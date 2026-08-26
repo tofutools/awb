@@ -33,8 +33,11 @@ most issues. It differs from Beads in three deliberate ways:
 Versioning, history, merge or offline replication; comments and discussion threads; field-level
 audit logs; sprints, boards, burndowns or time tracking; notifications; continuous synchronisation
 with GitHub, Jira or Linear; user accounts, roles and permissions; custom fields or configurable
-workflows; an MCP server; bulk import from stdin; attachment or blob storage; a write-capable web
-UI.
+workflows; an MCP server; bulk import from stdin; attachment or blob storage.
+
+The web UI shipped in version 1 is read-only. That is a scope decision about the bundled UI, not
+about the API: the HTTP API is required to be complete enough that a fully-functional read/write
+web UI can be built on it, by this project later or by somebody else now (§6.2).
 
 ## 2. Concepts
 
@@ -299,7 +302,7 @@ boundaries, and does not show ancestors.
 
 | Command | Description |
 | --- | --- |
-| `awb serve [--addr 127.0.0.1:7777]` | Serve the HTTP API and the read-only web UI over the local database. |
+| `awb serve [--addr 127.0.0.1:7777] [--cors-origin ORIGIN]...` | Serve the HTTP API and the bundled read-only web UI over the local database. `--cors-origin` allows that exact origin to call the API from a browser; it is repeatable and empty by default, so a separately hosted web UI is opt-in rather than any page in the browser being able to read the database. |
 
 ### 4.6 JSON representation
 
@@ -372,8 +375,8 @@ on the assumption that work inside a checkout is work on that checkout.
 
 A repository may opt out of that assumption in its repository-level configuration file (§7.2):
 
-```toml
-include_untagged = true    # also show project-level issues in this working tree
+```yaml
+include_untagged: true    # also show project-level issues in this working tree
 ```
 
 Overrides on the command line, mutually exclusive — giving more than one is a usage error:
@@ -406,9 +409,10 @@ the command fails with exit code 2.
 third-party user interfaces, dashboards and integrations today, a shared team instance later (§10).
 It serves:
 
-* a JSON HTTP API that mirrors the CLI one-to-one,
+* a JSON HTTP API that mirrors the CLI one-to-one and is complete enough to drive a fully
+  functional read/write web UI (§6.2),
 * the OpenAPI document describing that API (§6.1), and
-* a read-only web UI for browsing projects, issues and dependency trees.
+* the bundled web UI, which in version 1 is read-only (§6.3).
 
 Setting `AWB_DB`/`--db` to the server's URL makes the CLI operate against it; every command
 behaves identically to direct mode, and repository context is still resolved on the client.
@@ -438,6 +442,8 @@ GET    /api/blocked
 GET    /api/search?q=...
 GET    /api/projects        POST /api/projects        PATCH /api/projects/{key}    DELETE …
 GET    /api/repos           POST /api/repos           PATCH /api/repos/{name}      DELETE …
+GET    /api/labels
+GET    /api/assignees
 ```
 
 The status transitions are endpoints rather than `PATCH` bodies for the same reason `update` cannot
@@ -459,7 +465,7 @@ can move between the two transports without relearning anything. Query parameter
 names as the corresponding CLI filter flags. Repository context is resolved on the client, so the
 server never inspects the caller's working directory: the client sends a resolved `repo` parameter.
 Resolving it needs the repository registry, so in remote mode a command with repository context
-first fetches `GET /api/repos`; a working tree whose `.awb.toml` names its repository directly
+first fetches `GET /api/repos`; a working tree whose `.awb.yaml` names its repository directly
 skips that round trip. `--mine` likewise never reaches the server — the client resolves its own
 identity and sends `assignee=<identity>`.
 
@@ -470,45 +476,104 @@ integrations can be built against it and clients can be generated from it. The d
 the repository, is embedded in the binary, and is served at `/openapi.json` and `/openapi.yaml`.
 
 * Its component schemas are the CLI's `--json` structures: `Issue`, `Relation`, `Project`, `Repo`,
-  `Error`. There is no second, HTTP-only representation of anything — if the shapes ever diverge,
+  `Error`, plus `Facet` for the two endpoints the CLI has no counterpart for (§6.2). There is no
+  second, HTTP-only representation of anything the CLI also returns — if the shapes ever diverge,
   the JSON output is what changed and both must be corrected together.
 * Enumerations (`type`, `status`, relation types) and the priority range are declared in the schema,
   so a generated client validates the same vocabulary the CLI enforces.
 * Errors use the exit-code taxonomy of §4.1 mapped onto status codes: `400` usage, `404` not found,
-  `409` constraint violation, `500` runtime error, with an `Error` body.
+  `409` constraint violation, `500` runtime error, with an `Error` body. `412` is the one status
+  with no exit code behind it: it answers a failed `If-Match` (§6.2), which only a client that sends
+  one can provoke.
 * The document is treated as a compatibility contract: within a major version, changes are additive
   only. `info.version` tracks the API, not the binary.
 
 Authoring the document is deferred to implementation; this specification fixes only that it must
 exist, be authoritative for the API, and reuse the CLI JSON schemas.
 
+### 6.2 Sufficiency for a read/write web UI
+
+Version 1 ships a read-only UI, but the API is specified as if a read/write one existed, so that a
+later version — or somebody else, now — can build one without a new server surface. The API is
+therefore required to satisfy the following. Nothing here is optional for version 1: the endpoints
+exist and are supported even though the bundled UI only reads.
+
+* **Complete write coverage.** Every state change the CLI can make, an API client can make: create,
+  update and delete issues; the four status transitions; labels; relations; projects; repositories.
+  The only CLI commands with no API equivalent are the ones that are about the local machine rather
+  than about the data — `init`, `serve` and `agent-guide`.
+* **Safe concurrent editing.** A form-based UI reads an issue, the user edits it for a while, and
+  the UI writes it back; a plain `PATCH` would silently overwrite whatever changed meanwhile. So
+  `GET /api/issues/{id}` returns an `ETag` derived from `updated_at`, and `PATCH` honours
+  `If-Match`, answering `412` when the issue has moved on. `If-Match` is optional — a caller that
+  omits it, as the CLI always does, gets last-write-wins — but a UI is expected to send it. This is
+  the same concern that already makes `claim` a compare-and-set and labels individually mutable.
+* **Enough for the chrome, not just the content.** Editing UIs need to populate filter menus and
+  autocomplete: `GET /api/labels` and `GET /api/assignees` return the distinct values in use as
+  `{"value", "count"}` objects, sorted by value, where `count` counts issues that are not closed.
+  Both honour the same filters as `GET /api/issues`.
+* **Paging.** List endpoints accept `limit` and `offset` and return the unpaged total in an
+  `X-Total-Count` header, so a UI can show "1–50 of 214" and page through without loading
+  everything.
+* **Markdown source, never HTML.** The API returns and accepts the description exactly as stored, so
+  an editor round-trips it losslessly. Rendering — and sanitising (§9) — is the UI's job. The
+  derived `links` array (§2.5) stays available for clients that want the links without a parser.
+* **Cross-origin access, opt in.** A UI hosted anywhere other than the server itself is a browser
+  origin the API must allow explicitly, via `--cors-origin` (§4.5). The default is to allow none,
+  because the API is unauthenticated and any page in the user's browser could otherwise reach it.
+
+`offset`, `X-Total-Count`, the two facet endpoints and the `ETag`/`If-Match` handshake are the only
+places where the API is wider than the CLI. Everything else stays one-to-one, and all of them are
+declared in the OpenAPI document like the rest.
+
+Two things a write UI needs that are deliberately *not* API concerns. Repository context is resolved
+by the client (§5), so a browser UI, having no working directory, simply does not have one and
+filters by `repo` explicitly. And errors stay a single human-readable `Error` message (§4.6) with a
+status code; there is no field-level validation report, because the vocabulary a form must respect
+is fixed and published in the OpenAPI document, so a UI can validate before it submits.
+
+### 6.3 The bundled web UI
+
+Version 1 bundles a read-only UI, served from the binary on the paths described above, for browsing
+projects, issues, search results and dependency trees. It is a client of the same HTTP API and gets
+no privileged access to the database, which is what keeps that API honest: making the UI writable
+later is a change to the UI alone.
+
 ## 7. Configuration
 
-Both configuration files are TOML and both are optional; `awb` runs with neither.
+Both configuration files are YAML and both are optional; `awb` runs with neither. Each is a flat
+mapping of scalar keys — there is no nesting, no list and no anchor in any documented setting — and
+each is parsed by a real YAML parser (§9) rather than by line matching. Only the exact file names
+below are looked for; the `.yml` spelling is not searched.
+
+An unreadable, malformed or wrongly typed configuration file fails the command with exit code 1 and
+a message naming the file: silently falling back to defaults would hide the reason a command wrote
+to the wrong database or picked the wrong project. Unknown keys are the one thing that is ignored
+(§7.2).
 
 ### 7.1 User configuration
 
-`$XDG_CONFIG_HOME/awb/config.toml`, falling back to `~/.config/awb/config.toml`:
+`$XDG_CONFIG_HOME/awb/config.yaml`, falling back to `~/.config/awb/config.yaml`:
 
-```toml
-db       = "/home/mikael/.local/share/awb/awb.db"  # path or http(s) URL
-identity = "mikael"                                 # default assignee, --mine, claim --as
-project  = "awb"                                    # default project for create
-color    = "auto"
+```yaml
+db: /home/mikael/.local/share/awb/awb.db   # path or http(s) URL
+identity: mikael                           # default assignee, --mine, claim --as
+project: awb                               # default project for create
+color: auto
 ```
 
 When `identity` is unset it defaults to the OS username.
 
 ### 7.2 Repository configuration
 
-`.awb.toml` in the root of a Git working tree. It is meant to be committed, so that a repository
+`.awb.yaml` in the root of a Git working tree. It is meant to be committed, so that a repository
 carries its own `awb` settings for everyone who checks it out, and it is a general-purpose file
 rather than a single-purpose filter switch:
 
-```toml
-repo             = "awb"   # bind this working tree to a registered repository by name
-project          = "awb"   # default project for issues created here
-include_untagged = true    # see §5
+```yaml
+repo: awb                 # bind this working tree to a registered repository by name
+project: awb              # default project for issues created here
+include_untagged: true    # see §5
 ```
 
 A `repo` key here identifies the repository directly and takes precedence over the URL and path
@@ -531,9 +596,37 @@ registered `default_project` inserted between the repository and user configurat
 
 ## 8. Identifiers
 
-An issue ID is `<project-key>-<hash>` where the hash is six lowercase hexadecimal characters
-generated randomly, and retried until it is unique within the project at insert time. Because a
-project key may itself contain hyphens, an ID is split on its *last* hyphen.
+An issue ID is `<project-key>-<hash>`, e.g. `awb-a3f9c1`. Because a project key may itself contain
+hyphens, an ID is split on its *last* hyphen.
+
+The hash follows the [Beads hash ID](https://beads.gascity.com/core-concepts/hash-ids) scheme: it
+is derived by hashing the content of the issue being created together with a random salt, rather
+than drawn from a sequence or from raw randomness. Concretely:
+
+1. Build the input string from the new issue's title, its creation timestamp (UTC, RFC 3339 with
+   nanosecond precision) and a fresh 16-byte random salt, joined by a separator that cannot occur
+   in a title.
+2. Take the SHA-256 digest of that string.
+3. The hash is the first six characters of its lowercase hexadecimal encoding.
+
+Each of the three inputs earns its place. Title and timestamp make the ID a function of the issue,
+which is what lets any machine mint one with no counter and no coordination (§10.3); the salt keeps
+that from being a promise, so two issues with the same title created in the same instant still get
+different IDs and nobody is tempted to treat the ID as content-addressed or to reconstruct it. The
+digest then spreads whatever entropy those inputs carry evenly over the space, which raw
+randomness would leave at the mercy of the random source alone.
+
+If the resulting hash already exists in the same project, a new salt is drawn and the hash
+recomputed, until the ID is unique within the project. This happens inside the insert transaction,
+so two concurrent local processes cannot both take the same ID. Six hexadecimal characters is a
+16-million-value space per project, in which birthday collisions start to appear somewhere in the
+thousands of issues, so the retry is a working part of the scheme rather than a formality. What it
+cannot do is see issues in a database it is not inserting into, which is §10.3's problem.
+
+Two deliberate departures from Beads: the hash length is fixed at six characters rather than
+configurable, and child issues do **not** get dotted IDs derived from their parent. A dotted ID
+would bake the parent into the identifier, while in `awb` an issue's parent is an ordinary relation
+that can be added, removed or replaced (§2.4) long after the ID has been written down.
 
 An ID is immutable and stable for the life of the issue; in particular an issue cannot move between
 projects, which is the price of putting the project key in the ID. Keeping an ID reserved after the
@@ -549,12 +642,16 @@ matches more than one issue fails with exit code 2 rather than picking one.
 
 * Go, one statically linked binary, no cgo, so `go install` and cross-compilation both work.
 * A pure Go SQLite driver (`modernc.org/sqlite`) provides FTS5 without a C toolchain.
+* A real YAML library (`goccy/go-yaml` or `gopkg.in/yaml.v3`) parses the configuration files (§7)
+  into a struct. Configuration is never read by matching lines or by regular expression.
 * A CommonMark parser (e.g. `goldmark`) extracts links from descriptions for `awb show` and renders
-  them in the web UI. Descriptions are stored verbatim; parsing is a read-time concern only, and
-  rendered HTML is sanitised.
+  them in the web UI. Descriptions are stored verbatim; parsing is a read-time concern only, it
+  belongs to the CLI and UI layers rather than to the API layer, which returns the source (§6.2),
+  and rendered HTML is sanitised.
+* `crypto/sha256` and `crypto/rand` generate issue IDs (§8); `math/rand` is not used for the salt.
 * Layering: a storage package owning the schema and queries; a domain package owning readiness,
   relation validation and repository matching; thin CLI and HTTP adapters over it, so both surfaces
-  exercise the same code paths.
+  exercise the same code paths. The web UI is a client of the HTTP adapter, not a third adapter.
 * All timestamps are stored in UTC.
 * Concurrency is handled by SQLite itself: short transactions, WAL mode and a busy timeout. There
   are no leases, locks or claim expiry — `claim` is a single atomic update, and a crashed agent
@@ -567,7 +664,8 @@ matches more than one issue fails with exit code 2 rather than picking one.
 Everything specified above, with no synchronisation and no shared deployment: one person, one
 machine, one database file, any number of local processes and agents against it. `awb serve` is in
 scope as a local surface — it is what third-party UIs and integrations are built against — but is
-bound to loopback and unauthenticated, so it serves the machine's own user.
+bound to loopback and unauthenticated, so it serves the machine's own user. The API it serves is
+complete in the sense of §6.2; only the bundled UI is limited to reading.
 
 ### 10.2 Version 2 — multi-user and multi-machine
 
@@ -579,13 +677,14 @@ designed here, and version 1 must not carry half of it.
 
 Choices that cost version 1 nothing but keep version 2 open:
 
-* **Random IDs.** Issue IDs are random hashes rather than sequence numbers (§8), so issues created
-  independently on different machines can be merged without renumbering. Six hexadecimal characters
-  is not a collision-*proof* space — independent generation within one project collides at odds
-  worth taking seriously in the thousands of issues — and the insert-time check cannot see another
-  machine's issues. Short IDs that an agent can type are worth more in version 1 than a merge
-  guarantee version 2 has not been designed yet; a version 2 that needs one can widen the hash in a
-  migration, since nothing parses its length.
+* **Hash IDs.** Issue IDs are salted content hashes rather than sequence numbers (§8), so issues
+  created independently on different machines can be merged without renumbering, and no coordination
+  is needed to mint one. Six hexadecimal characters is not a collision-*proof* space — independent
+  generation within one project collides at odds worth taking seriously in the thousands of issues —
+  and the insert-time uniqueness check cannot see another machine's issues. Short IDs that an agent
+  can type are worth more in version 1 than a merge guarantee version 2 has not been designed yet;
+  a version 2 that needs one can widen the hash in a migration, since nothing parses its length, and
+  can settle a merge collision by re-salting one side.
 * **Identity on every mutation.** Every mutating command and API call resolves a caller identity
   (§7), even though version 1 mostly records it only as `assignee`. The plumbing exists when
   attribution or authentication needs it.
@@ -598,6 +697,9 @@ Choices that cost version 1 nothing but keep version 2 open:
   cross-machine ordering or conflict rule would need.
 * **A published API contract.** The OpenAPI document (§6.1) fixes the wire format before other
   people build against it, so a version 2 server can stay compatible with version 1 clients.
+* **An API sized for a write UI.** Write coverage, optimistic concurrency, paging and facets are in
+  the API from the first release (§6.2), so making the bundled UI writable, or letting somebody else
+  build a better one, needs no server work and no second wire format.
 
 Explicitly *not* prepared for: a change log, tombstones for deletions, vector clocks or any other
 merge machinery. Version 1 deletes rows outright and keeps no history, and version 2 is free to
