@@ -2,16 +2,15 @@
 
 ## 1. Overview
 
-`awb` is an agent-first issue tracker: a single Go binary backed by SQLite, driven primarily
-through a command line interface that is equally usable by coding agents, humans and scripts.
+`awb` is an agent-first issue tracker: a single Go binary backed by SQLite, with a command line
+interface for coding agents, humans and scripts.
 
 It targets individuals, small teams and open source projects. It deliberately does not target
 enterprises: there is no permission model, no configurable workflow engine, no custom fields and
 no reporting suite.
 
-The design is inspired by [Beads](https://beads.gascity.com/), in particular its dependency-aware
-"what can I work on right now" model and its assumption that agents, not humans, file and close
-most issues. It differs from Beads in three deliberate ways:
+The design takes Beads' dependency-aware "what can I work on now" model and agent-first assumption,
+but differs in three ways:
 
 * Storage is a plain SQLite database. There is no version control, no branching and no merge.
 * The issue database is not tied to one Git repository. One database spans many projects and many
@@ -30,10 +29,10 @@ most issues. It differs from Beads in three deliberate ways:
 
 ### 1.2 Non-goals
 
-Versioning, history, merge or offline replication; comments and discussion threads; field-level
-audit logs; sprints, boards, burndowns or time tracking; notifications; continuous synchronisation
-with GitHub, Jira or Linear; user accounts, roles and permissions; custom fields or configurable
-workflows; an MCP server; bulk import from stdin; attachment or blob storage.
+Versioning, history, merge or offline replication; comments; audit logs; planning and reporting
+features such as sprints, boards, burndowns and time tracking; notifications; continuous external
+tracker synchronisation; accounts and permissions; custom fields or workflows; an MCP server;
+bulk stdin import; attachments and blobs.
 
 The web UI shipped in version 1 is read-only. That is a scope decision about the bundled UI, not
 about the API: the HTTP API is required to be complete enough that a fully-functional read/write
@@ -86,10 +85,9 @@ Either a remote URL or a local path is enough to identify the repository; see §
 | `created_at` | timestamp | Set automatically (UTC, RFC 3339 with millisecond precision, e.g. `2026-08-26T09:12:03.412Z`). |
 | `updated_at` | timestamp | Set automatically whenever a stored field of the issue, including its labels, actually changes. A write that changes nothing leaves it alone, and adding or removing a relation does not change either endpoint. Strictly increasing per issue: if the clock yields a value that is not greater than the stored one — the system clock may have a coarser resolution than a millisecond — the stored value plus one millisecond is written instead. |
 
-Both timestamps are best effort to the millisecond, but only their ordering is guaranteed. On a host
-whose clock is coarser than a millisecond, the rule that keeps `updated_at` increasing can push it
-slightly ahead of wall-clock time under rapid successive writes. A timestamp is therefore reliable
-as a version and as an ordering key, and as a measurement only to the second.
+Only timestamp ordering is guaranteed. Rapid writes on a coarse clock can push `updated_at`
+slightly ahead of wall time, so timestamps are reliable as versions and ordering keys, but as time
+measurements only to the second.
 
 `blocked` is **not** a stored status. It is derived: an issue is blocked when at least one issue it
 is `blocked-by` is not closed. This makes it impossible for the recorded state to disagree with the
@@ -117,27 +115,17 @@ The `blocked-by` and `parent` graphs must each remain acyclic, and are checked s
 command that would create a cycle fails with exit code 4, as does a relation from an issue to
 itself. Adding a relation that already exists succeeds and changes nothing.
 
-One shape spanning both graphs is rejected as well: an issue may not be `blocked-by` any ancestor
-or descendant of itself in the `parent` graph. Such a pair inverts the decomposition: the descendant
-cannot start until the ancestor is closed, while the ancestor is meant to be completed through the
-very work that is waiting for it. Between an issue and its direct parent this deadlocks readiness
-from both sides — the child is blocked, and the parent has a child that is not closed — so neither
-can ever appear in `awb ready` (§2.6) even though the two graphs are individually acyclic. The rule
-covers the whole ancestor and descendant chain rather than only the direct parent, because the same
-inversion is a mistake at any depth. The attempt fails with exit code 4 like a cycle.
+An issue also may not be `blocked-by` any ancestor or descendant in the `parent` graph. This
+inverts decomposition and can deadlock readiness even though each graph is acyclic. The rule covers
+the full ancestor/descendant chain and violations exit 4 like cycles.
 
 An issue has at most one parent; `dep add` on an issue that already has one fails with exit code 4
 unless `--force` is given, which replaces it. Relations are deleted with either endpoint issue.
 
-A relation is stored once, as a row belonging to its subject, but is shown on both of its issues.
-It keeps the subject's name and reading in both places; what differs is the direction it points
-relative to the issue being looked at, which `awb show` renders and the JSON representation carries
-as a `direction` field (§4.6). The three directed types work that way. A `related` relation is
-symmetric and therefore has no meaningful subject: the pair is stored canonically, as a row whose
-subject is the lexicographically smaller of the two ids, so adding it from either end yields the
-same single relation and a second such `dep add` is the no-op of the rule above. Removing it works
-whichever endpoint is named first, and it reads the same either way, which is why §4.6 gives it
-`direction` `out` on both of its issues.
+A relation is stored once but shown on both issues; `direction` identifies the viewed endpoint
+(§4.6). A symmetric `related` pair is stored canonically with the smaller ID as subject. Adding it
+from either end is therefore idempotent, removal works in either order, and both views use
+`direction: out`.
 
 ### 2.5 External artifacts
 
@@ -168,11 +156,9 @@ An issue is **ready** when all of the following hold:
   not directly. Only direct children count, as with `--parent` (§4.3); a closed child hides its own
   open children from this test, which is a consequence of `close` never looking at another issue.
 
-Readiness governs what the listing commands show, not what may be done. An issue that is merely not
-ready — a parent whose children are still open, say — can be claimed and closed like any other, and
-`awb close` never looks at another issue, so a parent may be closed with open children beneath it.
-The one refusal readiness feeds is `claim` on a blocked issue (§4.3), which `--force` overrides.
-Readiness is advice about what to pick up next, not a workflow engine (§1.2).
+Readiness guides listings rather than enforcing workflow. Non-ready issues may still be claimed or
+closed, and closing never inspects related issues. The sole exception is claiming a blocked issue,
+which requires `--force` (§4.3).
 
 Readiness says nothing about the assignee. `awb ready` nevertheless defaults to unassigned issues,
 because "what should I pick up next" is the question it exists to answer; `awb ready --mine` asks
@@ -251,48 +237,31 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   `relations` that went with it.
 * Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not found ·
   `4` constraint violation (e.g. dependency cycle).
-* Validating a value against the vocabulary of §2 — a line break in a title, a character outside
-  the label set, a priority outside `0`–`3`, an unknown enum or `--sort` value, an over-long
-  project key — is a usage error: exit code `2`. Exit code `4` is for violations that depend on
-  the state of the database rather than on the argument alone: a cycle, a duplicate project key or
-  repository name, an issue already claimed by somebody else, an issue that already has a parent,
-  and a `project rm` or `repo rm` refused for want of `--cascade`. Rejecting the reserved
-  repository name `none` (§5) is exit code `2` like any other vocabulary violation, since the
-  argument alone settles it.
+* Invalid argument vocabulary (title, label, priority, enum, sort value, project key, or reserved
+  repository name `none`) exits `2`. Constraints that depend on database state (cycles,
+  duplicates, claim or parent conflicts, and deletion without required `--cascade`) exit `4`.
 * An empty string clears an optional string value: `--assignee ""` unassigns,
   `--description ""` blanks the description, `--project ""` on `repo add` or `repo update`
   clears its optional `default_project`, and `--remote ""` or `--path ""` empties that whole set.
   An empty occurrence of `--remote` or `--path` may not be combined with a non-empty occurrence of
   the same flag in one invocation; that is a usage error rather than an order-dependent result.
-  An empty `--project` is rejected on issue creation and as a project filter, because an issue must
-  belong to a project and a filter must name one. Two exceptions. `--name ""` on a project
-  restores a default rather than blanking: it puts the name
-  back to the project key, which is what `project add` would have given it, so a project always has
-  a name to show. And `--repo` spells the same thing `--repo none` (§5), because `none` is a
-  reserved repository name anyway.
-* `--force` carries two meanings, one per kind of command. On the destructive commands it is the
-  confirmation this section requires, and `--cascade` is the separate permission to deal with what
-  depends on the thing being deleted — deleting it, in the case of a project's issues, or cutting
-  it loose, in the case of a repository's tags. On `claim`, `release` and `dep add --parent` there
-  is nothing to confirm and `--force` overrides a refusal.
-* An argument that matches nothing exits `3`; one that matches more than one thing — an ambiguous
-  ID prefix (§8) or an ambiguous repository context (§5) — exits `2`, because the fix is to write a
-  more specific command. Creating something that already exists, like a duplicate project key,
-  exits `4`.
-* An empty result from a list-like command is success: exit code `0` and an empty table, no output,
-  or `[]` depending on the output mode. Exit code `3` is reserved for a named entity that does not
-  exist.
+  Empty `--project` is invalid for issue creation or filtering. Two exceptions: project
+  `--name ""` restores the key as its name, and issue `--repo ""` means `--repo none` (§5).
+* On destructive commands, `--force` confirms deletion and `--cascade` permits deleting dependent
+  issues or clearing repository tags. On `claim`, `release` and `dep add --parent`, `--force`
+  overrides a refusal.
+* No match exits `3`; an ambiguous ID or repository match exits `2`; creating a duplicate exits `4`.
+* An empty list is success (`0`) and renders as an empty table, no compact output, or `[]`.
 * Errors always go to stderr, as a single line in the default and `--compact` modes and as
   `{"error": "..."}` under `--json`. The exit code is the machine-readable classification; the
   message is human-readable text.
 * Colour is used in the default output mode when stdout is a terminal. `--color`, `color` in the
   configuration file and `AWB_COLOR` accept `auto`, `always` and `never`; `--no-color` is an alias
   for `--color never`, and a `NO_COLOR` environment variable of any value is equivalent to `never`.
-* Repeating a filter flag ORs its values within that field; different filter flags are ANDed
-  together. Filter flags do not accept comma-separated lists. The repeatable filters are exactly
-  `--status`, `--type`, `--priority`, `--label`, `--assignee` and `--project`; the remaining
-  filters of §4.3 and the context flags of §5 may be given at most once, and repeating one is a
-  usage error. Elsewhere, a flag is repeatable exactly when its signature writes it `...`.
+* Repeated values of one filter are ORed; different filters are ANDed. No filter accepts
+  comma-separated lists. Only `--status`, `--type`, `--priority`, `--label`, `--assignee` and
+  `--project` repeat; other filters and context flags may occur once. Elsewhere `...` marks a
+  repeatable flag.
 
 ### 4.2 Setup
 
@@ -345,10 +314,8 @@ Filters accepted by `list`, `ready`, `blocked` and `search`:
   means P0 and P1. There is deliberately no `--priority-min`; nobody asks for the unimportant half.
 * `--parent <id>` selects the direct children of that issue, not the whole subtree. `awb dep tree`
   is how you see a subtree.
-* `--limit <n>` caps the number of results. There is no default limit: a list-like command returns
-  everything that matches, because the CLI has no `--offset` (§6.2) and a silent cap would put rows
-  out of reach. `--compact` is the answer to output size, not truncation. The value must be a
-  non-negative integer; zero returns no results.
+* `--limit <n>` caps results and must be non-negative; zero returns none. There is no default limit
+  or CLI offset, so every match remains reachable; use `--compact` to reduce output size.
 * `--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
   It is shorthand for `--assignee <identity>`. `--mine`, `--assignee` and `--unassigned` are
   mutually exclusive: giving more than one of them is a usage error. Giving any of them to
@@ -606,11 +573,10 @@ The three shapes that context can take all have a spelling — `repo=<name>`, `r
 untagged issues only, and `all-repos=true` for no filtering at all — and the widening of §5 is
 `include-untagged=true` alongside `repo=<name>`, which ORs untagged issues into that filter. The
 server implements those parameters; what it does not do is decide which of them applies.
-Resolving it needs the repository registry, so in remote mode a command with repository context
-first fetches `GET /api/repos`. That holds even for a working tree whose `.awb.yaml` names its
-repository directly, because the auto-registration of §7.2 has to know whether that name is
-registered yet. `--mine` likewise never reaches the server — the client resolves its own
-identity and sends `assignee=<identity>`.
+Resolving context needs the repository registry, so in remote mode the client first fetches
+`GET /api/repos`. If `.awb.yaml` names a missing repository, the client infers its remotes and path
+and registers it with `POST /api/repos` as required by §7.2. `--mine` likewise never reaches the
+server: the client sends `assignee=<identity>`.
 
 ### 6.1 OpenAPI
 
@@ -842,29 +808,17 @@ than drawn from a sequence or from raw randomness. Concretely:
 2. Take the SHA-256 digest of that byte sequence.
 3. The hash is the first six characters of its lowercase hexadecimal encoding.
 
-Each of the three inputs earns its place. Title and timestamp make the ID a function of the issue,
-which is what lets any machine mint one with no counter and no coordination (§10.3); the salt keeps
-that from being a promise, so two issues with the same title created in the same instant still get
-different IDs and nobody is tempted to treat the ID as content-addressed or to reconstruct it. The
-digest then spreads whatever entropy those inputs carry evenly over the space, which raw
-randomness would leave at the mercy of the random source alone.
+The title and timestamp make IDs independently mintable without a counter; the salt distinguishes
+otherwise identical creations. IDs are not content-addressed and must not be reconstructed.
 
-If the resulting hash already exists in the same project, a new salt is drawn and the hash
-recomputed, until the ID is unique within the project. This happens inside the insert transaction,
-so two concurrent local processes cannot both take the same ID. Six hexadecimal characters is a
-16-million-value space per project, in which birthday collisions start to appear somewhere in the
-thousands of issues, so the retry is a working part of the scheme rather than a formality. What it
-cannot do is see issues in a database it is not inserting into, which is §10.3's problem.
+On a same-project collision, draw a new salt and retry inside the insert transaction. The six-hex
+character space has about 16 million values per project, so collision handling is required.
 
-Two deliberate departures from Beads: the hash length is fixed at six characters rather than
-configurable, and child issues do **not** get dotted IDs derived from their parent. A dotted ID
-would bake the parent into the identifier, while in `awb` an issue's parent is an ordinary relation
-that can be added, removed or replaced (§2.4) long after the ID has been written down.
+Unlike Beads, the hash length is fixed at six and children do not get dotted IDs; parentage is a
+mutable relation (§2.4).
 
-An ID is immutable and stable for the life of the issue; in particular an issue cannot move between
-projects, which is the price of putting the project key in the ID. Keeping an ID reserved after the
-issue is deleted would need a record of deleted issues, which is exactly the tombstone that §10.3
-rules out of version 1, so a deleted issue's hash may eventually be generated again.
+An ID is immutable, so an issue cannot move between projects. Deleted IDs are not reserved and may
+eventually be reused.
 
 Commands accept an unambiguous hash prefix in place of a full ID, and accept a bare hash or hash
 prefix when it is unique across the database. Any non-empty prefix is allowed, and the argument is
@@ -878,10 +832,9 @@ matches more than one issue fails with exit code 2 rather than picking one.
 * A pure Go SQLite driver (`modernc.org/sqlite`) provides FTS5 without a C toolchain.
 * A real YAML library (`goccy/go-yaml` or `gopkg.in/yaml.v3`) parses the configuration files (§7)
   into a struct. Configuration is never read by matching lines or by regular expression.
-* A CommonMark parser (e.g. `goldmark`) extracts links from descriptions for `awb show` and renders
-  them in the web UI. Descriptions are stored verbatim; parsing is a read-time concern only, it
-  belongs to the CLI and UI layers rather than to the API layer, which returns the source (§6.2),
-  and rendered HTML is sanitised.
+* A CommonMark parser (e.g. `goldmark`) extracts links in the shared read/domain layer so CLI and
+  API return the same derived data. Descriptions remain verbatim; the web UI renders and sanitises
+  them.
 * `crypto/sha256` and `crypto/rand` generate issue IDs (§8); `math/rand` is not used for the salt.
 * Layering: a storage package owning the schema and queries; a domain package owning readiness,
   relation validation and repository matching; thin CLI and HTTP adapters over it, so both surfaces
@@ -907,38 +860,11 @@ Deferred: identity and authentication for the server, a shared instance for a te
 project, and some form of synchronisation or replication between databases. Nothing about it is
 designed here, and version 1 must not carry half of it.
 
-### 10.3 Preparations made now
+### 10.3 Version 2 foundations
 
-Choices that cost version 1 nothing but keep version 2 open:
-
-* **Hash IDs.** Issue IDs are salted content hashes rather than sequence numbers (§8), so issues
-  created independently on different machines can be merged without renumbering, and no coordination
-  is needed to mint one. Six hexadecimal characters is not a collision-*proof* space — independent
-  generation within one project collides at odds worth taking seriously in the thousands of issues —
-  and the insert-time uniqueness check cannot see another machine's issues. Short IDs that an agent
-  can type are worth more in version 1 than a merge guarantee version 2 has not been designed yet;
-  a version 2 that needs one can widen the hash in a migration, since nothing parses its length, and
-  can settle a merge collision by re-salting one side.
-* **Identity on every mutation.** Every mutating command and API call resolves a caller identity
-  (§7), even though version 1 mostly records it only as `assignee`. The plumbing exists when
-  attribution or authentication needs it.
-* **A domain layer, not a database.** All mutations go through a small set of explicit, atomic
-  domain operations (§9) rather than ad-hoc SQL in the CLI or HTTP handlers. That is the seam where
-  a change log or replication hook is later inserted.
-* **Versioned schema from the start.** Migrations are numbered and recorded in the database from
-  the first release, so a version 2 schema can be reached from any version 1 database.
-* **UTC timestamps.** `created_at` and `updated_at` are UTC on every row, which is what any
-  cross-machine ordering or conflict rule would need, and `updated_at` never repeats or goes
-  backwards for a given issue (§2.3), so it already names a version and not merely a moment.
-* **A published API contract.** The OpenAPI document (§6.1) fixes the wire format before other
-  people build against it, so a version 2 server can stay compatible with version 1 clients.
-* **An API sized for a write UI.** Write coverage, optimistic concurrency, paging and facets are in
-  the API from the first release (§6.2), so making the bundled UI writable, or letting somebody else
-  build a better one, needs no server work and no second wire format.
-
-Explicitly *not* prepared for: a change log, tombstones for deletions, vector clocks or any other
-merge machinery. Version 1 deletes rows outright and keeps no history, and version 2 is free to
-decide that a synchronised database needs a different mechanism.
+Version 1 provides independently generated hash IDs (§8), atomic domain operations, schema
+migrations, UTC version timestamps, a stable OpenAPI contract and an API sufficient for a write UI.
+It deliberately provides no change log, tombstones, vector clocks or other merge machinery.
 
 ## 11. Worked example
 
