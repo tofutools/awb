@@ -227,16 +227,19 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
     — the same issue the JSON of §4.6 shows.
   * `--json` — stable JSON, one object or one array per invocation, suitable for `jq` (§4.6).
 * The `--compact` line begins with five mandatory positional fields — id, `P<priority>`, status,
-  type and the title. The title is double-quoted, and is the only field that may contain a space;
-  a `"` or `\` inside it is backslash-escaped. Any further fields are optional and identified by
+  type and the title. The title is encoded as a JSON string, including the surrounding double
+  quotes and JSON escaping; it is the only field that may contain literal spaces after decoding.
+  Any further fields are optional and identified by
   their prefix rather than their position, and appear in this fixed order when present:
   `@<assignee>`, one `#<label>` per label in sorted order, `repo:<name>`, `!blocked` and, for
   `awb blocked`, one `blocked-by:<id>` per blocker in sorted order. The character restrictions on
   labels and assignees (§2.3) keep those tokens free of spaces, so a line is parseable by splitting
   on whitespace outside the quoted title.
 * `--compact` for the commands that do not list issues: `project ls` prints
-  `<key> <active_issues> "<name>"` per line, `repo ls` prints
-  `<name> [remote:<url>]... [path:<dir>]... [project:<key>]` per line, and `dep tree` prints the
+  `<key> <active_issues> <name>` per line, where `<name>` is a JSON string. `repo ls` prints
+  `<name> [remote:<url>]... [path:<dir>]... [project:<key>]` per line; each URL and path is a JSON
+  string immediately after its prefix, so a path with spaces is written as
+  `path:"/home/me/my project"`. `dep tree` prints the
   ordinary compact issue line per node, prefixed by two spaces per level of depth — the root is at
   depth zero and therefore unindented. That prefix is the one thing that may precede the id, so a
   consumer strips the leading spaces, counts them to recover the depth, and then parses the rest of
@@ -256,9 +259,14 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   and a `project rm` or `repo rm` refused for want of `--cascade`. Rejecting the reserved
   repository name `none` (§5) is exit code `2` like any other vocabulary violation, since the
   argument alone settles it.
-* An empty string clears a value: `--assignee ""` unassigns, `--description ""` and
-  `--project ""` blank the field, and `--remote ""` or `--path ""` empties that whole set. Two
-  exceptions. `--name ""` on a project restores a default rather than blanking: it puts the name
+* An empty string clears an optional string value: `--assignee ""` unassigns,
+  `--description ""` blanks the description, `--project ""` on `repo add` or `repo update`
+  clears its optional `default_project`, and `--remote ""` or `--path ""` empties that whole set.
+  An empty occurrence of `--remote` or `--path` may not be combined with a non-empty occurrence of
+  the same flag in one invocation; that is a usage error rather than an order-dependent result.
+  An empty `--project` is rejected on issue creation and as a project filter, because an issue must
+  belong to a project and a filter must name one. Two exceptions. `--name ""` on a project
+  restores a default rather than blanking: it puts the name
   back to the project key, which is what `project add` would have given it, so a project always has
   a name to show. And `--repo` spells the same thing `--repo none` (§5), because `none` is a
   reserved repository name anyway.
@@ -339,7 +347,8 @@ Filters accepted by `list`, `ready`, `blocked` and `search`:
   is how you see a subtree.
 * `--limit <n>` caps the number of results. There is no default limit: a list-like command returns
   everything that matches, because the CLI has no `--offset` (§6.2) and a silent cap would put rows
-  out of reach. `--compact` is the answer to output size, not truncation.
+  out of reach. `--compact` is the answer to output size, not truncation. The value must be a
+  non-negative integer; zero returns no results.
 * `--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
   It is shorthand for `--assignee <identity>`. `--mine`, `--assignee` and `--unassigned` are
   mutually exclusive: giving more than one of them is a usage error. Giving any of them to
@@ -639,14 +648,18 @@ exist and are supported even though the bundled UI only reads.
   than about the data — `init`, `serve` and `agent-guide`.
 * **Safe concurrent editing.** A form-based UI reads an issue, the user edits it for a while, and
   the UI writes it back; a plain `PATCH` would silently overwrite whatever changed meanwhile. So
-  `GET /api/issues/{id}` returns an `ETag` derived from `updated_at`, and `PATCH` honours
+  `GET /api/issues/{id}` returns a strong `ETag` whose quoted value is the issue's `updated_at`
+  string, and `PATCH` honours
   `If-Match`, answering `412` when the issue has moved on. What makes that reliable is not the
   millisecond resolution of `updated_at` but its being strictly increasing per issue (§2.3): two
   successive versions of one issue can never carry the same timestamp, whatever the host clock's
   real resolution is, so an ETag identifies a version rather than an instant. That is also what
   lets a client cache a response and a version 2 mechanism order the versions of a row. `If-Match`
   is optional — a caller that omits it, as the CLI always does, gets last-write-wins — but a UI is
-  expected to send it. It guards the issue's own stored fields, which is what a form edits; a
+  expected to send it. Every successful endpoint response whose body is one `Issue`, including a
+  mutation response, carries the ETag for the returned version, so a client can make another
+  conditional edit without first repeating the GET. It guards the issue's own stored fields,
+  which is what a form edits; a
   relation added meanwhile does not move `updated_at` (§2.3) and so does not invalidate the ETag,
   and neither does `blocked` flipping because somebody closed a blocker. This is the same concern
   that already makes `claim` a compare-and-set and labels individually mutable.
@@ -662,7 +675,8 @@ exist and are supported even though the bundled UI only reads.
   `/api/search`, `/api/projects`, `/api/repos`, `/api/labels`, `/api/assignees` — accepts `limit`
   and `offset` and returns the unpaged total in an `X-Total-Count` header, so a UI can show
   "1–50 of 214" and page through without loading everything. `GET /api/issues/{id}/tree` is not
-  one of them: a tree is returned whole (§4.4).
+  one of them: a tree is returned whole (§4.4). `limit` and `offset` must be non-negative integers;
+  `limit=0` returns no rows while preserving the unpaged total in `X-Total-Count`.
 * **Markdown source, never HTML.** The API returns and accepts the description exactly as stored, so
   an editor round-trips it losslessly. Rendering — and sanitising (§9) — is the UI's job. The
   derived `links` array (§2.5) stays available for clients that want the links without a parser.
@@ -694,8 +708,9 @@ later is a change to the UI alone.
 
 ### 6.4 Request bodies
 
-Response bodies are the shapes of §4.6. Request bodies are the ones below, and none of them is
-invented for HTTP: each carries exactly the arguments of the corresponding CLI command.
+Response bodies are the shapes of §4.6. Request bodies are the ones below, and none of them adds a
+domain operation that the CLI lacks. They carry the corresponding CLI arguments, except that label
+changes deliberately carry one label per request so concurrent edits cannot replace one another.
 
 * `POST /api/issues` takes an `IssueCreate`: the writable fields of an `Issue` — `project`,
   `title`, `description`, `type`, `priority`, `assignee`, `repo` — plus `labels` and an initial
@@ -744,6 +759,11 @@ An unreadable, malformed or wrongly typed configuration file fails the command w
 a message naming the file: silently falling back to defaults would hide the reason a command wrote
 to the wrong database or picked the wrong project. Unknown keys are the one thing that is ignored
 (§7.2).
+
+A recognised configuration key whose value violates that setting's vocabulary is likewise an
+exit-code-1 configuration error naming the file. An invalid value supplied by an environment
+variable or command-line flag is a usage error (exit code 2). A syntactically valid project or
+repository name that is selected by any source but does not exist is not found (exit code 3).
 
 ### 7.1 User configuration
 
@@ -814,10 +834,12 @@ The hash follows the [Beads hash ID](https://beads.gascity.com/core-concepts/has
 is derived by hashing the content of the issue being created together with a random salt, rather
 than drawn from a sequence or from raw randomness. Concretely:
 
-1. Build the input string from the new issue's title, its creation timestamp (the `created_at`
-   value of §2.3, UTC RFC 3339 with millisecond precision) and a fresh 16-byte random salt, joined
-   by a separator that cannot occur in a title.
-2. Take the SHA-256 digest of that string.
+1. Build a byte sequence by concatenating, in order: the title's UTF-8 byte length as an unsigned
+   64-bit big-endian integer; the title's UTF-8 bytes; the 24 ASCII bytes of the `created_at` value
+   in the exact millisecond form `YYYY-MM-DDTHH:MM:SS.sssZ`; and the 16 raw random salt bytes.
+   Length-prefixing the only variable-length field makes the framing unambiguous without reserving
+   a character that titles could otherwise use.
+2. Take the SHA-256 digest of that byte sequence.
 3. The hash is the first six characters of its lowercase hexadecimal encoding.
 
 Each of the three inputs earns its place. Title and timestamp make the ID a function of the issue,
