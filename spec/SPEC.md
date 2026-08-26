@@ -44,7 +44,7 @@ The top-level organising unit. Every issue belongs to exactly one project.
 
 | Field | Description |
 | --- | --- |
-| `key` | Short lowercase identifier, e.g. `awb`. Unique. Used as the issue ID prefix. Immutable. |
+| `key` | Short identifier, e.g. `awb`. Lowercase ASCII letters, digits and hyphens, starting with a letter, at most 16 characters. Unique. Used as the issue ID prefix. Immutable. |
 | `name` | Human-readable name. |
 | `description` | Optional markdown text. |
 
@@ -55,9 +55,9 @@ one repository may serve several projects and one project may span several repos
 
 | Field | Description |
 | --- | --- |
-| `name` | Short identifier, e.g. `awb`. Unique. |
+| `name` | Short identifier, e.g. `awb`. Same character rules as a project key, and not the reserved word `none`. Unique. |
 | `remotes` | Zero or more Git remote URLs. |
-| `paths` | Zero or more absolute local working-tree paths. |
+| `paths` | Zero or more absolute local working-tree paths, symlinks resolved. |
 | `default_project` | Optional project used when creating issues from inside this repository. |
 
 Either a remote URL or a local path is enough to identify the repository; see §5.
@@ -68,20 +68,21 @@ Either a remote URL or a local path is enough to identify the repository; see §
 | --- | --- | --- |
 | `id` | string | `<project-key>-<hash>`, e.g. `awb-a3f9c1`. Assigned at creation, immutable. |
 | `project` | project key | Required. Immutable after creation. |
-| `title` | string | Required, single line. |
+| `title` | string | Required, single line. A title containing a line break is rejected. |
 | `description` | markdown | Optional. The only free text field on the issue. Links to pull requests, CI runs, logs and documents are written as ordinary Markdown links inside it. |
 | `type` | enum | `bug`, `feature`, `task`, `chore`. Default `task`. |
-| `status` | enum | `open`, `in_progress`, `closed`. Default `open`. |
+| `status` | enum | `open`, `in_progress`, `closed`. Default `open`. Changed only by `claim`, `release`, `close` and `reopen`. |
+| `close_reason` | string | Optional. Set by `close --reason`, cleared by `reopen`. Empty otherwise. |
 | `priority` | integer | `0` (highest) to `3` (lowest). Default `2`. |
-| `labels` | set of strings | Free-form, lowercase, no spaces. |
-| `assignee` | string | Free-form, e.g. `mikael` or `claude-1`. Empty means unassigned. |
-| `repo` | repository name | Optional. |
+| `labels` | set of strings | Free-form, but restricted to lowercase ASCII letters, digits, hyphens, underscores, dots and slashes. A label outside that set is rejected rather than normalised. |
+| `assignee` | string | Free-form, e.g. `mikael` or `claude-1`. Same character set as a label. Empty means unassigned. |
+| `repo` | repository name | Optional, and must name a registered repository (§2.2). |
 | `created_at` | timestamp | Set automatically (UTC, RFC 3339). |
-| `updated_at` | timestamp | Set automatically on every write. |
+| `updated_at` | timestamp | Set automatically whenever a stored field of the issue, including its labels, actually changes. A write that changes nothing leaves it alone, and adding or removing a relation does not change either endpoint. |
 
-`blocked` is **not** a stored status. It is derived: an issue is blocked when at least one issue
-that `blocks` it is not closed. This makes it impossible for the recorded state to disagree with
-the dependency graph.
+`blocked` is **not** a stored status. It is derived: an issue is blocked when at least one issue it
+is `blocked-by` is not closed. This makes it impossible for the recorded state to disagree with the
+dependency graph.
 
 The fixed vocabulary above is not configurable. Everything a team wants to express beyond it goes
 into labels.
@@ -90,15 +91,27 @@ into labels.
 
 A directed link between two issues. Both issues may belong to different projects.
 
+Every relation type is named from the point of view of its subject, and reads
+"*subject* — *type* — *other*". That one convention holds everywhere a relation is named: in this
+table, in `awb create`, in `awb dep add` and in the API.
+
 | Type | Meaning |
 | --- | --- |
-| `blocks` | `A blocks B`: B cannot start until A is closed. Drives readiness. |
-| `parent-child` | `A parent-of B`: B is part of decomposing A. |
-| `discovered-from` | `B discovered-from A`: B was found while working on A. Provenance only. |
-| `related` | Loose, symmetric association. No behaviour attached. |
+| `blocked-by` | `A blocked-by B`: A cannot start until B is closed. Drives readiness. |
+| `parent` | `A parent B`: B is the parent of A, which is part of decomposing B. |
+| `discovered-from` | `A discovered-from B`: A was found while working on B. Provenance only. |
+| `related` | `A related B`: loose, symmetric association. No behaviour attached. |
 
-`blocks` and `parent-child` graphs must remain acyclic; a command that would create a cycle fails.
-An issue has at most one parent. Relations are deleted with either endpoint issue.
+The `blocked-by` and `parent` graphs must each remain acyclic; they are checked separately, so an
+issue may legally be blocked by its own parent. A command that would create a cycle fails with exit
+code 4, as does a relation from an issue to itself. Adding a relation that already exists succeeds
+and changes nothing.
+
+An issue has at most one parent; `dep add` on an issue that already has one fails with exit code 4
+unless `--force` is given, which replaces it. Relations are deleted with either endpoint issue.
+
+A `related` relation is stored as a single row but behaves identically from both ends: `awb show`
+lists it on both issues, and removing it works whichever endpoint is named first.
 
 ### 2.5 External artifacts
 
@@ -110,16 +123,27 @@ To make those links useful without a separate model, `awb` parses the descriptio
 `awb show` lists the links it finds under the rendered text, and the web UI renders the description
 and turns the links into anchors.
 
+Extraction takes inline links, reference links and autolinks, and ignores images. Each distinct
+destination appears once, in the order it first occurs in the description, with the link text of
+that first occurrence. The result is a derived, read-only property of the issue and appears as
+`links` in the JSON representation (§4.6).
+
 ### 2.6 Readiness
 
 An issue is **ready** when all of the following hold:
 
 * `status` is `open`,
 * it is not blocked (§2.3),
-* `assignee` is empty,
-* it is not excluded by the active repository context (§5).
+* it has no child that is not closed — a decomposed issue is worked through its children, not
+  directly.
 
-`awb ready` is the primary agent entry point: it answers "what should I pick up next".
+Readiness says nothing about the assignee. `awb ready` nevertheless defaults to unassigned issues,
+because "what should I pick up next" is the question it exists to answer; `awb ready --mine` asks
+the companion question, "which of the issues I hold can I actually work on", and `awb ready
+--assignee X` asks it about somebody else. Repository context and the other filters of §4.3 apply
+to `awb ready` exactly as they do to `awb list`.
+
+`awb ready` is the primary agent entry point.
 
 ## 3. Storage
 
@@ -133,7 +157,12 @@ A single SQLite database file holds projects, repositories, issues and relations
 There is no per-repository or per-directory database and no upward directory search: one user has
 one database unless they explicitly point at another.
 
-Schema migrations are embedded in the binary and applied automatically when the database is opened.
+Schema migrations are embedded in the binary, numbered, recorded in the database, and applied
+automatically when the database is opened. They run inside a transaction that takes the write lock
+first, so that several processes opening a stale database at once cannot race. A binary refuses to
+open a database whose recorded schema version is newer than the highest migration it carries,
+failing with exit code 1 rather than operating on a schema it does not understand.
+
 The database is opened with WAL journalling, foreign keys enabled and a busy timeout, so several
 local processes — for example three agents in three terminals — can use the same file safely.
 
@@ -145,29 +174,55 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
 
 * Every command is non-interactive and safe to script. Destructive commands require a confirmation
   flag rather than a prompt.
-* Global flags: `--db`, `--json`, `--compact`, `--all`, `--repo`, `--project`, `--no-color`.
+* Global flags: `--db`, `--json`, `--compact`, `--all-repos`, `--repo`, `--project`, `--no-color`.
+  Where a command defines a flag of the same name — `--repo` and `--project` on `create` and
+  `update` — the command's meaning wins.
 * Output modes:
   * default — aligned, coloured table for humans;
   * `--compact` — one line per issue, no padding, minimal punctuation, designed to consume as
     little agent context as possible:
     `awb-a3f9c1 P1 open bug "Parser crashes on empty input" @claude-1 #parser repo:awb`
-  * `--json` — stable JSON, one object or one array per invocation, suitable for `jq`.
+  * `--json` — stable JSON, one object or one array per invocation, suitable for `jq` (§4.6).
+* The `--compact` line begins with five mandatory positional fields — id, `P<priority>`, status,
+  type and the title. The title is double-quoted, and is the only field that may contain a space;
+  a `"` or `\` inside it is backslash-escaped. Any further fields are optional and identified by
+  their prefix rather than their position: `@<assignee>`, one `#<label>` per label, `repo:<name>`
+  and `!blocked`. The character restrictions on labels and assignees (§2.3) keep those tokens free
+  of spaces, so a line is parseable by splitting on whitespace outside the quoted title.
+* Mutating commands print nothing on success in the default and `--compact` modes, except `create`,
+  which prints the new ID. Under `--json` every mutating command prints the resulting object.
 * Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not found ·
   `4` constraint violation (e.g. dependency cycle).
-* Errors go to stderr as a single line; with `--json`, as `{"error": "..."}`.
+* An argument that matches nothing exits `3`; one that matches more than one thing — an ambiguous
+  ID prefix (§8) or an ambiguous repository context (§5) — exits `2`, because the fix is to write a
+  more specific command. Creating something that already exists, like a duplicate project key,
+  exits `4`.
+* An empty result from a list-like command is success: exit code `0` and an empty table, no output,
+  or `[]` depending on the output mode. Exit code `3` is reserved for a named entity that does not
+  exist.
+* Errors always go to stderr, as a single line in the default and `--compact` modes and as
+  `{"error": "..."}` under `--json`. The exit code is the machine-readable classification; the
+  message is human-readable text.
+* Colour is used in the default output mode when stdout is a terminal. `--no-color`, `color` in the
+  configuration file and `AWB_COLOR` accept `auto`, `always` and `never`; a `NO_COLOR` environment
+  variable of any value is equivalent to `never`.
+* Repeating a filter flag ORs its values within that field; different filter flags are ANDed
+  together. Filter flags do not accept comma-separated lists.
 
 ### 4.2 Setup
 
 | Command | Description |
 | --- | --- |
-| `awb init` | Create the database if absent. With no arguments it is idempotent. |
+| `awb init` | Create the database if absent and bring its schema up to date. Takes no arguments and is idempotent. Fails with exit code 2 if the configured database location is an `http(s)` URL. |
 | `awb project add <key> [--name] [--description]` | Create a project. |
-| `awb project ls` | List projects with open issue counts. |
-| `awb project rm <key> --force` | Delete a project. Refuses while it has issues unless `--force` is repeated with `--cascade`. |
-| `awb repo add <name> [--remote URL]... [--path DIR]... [--project KEY]` | Register a repository. With no flags inside a working tree, infers remotes and path from it. |
+| `awb project update <key> [--name] [--description]` | Change a project's name or description. The key itself is immutable. |
+| `awb project ls` | List projects with counts of issues that are not closed. |
+| `awb project rm <key> --force` | Delete a project. Refuses while it has issues unless `--cascade` is also given, which deletes those issues and their relations — including relations to issues in other projects, which may unblock work elsewhere. |
+| `awb repo add <name> [--remote URL]... [--path DIR]... [--project KEY]` | Register a repository. With no flags inside a working tree, infers remotes and path from it, storing the resolved top-level path of that working tree. |
+| `awb repo update <name> [--remote URL]... [--path DIR]... [--project KEY]` | Change a repository. Each flag that is given replaces that whole set or value; the name itself is immutable. |
 | `awb repo ls` | List repositories and their matching rules. |
-| `awb repo rm <name>` | Unregister. Issues tagged with it keep the tag as a dangling name until retagged. |
-| `awb agent-guide [--write FILE]` | Print a compact usage block for agents; `--write` appends it to `AGENTS.md`/`CLAUDE.md`. |
+| `awb repo rm <name>` | Unregister. Refuses while issues are tagged with it unless `--force`, which clears the tag on those issues, leaving them untagged rather than pointing at a name that no longer resolves. |
+| `awb agent-guide [--write FILE]` | Print a compact usage block for agents to stdout. `--write` instead writes it into `FILE` (typically `AGENTS.md` or `CLAUDE.md`), creating the file if absent, delimited by marker comments so that a second run replaces the existing block rather than appending a duplicate. |
 
 ### 4.3 Issues
 
@@ -177,42 +232,119 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
 | `awb show <id>` | Full issue, including relations, derived blocked state and the Markdown links found in the description. |
 | `awb list [filters]` | List issues. |
 | `awb ready [filters]` | List ready issues (§2.6), highest priority first. |
-| `awb blocked [filters]` | List open issues that are blocked, each with its blockers. |
+| `awb blocked [filters]` | List issues that are not closed and are blocked, each with its blockers. |
 | `awb search <terms> [filters]` | Full text search over title and description. |
-| `awb update <id> [--title] [--description] [--type] [--priority] [--assignee] [--repo] [--status]` | Change fields. |
-| `awb label add\|rm <id> <label>...` | Manage labels. |
-| `awb claim <id> [--as NAME]` | Atomically set assignee and `status=in_progress`. Fails if already assigned to someone else unless `--force`. |
-| `awb release <id>` | Clear the assignee and set status back to `open`. |
-| `awb close <id> [--reason TEXT]` | Set `status=closed`. `--reason` is appended to the description. |
-| `awb reopen <id>` | Set `status=open`. |
-| `awb delete <id> --force` | Hard delete the issue and its relations. Not recoverable. |
+| `awb update <id> [--title] [--description] [--description-file FILE] [--type] [--priority] [--assignee] [--repo]` | Change fields. It cannot change `status`: the four commands below are the only status transitions, which keeps `in_progress` and an assignee from drifting apart. |
+| `awb label add\|rm <id> <label>...` | Manage labels. Adding a label the issue already carries, or removing one it does not, succeeds and changes nothing. |
+| `awb claim <id> [--as NAME] [--force]` | Atomically set assignee and `status=in_progress`. Claiming an issue you already hold succeeds and changes nothing. Fails with exit code 4 if it is assigned to someone else, blocked, or closed; `--force` overrides all three. |
+| `awb release <id> [--force]` | Clear the assignee and set status back to `open`. Fails with exit code 4 on a closed issue, or on one assigned to someone else, unless `--force`. |
+| `awb close <id> [--reason TEXT]` | Set `status=closed` and `close_reason`. Closing a closed issue succeeds and updates the reason. The assignee is left alone, since it records who did the work. |
+| `awb reopen <id>` | Set `status=open`, clear `close_reason` and clear the assignee, so that the issue returns to the pool `awb ready` draws from. |
+| `awb delete <id> --force` | Hard delete the issue and its relations. Not recoverable. Reports how many relations went with it, since removing a blocker silently makes other issues ready. |
+
+`--description` and `--description-file` are mutually exclusive; `--description-file -` reads the
+description from stdin. Both replace the description outright. This is the only use of stdin, and
+is not the bulk import excluded by §1.2.
 
 Filters accepted by `list`, `ready`, `blocked` and `search`:
-`--status`, `--type`, `--priority`, `--priority-max`, `--label`, `--assignee`, `--mine`,
-`--unassigned`, `--project`, `--repo`, `--all`, `--parent`, `--limit`, `--sort`.
+`--status`, `--include-closed`, `--type`, `--priority`, `--priority-max`, `--label`, `--assignee`,
+`--mine`, `--unassigned`, `--project`, `--repo`, `--all-repos`, `--include-untagged`, `--parent`,
+`--limit`, `--sort`.
 
-Defaults: closed issues are hidden unless `--status closed`/`--status all` is given; results are
-sorted by priority ascending, then `created_at` ascending. Nothing is ever archived or purged —
-closed issues remain queryable forever.
+* `--status` takes the enum values of §2.3 and may be repeated. There is no magic `all` value, so
+  the flag's vocabulary is exactly the enum the OpenAPI document declares (§6.1). By default
+  closed issues are hidden; `--include-closed` widens whatever status set is in force to include
+  them, and giving `--status closed` explicitly selects only closed issues.
+* `--priority` selects one priority exactly and may be repeated. `--priority-max` is inclusive and
+  reads as urgency, not as a number: because `0` is the highest priority, `--priority-max 1`
+  means P0 and P1. There is deliberately no `--priority-min`; nobody asks for the unimportant half.
+* `--parent <id>` selects the direct children of that issue, not the whole subtree. `awb dep tree`
+  is how you see a subtree.
+* `--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
+  It is shorthand for `--assignee <identity>`, and combining it with `--assignee` or
+  `--unassigned` is a usage error.
+* `--sort` takes one of `priority`, `created`, `updated`, `id` or, for `search` only, `relevance`,
+  optionally prefixed with `-` for descending order.
 
-`--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
+Defaults: results are sorted by priority ascending, then `created_at` ascending — except `search`,
+which defaults to `relevance`. `awb ready` and `awb blocked` fix the status set themselves (§2.6)
+and reject `--status` and `--include-closed`; `awb ready` additionally defaults to `--unassigned`.
+Nothing is ever archived or purged — closed issues remain queryable forever.
+
+`awb search` treats its arguments as literal terms rather than as FTS5 syntax: each argument is
+quoted before it reaches the query, and an issue matches when its title or description contains all
+of them. No operator, wildcard or column prefix is passed through, so no user or agent input can
+produce a query syntax error.
 
 ### 4.4 Relations
 
 | Command | Description |
 | --- | --- |
-| `awb dep add <id> --blocks <id>` | Record that one issue blocks another. |
-| `awb dep add <id> --parent <id>` | Set the parent of an issue. |
+| `awb dep add <id> --blocked-by <id>` | Record that the first issue cannot start until the second is closed. |
+| `awb dep add <id> --parent <id> [--force]` | Set the parent of the first issue to the second. |
 | `awb dep add <id> --related <id>` | Record a loose association. |
 | `awb dep add <id> --discovered-from <id>` | Record provenance. |
-| `awb dep rm <id> <type> <id>` | Remove a relation. |
-| `awb dep tree <id>` | Print the parent-child subtree with status and blocked markers. |
+| `awb dep rm <id> <type> <id>` | Remove a relation, where `<type>` is `blocked-by`, `parent`, `related` or `discovered-from`. |
+| `awb dep tree <id>` | Print the subtree of children rooted at that issue, with status and blocked markers. |
+
+Every one of these reads "*first id* — *relation* — *second id*", the single convention of §2.4;
+`awb create --blocked-by`, `--parent` and `--discovered-from` read the same way about the issue
+being created. `dep rm` takes its two ids in that same order, so removing a relation is the `add`
+command with `rm` substituted.
+
+`dep tree` descends from the named issue to its full depth, following children across project
+boundaries, and does not show ancestors.
 
 ### 4.5 Serving
 
 | Command | Description |
 | --- | --- |
 | `awb serve [--addr 127.0.0.1:7777]` | Serve the HTTP API and the read-only web UI over the local database. |
+
+### 4.6 JSON representation
+
+`--json` and the HTTP API share one set of shapes; §6.1 makes the OpenAPI document their formal
+declaration, but the shapes themselves are fixed here so that neither surface can invent a second
+one.
+
+```json
+{
+  "id": "awb-a3f9c1",
+  "project": "awb",
+  "title": "Parser crashes on empty input",
+  "description": "Crashes when the token stream is empty. See [CI run](https://ci/1).",
+  "type": "bug",
+  "status": "open",
+  "priority": 1,
+  "labels": ["parser"],
+  "assignee": "",
+  "repo": "awb",
+  "close_reason": "",
+  "created_at": "2026-08-26T09:12:03Z",
+  "updated_at": "2026-08-26T09:12:03Z",
+  "blocked": true,
+  "blockers": ["awb-77e0b2"],
+  "relations": [{"type": "blocked-by", "other": "awb-77e0b2"}],
+  "links": [{"text": "CI run", "url": "https://ci/1"}]
+}
+```
+
+* There is one `Issue` shape, always complete. A list-like command returns an array of exactly
+  these objects; nothing is trimmed for size, because `--compact` is the answer to output size.
+* Every field is always present. An unset string is `""`, never `null` or absent, so consumers
+  need no absence handling.
+* `blocked`, `blockers`, `relations` and `links` are derived and read-only: they are ignored in a
+  request body and cannot be written through `update`. `blockers` lists only the not-closed issues
+  that cause `blocked`, while `relations` lists every relation of the issue, in both directions,
+  each named from this issue's point of view (§2.4).
+* `labels`, `blockers` and `relations` are sorted, so two invocations against unchanged data
+  produce byte-identical output.
+* `Project` is `{"key", "name", "description", "active_issues"}`, where `active_issues` counts the
+  issues that are not closed, and `Repo` is
+  `{"name", "remotes", "paths", "default_project"}`. An error is `{"error": "..."}` on stderr; the
+  exit code, or the HTTP status, carries the classification.
+* `awb dep tree --json` returns one `Issue` object extended with a `children` array of the same
+  shape, recursively.
 
 ## 5. Git repository context
 
@@ -225,11 +357,14 @@ Resolution, performed once per invocation:
    there is no repository context.
 2. Collect the working tree's top-level path and the URLs of all its remotes.
 3. Match against registered repositories: a repository matches if any of its `paths` is a prefix of
-   the working tree path, or if any of its `remotes` matches a remote of the working tree after
-   normalisation (scp-style URLs rewritten to a canonical form, `.git` suffix stripped, host
-   lower-cased, credentials and ports ignored).
-4. If several repositories match, the one with the longest matching path wins; if the ambiguity
-   cannot be resolved that way, the command fails with exit code 4 and asks for `--repo`.
+   the working tree path at a path-component boundary (`/home/me/proj` matches `/home/me/proj` and
+   `/home/me/proj/sub`, but not `/home/me/project-two`), or if any of its `remotes` matches a remote
+   of the working tree after normalisation (scp-style URLs rewritten to a canonical form, `.git`
+   suffix stripped, host lower-cased, credentials and ports ignored).
+4. If several repositories match, the one with the longest matching path wins. A repository matched
+   only by remote has no path to compare, so a tie between two such repositories — or between a
+   remote-only match and a path match — cannot be resolved this way and the command fails with exit
+   code 2, asking for `--repo`.
 
 When a repository context is active, list-like commands (`list`, `ready`, `blocked`, `search`)
 show only issues tagged with that repository. Untagged, project-level issues are hidden by default,
@@ -238,19 +373,32 @@ on the assumption that work inside a checkout is work on that checkout.
 A repository may opt out of that assumption in its repository-level configuration file (§7.2):
 
 ```toml
-[repo]
 include_untagged = true    # also show project-level issues in this working tree
 ```
 
-Overrides on the command line, in increasing precedence over the above:
+Overrides on the command line, mutually exclusive — giving more than one is a usage error:
 
 * `--repo <name>` — use that repository as context regardless of the working directory.
 * `--repo none` — show only untagged issues.
-* `--all` — disable repository filtering entirely.
+* `--all-repos` — disable repository filtering entirely, showing tagged and untagged issues from
+  every repository.
 
-`awb create` tags the new issue with the context repository, and picks the project from
-`--project`, else the context repository's `default_project`, else the configured default project;
-if none of these yields a project the command fails with exit code 2.
+`--include-untagged` is not one of these: it combines with the resolved context, widening it to
+also show untagged issues, and is the command line equivalent of `include_untagged` in the
+repository configuration file.
+
+`none` is therefore a reserved repository name that `repo add` refuses.
+
+Repository context and `--project` are independent filters that are ANDed: inside a working tree
+bound to repository `awb`, `awb list --project other` lists issues that are in project `other`
+*and* tagged with `awb`, which may well be none.
+
+On `create` and `update`, `--repo` is not a context override but the value of the issue's `repo`
+field; `--repo none` there creates or leaves an untagged issue. Otherwise `awb create` tags the new
+issue with the context repository. The project of a new issue is resolved as `--project`, else
+`AWB_PROJECT`, else `project` in the repository configuration file, else the context repository's
+`default_project`, else `project` in the user configuration file; if none of these yields a project
+the command fails with exit code 2.
 
 ## 6. Server mode
 
@@ -279,19 +427,41 @@ POST   /api/issues
 GET    /api/issues/{id}
 PATCH  /api/issues/{id}
 DELETE /api/issues/{id}
+POST   /api/issues/{id}/claim      /release   /close   /reopen
+POST   /api/issues/{id}/labels
+DELETE /api/issues/{id}/labels/{label}
 POST   /api/issues/{id}/relations
 DELETE /api/issues/{id}/relations/{type}/{other}
+GET    /api/issues/{id}/tree
 GET    /api/ready
 GET    /api/blocked
 GET    /api/search?q=...
-GET    /api/projects        POST /api/projects
-GET    /api/repos           POST /api/repos
+GET    /api/projects        POST /api/projects        PATCH /api/projects/{key}    DELETE …
+GET    /api/repos           POST /api/repos           PATCH /api/repos/{name}      DELETE …
 ```
+
+The status transitions are endpoints rather than `PATCH` bodies for the same reason `update` cannot
+set `status` (§4.3), and because `claim` must be a compare-and-set: it carries the assignee it
+expects to replace, so two agents racing for the same issue cannot both win. A plain `PATCH` of the
+assignee field would be a lost update. Labels are added and removed individually for the same
+reason — a whole-set replace would silently discard a concurrent edit.
+
+Every request may carry an `X-Awb-Identity` header holding the caller's resolved identity (§7).
+Version 1 does not authenticate it and mostly ignores it — the client already sends explicit
+`assignee` values — but it is the field a version 2 server would authenticate and attribute, and
+having it on the wire from the first release is one of the preparations of §10.3.
+
+Everything under `/api/` is the JSON API and `/openapi.json` and `/openapi.yaml` are the document;
+every other path belongs to the web UI.
 
 Request and response bodies use exactly the same JSON representation as `--json` output, so agents
 can move between the two transports without relearning anything. Query parameters carry the same
 names as the corresponding CLI filter flags. Repository context is resolved on the client, so the
 server never inspects the caller's working directory: the client sends a resolved `repo` parameter.
+Resolving it needs the repository registry, so in remote mode a command with repository context
+first fetches `GET /api/repos`; a working tree whose `.awb.toml` names its repository directly
+skips that round trip. `--mine` likewise never reaches the server — the client resolves its own
+identity and sends `assignee=<identity>`.
 
 ### 6.1 OpenAPI
 
@@ -336,10 +506,8 @@ carries its own `awb` settings for everyone who checks it out, and it is a gener
 rather than a single-purpose filter switch:
 
 ```toml
-repo    = "awb"      # bind this working tree to a registered repository by name
-project = "awb"      # default project for issues created here
-
-[repo]
+repo             = "awb"   # bind this working tree to a registered repository by name
+project          = "awb"   # default project for issues created here
 include_untagged = true    # see §5
 ```
 
@@ -348,7 +516,8 @@ matching of §5, which makes registration optional for anyone who clones the rep
 
 Because this file comes from a checkout and may not have been written by the person running the
 command, it may **not** set `db`, `identity` or `color`: a repository can shape what you see, but
-cannot redirect where your issues are stored or claim to be you. Unknown keys are ignored, so
+cannot redirect where your issues are stored or claim to be you. Those keys are ignored if present,
+without an error and without a warning, exactly like unknown keys — which are also ignored, so
 future versions can add settings without breaking older binaries.
 
 ### 7.3 Precedence
@@ -357,14 +526,24 @@ Command line flags, then environment variables (`AWB_DB`, `AWB_IDENTITY`, `AWB_P
 `AWB_COLOR`), then the repository configuration file, then the user configuration file, then the
 built-in defaults.
 
+The default project for `awb create` follows the same order, with the context repository's
+registered `default_project` inserted between the repository and user configuration files (§5).
+
 ## 8. Identifiers
 
 An issue ID is `<project-key>-<hash>` where the hash is six lowercase hexadecimal characters
-generated randomly and checked for uniqueness within the project at insert time. IDs are stable and
-never reused, including after deletion.
+generated randomly, and retried until it is unique within the project at insert time. Because a
+project key may itself contain hyphens, an ID is split on its *last* hyphen.
 
-Commands accept an unambiguous hash prefix in place of a full ID, and accept a bare hash when it is
-unique across the database.
+An ID is immutable and stable for the life of the issue; in particular an issue cannot move between
+projects, which is the price of putting the project key in the ID. Keeping an ID reserved after the
+issue is deleted would need a record of deleted issues, which is exactly the tombstone that §10.3
+rules out of version 1, so a deleted issue's hash may eventually be generated again.
+
+Commands accept an unambiguous hash prefix in place of a full ID, and accept a bare hash or hash
+prefix when it is unique across the database. Uniqueness of a bare hash is a property of the data
+at that moment, not a guarantee — as projects accumulate it can stop holding — so a bare hash that
+matches more than one issue fails with exit code 2 rather than picking one.
 
 ## 9. Implementation notes
 
@@ -400,8 +579,13 @@ designed here, and version 1 must not carry half of it.
 
 Choices that cost version 1 nothing but keep version 2 open:
 
-* **Collision-resistant IDs.** Issue IDs are random hashes rather than sequence numbers (§8), so
-  issues created independently on different machines can be merged without renumbering.
+* **Random IDs.** Issue IDs are random hashes rather than sequence numbers (§8), so issues created
+  independently on different machines can be merged without renumbering. Six hexadecimal characters
+  is not a collision-*proof* space — independent generation within one project collides at odds
+  worth taking seriously in the thousands of issues — and the insert-time check cannot see another
+  machine's issues. Short IDs that an agent can type are worth more in version 1 than a merge
+  guarantee version 2 has not been designed yet; a version 2 that needs one can widen the hash in a
+  migration, since nothing parses its length.
 * **Identity on every mutation.** Every mutating command and API call resolves a caller identity
   (§7), even though version 1 mostly records it only as `assignee`. The plumbing exists when
   attribution or authentication needs it.
