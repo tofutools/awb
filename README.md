@@ -227,7 +227,8 @@ The component tasks are available separately:
 | `task fe:watch` | Recompile the frontend when its TypeScript changes. |
 
 Backend and frontend steps can also be run individually; `task --list` shows
-the complete set. Set `OUTPUT_DIR` to choose where a binary is written, for
-example `task build OUTPUT_DIR=dist`.
+the complete set, as does running `task` without a task name. Set `OUTPUT_DIR`
+to choose where a binary is written, for example
+`task build OUTPUT_DIR=dist`.
 
 [License](LICENSE) (MIT)

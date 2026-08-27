@@ -5,9 +5,10 @@ vars:
 
 tasks:
   default:
-    desc: Build, test, and lint everything
+    desc: List available tasks
+    silent: true
     cmds:
-      - task: check
+      - task --list
 
   check:
     desc: Build, test, and lint everything
