@@ -17,8 +17,8 @@ info:
     Within a major version, changes to this document are additive only.
     `info.version` tracks the API, not the binary.
   license:
-    name: Apache-2.0
-    identifier: Apache-2.0
+    name: MIT
+    identifier: MIT
 
 servers:
   - url: /

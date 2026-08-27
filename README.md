@@ -214,3 +214,5 @@ authoritative for behaviour.
 
 `./build.sh` compiles the frontend, builds the binary, runs every test and
 lints; it is silent when it all passes.
+
+[License](LICENSE) (MIT)
