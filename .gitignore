@@ -1,1 +1,8 @@
 /ignored/
+
+# Build output
+/awb
+
+# Compiled frontend (tsc output; vendor bundles are committed)
+/web/static/**/*.js
+!/web/static/vendor/**
