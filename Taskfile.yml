@@ -12,7 +12,6 @@ tasks:
   check:
     desc: Build, test, and lint everything
     cmds:
-      - task: fe:build
       - task: fe:test
       - task: be:build
         vars:
@@ -68,6 +67,7 @@ tasks:
 
   fe:test:
     desc: Run the frontend tests
+    deps: [fe:build]
     cmds:
       - node --test 'web/ts/tests/*.test.mjs'
 
