@@ -1,0 +1,161 @@
+// Package remote implements the backend over the HTTP API, so that setting
+// --db to a server's URL makes every command behave identically to direct mode
+// (SPEC §6).
+//
+// Directory context and the CLI's identity are resolved on the client, and the
+// identity is always stated explicitly — as the assignee of claim and release,
+// and as the assignee parameter --mine becomes — so that a remote claim records
+// exactly what the same command would record locally and a server's own
+// identity never stands in for it.
+package remote
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/domain"
+)
+
+// requestTimeout bounds a single API call.
+const requestTimeout = 30 * time.Second
+
+// Backend talks to an awb server.
+type Backend struct {
+	base     *url.URL
+	user     string
+	password string
+	identity string
+	client   *http.Client
+}
+
+// New builds a client for the server at base, which may carry a path that the
+// API paths hang under (SPEC §3).
+func New(base *url.URL, user, password, identity string) *Backend {
+	return &Backend{
+		base:     base,
+		user:     user,
+		password: password,
+		identity: identity,
+		client:   &http.Client{Timeout: requestTimeout},
+	}
+}
+
+// Close releases the client's idle connections.
+func (b *Backend) Close() error {
+	b.client.CloseIdleConnections()
+	return nil
+}
+
+// Identity is resolved on the client, never asked of the server: what a remote
+// claim records must be exactly what a local one would.
+func (b *Backend) Identity(_ context.Context) (string, error) {
+	if b.identity == "" {
+		return "", awberr.Runtimef(
+			"no identity is configured: set \"identity\" in the configuration file or AWB_IDENTITY")
+	}
+	return b.identity, nil
+}
+
+// endpoint builds a URL under the server's base path.
+func (b *Backend) endpoint(path string, query url.Values) string {
+	u := *b.base
+	u.Path = b.base.Path + path
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
+	}
+	return u.String()
+}
+
+// call performs one request and decodes the response into out.
+//
+// The status-to-exit-code mapping of SPEC §6 is inverted here so the CLI's exit
+// codes are identical in both modes: 400 becomes 2, 404 becomes 3, 409 becomes
+// 4, and any other failure — including a transport error or an unreachable
+// server — becomes 1.
+func (b *Backend) call(ctx context.Context, method, url string, body any, ifMatch string,
+	out any) (http.Header, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "encode request")
+		}
+		reader = bytes.NewReader(encoded)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "build request")
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if ifMatch != "" {
+		req.Header.Set("If-Match", ifMatch)
+	}
+	// A client that has credentials sends them on every request, whether or not
+	// the server asks for them (SPEC §6).
+	if b.user != "" || b.password != "" {
+		req.SetBasicAuth(b.user, b.password)
+	}
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, awberr.Runtimef("cannot reach %s: %s", b.base.Host, err.Error())
+	}
+	defer resp.Body.Close() //nolint:errcheck // the response is being discarded
+
+	if resp.StatusCode >= 400 {
+		return nil, b.apiError(resp)
+	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "decode response")
+		}
+	} else {
+		_, _ = io.Copy(io.Discard, resp.Body)
+	}
+	return resp.Header, nil
+}
+
+// apiError turns a failure response into a classified error, printing the
+// message the server sent. Wrong credentials are reported, never retried or
+// prompted for.
+func (b *Backend) apiError(resp *http.Response) error {
+	kind := awberr.KindFromHTTPStatus(resp.StatusCode)
+
+	var payload domain.APIError
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Error != "" {
+		return &awberr.Error{Kind: kind, Msg: payload.Error}
+	}
+
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		message = http.StatusText(resp.StatusCode)
+	}
+	return &awberr.Error{Kind: kind, Msg: fmt.Sprintf("%s: %s", resp.Status, message)}
+}
+
+// totalCount reads the unpaged total the server reports (SPEC §6.2), falling
+// back to the number of rows when the header is absent.
+func totalCount(header http.Header, fallback int) int {
+	value := header.Get("X-Total-Count")
+	if value == "" {
+		return fallback
+	}
+	total, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return total
+}

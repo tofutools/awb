@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Full build: compile the frontend, build the binary, then test and lint.
+# Prerequisites on $PATH: go, tsc, golangci-lint.
+#
+# NOTE: no npm/npx/yarn/pnpm/bun — the browser vendor bundles under
+# web/static/vendor/ are pre-built committed artifacts.
+#
+# On success this script is silent (no stdout/stderr) and exits 0.
+# On failure it prints the failing step's output to stderr and exits non-zero.
+set -euo pipefail
+
+OUTPUT_DIR="."
+while getopts "o:" opt; do
+  case $opt in
+    o) OUTPUT_DIR="$OPTARG" ;;
+    \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
+  esac
+done
+
+cd "$(dirname "$0")"
+
+# Run a build step silently; on failure, print its combined output to stderr
+# and abort with a non-zero exit code.
+run() {
+  local output
+  if ! output=$("$@" 2>&1); then
+    printf 'build.sh: step failed: %s\n' "$*" >&2
+    printf '%s\n' "$output" >&2
+    exit 1
+  fi
+}
+
+# 1. Compile the TypeScript frontend into web/static/.
+run tsc --project web/ts/tsconfig.json
+
+# 2. Run the frontend tests.
+run node --test web/ts/tests/
+
+# 3. Build the single binary; the frontend is embedded via web/embed.go.
+run env CGO_ENABLED=0 go build -trimpath -buildvcs=true -tags netgo \
+  -o "$OUTPUT_DIR/awb" .
+
+# 4. Run the Go tests.
+run go test ./...
+
+# 5. Lint.
+run golangci-lint run ./...

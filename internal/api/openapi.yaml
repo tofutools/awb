@@ -1,0 +1,1197 @@
+openapi: 3.1.0
+
+info:
+  title: Agent Work Board
+  version: 1.0.0
+  summary: An agent-first issue tracker.
+  description: |
+    The HTTP API of `awb`. It mirrors the command line one-to-one and is
+    complete enough to drive a fully functional read/write web UI, even though
+    the UI bundled in version 1 only reads.
+
+    The component schemas below *are* the CLI's `--json` structures. There is no
+    second, HTTP-only response representation of anything the CLI also returns:
+    if the shapes ever diverge, the JSON output is what changed and both must be
+    corrected together.
+
+    Within a major version, changes to this document are additive only.
+    `info.version` tracks the API, not the binary.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: /
+    description: |
+      The server's own paths. A `--db` URL carrying a base path is the client
+      joining onto them, and a reverse proxy serving that base strips it before
+      the request arrives.
+
+security:
+  # Declared optional: a server started without --basic-auth-file accepts
+  # requests that carry no credentials.
+  - {}
+  - basicAuth: []
+
+tags:
+  - name: issues
+  - name: relations
+  - name: projects
+  - name: metadata
+
+paths:
+  /api/issues:
+    get:
+      tags: [issues]
+      operationId: listIssues
+      summary: List issues
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/IssueList'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [issues]
+      operationId: createIssue
+      summary: Create an issue with its labels and relations, in one transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueCreate' }
+      responses:
+        '201':
+          description: The new issue.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/issues/{id}:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+    get:
+      tags: [issues]
+      operationId: getIssue
+      summary: Read one issue
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [issues]
+      operationId: updateIssue
+      summary: Change an issue's title, description, type or priority
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssuePatch' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+    delete:
+      tags: [issues]
+      operationId: deleteIssue
+      summary: Hard delete an issue and its relations
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200':
+          description: |
+            The issue as it was immediately before deletion, which includes the
+            relations that went with it. It carries no ETag: the version it
+            describes is gone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/claim:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: claimIssue
+      summary: Atomically set the assignee and status to in_progress
+      description: |
+        A compare-and-set. `expect_assignee`, when present, makes the claim
+        proceed only if the current assignee is exactly that value, so two
+        agents racing for the same issue cannot both win.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/release:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: releaseIssue
+      summary: Clear the assignee and set the status back to open
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReleaseRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/close:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: closeIssue
+      summary: Set the status to closed
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/reopen:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: reopenIssue
+      summary: Set the status to open, clearing the close reason and the assignee
+      description: |
+        Acts only on a closed issue: on one that is not closed it succeeds and
+        changes nothing, so it can never take a claim away from somebody who is
+        working. Takes no body.
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/labels:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: addLabel
+      summary: Add one label
+      description: |
+        Labels are added and removed individually, because a whole-set replace
+        would silently discard a concurrent edit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LabelRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+    delete:
+      tags: [issues]
+      operationId: removeLabel
+      summary: Remove one label
+      description: |
+        The label travels as a query parameter rather than a path segment
+        because a label may contain a slash.
+      parameters:
+        - name: label
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Label' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/relations:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [relations]
+      operationId: addRelation
+      summary: Record a relation, read with this issue as the subject
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationRequest' }
+
+  /api/issues/{id}/relations/{type}/{other}:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - name: type
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/RelationType' }
+      - name: other
+        in: path
+        required: true
+        description: The issue at the other end; an unambiguous prefix or bare hash works.
+        schema: { type: string }
+      - $ref: '#/components/parameters/ifMatch'
+    delete:
+      tags: [relations]
+      operationId: removeRelation
+      summary: Remove a relation
+      description: Removing one that does not exist succeeds and changes nothing.
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/issues/{id}/tree:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+    get:
+      tags: [relations]
+      operationId: getIssueTree
+      summary: The subtree of children rooted at an issue
+      description: |
+        Returned whole: it is not paged, and it carries no ETag, because an
+        IssueTree aggregates many issues and no one version tags it.
+      responses:
+        '200':
+          description: The subtree.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssueTree' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/ready:
+    get:
+      tags: [issues]
+      operationId: listReady
+      summary: List ready issues, highest priority first
+      description: |
+        An issue is ready when it is open and not blocked. This endpoint lists
+        only unassigned issues and therefore rejects `status`, `include-closed`,
+        `assignee` and `unassigned`.
+      parameters:
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/IssueList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/blocked:
+    get:
+      tags: [issues]
+      operationId: listBlocked
+      summary: List issues that are not closed and are blocked
+      description: |
+        Fixes the status set to the two that are not closed, and therefore
+        rejects `status` and `include-closed`.
+      parameters:
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/IssueList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/search:
+    get:
+      tags: [issues]
+      operationId: searchIssues
+      summary: Full text search over title and description
+      description: |
+        `q` is repeated once per term, each value one literal term that may
+        itself contain spaces. No operator, wildcard or column prefix is passed
+        through, so no input can produce a query syntax error. An issue matches
+        when its title and description together contain all of the terms.
+
+        A request with no `q`, or with a term the tokenizer reduces to nothing,
+        is a 400.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: One literal search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - name: sort
+          in: query
+          description: |
+            Ordering, optionally prefixed with `-` for descending. Defaults to
+            `relevance`, whose bare form is descending because best match first
+            is what it means.
+          schema:
+            type: string
+            enum:
+              [relevance, priority, created, updated, id,
+               -relevance, -priority, -created, -updated, -id]
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/IssueList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List projects, ordered by key ascending
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: The projects.
+          headers:
+            X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses:
+        '201':
+          description: The new project.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/projects/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Read one project
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Change a project's name or description
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectPatch' }
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a project
+      description: |
+        Refuses while the project holds any issue at all, closed ones included,
+        unless `cascade` is true — which deletes those issues and their
+        relations, including relations to issues in other projects, which may
+        unblock work elsewhere.
+      parameters:
+        - name: cascade
+          in: query
+          description: Also delete the issues the project holds.
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200':
+          description: |
+            The project as it was immediately before deletion. It carries no
+            ETag: the version it describes is gone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+
+  /api/labels:
+    get:
+      tags: [metadata]
+      operationId: listLabels
+      summary: The distinct labels in use, with counts
+      description: |
+        Honours the selection parameters of `GET /api/issues`, the facet's own
+        included, so `?label=parser` lists the labels that co-occur with
+        `parser` and a UI can narrow progressively. A value with a count of zero
+        is not listed at all.
+
+        `limit` and `offset` page the facet rows rather than the issues behind
+        them, so `count` is the same whatever page it appears on. `sort` is not
+        accepted: the row order is fixed at value ascending.
+      parameters: [$ref: '#/components/parameters/facetSelection']
+      responses:
+        '200': { $ref: '#/components/responses/FacetList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/assignees:
+    get:
+      tags: [metadata]
+      operationId: listAssignees
+      summary: The distinct assignees in use, with counts
+      description: |
+        As `GET /api/labels`. There is no row for the empty assignee:
+        unassigned is a filter, not a value.
+      parameters: [$ref: '#/components/parameters/facetSelection']
+      responses:
+        '200': { $ref: '#/components/responses/FacetList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/identity:
+    get:
+      tags: [metadata]
+      operationId: getIdentity
+      summary: The caller's own identity
+      description: |
+        The authenticated username, or the fixed identity of a server that
+        authenticates nobody. It is the one thing a browser UI cannot resolve
+        for itself, and without it no UI could offer "my issues", show that an
+        issue is held by *this* user, or fill in `expect_assignee`.
+
+        It is read-only and says nothing about what the caller may do, there
+        being no authorization to describe.
+      responses:
+        '200':
+          description: The identity.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: |
+        Enabled by `awb serve --basic-auth-file`. There is authentication but no
+        authorization: every user the server knows may do everything every other
+        one may, and credentials serve only to say who is calling.
+
+  headers:
+    ETag:
+      description: |
+        A strong entity tag of `"<updated_at>"` for the version returned, so a
+        client can make a conditional edit without repeating the GET.
+
+        It is not a cache validator and nothing should treat it as one: it
+        guards the entity's own stored fields, which are what a form edits. Two
+        issue bodies differing only in `relations`, `blocked` or `blockers`
+        carry the same tag.
+      schema: { type: string }
+    XTotalCount:
+      description: The number of rows before `limit` and `offset` were applied.
+      schema: { type: integer, minimum: 0 }
+    Location:
+      description: The path of the newly created object.
+      schema: { type: string }
+
+  parameters:
+    issueId:
+      name: id
+      in: path
+      required: true
+      description: |
+        A full issue ID, an unambiguous ID prefix, or a bare hash or hash
+        prefix that is unique across the database. Matching more than one issue
+        is a 400; matching none is a 404.
+      schema: { type: string, minLength: 1 }
+    ifMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        The ETag the client read. Optional — a caller that omits it, as the CLI
+        always does, gets last-write-wins — but a UI is expected to send it.
+      schema: { type: string }
+    status:
+      name: status
+      in: query
+      description: Select these statuses. Repeat for several; values are ORed.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Status' }
+      style: form
+      explode: true
+    includeClosed:
+      name: include-closed
+      in: query
+      description: Widen whatever status set is in force to include closed issues.
+      schema: { type: boolean, default: false }
+    type:
+      name: type
+      in: query
+      description: Select these types. Repeat for several; values are ORed.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Type' }
+      style: form
+      explode: true
+    priority:
+      name: priority
+      in: query
+      description: Select these priorities exactly. Repeat for several.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Priority' }
+      style: form
+      explode: true
+    priorityMax:
+      name: priority-max
+      in: query
+      description: |
+        Inclusive, and reading as urgency rather than as a number: because 0 is
+        the highest priority, `priority-max=1` means P0 and P1.
+      schema: { $ref: '#/components/schemas/Priority' }
+    label:
+      name: label
+      in: query
+      description: Select these labels. Repeat for several; values are ORed.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Label' }
+      style: form
+      explode: true
+    assignee:
+      name: assignee
+      in: query
+      description: |
+        Select these assignees. Repeat for several; values are ORed. Mutually
+        exclusive with `unassigned`.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Assignee' }
+      style: form
+      explode: true
+    unassigned:
+      name: unassigned
+      in: query
+      description: Select the empty assignee. Mutually exclusive with `assignee`.
+      schema: { type: boolean, default: false }
+    project:
+      name: project
+      in: query
+      description: |
+        Select these projects. Repeat for several; values are ORed. A key naming
+        no project is a 404 rather than a listing that matches nothing.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/ProjectKey' }
+      style: form
+      explode: true
+    parent:
+      name: parent
+      in: query
+      description: |
+        Select the direct children of that issue — the issues whose `has-parent`
+        relation names it — not the whole subtree.
+      schema: { type: string }
+    sort:
+      name: sort
+      in: query
+      description: |
+        Ordering, optionally prefixed with `-` for descending. Every sort ends
+        with `id` ascending as a final tiebreak, so the order is total.
+      schema:
+        type: string
+        default: priority
+        enum: [priority, created, updated, id, -priority, -created, -updated, -id]
+    limit:
+      name: limit
+      in: query
+      description: |
+        Cap the rows returned. There is no default: omitting it returns every
+        row, so a listing is never silently truncated. Zero returns no rows
+        while preserving the unpaged total in `X-Total-Count`.
+      schema: { type: integer, minimum: 0 }
+    offset:
+      name: offset
+      in: query
+      description: Skip this many rows.
+      schema: { type: integer, minimum: 0, default: 0 }
+    facetSelection:
+      name: label
+      in: query
+      description: |
+        The facet endpoints accept every *selection* parameter of
+        `GET /api/issues` — `status`, `include-closed`, `type`, `priority`,
+        `priority-max`, `label`, `assignee`, `unassigned`, `project` and
+        `parent` — plus `limit` and `offset`, which page the facet rows.
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Label' }
+      style: form
+      explode: true
+
+  responses:
+    Issue:
+      description: The issue.
+      headers:
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Issue' }
+    IssueList:
+      description: The matching issues.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Issue' }
+    Project:
+      description: The project.
+      headers:
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Project' }
+    FacetList:
+      description: The distinct values in use, sorted by value ascending.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Facet' }
+    BadRequest:
+      description: |
+        The request asked for something invalid — an unknown enum value, text
+        failing the input rules, a parameter this endpoint does not accept, an
+        unrecognised body field, a `null` where a value belongs, or an ambiguous
+        issue reference. On the command line this is exit code 2.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: |
+        An entity addressed by name does not exist. On the command line this is
+        exit code 3.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: |
+        A constraint that depends on stored state — a dependency cycle, a
+        duplicate, a claim held by somebody else, a parent already set, or a
+        project that still holds issues. On the command line this is exit
+        code 4.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PreconditionFailed:
+      description: |
+        The `If-Match` no longer matches: the entity has moved on since it was
+        read. It has no exit code of its own, the command line never sending
+        `If-Match`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Type:
+      type: string
+      description: |
+        An `epic` is a large piece of work decomposed through `has-parent`;
+        nothing in the tool treats it specially.
+      enum: [epic, feature, bug, task, chore]
+      default: task
+
+    Status:
+      type: string
+      description: |
+        Changed only by creating with an assignee and by the claim, release,
+        close and reopen endpoints, so it never drifts from the assignee.
+      enum: [open, in_progress, closed]
+      default: open
+
+    Priority:
+      type: integer
+      description: 0 is the highest priority and 4 the lowest.
+      minimum: 0
+      maximum: 4
+      default: 2
+
+    RelationType:
+      type: string
+      description: |
+        Named from the point of view of the subject and read
+        "subject — type — other". Only `blocked-by` drives readiness;
+        `has-parent` is decomposition, `discovered-from` is provenance, and
+        `related` is a loose symmetric association with no behaviour attached.
+      enum: [blocked-by, has-parent, discovered-from, related]
+
+    Direction:
+      type: string
+      description: |
+        Which end of a stored relation this issue is: `out` when it is the
+        subject — the one named first — and `in` when `other` is. A `related`
+        relation is always `out`, since it is symmetric.
+      enum: [out, in]
+
+    Label:
+      type: string
+      description: |
+        Free-form, but restricted to lowercase ASCII letters, digits, hyphens,
+        underscores, dots and slashes. A value outside that set is rejected
+        rather than normalised.
+      pattern: '^[a-z0-9._/-]+$'
+      minLength: 1
+      maxLength: 64
+
+    Assignee:
+      type: string
+      description: |
+        The same character set as a label, and like a label rejected rather than
+        normalised. Empty means unassigned.
+      pattern: '^[a-z0-9._/-]+$'
+      minLength: 1
+      maxLength: 64
+
+    ProjectKey:
+      type: string
+      description: |
+        Lowercase ASCII letters, digits and hyphens, starting with a letter.
+        Used as the issue ID prefix, and immutable.
+      pattern: '^[a-z][a-z0-9-]*$'
+      minLength: 1
+      maxLength: 16
+
+    Link:
+      type: object
+      description: A Markdown link found in the description. Derived and read-only.
+      additionalProperties: false
+      required: [text, url]
+      properties:
+        text:
+          type: string
+          description: The link's rendered plain text, markup removed and whitespace collapsed.
+        url:
+          type: string
+          description: The destination exactly as written, with no normalisation applied.
+
+    Relation:
+      type: object
+      additionalProperties: false
+      required: [type, other, direction]
+      properties:
+        type: { $ref: '#/components/schemas/RelationType' }
+        other: { type: string, description: The issue at the other end. }
+        direction: { $ref: '#/components/schemas/Direction' }
+
+    Issue:
+      type: object
+      description: |
+        One issue, always complete. Every field is always present: an unset
+        string is `""`, never `null` or absent, so consumers need no absence
+        handling.
+
+        `labels` and `blockers` are sorted; `relations` is sorted by type, then
+        other, then direction; `links` keeps the order the links occur in. Two
+        requests against unchanged data therefore produce byte-identical output.
+      additionalProperties: false
+      required:
+        [id, project, title, description, type, status, priority, labels,
+         assignee, close_reason, created_at, updated_at, blocked, blockers,
+         relations, links]
+      properties:
+        id:
+          type: string
+          description: '`<project-key>-<hash>`, assigned at creation and immutable.'
+          examples: [awb-5c1d84]
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        title:
+          type: string
+          description: Single line, trimmed, never empty.
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+          description: |
+            GitHub Flavored Markdown, returned and accepted exactly as stored so
+            an editor round-trips it losslessly. Rendering and sanitising are
+            the client's job. At most 64 KiB of UTF-8.
+        type: { $ref: '#/components/schemas/Type' }
+        status: { $ref: '#/components/schemas/Status' }
+        priority: { $ref: '#/components/schemas/Priority' }
+        labels:
+          type: array
+          description: Sorted.
+          items: { $ref: '#/components/schemas/Label' }
+        assignee:
+          type: string
+          description: Empty means unassigned.
+        close_reason:
+          type: string
+          description: |
+            Empty unless the issue is closed: a non-closed issue never carries
+            one.
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at:
+          allOf: [$ref: '#/components/schemas/Timestamp']
+          description: |
+            Moves only when a stored field actually changes, and is strictly
+            increasing per issue, so it identifies a version rather than an
+            instant. Adding or removing a relation does not move it.
+        blocked:
+          type: boolean
+          description: |
+            Derived and read-only: true when the issue is itself not closed and
+            at least one issue it is `blocked-by` is not closed. A closed issue
+            is therefore never blocked.
+        blockers:
+          type: array
+          description: |
+            Derived and read-only: the not-closed issues that cause `blocked`.
+            Sorted, and empty for a closed issue whatever its relations say.
+          items: { type: string }
+        relations:
+          type: array
+          description: |
+            Derived and read-only: every relation the issue takes part in, at
+            either end.
+          items: { $ref: '#/components/schemas/Relation' }
+        links:
+          type: array
+          description: Derived and read-only; see Link.
+          items: { $ref: '#/components/schemas/Link' }
+
+    IssueTree:
+      description: One Issue extended with its children, recursively.
+      allOf:
+        - $ref: '#/components/schemas/Issue'
+        - type: object
+          required: [children]
+          properties:
+            children:
+              type: array
+              description: |
+                Ordered by priority ascending, then created_at ascending, then
+                id ascending. A leaf carries an empty array.
+              items: { $ref: '#/components/schemas/IssueTree' }
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: UTC, RFC 3339 with millisecond precision.
+      examples: ['2026-08-26T09:12:03.412Z']
+
+    Project:
+      type: object
+      additionalProperties: false
+      required: [key, name, description, active_issues, created_at, updated_at]
+      properties:
+        key: { $ref: '#/components/schemas/ProjectKey' }
+        name:
+          type: string
+          description: Defaults to the key and is never empty.
+          minLength: 1
+          maxLength: 500
+        description: { type: string }
+        active_issues:
+          type: integer
+          description: |
+            Derived and read-only: the number of issues that are not closed.
+            Changing it does not affect the project's `updated_at`.
+          minimum: 0
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    Facet:
+      type: object
+      description: A distinct value in use, with the number of matching issues carrying it.
+      additionalProperties: false
+      required: [value, count]
+      properties:
+        value: { type: string }
+        count: { type: integer, minimum: 1 }
+
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [identity]
+      properties:
+        identity: { type: string }
+
+    Error:
+      type: object
+      description: |
+        A single human-readable message. There is no field-level validation
+        report, because the vocabulary a form must respect is fixed and
+        published here, so a UI can validate before it submits.
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string }
+
+    IssueCreate:
+      type: object
+      description: |
+        Applied in one transaction, so the issue, its labels and its relations
+        are created in a single call. Nothing beyond these fields is recognised:
+        `id`, `status`, `close_reason`, the timestamps and the derived fields
+        are rejected rather than ignored — `status` follows from `assignee` and
+        the rest are the server's to assign.
+      additionalProperties: false
+      required: [project, title]
+      properties:
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string }
+        type: { $ref: '#/components/schemas/Type' }
+        priority: { $ref: '#/components/schemas/Priority' }
+        assignee:
+          allOf: [$ref: '#/components/schemas/Assignee']
+          description: |
+            A non-empty assignee sets `status` to `in_progress`, making creation
+            an atomic create-and-claim.
+        labels:
+          type: array
+          items: { $ref: '#/components/schemas/Label' }
+        relations:
+          type: array
+          description: |
+            Read with the new issue as the subject. At most one entry may be
+            `has-parent`. A `direction` here is unrecognised.
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, other]
+            properties:
+              type: { $ref: '#/components/schemas/RelationType' }
+              other: { type: string }
+
+    IssuePatch:
+      type: object
+      description: |
+        Takes only what `awb update` can change.
+
+        `labels`, `status`, `assignee` and `close_reason` may appear but may not
+        change: each is ignored when it equals what is stored and rejected when
+        it differs, because labels are mutated individually and the transitions
+        are their own endpoints. The derived and immutable fields are ignored
+        whatever they say. Together those rules let a UI send back the object it
+        read with only the fields it edited changed.
+
+        Any unrecognised field name is rejected.
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string }
+        type: { $ref: '#/components/schemas/Type' }
+        priority: { $ref: '#/components/schemas/Priority' }
+        labels:
+          type: array
+          items: { $ref: '#/components/schemas/Label' }
+        status: { $ref: '#/components/schemas/Status' }
+        assignee: { type: string }
+        close_reason: { type: string }
+        id: { type: string }
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+        blocked: { type: boolean }
+        blockers: { type: array, items: { type: string } }
+        relations: { type: array, items: { $ref: '#/components/schemas/Relation' } }
+        links: { type: array, items: { $ref: '#/components/schemas/Link' } }
+
+    ClaimRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        assignee:
+          allOf: [$ref: '#/components/schemas/Assignee']
+          description: |
+            Who takes the issue. May be omitted, in which case the request's
+            identity is used.
+        expect_assignee:
+          type: string
+          description: |
+            The compare-and-set. When present, the claim proceeds only if the
+            current assignee is exactly this value, `""` meaning unassigned, and
+            otherwise answers 409.
+        force:
+          type: boolean
+          default: false
+          description: Override a held, blocked or closed issue.
+
+    ReleaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        assignee:
+          allOf: [$ref: '#/components/schemas/Assignee']
+          description: |
+            The caller's identity, and what the "assigned to someone else"
+            refusal compares against. May be omitted when `force` is true, that
+            refusal being the only thing it serves.
+        force: { type: boolean, default: false }
+
+    CloseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: |
+            Absent leaves any recorded reason alone; `""` clears it.
+
+    LabelRequest:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: { $ref: '#/components/schemas/Label' }
+
+    RelationRequest:
+      type: object
+      description: Read with the addressed issue as the subject.
+      additionalProperties: false
+      required: [type, other]
+      properties:
+        type: { $ref: '#/components/schemas/RelationType' }
+        other: { type: string }
+        force:
+          type: boolean
+          default: false
+          description: Replace an existing parent, which is the only refusal it overrides.
+
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key: { $ref: '#/components/schemas/ProjectKey' }
+        name:
+          type: string
+          maxLength: 500
+          description: Defaults to the key.
+        description: { type: string }
+
+    ProjectPatch:
+      type: object
+      description: |
+        Replaces each field it carries and leaves the others alone. `key` may
+        appear but may not change; `active_issues` and the timestamps are
+        derived and are ignored whatever they say, so a UI can send back the
+        object it read.
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 500
+          description: '`""` restores the key as the name.'
+        description: { type: string }
+        key: { $ref: '#/components/schemas/ProjectKey' }
+        active_issues: { type: integer }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
