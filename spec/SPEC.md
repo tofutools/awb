@@ -79,6 +79,11 @@ closed and at least one issue it is `blocked-by` is not closed. A closed issue i
 blocked and its `blockers` are empty, whatever its `blocked-by` relations still say. This makes it impossible for the recorded state to disagree with the
 dependency graph.
 
+`status` and `assignee` never disagree either, the transitions of §4.3 being the only way to change
+either of them. The pair is an invariant the storage layer enforces with a `CHECK` constraint: an
+`open` issue has no assignee and an `in_progress` issue has one. A `closed` issue may have either,
+its assignee being a record of who did the work rather than a claim on it.
+
 The fixed vocabulary above is not configurable. Everything a team wants to express beyond it goes
 into labels.
 
@@ -107,16 +112,29 @@ in a circle.
 An issue also may not be `blocked-by` any ancestor or descendant in the `has-parent` graph. This
 inverts decomposition — a child waiting for its own parent, or a parent for its own child,
 describes work that cannot sensibly be ordered — even though each graph is acyclic. The rule covers
-the full ancestor/descendant chain and violations exit 4 like cycles. It is about the `blocked-by`
-edge itself and not about what that edge transitively reaches, so it is checked by testing the
-other endpoint for membership in the issue's ancestor and descendant sets rather than by a
-reachability search across both graphs. This rule concerns those two graphs alone;
-`discovered-from` takes no part in it. Every rule here is checked on each operation that adds or
-replaces an edge in the graph it governs — a `has-parent` edge can violate the mixed rule just as
-a `blocked-by` edge can.
+the full ancestor/descendant chain and violations exit 4 like cycles. It is about `blocked-by` edges
+themselves and not about what they transitively reach, so neither check below is a reachability
+search across both graphs at once. This rule concerns those two graphs alone; `discovered-from`
+takes no part in it.
 
-An issue has at most one parent; `dep add` on an issue that already has one fails with exit code 4
-unless `--force` is given, which replaces it. Relations are deleted with either endpoint issue.
+It is an invariant of the stored graph, so it is checked on every operation that could break it,
+and the two kinds of edge break it differently:
+
+* Adding a `blocked-by` edge moves one edge into a fixed decomposition, so it is enough to test the
+  other endpoint for membership in the issue's ancestor and descendant sets.
+* Adding or replacing a `has-parent` edge moves a whole subtree under a new chain of ancestors, and
+  the edge that ends up violating the rule is then some *existing* `blocked-by` edge, neither of
+  whose endpoints is an endpoint of the edge being added. So the check is over the subtree rooted at
+  the child and the new parent's ancestor chain, the child and the new parent included: the edge is
+  refused when any `blocked-by` edge has one end in that subtree and the other in that chain. Both
+  sets are computed from the graph as it would be after the change, which is also what makes the
+  cheaper `blocked-by` test above correct.
+
+An issue has at most one parent; `dep add` on an issue that already has a *different* parent fails
+with exit code 4 unless `--force` is given, which replaces it. Naming the parent an issue already
+has is the ordinary idempotent re-add above: it succeeds, changes nothing and needs no `--force`,
+on `POST /api/issues/{id}/relations` exactly as on the command line. Relations are deleted with
+either endpoint issue.
 
 A relation is stored once but shown on both issues; `direction` identifies the viewed endpoint
 (§4.6). A symmetric `related` pair is stored canonically with the smaller ID — comparing the whole ID
@@ -134,14 +152,33 @@ To make those links useful without a separate model, `awb` parses the descriptio
 `awb show` prints the description verbatim and lists the links it finds beneath it, and the web UI
 renders the description and turns the links into anchors.
 
-Extraction takes inline links, reference links and autolinks, and ignores images. Each distinct
-destination appears once, in the order it first occurs in the description, with the link text of
-that first occurrence. Two destinations are distinct when they differ byte for byte; no
-normalisation, resolution or validation is applied, so a relative destination such as `./notes.md`
-is extracted as written. The text is the link's rendered plain text, with inline markup removed and
-whitespace collapsed — `[**CI** run](https://ci/1)` yields `CI run` — and an autolink's text is its
-destination. The result is a derived, read-only property of the issue and appears as `links` in the
-JSON representation (§4.6).
+The dialect is GitHub Flavored Markdown: CommonMark plus GFM's tables, task lists, strikethrough,
+autolink extension and disallowed-raw-HTML rule, and nothing beyond that. It is pinned here, and
+identically on both surfaces, because `links` is a specified output — the same description must
+always yield the same array, whoever parses it. GFM rather than bare CommonMark because it is what
+people and agents actually write, and the autolink extension is the point: a bare `https://ci/1`
+pasted into a description is a link and is extracted, with nobody having to remember `<...>` or
+`[...](...)` for the commonest thing anyone writes in an issue.
+
+Extraction takes inline links, reference links and autolinks of both kinds — CommonMark's
+`<https://ci/1>` and GFM's bare `https://ci/1` — and ignores images. Each distinct destination
+appears once, in the order it first occurs in the description, with the link text of that first
+occurrence. Two destinations are distinct when they differ byte for byte; `awb` applies no
+normalisation, resolution or validation of its own, so a relative destination such as `./notes.md`
+is extracted as written. A GFM autolink's destination is whatever that extension's algorithm
+yields, trailing-punctuation trimming included and with the `http://` it puts in front of a `www.`
+host and the `mailto:` in front of an email address; those prefixes come from the parser, and are
+the one case where a destination is not a substring of the description.
+
+The text is the link's rendered plain text, with inline markup removed and whitespace collapsed —
+`[**CI** run](https://ci/1)` yields `CI run` — and an autolink's text is the text that was
+linkified, which for `<https://ci/1>` and for a bare `https://ci/1` is the destination itself and
+for `www.example.com` or `dev@example.com` is that source text without the prefix the extension
+added. An image inside a link contributes nothing, images being ignored, so
+`[![alt](i.png)](https://ci/1)` is extracted with an empty text rather than with `alt`. Raw HTML is
+not a source of links either: an `<a href=...>` written out by hand is raw HTML to the parser and
+not a Markdown link, so it is not extracted. The result is a derived, read-only property of the
+issue and appears as `links` in the JSON representation (§4.6).
 
 ### 2.5 Readiness
 
@@ -180,7 +217,10 @@ line, `400` over HTTP.
 * **Valid UTF-8.** A byte sequence that is not well-formed UTF-8 is rejected. It is never repaired
   and an invalid byte is never replaced with U+FFFD, so nothing is stored that the caller did not
   send. Command line arguments and the contents of a `--description-file` are checked exactly as a
-  JSON request body is, an argument being bytes rather than text on POSIX.
+  JSON request body is, an argument being bytes rather than text on POSIX. A JSON escape denoting
+  an unpaired surrogate, such as `"\ud800"`, is rejected for the same reason: it is not a
+  character, and a decoder that quietly turned it into U+FFFD would store what the caller did not
+  send, so the body is answered `400` rather than repaired.
 * **No Unicode control characters.** A rune in general category `Cc` — the C0 range, `DEL` and the
   C1 range — is rejected. The one exception is `description`, which may contain tab (U+0009), line
   feed (U+000A) and carriage return (U+000D), those being what Markdown text is made of. The
@@ -191,6 +231,13 @@ line, `400` over HTTP.
   the trimming §2.2 specifies for `title` and `close_reason`, an accepted value is stored byte for
   byte as it arrived and comes back out the same way — a byte-order mark included, that being
   ordinary content and not a prefix to remove.
+* **Bounded length.** Every field has a maximum, so that nothing unbounded reaches the database,
+  the FTS index or a `--compact` line. Counted in Unicode code points after the trimming §2.2
+  specifies: a `title`, a `close_reason`, a project `name` and a single search term at most 500; a
+  label and an assignee at most 64; a project `key` at most 16, as §2.1 already says. A
+  `description`, the one field meant to hold prose, is bounded in bytes instead — at most 64 KiB of
+  UTF-8 — because that is the size that matters for a blob nobody counts characters in. Exceeding a
+  maximum is a usage error like any other here.
 
 Labels, assignees and project keys are narrower still, their own character sets (§2.1, §2.2) having
 already excluded everything above. For the free text fields these rules are the whole of the gate.
@@ -200,9 +247,14 @@ already excluded everything above. For the free text fields these rules are the 
 A single SQLite database file holds projects, issues and relations.
 
 * Default location: `$XDG_DATA_HOME/awb/awb.db`, falling back to `~/.local/share/awb/awb.db`.
-* Overridable, in increasing precedence, by the config file, the `AWB_DB` environment variable and
-  the `--db` global flag.
-* The value is either a filesystem path (direct mode) or an `http(s)://` URL (remote mode, §6).
+* Overridable, in increasing precedence, by the user configuration file, the `AWB_DB` environment
+  variable and the `--db` global flag. The local configuration file cannot set it (§7.2).
+* The value is either a filesystem path (direct mode) or an `http(s)://` URL (remote mode, §6). A
+  remote URL may carry a path, which is the base the API paths of §6 hang under, so
+  `https://host/awb/` reaches `https://host/awb/api/issues` and a server behind a reverse proxy at
+  a subpath needs nothing else. A trailing slash is optional and means the same either way. A URL
+  carrying a query or a fragment is refused, having no meaning here, as is one carrying userinfo
+  (§7.1).
 
 There is no per-directory database. The upward directory search of §5 looks for a configuration
 file and never for a database, so one user has one database unless they explicitly point at
@@ -211,13 +263,22 @@ another.
 The database file is created by `awb init` and by nothing else. Any other command that finds it
 missing fails with exit code 1 and a message naming the path, so that a typo in `--db` or `AWB_DB`
 cannot silently produce a second, empty tracker. A zero-length file counts as missing for this
-purpose, so what `touch` or an interrupted `init` leaves behind is not something another command
-quietly fills in; only `init` treats it as a file to create the schema in. The stamp that
-identifies the file — SQLite's `application_id` set to a fixed `awb` value — is written by the
-first migration rather than as a separate step of `init`, so whatever creates the schema also
-carries it. Every command, `init` included, refuses a file that exists, is not empty and does not
-carry the stamp — again exit code 1 — so the same typo cannot point at somebody else's database and
-have `awb`'s migrations applied to it.
+purpose, so what `touch` leaves behind is not something another command quietly fills in; only
+`init` treats it as a file to create the schema in.
+
+The stamp that identifies the file is SQLite's `application_id`, set to `0x41574200` — the ASCII
+bytes `AWB` and a NUL. It is written by the first migration rather than as a separate step of
+`init`, so whatever creates the schema also carries it. Every command, `init` included, refuses a
+file that exists, is not empty and does not carry the stamp — again exit code 1 — so the same typo
+cannot point at somebody else's database and have `awb`'s migrations applied to it.
+
+`init` makes one exception, because it must: an interrupted `init` does not leave a zero-length
+file, SQLite having written the header before the first migration could commit. A file that is a
+readable SQLite database with `application_id` and `user_version` both still `0`, and no table of
+its own, is an empty database rather than somebody else's, and `init` adopts it and stamps it. That
+covers what a crashed `init` and a bare `sqlite3` alike leave behind. Anything else unstamped stays
+refused, and the message names the path and says to remove the file or point elsewhere, so the
+refusal is never a dead end somebody has to guess their way out of.
 
 Schema migrations are embedded in the binary as an ordered list of statement batches: the first
 takes a fresh database to version 1, the second from 1 to 2, and so on. The version reached is
@@ -289,13 +350,15 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   `relations` that went with it. Only `delete` and `project rm` delete an entity that way;
   `label rm` and `dep rm` are ordinary mutations that print nothing on success and, under `--json`,
   the resulting issue — the one named first, for `dep rm`. `init`, `serve` and `agent-guide`
-  produce no object and ignore both output-mode flags.
+  produce no object and ignore both output-mode flags on success. An error is reported as it is
+  everywhere else, so `--json` still turns it into `{"error": "..."}` on stderr.
 * Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not found ·
   `4` constraint violation (e.g. dependency cycle).
 * Invalid argument vocabulary (title, label, priority, enum, sort value or project key), and text
   that fails §2.6, exit `2`.
   Constraints that depend on database state (cycles, duplicates, claim or parent conflicts, and
-  deletion without required `--cascade`) exit `4`.
+  deletion without required `--cascade`) exit `4`. A missing `--force` exits `2` instead: it
+  depends on the arguments alone and not on anything the database holds.
 * An empty string clears an optional string value: `--description ""` blanks the description and
   `--reason ""` the close reason. An empty `--project`, `--label` or `--assignee` is invalid
   everywhere, being outside those vocabularies (§2.1, §2.2) — `--unassigned` is how a listing asks
@@ -305,20 +368,26 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   has, additionally permits deleting the issues a project holds. On `claim`, `release` and
   `dep add --has-parent`, `--force` overrides a refusal.
 * Addressing a single entity that does not exist — an issue ID, or a project key from any source
-  (§7) — exits `3`, even when it appears as a listing's `--project`. An ambiguous ID exits `2` and
-  creating a duplicate exits `4`.
+  (§7) — exits `3`, even when it appears as a listing's `--project` or `--parent`: a filter naming
+  something that is not there is a mistake to report, not a listing that happens to match nothing.
+  An ambiguous ID exits `2` and creating a duplicate exits `4`.
 * An empty list is success (`0`) and renders as an empty table, no compact output, or `[]`.
 * Errors always go to stderr, as a single line in the default and `--compact` modes and as
   `{"error": "..."}` under `--json`. The exit code is the machine-readable classification; the
   message is human-readable text.
 * Colour is used in the default output mode when stdout is a terminal. `--color`, `color` in the
   configuration file and `AWB_COLOR` accept `auto`, `always` and `never`; `--no-color` is an alias
-  for `--color never`, and a `NO_COLOR` environment variable of any value is equivalent to `never`.
+  for `--color never`. A `NO_COLOR` environment variable that is set and not empty means `never`,
+  as the convention that defines it says; an empty one means nothing at all. It sits between the
+  command line and the rest of §7.3's chain: `--color` and `--no-color` override it, an explicit
+  flag being what the person running the command means, and it overrides `AWB_COLOR`, the
+  configuration file and the default.
 * Repeated values of one filter are ORed; different filters are ANDed. No filter accepts
-  comma-separated lists. Only `--status`, `--type`, `--priority`, `--label`, `--assignee` and
-  `--project` repeat, and only as filters: the `--project` of `awb create` names one project and
-  may occur once. Other filters and context flags may occur once too. Elsewhere `...` marks a
-  repeatable flag.
+  comma-separated lists. The only filters that repeat are `--status`, `--type`, `--priority`,
+  `--label`, `--assignee` and `--project`; every other filter and context flag may occur once, and
+  the `--project` of `awb create` names one project rather than filtering and may occur once too.
+  Outside the filters, `...` in a synopsis marks a repeatable flag like any other — `awb create`
+  takes several `--label` and several relation flags, and `awb serve` several `--cors-origin`.
 
 ### 4.2 Setup
 
@@ -350,8 +419,11 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
 | `awb delete <id> --force` | Hard delete the issue and its relations. Not recoverable. It never refuses on account of dependents and has no `--cascade`: it orphans any children and drops every relation. Reports how many relations went with it, since removing a blocker silently makes other issues ready and orphaning children makes a decomposed parent's work top-level. |
 
 `--description` and `--description-file` are mutually exclusive; `--description-file -` reads the
-description from stdin. Both replace the description outright. The same holds for the description
-of a project (§4.2). This is the only use of stdin, and is not the bulk import excluded by §1.2.
+description from stdin. Both replace the description outright, taking the bytes exactly as given: a
+description is never trimmed (§2.6), so a trailing line feed from a heredoc or an editor is part of
+it and `--description-file` stores what a JSON body carrying the same bytes stores. The same holds
+for the description of a project (§4.2). This is the only use of stdin, and is not the bulk import
+excluded by §1.2.
 
 Filters accepted by `list`, `ready`, `blocked` and `search`:
 `--status` and `--include-closed` (on `list` and `search` only, see below), `--type`, `--priority`, `--priority-max`, `--label`, `--assignee`,
@@ -396,6 +468,11 @@ Nothing is ever archived or purged — closed issues remain queryable forever.
 wrapped in double quotes, with any double quote inside it doubled, before it reaches the query, and an issue matches when the title and description together
 contain all of them. No operator, wildcard or column prefix is passed through, so no user or agent
 input can produce a query syntax error.
+
+Relevance is FTS5's `bm25(title, description)` with the title weighted ten times the description,
+ordered ascending — that function's better matches being its more negative values — so a term in a
+title outranks the same term buried in a description. Fixing the function and the weights here is
+what makes `--sort relevance` mean one thing rather than whatever a driver happens to do.
 
 Matching is by whole token, using the FTS5 `unicode61` tokenizer with its default settings:
 case- and diacritic-insensitive, splitting on non-alphanumeric characters, no stemming and no
@@ -546,7 +623,12 @@ commands that take an issue ID address one issue by name and never filter, so `s
 The project of a new issue is resolved as `--project`, else `AWB_PROJECT`, else `project` in the
 local configuration file, else `project` in the user configuration file; if none of these yields a
 project the command fails with exit code 2. `--no-context` removes the third of those, not the
-others.
+others. That is §7.3's order and no exception to it, which is worth one warning: an exported
+`AWB_PROJECT` outranks the directory's own `project`, so `awb create` run in a directory scoped to
+another project puts the issue where the variable says while the same directory's `awb list`
+filters where the file says, and the new issue — still carrying the context label — is not in it.
+The variable is a deliberate override and wins as one; a directory whose creates should land in it
+says so in its own file.
 
 ## 6. Server mode
 
@@ -560,7 +642,12 @@ It serves:
 * the bundled web UI, which in version 1 is read-only (§6.3).
 
 Setting `AWB_DB`/`--db` to the server's URL makes the CLI operate against it; every command
-behaves identically to direct mode, and directory context is still resolved on the client. The
+behaves identically to direct mode, and directory context is still resolved on the client. So is
+the CLI's identity (§7.1), which it resolves locally and always states explicitly — as the
+`assignee` of `claim` and `release` (§6.4), and as the `assignee` parameter `--mine` becomes — so
+that a remote `claim` records exactly what the same command would record locally and a server's own
+identity never stands in for it. A command that needs an identity and has none fails on the client,
+with exit code 1, before it sends anything. The
 exceptions are `init` and `serve`, which are about a local database file and refuse a URL with exit
 code 2 (§4.2, §4.5). The CLI inverts the mapping of §6.1 to keep its exit codes identical in both
 modes — `400` becomes 2, `404` becomes 3, `409` becomes 4, and any other failure, including a
@@ -573,8 +660,11 @@ nothing else with the result: every user it knows may do everything every other 
 credentials serve only to say who is calling.
 
 * `--basic-auth-file` names an htpasswd file of `username:bcrypt-hash` entries, the format
-  `htpasswd -B` writes. Only bcrypt is accepted. `serve` fails with exit code 1, naming the file,
-  when it cannot be read or holds no usable entry, rather than starting a server nobody can enter.
+  `htpasswd -B` writes. Only bcrypt is accepted. Every line is read strictly: `serve` fails with
+  exit code 1, naming the file and the line, when the file cannot be read, when it holds no entry
+  at all, or when any line is not a `username:bcrypt-hash` pair — an MD5, crypt or SHA-1 hash
+  included. A line skipped silently would be a login the operator believes in and the server does
+  not, so nothing is skipped. Blank lines are the one thing ignored.
 * Every username in it must be a valid assignee (§2.2), because that is what it becomes. One that
   is not fails `serve` the same way — refused rather than folded, exactly as §2.2 refuses
   `claim --as Mikael`.
@@ -632,6 +722,7 @@ GET    /api/projects        POST /api/projects
 GET    /api/projects/{key}  PATCH /api/projects/{key}  DELETE /api/projects/{key}
 GET    /api/labels
 GET    /api/assignees
+GET    /api/identity
 ```
 
 The status transitions are endpoints rather than `PATCH` bodies for the same reason `update` cannot
@@ -652,7 +743,9 @@ command does (§8), answering `400` when it matches more than one issue and `404
 none, so the CLI needs no extra round trip in remote mode.
 
 Everything under `/api/` is the JSON API and `/openapi.json` and `/openapi.yaml` are the document;
-every other path belongs to the web UI.
+every other path belongs to the web UI. Those paths are the server's own; a `--db` URL carrying a
+base path (§3) is the client joining onto them, and a reverse proxy serving that base strips it
+before the request arrives.
 
 Request and response bodies use exactly the same JSON representation as `--json` output, so agents
 can move between the two transports without relearning anything. Query parameters carry the same
@@ -678,9 +771,9 @@ The HTTP API is specified by an OpenAPI 3.1 document, so third-party user interf
 integrations can be built against it and clients can be generated from it. The document lives in
 the repository, is embedded in the binary, and is served at `/openapi.json` and `/openapi.yaml`.
 
-* Its component schemas are the CLI's `--json` structures: `Issue`, `IssueTree`, `Relation`,
-  `Project`, `Error`, plus `Facet` for the two endpoints the CLI has no counterpart for (§6.2) and
-  the request bodies of §6.4. There is no second, HTTP-only *response* representation of anything the CLI also
+* Its component schemas are the CLI's `--json` structures: `Issue`, `IssueTree`, `Relation`, `Link`,
+  `Project`, `Error`, plus `Facet` and `Identity` for the three endpoints the CLI has no
+  counterpart for (§6.2) and the request bodies of §6.4. There is no second, HTTP-only *response* representation of anything the CLI also
   returns — if the shapes ever diverge, the JSON output is what changed and both must be corrected
   together.
 * Enumerations (`type`, `status`, relation types) and the priority range are declared in the schema,
@@ -692,10 +785,14 @@ the repository, is embedded in the binary, and is served at `/openapi.json` and 
   client knows to carry credentials. It is declared optional, because a server started without
   `--basic-auth-file` accepts requests that carry none (§6).
 * Errors use the exit-code taxonomy of §4.1 mapped onto status codes: `400` usage, `404` not found,
-  `409` constraint violation, `500` runtime error, with an `Error` body. Three statuses have no
+  `409` constraint violation, `500` runtime error, with an `Error` body. Six statuses have no
   exit code behind them, all of them provoked only by how a client behaves rather than by what it
   asks for: `401` for missing or wrong credentials (§6), `403` for a rejected cross-site write
-  (§6.2), and `412` for a failed `If-Match` (§6.2). The CLI folds all three into exit code 1.
+  (§6.2), `412` for a failed precondition (§6.2), `405` for a method the path does not support,
+  `415` for a request that carries a body without a JSON content type, and `413` for one over the
+  body cap (§9). The CLI folds all six into exit code 1. A body that is well-formed JSON but wrong,
+  and one that is not well-formed JSON at all, are both `400`: those are what the client asked for
+  rather than how it asked.
 * The document is treated as a compatibility contract: within a major version, changes are additive
   only. `info.version` tracks the API, not the binary.
 
@@ -715,27 +812,33 @@ exist and are supported even though the bundled UI only reads.
   than about the data — `init`, `serve` and `agent-guide`.
 * **Safe concurrent editing.** A form-based UI reads an issue, the user edits it for a while, and
   the UI writes it back; a plain `PATCH` would silently overwrite whatever changed meanwhile. So
-  `GET /api/issues/{id}` returns a weak `ETag`, `W/"<updated_at>"`, and every request that mutates
-  one issue — `PATCH`, the four transitions, the label and relation endpoints and
-  `DELETE /api/issues/{id}` — honours `If-Match`, answering `412` when the issue has moved on. What makes that reliable is not the
-  millisecond resolution of `updated_at` but its being strictly increasing per issue (§2.2): two
-  successive versions of one issue can never carry the same timestamp, whatever the host clock's
-  real resolution is, so the tag identifies a version rather than an instant. That is also what
-  lets a version 2 mechanism order the versions of a row. It is weak rather than strong, and no
-  use as a cache validator, precisely because it does not cover the whole body: it guards the
-  issue's own stored fields, and two bodies differing only in `relations`, `blocked` or `blockers`
-  carry the same tag. `If-Match`
-  is optional — a caller that omits it, as the CLI always does, gets last-write-wins — but a UI is
-  expected to send it. Every successful endpoint response whose body is one `Issue` or one
-  `Project`, including a
-  mutation response, carries the ETag for the returned version, so a client can make another
-  conditional edit without first repeating the GET. It guards the issue's own stored fields,
-  which is what a form edits; a
-  relation added meanwhile does not move `updated_at` (§2.2) and so does not invalidate the ETag,
-  and neither does `blocked` flipping because somebody closed a blocker. This is the same concern
-  that already makes `claim` a compare-and-set and labels individually mutable.
+  `GET /api/issues/{id}` returns an `ETag` of `"<updated_at>"`, and every request that mutates one
+  issue — `PATCH`, the four transitions, the label and relation endpoints and
+  `DELETE /api/issues/{id}` — honours `If-Match`, answering `412` when the issue has moved on.
+  What makes that reliable is not the millisecond resolution of `updated_at` but its being strictly
+  increasing per issue (§2.2): two successive versions of one issue can never carry the same
+  timestamp, whatever the host clock's real resolution is, so the tag identifies a version rather
+  than an instant. That is also what lets a version 2 mechanism order the versions of a row.
+
+  The tag is a *strong* one, because `If-Match` is compared strongly and a weak validator would
+  never match, and it therefore says exactly what it guards: the issue's own stored fields, which
+  are what a form edits. It is not a cache validator and nothing should treat it as one — two
+  bodies differing only in `relations`, `blocked` or `blockers` carry the same tag, since a
+  relation added meanwhile does not move `updated_at` (§2.2) and neither does `blocked` flipping
+  because somebody closed a blocker. Those are the very changes a conditional edit should not fail
+  on. No response here is cacheable in the first place: the API sends `Cache-Control: no-store`
+  with every `/api/` response, so the tag has no second job to be wrong about.
+
+  `If-Match` is optional — a caller that omits it, as the CLI always does, gets last-write-wins —
+  but a UI is expected to send it. Every successful endpoint response whose body is one `Issue` or
+  one `Project`, including a mutation response, carries the ETag for the returned version, so a
+  client can make another conditional edit without first repeating the GET.
+  `GET /api/issues/{id}/tree` is not one of them and carries none: an `IssueTree` aggregates many
+  issues, and no one version tags it. This is the same concern that already makes `claim` a
+  compare-and-set and labels individually mutable.
+
   A project is edited through the same form-read-write cycle and gets the same treatment.
-  `GET /api/projects/{key}` returns a weak `ETag`, `W/"<updated_at>"`, built from the project's own
+  `GET /api/projects/{key}` returns an `ETag` of `"<updated_at>"`, built from the project's own
   `updated_at` (§2.1), and `PATCH /api/projects/{key}` and `DELETE /api/projects/{key}` honour
   `If-Match` and answer `412` when the project has moved on. It is the issue rule with the entity
   changed, down to the detail that the tag covers the project's stored fields alone: `active_issues`
@@ -743,15 +846,25 @@ exist and are supported even though the bundled UI only reads.
   relation does not invalidate an issue's.
 * **Enough for the chrome, not just the content.** Editing UIs need to populate filter menus and
   autocomplete: `GET /api/labels` and `GET /api/assignees` return the distinct values in use as
-  `{"value", "count"}` objects, sorted by value. Both honour the same filters as
-  `GET /api/issues`, including the facet's own — `?label=parser` lists the labels that co-occur
-  with `parser`, so a UI can narrow progressively. `count` counts the issues matching those
-  filters, so with no filters it counts the issues that are not closed, that being the default
-  everywhere; a value with a count of zero is not listed at all, "in use" meaning in use under the
-  filters in force. `GET /api/assignees`
-  has no row for the empty assignee; unassigned is a filter (`unassigned=true`), not a value. Where
-  these two endpoints are paged, `limit` and `offset` page the facet rows themselves and never the
-  issues behind them, so `count` is the same whatever page it appears on.
+  `{"value", "count"}` objects, sorted by value ascending. Both honour the *selection* parameters
+  of `GET /api/issues` — `status`, `include-closed`, `type`, `priority`, `priority-max`, `label`,
+  `assignee`, `unassigned`, `project` and `parent` — the facet's own included, so `?label=parser`
+  lists the labels that co-occur with `parser` and a UI can narrow progressively. `count` counts
+  the issues matching those filters, so with no filters it counts the issues that are not closed,
+  that being the default everywhere; a value with a count of zero is not listed at all, "in use"
+  meaning in use under the filters in force. `GET /api/assignees` has no row for the empty
+  assignee; unassigned is a filter (`unassigned=true`), not a value.
+
+  The parameters that shape a *listing* rather than select it belong to the facet rows here, not to
+  the issues behind them: `limit` and `offset` page the rows, `X-Total-Count` counts the rows, and
+  `count` is therefore the same whatever page it appears on. `sort` is not accepted at all and is a
+  `400`, the row order being fixed at value ascending.
+* **A caller's own identity.** `GET /api/identity` returns `{"identity": "<name>"}`: the
+  authenticated username, or the fixed identity of a server that authenticates nobody (§6). It is
+  the one thing a browser UI cannot resolve for itself the way the CLI does (§7.1), and without it
+  no UI could offer "my issues", show that an issue is held by *this* user, or fill in
+  `expect_assignee`. It is read-only and says nothing about what the caller may do, there being no
+  authorization to describe (§6).
 * **Paging.** Every endpoint that returns an array — `/api/issues`, `/api/ready`, `/api/blocked`,
   `/api/search`, `/api/projects`, `/api/labels`, `/api/assignees` — accepts `limit`
   and `offset` and returns the unpaged total in an `X-Total-Count` header, so a UI can show
@@ -770,7 +883,8 @@ exist and are supported even though the bundled UI only reads.
   an allowed origin the server answers preflight `OPTIONS` requests, permits the methods and
   request headers the API uses (`Content-Type`, `If-Match`, `Authorization`), answers
   `Access-Control-Allow-Credentials: true` so that a UI there can authenticate at all, and exposes
-  `ETag` and `X-Total-Count` in `Access-Control-Expose-Headers` — without which a cross-origin UI
+  `ETag`, `X-Total-Count` and `Location` in `Access-Control-Expose-Headers` — without which a
+  cross-origin UI
   could use neither the optimistic concurrency nor the paging above.
 * **Same-origin writes.** Because a browser attaches basic-authentication credentials to
   cross-site requests of its own accord, a request that is not a `GET` must also carry an `Origin`
@@ -780,8 +894,8 @@ exist and are supported even though the bundled UI only reads.
 
 `offset`, `X-Total-Count`, `limit` on the array endpoint the CLI has no `--limit` for
 (`/api/projects`), `GET /api/projects/{key}` for which the CLI has no `project show`, the two facet
-endpoints, the `ETag`/`If-Match` handshake and the `expect_assignee` of §6.4 are the only places
-where the API is wider than the CLI. Everything else stays one-to-one, and all of
+endpoints, `GET /api/identity`, the `ETag`/`If-Match` handshake and the `expect_assignee` of §6.4
+are the only places where the API is wider than the CLI. Everything else stays one-to-one, and all of
 them are declared in the OpenAPI document like the rest.
 
 Two things a write UI needs that are deliberately *not* API concerns. Directory context is resolved
@@ -803,13 +917,25 @@ Response bodies are the shapes of §4.6. Request bodies are the ones below, and 
 domain operation that the CLI lacks. They carry the corresponding CLI arguments, except that label
 changes deliberately carry one label per request so concurrent edits cannot replace one another.
 
+Everything these bodies say turns on a field being present or absent, and `null` is neither: no
+field of §4.6 is ever `null`, an unset string being `""`, so a field present with a JSON `null` is
+a type error answered `400`, exactly as a number would be where a string belongs. A description or
+a close reason is therefore cleared with `""` and left alone by omission, and there is no third
+state to encode.
+
 * `POST /api/issues` takes an `IssueCreate`: the writable fields of an `Issue` — `project`,
   `title`, `description`, `type`, `priority`, `assignee` — plus `labels` and an initial
   `relations` array of `{"type", "other"}` pairs, read with the new issue as the subject exactly as
   `awb create`'s relation flags are. Everything but `project` and `title` may be omitted and then
   takes the default of §2.2. The whole body is applied in one transaction, so the API creates an
   issue with its labels and relations in a single call, as the CLI does. A non-empty `assignee`
-  sets `status` to `in_progress`, exactly as `awb create --assignee` does.
+  sets `status` to `in_progress`, exactly as `awb create --assignee` does. Nothing else is
+  recognised: `id`, `status`, `close_reason`, the timestamps and the derived fields are rejected
+  with `400` under the unknown-field rule below rather than ignored, there being no
+  object-it-read to send back here — `status` follows from `assignee` and the rest are the
+  server's to assign. A `direction` inside a `relations` entry is unrecognised for the same
+  reason; a `relations` array holding more than one `has-parent` is a `400` too, an issue having
+  at most one parent (§2.3) and `awb create` taking one `--has-parent`.
 * `PATCH /api/issues/{id}` takes only what `awb update` can change: `title`, `description`, `type`
   and `priority`. `labels`, `status`, `assignee` and `close_reason` may appear but
   may not change: each is ignored when it equals what is stored — `labels` compared as the sorted
@@ -821,7 +947,7 @@ changes deliberately carry one label per request so concurrent edits cannot repl
   still good. Together those rules let a UI send back the object it read with only the
   fields it edited changed, while a `PATCH` that genuinely tries to close an issue or rewrite its
   labels is refused rather than silently dropped. Any unrecognised field name is rejected with
-  `400`; so it is in every other request body below.
+  `400`, here and in every other body of this section, `IssueCreate` included.
 * `POST /api/issues/{id}/claim` takes `{"assignee", "expect_assignee", "force"}`. `assignee` names
   who takes the issue and may be omitted, in which case the request's identity (§6) is used —
   the authenticated username, or the server's fixed identity when it authenticates nobody.
@@ -839,7 +965,9 @@ changes deliberately carry one label per request so concurrent edits cannot repl
   subject, where `force` replaces an existing parent as `dep add --has-parent --force` does.
 * `POST /api/projects` takes `{"key", "name", "description"}` and `PATCH /api/projects/{key}` the
   same without `key`, replacing each field it carries and leaving the others alone, like
-  `project update`. `active_issues`, `created_at` and `updated_at` are derived and are ignored
+  `project update`. `key` may appear but may not change, and is ignored when it equals the key in
+  the path and rejected with `400` when it differs, exactly as `status` is on an issue.
+  `active_issues`, `created_at` and `updated_at` are derived and are ignored
   whatever they say, so a UI can send back the object it read.
 
 Every mutating endpoint answers with the resulting object, including the label and relation
@@ -994,9 +1122,12 @@ matches more than one issue fails with exit code 2 rather than picking one.
 * A pure Go SQLite driver (`modernc.org/sqlite`) provides FTS5 without a C toolchain.
 * A real YAML library (`goccy/go-yaml` or `gopkg.in/yaml.v3`) parses the configuration files (§7)
   into a struct. Configuration is never read by matching lines or by regular expression.
-* A CommonMark parser (e.g. `goldmark`) extracts links in the shared read/domain layer so CLI and
-  API return the same derived data. Descriptions remain verbatim; the web UI renders and sanitises
-  them.
+* A CommonMark parser with GFM enabled — `goldmark` with `extension.GFM`, which is exactly the set
+  §2.4 pins — extracts links in the shared read/domain layer, so CLI and API return the same
+  derived data. The web UI has a renderer of its own and must configure it to that same set, so
+  that what it shows as a link is what `links` lists; a divergence there is a bug in one of the
+  two, not a choice either is free to make. Descriptions remain verbatim; the web UI renders and
+  sanitises them.
 * `crypto/sha256` and `crypto/rand` generate issue IDs (§8); `math/rand` is not used for the salt.
 * Layering: a storage package owning the schema and queries; a domain package owning readiness,
   relation validation and the text rules of §2.6; thin CLI and HTTP adapters over it, so both
@@ -1008,10 +1139,19 @@ matches more than one issue fails with exit code 2 rather than picking one.
 * `build.sh` is the whole build — compile the frontend, build the binary with `CGO_ENABLED=0 go
   build -trimpath`, run the Go and frontend tests, lint with `golangci-lint` — silent on success
   and printing the failing step's output on failure.
-* `serve` runs an `http.Server` with read, write and idle timeouts, a cap on the request body, and
-  graceful shutdown on `SIGINT` and `SIGTERM`.
+* `serve` runs an `http.Server` with read, write and idle timeouts, a 1 MiB cap on the request
+  body, and graceful shutdown on `SIGINT` and `SIGTERM`. The cap is a transport limit and not a
+  second validation rule: it sits far above anything the field maxima of §2.6 permit for one issue
+  or one project, so no body that those rules would accept is ever refused for its size, and §2.6's
+  promise that both surfaces accept the same strings holds. A body over the cap is answered `413`.
 * All timestamps are stored in UTC.
-* Concurrency is handled by SQLite itself: short transactions, WAL mode and a busy timeout. There
+* Concurrency is handled by SQLite itself: short transactions, WAL mode and a busy timeout. Every
+  mutating operation is one `BEGIN IMMEDIATE` transaction, so it takes the write lock before it
+  reads anything it then validates against: the graph checks of §2.3, the compare-and-set of
+  `claim`, the strictly-increasing `updated_at` of §2.2 and the collision retry of §8 all read and
+  write inside one writer's exclusive turn, and no concurrent commit can slip between the check and
+  the change. A transaction that cannot take the lock within the busy timeout fails with exit
+  code 1, or `500`, rather than being retried in a loop. There
   are no leases, locks or claim expiry — `claim` is a single atomic update, and a crashed agent
   leaves an assigned issue that a human or another agent releases explicitly.
 
