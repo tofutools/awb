@@ -32,7 +32,7 @@ tasks:
     desc: Install awb to GOBIN or GOPATH/bin
     deps: [fe:build]
     cmds:
-      - env CGO_ENABLED=0 go install -trimpath -buildvcs=true -tags netgo .
+      - env CGO_ENABLED=0 go install -trimpath -buildvcs=true .
 
   test:
     desc: Run all tests
@@ -55,7 +55,7 @@ tasks:
   be:build:
     desc: Build the awb binary
     cmds:
-      - env CGO_ENABLED=0 go build -trimpath -buildvcs=true -tags netgo -o "{{.OUTPUT_DIR}}/awb" .
+      - env CGO_ENABLED=0 go build -trimpath -buildvcs=true -o "{{.OUTPUT_DIR}}/awb" .
 
   be:test:
     desc: Run the Go tests
