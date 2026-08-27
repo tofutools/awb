@@ -57,6 +57,23 @@ func selection(f *domain.Filter) *conditions {
 	} else {
 		c.addIn("i.assignee", anyArgs(f.Assignees))
 	}
+	// The derived blocked state of SPEC §2.2: an issue is blocked when it is
+	// itself not closed and at least one issue it is blocked-by is not closed.
+	// Expressing it here rather than after the fact keeps ready and blocked
+	// pageable, with an accurate unpaged total.
+	const blockedBy = `EXISTS (SELECT 1 FROM relations r
+	                             JOIN issues b ON b.id = r.other
+	                            WHERE r.subject = i.id
+	                              AND r.type = 'blocked-by'
+	                              AND b.status <> 'closed')`
+	switch f.Readiness {
+	case domain.ReadinessReady:
+		c.add(`i.status <> 'closed' AND NOT ` + blockedBy)
+	case domain.ReadinessBlocked:
+		c.add(`i.status <> 'closed' AND ` + blockedBy)
+	case domain.ReadinessAny:
+	}
+
 	if f.Parent != "" {
 		c.add(`i.id IN (SELECT subject FROM relations
 		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)

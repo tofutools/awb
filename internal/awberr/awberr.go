@@ -151,3 +151,18 @@ func ExitCode(err error) int {
 	}
 	return KindOf(err).ExitCode()
 }
+
+// ErrPreconditionFailed marks a conditional request whose If-Match no longer
+// matches (SPEC §6.2). It has no exit code of its own — the command line never
+// sends If-Match — so it is a Runtime error that the HTTP adapter recognises
+// and answers 412.
+var ErrPreconditionFailed = errors.New("it has changed since you read it")
+
+// PreconditionFailed reports that a conditional request lost its race.
+func PreconditionFailed(what string) error {
+	return &Error{
+		Kind: Runtime,
+		Msg:  what + " has changed since it was read",
+		Err:  ErrPreconditionFailed,
+	}
+}

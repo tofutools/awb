@@ -81,9 +81,27 @@ func containsKey(keys []SortKey, key SortKey) bool {
 	return false
 }
 
+// Readiness selects on the derived blocked state of SPEC §2.2, which is what
+// separates awb ready and awb blocked from awb list.
+type Readiness int
+
+const (
+	// ReadinessAny does not select on blocked state, which is awb list.
+	ReadinessAny Readiness = iota
+	// ReadinessReady selects issues that are not blocked. Combined with the
+	// status and assignee sets awb ready fixes for itself, that is §2.5's
+	// definition of ready.
+	ReadinessReady
+	// ReadinessBlocked selects issues that are blocked.
+	ReadinessBlocked
+)
+
 // Filter selects issues for a listing (SPEC §4.3). Repeated values of one
 // filter are ORed; different filters are ANDed.
 type Filter struct {
+	// Readiness selects on the derived blocked state; the zero value does not.
+	Readiness Readiness
+
 	// Statuses selects exactly these statuses. Empty means the default, which
 	// is every status but closed unless IncludeClosed widens it.
 	Statuses []Status
