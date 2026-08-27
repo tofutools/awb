@@ -1,0 +1,77 @@
+version: "3"
+
+vars:
+  OUTPUT_DIR: '{{default "." .OUTPUT_DIR}}'
+
+tasks:
+  default:
+    desc: Build, test, and lint everything
+    cmds:
+      - task: check
+
+  check:
+    desc: Build, test, and lint everything
+    cmds:
+      - task: fe:build
+      - task: fe:test
+      - task: be:build
+        vars:
+          OUTPUT_DIR: "{{.OUTPUT_DIR}}"
+      - task: be:test
+      - task: lint
+
+  build:
+    desc: Build the frontend and the awb binary
+    cmds:
+      - task: fe:build
+      - task: be:build
+        vars:
+          OUTPUT_DIR: "{{.OUTPUT_DIR}}"
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: fe:test
+      - task: be:test
+
+  lint:
+    desc: Run the Go linter
+    cmds:
+      - golangci-lint run ./...
+
+  run:
+    desc: Build the frontend and run the development server
+    aliases: [dev]
+    cmds:
+      - task: fe:build
+      - task: be:run
+
+  be:build:
+    desc: Build the awb binary
+    cmds:
+      - env CGO_ENABLED=0 go build -trimpath -buildvcs=true -tags netgo -o "{{.OUTPUT_DIR}}/awb" .
+
+  be:test:
+    desc: Run the Go tests
+    cmds:
+      - go test ./...
+
+  be:run:
+    desc: Run the development server
+    cmds:
+      - go run . serve {{.CLI_ARGS}}
+
+  fe:build:
+    desc: Compile the TypeScript frontend
+    cmds:
+      - tsc --project web/ts/tsconfig.json
+
+  fe:test:
+    desc: Run the frontend tests
+    cmds:
+      - node --test 'web/ts/tests/*.test.mjs'
+
+  fe:watch:
+    desc: Recompile the TypeScript frontend when its sources change
+    cmds:
+      - tsc --project web/ts/tsconfig.json --watch

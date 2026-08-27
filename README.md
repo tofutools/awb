@@ -39,10 +39,12 @@ $ go install github.com/tofutools/awb@latest
 Or take a binary for Linux or macOS, amd64 or arm64, from the
 [releases](https://github.com/tofutools/awb/releases) page.
 
-Or build from a checkout with `./build.sh`, which produces the same single
+Or build from a checkout with `task build`, which produces the same single
 static binary with the web UI embedded — no cgo, so it cross-compiles.
+`./build.sh` remains available as an alternative.
 
-Building needs Go 1.26.6 or later.
+The required development tools and their versions are declared in `mise.toml`;
+run `mise install` to install them.
 
 ## Quickstart
 
@@ -212,7 +214,20 @@ shape; `spec/TODO.md` lists what is left for future versions; `AGENTS.md`
 describes the layout and the conventions. The code and its tests are
 authoritative for behaviour.
 
-`./build.sh` compiles the frontend, builds the binary, runs every test and
-lints; it is silent when it all passes.
+`task check` compiles the frontend, builds the binary, runs every test and
+lints. `./build.sh` performs the same checks and is silent when they all pass.
+The component tasks are available separately:
+
+| Task | What it does |
+| --- | --- |
+| `task build` | Compile the frontend and build `awb`. |
+| `task test` | Run the frontend and Go tests. |
+| `task lint` | Run `golangci-lint`. |
+| `task run` | Compile the frontend and run the development server. |
+| `task fe:watch` | Recompile the frontend when its TypeScript changes. |
+
+Backend and frontend steps can also be run individually; `task --list` shows
+the complete set. Set `OUTPUT_DIR` to choose where a binary is written, for
+example `task build OUTPUT_DIR=dist`.
 
 [License](LICENSE) (MIT)
