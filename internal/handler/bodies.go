@@ -21,8 +21,41 @@ var (
 	errBodyTooLarge = errors.New("request body is too large")
 )
 
-// decodeBody reads a JSON request body into out, applying the API's strict
-// body rules.
+// readBody reads the whole request body, turning the transport cap into the
+// status that describes it.
+func readBody(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		// http.MaxBytesHandler surfaces the cap as a read error.
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return nil, errBodyTooLarge
+		}
+		return nil, awberr.Wrap(awberr.Runtime, err, "read request body")
+	}
+	return raw, nil
+}
+
+// checkContentType requires a JSON content type of a request that carries a
+// body.
+//
+// A missing header is not a JSON content type either: the rule is about what
+// the body claims to be, and a body claiming nothing claims nothing useful. It
+// is checked only once a body is known to be present, so a request that sends
+// none is never asked to describe it.
+func checkContentType(r *http.Request) error {
+	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	if strings.TrimSpace(mediaType) != "application/json" {
+		return errUnsupportedMediaType
+	}
+	return nil
+}
+
+// decodeBody reads a required JSON request body into out, applying the API's
+// strict body rules.
 //
 // Any unrecognised field name is rejected. A field present with a JSON null is
 // a type error, because no field of an Issue is ever null — an unset string is
@@ -30,30 +63,49 @@ var (
 // but wrong, and one that is not well-formed JSON at all, are both 400: those
 // are what the client asked for rather than how it asked.
 func decodeBody(r *http.Request, out any) error {
-	if r.Body == nil {
-		return awberr.Usagef("a request body is required")
-	}
-
-	if contentType := r.Header.Get("Content-Type"); contentType != "" {
-		mediaType, _, _ := strings.Cut(contentType, ";")
-		if strings.TrimSpace(mediaType) != "application/json" {
-			return errUnsupportedMediaType
-		}
-	}
-
-	raw, err := io.ReadAll(r.Body)
+	raw, err := readBody(r)
 	if err != nil {
-		// http.MaxBytesHandler surfaces the cap as a read error.
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return errBodyTooLarge
-		}
-		return awberr.Wrap(awberr.Runtime, err, "read request body")
+		return err
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return awberr.Usagef("a request body is required")
 	}
+	if err := checkContentType(r); err != nil {
+		return err
+	}
+	return decodeRaw(raw, out)
+}
 
+// decodeOptionalBody is decodeBody for an endpoint whose body may be omitted
+// entirely, such as claim.
+func decodeOptionalBody(r *http.Request, out any) error {
+	raw, err := readBody(r)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	if err := checkContentType(r); err != nil {
+		return err
+	}
+	return decodeRaw(raw, out)
+}
+
+// rejectBody refuses a body on an endpoint that takes none. Ignoring one would
+// let a client believe it had said something the server never read.
+func rejectBody(r *http.Request) error {
+	raw, err := readBody(r)
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		return awberr.Usagef("this endpoint takes no request body")
+	}
+	return nil
+}
+
+func decodeRaw(raw []byte, out any) error {
 	if err := checkJSONText(raw); err != nil {
 		return err
 	}
@@ -70,28 +122,6 @@ func decodeBody(r *http.Request, out any) error {
 		return awberr.Usagef("invalid request body: it holds more than one JSON value")
 	}
 	return nil
-}
-
-// decodeOptionalBody is decodeBody for an endpoint whose body may be omitted
-// entirely, such as reopen.
-func decodeOptionalBody(r *http.Request, out any) error {
-	if r.Body == nil {
-		return nil
-	}
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return errBodyTooLarge
-		}
-		return awberr.Wrap(awberr.Runtime, err, "read request body")
-	}
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil
-	}
-
-	r.Body = io.NopCloser(bytes.NewReader(raw))
-	return decodeBody(r, out)
 }
 
 // checkJSONText applies the UTF-8 half of the input rules to a request body.

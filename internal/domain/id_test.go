@@ -136,3 +136,20 @@ func TestIsHex(t *testing.T) {
 	assert.False(t, domain.IsHex("A3F"), "an ID is lower-cased before matching")
 	assert.False(t, domain.IsHex("g1"))
 }
+
+// An identifier is lower-cased before matching and nothing else is touched, so
+// a stray space is a mistake to report rather than one to paper over.
+// Regression: the reference used to be trimmed.
+func TestParseIssueRefDoesNotTrim(t *testing.T) {
+	for _, ref := range []string{" awb-a3f9c1", "awb-a3f9c1 ", " a3f9c1 ", "\tawb-a3f9c1"} {
+		_, err := domain.ParseIssueRef(ref)
+		require.Error(t, err, "%q", ref)
+		assert.Equal(t, awberr.Usage, awberr.KindOf(err), "%q", ref)
+	}
+
+	// The exact reference still resolves, in any case.
+	ref, err := domain.ParseIssueRef("AWB-A3F9C1")
+	require.NoError(t, err)
+	assert.Equal(t, "awb", ref.Project)
+	assert.Equal(t, "a3f9c1", ref.Hash)
+}

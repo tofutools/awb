@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -150,65 +149,32 @@ func (h *Handler) getIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) patchIssue(w http.ResponseWriter, r *http.Request) {
-	be := h.backendFor(r)
-	id := r.PathValue("id")
-
 	var body issuePatch
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, err)
 		return
 	}
 
-	// The fields that may appear but may not change are compared against what is
-	// stored, which means reading the issue first.
-	current, err := be.GetIssue(r.Context(), id)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	if err := checkUnchangeable(&body, current); err != nil {
-		writeError(w, err)
-		return
-	}
-
-	issue, err := be.UpdateIssue(r.Context(), id, backend.IssuePatch{
+	// The fields that may appear but may not change travel with the patch, so
+	// they are compared against what is stored inside the same transaction
+	// that performs the write. Comparing them here would leave a window in
+	// which a concurrent transition could make a stale value pass.
+	issue, err := h.backendFor(r).UpdateIssue(r.Context(), r.PathValue("id"), backend.IssuePatch{
 		Title:       body.Title,
 		Description: body.Description,
 		Type:        body.Type,
 		Priority:    body.Priority,
+
+		ExpectLabels:      body.Labels,
+		ExpectStatus:      body.Status,
+		ExpectAssignee:    body.Assignee,
+		ExpectCloseReason: body.CloseReason,
 	}, ifMatch(r))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeIssue(w, http.StatusOK, issue)
-}
-
-// checkUnchangeable enforces the "may appear but may not change" rule. A PATCH
-// that genuinely tries to close an issue or rewrite its labels is refused
-// rather than silently dropped.
-func checkUnchangeable(body *issuePatch, current *domain.Issue) error {
-	if body.Status != nil && *body.Status != current.Status {
-		return awberr.Usagef(
-			"status cannot be changed here: use the claim, release, close or reopen endpoint")
-	}
-	if body.Assignee != nil && *body.Assignee != current.Assignee {
-		return awberr.Usagef(
-			"assignee cannot be changed here: use the claim or release endpoint")
-	}
-	if body.CloseReason != nil && *body.CloseReason != current.CloseReason {
-		return awberr.Usagef("close_reason cannot be changed here: use the close endpoint")
-	}
-	if body.Labels != nil {
-		// Compared as the sorted form, which is what a client read.
-		sent := slices.Clone(*body.Labels)
-		slices.Sort(sent)
-		if !slices.Equal(sent, current.Labels) {
-			return awberr.Usagef(
-				"labels cannot be changed here: add and remove them one at a time")
-		}
-	}
-	return nil
 }
 
 func (h *Handler) deleteIssue(w http.ResponseWriter, r *http.Request) {
@@ -295,8 +261,12 @@ func (h *Handler) closeIssue(w http.ResponseWriter, r *http.Request) {
 	writeIssue(w, http.StatusOK, issue)
 }
 
-// reopen takes no body.
+// reopen takes no body, and says so rather than ignoring one.
 func (h *Handler) reopen(w http.ResponseWriter, r *http.Request) {
+	if err := rejectBody(r); err != nil {
+		writeError(w, err)
+		return
+	}
 	issue, err := h.backendFor(r).Reopen(r.Context(), r.PathValue("id"), ifMatch(r))
 	if err != nil {
 		writeError(w, err)

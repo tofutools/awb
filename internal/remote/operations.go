@@ -39,6 +39,14 @@ type issuePatchBody struct {
 	Description *string      `json:"description,omitempty"`
 	Type        *domain.Type `json:"type,omitempty"`
 	Priority    *int         `json:"priority,omitempty"`
+
+	// The fields a caller may send back but may not change. They go on the
+	// wire so the server compares them against what it has stored, which is
+	// the only place the comparison means anything.
+	Labels      *[]string      `json:"labels,omitempty"`
+	Status      *domain.Status `json:"status,omitempty"`
+	Assignee    *string        `json:"assignee,omitempty"`
+	CloseReason *string        `json:"close_reason,omitempty"`
 }
 
 type claimBody struct {
@@ -207,6 +215,11 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Description: req.Description,
 		Type:        req.Type,
 		Priority:    req.Priority,
+
+		Labels:      req.ExpectLabels,
+		Status:      req.ExpectStatus,
+		Assignee:    req.ExpectAssignee,
+		CloseReason: req.ExpectCloseReason,
 	}
 	return b.issueCall(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(ref), body, ifMatch)
 }
@@ -347,9 +360,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 	if err != nil {
 		return nil, err
 	}
-	// The count of deleted issues is not on the wire; the project's own
-	// active-issue count is the closest thing the response carries.
-	return &backend.DeletedProject{Project: project, IssuesRemoved: project.ActiveIssues}, nil
+	return &backend.DeletedProject{Project: project}, nil
 }
 
 func (b *Backend) LabelFacets(ctx context.Context, filter *domain.Filter) (backend.FacetPage, error) {

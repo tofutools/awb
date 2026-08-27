@@ -580,7 +580,11 @@ func TestProjectDeletionAndCascade(t *testing.T) {
 	deleted, err := b.DeleteProject(ctx, "awb", true, "")
 	require.NoError(t, err)
 	assert.Equal(t, "awb", deleted.Project.Key)
-	assert.Equal(t, 1, deleted.IssuesRemoved)
+
+	// The issues went with it, closed ones included.
+	page, err := b.ListIssues(ctx, &domain.Filter{IncludeClosed: true, Sort: domain.DefaultSort})
+	require.NoError(t, err)
+	assert.Empty(t, page.Issues)
 }
 
 // The conditional-edit precondition. The CLI never sends one and gets

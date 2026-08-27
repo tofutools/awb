@@ -9,9 +9,9 @@ import (
 )
 
 // The length maxima. Everything but a description is counted in Unicode code
-// points after trimming; a description, the one field meant to hold prose, is
-// bounded in bytes instead, because that is the size that matters for a blob
-// nobody counts characters in.
+// points, after trimming for the two fields that are trimmed; a description,
+// the one field meant to hold prose, is bounded in bytes instead, because that
+// is the size that matters for a blob nobody counts characters in.
 const (
 	MaxTitleLen       = 500
 	MaxCloseReasonLen = 500
@@ -134,7 +134,9 @@ func ValidateProjectName(s string) (string, error) {
 	if err := checkUTF8("project name", s); err != nil {
 		return "", err
 	}
-	s = strings.TrimSpace(s)
+	// Not trimmed: only a title and a close reason are. Everything else is
+	// stored byte for byte as it arrived, so a name whose spacing the caller
+	// meant is the name they get back.
 	if err := checkNoControls("project name", s); err != nil {
 		return "", err
 	}

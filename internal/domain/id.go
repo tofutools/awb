@@ -103,7 +103,10 @@ type IssueRef struct {
 // matching, so an ID typed in capitals resolves.
 func ParseIssueRef(s string) (IssueRef, error) {
 	raw := s
-	s = strings.ToLower(strings.TrimSpace(s))
+	// Lower-cased before matching, so an ID typed in capitals resolves — and
+	// nothing else is touched, so a stray space is a mistake to report rather
+	// than one to paper over.
+	s = strings.ToLower(s)
 	if s == "" {
 		return IssueRef{}, awberr.Usagef("issue id must not be empty")
 	}

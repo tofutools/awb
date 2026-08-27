@@ -579,3 +579,101 @@ func TestEmptyArrays(t *testing.T) {
 		assert.Equal(t, "0", resp.Header.Get("X-Total-Count"), path)
 	}
 }
+
+// A body without a JSON content type is a 415, and a missing header is not a
+// JSON content type either — a body claiming nothing claims nothing useful.
+// Regression: the check used to run only when the header was present, so an
+// untyped body was accepted and could create an issue.
+func TestBodyWithoutContentTypeIsRejected(t *testing.T) {
+	a := newAPI(t)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		a.server.URL+"/api/issues", strings.NewReader(`{"project":"awb","title":"untyped"}`))
+	require.NoError(t, err)
+	req.Header.Del("Content-Type")
+
+	resp, err := a.server.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
+
+	// And nothing was created.
+	_, payload := a.do(http.MethodGet, "/api/issues", "")
+	assert.Equal(t, "[]\n", payload)
+}
+
+// A request that sends no body at all is never asked to describe one.
+func TestNoBodyNeedsNoContentType(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+
+	for _, path := range []string{"/claim", "/release", "/close", "/reopen"} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+			a.server.URL+"/api/issues/"+issue.ID+path, nil)
+		require.NoError(t, err)
+
+		resp, err := a.server.Client().Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+	}
+}
+
+// reopen takes no body, and says so rather than ignoring one. Regression: it
+// used never to read the body, so arbitrary bytes, unknown fields and nulls all
+// passed silently.
+func TestReopenRefusesABody(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	_, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close", `{}`)
+	require.NotEmpty(t, payload)
+
+	for _, body := range []string{`{"nonsense":1}`, `{"reason":"x"}`, `{}`} {
+		resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+		assert.Contains(t, payload, "no request body", body)
+	}
+
+	// Still closed: a refused request changed nothing.
+	_, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	assert.Contains(t, payload, `"status":"closed"`)
+
+	// And with no body it works.
+	resp, _ := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", "")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// The "may appear but may not change" comparison happens inside the write
+// transaction. This cannot observe the race directly, but it pins the rule to
+// the layer that can enforce it: the refusal must survive the value being
+// carried through the backend rather than checked in the adapter.
+func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t","labels":["a","b"]}`)
+
+	// Claim it, so the stored status and assignee differ from what a client
+	// that read it earlier would send back.
+	_, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", `{"assignee":"claude-1"}`)
+	require.Contains(t, payload, "in_progress")
+
+	// A patch carrying the stale values is refused, not silently applied.
+	for _, body := range []string{
+		`{"title":"x","status":"open"}`,
+		`{"title":"x","assignee":""}`,
+		`{"title":"x","labels":["a"]}`,
+	} {
+		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+		assert.Contains(t, payload, "cannot be changed", body)
+	}
+
+	// The title never changed.
+	_, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	assert.Contains(t, payload, `"title":"t"`)
+
+	// Carrying the current values is fine, so a UI can send back what it read.
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"renamed","status":"in_progress","assignee":"claude-1","labels":["b","a"]}`)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"title":"renamed"`)
+}

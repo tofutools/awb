@@ -158,7 +158,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 
 		deleted.Project = *project
 		if cascade {
-			if deleted.IssuesRemoved, err = tx.DeleteProjectIssues(key); err != nil {
+			if _, err := tx.DeleteProjectIssues(key); err != nil {
 				return err
 			}
 		}

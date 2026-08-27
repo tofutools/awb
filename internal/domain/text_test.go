@@ -184,3 +184,30 @@ func TestFoldToAssignee(t *testing.T) {
 	_, err := domain.ValidateAssignee(folded)
 	assert.NoError(t, err, "whatever folding yields must itself be a valid assignee")
 }
+
+// A project name is not trimmed: only a title and a close reason are, and
+// everything else is stored byte for byte as it arrived. Regression: it used to
+// be trimmed, which silently altered a name the caller meant and turned a
+// whitespace-only name into an empty one.
+func TestValidateProjectNameIsNotTrimmed(t *testing.T) {
+	for _, name := range []string{"  Display name  ", " leading", "trailing ", "   "} {
+		got, err := domain.ValidateProjectName(name)
+		require.NoError(t, err, "%q", name)
+		assert.Equal(t, name, got, "%q must be stored as it arrived", name)
+	}
+
+	// Only the genuinely empty name is empty, and that is what restores the key.
+	got, err := domain.ValidateProjectName("")
+	require.NoError(t, err)
+	assert.Equal(t, "", got)
+}
+
+// The maximum is counted over the value as stored, which for a name is the
+// untrimmed one.
+func TestValidateProjectNameLengthCountsUntrimmed(t *testing.T) {
+	_, err := domain.ValidateProjectName(strings.Repeat("x", domain.MaxProjectNameLen))
+	require.NoError(t, err)
+
+	_, err = domain.ValidateProjectName(" " + strings.Repeat("x", domain.MaxProjectNameLen))
+	assertUsage(t, err, "the leading space counts")
+}

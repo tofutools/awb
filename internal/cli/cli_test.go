@@ -415,3 +415,38 @@ func TestMine(t *testing.T) {
 	_, _, code := h.run("ready", "--mine")
 	assert.Equal(t, 2, code)
 }
+
+// The deleting summary must not claim a number one of the two modes cannot
+// know. Regression: it used to report the count of *active* issues in remote
+// mode, so a project holding one open and one closed issue reported "1 issue"
+// remotely and "2" directly, and a project of only closed issues reported none
+// at all while deleting them.
+func TestProjectRemovalSummaryIsModeIndependent(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "add", "doomed")
+	open := h.create("open one", "--project", "doomed")
+	closed := h.create("closed one", "--project", "doomed")
+	h.mustRun("close", closed)
+
+	summary := h.mustRun("project", "rm", "doomed", "--force", "--cascade")
+
+	// Whatever it says, it says nothing a remote client could not also say.
+	assert.Contains(t, summary, "doomed")
+	assert.NotContains(t, summary, "1 issue",
+		"a count here would differ between direct and remote mode")
+
+	// Both issues really went, closed one included.
+	for _, id := range []string{open, closed} {
+		_, _, code := h.run("show", id)
+		assert.Equal(t, 3, code, id)
+	}
+}
+
+// Without --cascade the summary is the plain one.
+func TestProjectRemovalWithoutCascade(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "add", "empty")
+
+	summary := h.mustRun("project", "rm", "empty", "--force")
+	assert.Equal(t, "Deleted project empty.\n", summary)
+}

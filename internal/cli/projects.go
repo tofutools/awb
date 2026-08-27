@@ -162,9 +162,9 @@ func newProjectRemoveCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(&deleted.Project)
 			}
-			if deleted.IssuesRemoved > 0 {
-				return e.summarise("Deleted project %s and %d issue(s).\n",
-					deleted.Project.Key, deleted.IssuesRemoved)
+			if cascade {
+				return e.summarise("Deleted project %s and the issues it held.\n",
+					deleted.Project.Key)
 			}
 			return e.summarise("Deleted project %s.\n", deleted.Project.Key)
 		},

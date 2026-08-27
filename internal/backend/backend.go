@@ -119,6 +119,22 @@ type IssuePatch struct {
 	Description *string
 	Type        *domain.Type
 	Priority    *int
+
+	// The four fields below may appear in a request but may not change: each
+	// is ignored when it equals what is stored and refused when it differs,
+	// because labels are mutated individually and the transitions are their
+	// own operations. Together with the rule that derived fields are ignored,
+	// that is what lets a UI send back the object it read with only the fields
+	// it edited changed.
+	//
+	// They are carried here, rather than compared in the HTTP adapter, so the
+	// comparison happens inside the same transaction as the write. Checking
+	// them beforehand would leave a window in which a concurrent transition
+	// could make a stale value pass.
+	ExpectLabels      *[]string
+	ExpectStatus      *domain.Status
+	ExpectAssignee    *string
+	ExpectCloseReason *string
 }
 
 // ProjectCreate is the body of awb project add and of POST /api/projects.
@@ -183,8 +199,14 @@ type DeletedIssue struct {
 }
 
 // DeletedProject is what project rm returns: the project as it was immediately
-// before deletion, and how many issues --cascade took with it.
+// before deletion.
+//
+// It deliberately carries no count of the issues --cascade took with it. Direct
+// mode knows that number, but the API response is a Project, whose
+// active_issues excludes closed issues and so cannot stand in for it — and
+// giving the response a count would be a second, HTTP-only representation of a
+// shape the CLI also returns. Rather than let the two modes print different
+// numbers, neither prints one.
 type DeletedProject struct {
-	Project       domain.Project
-	IssuesRemoved int
+	Project domain.Project
 }

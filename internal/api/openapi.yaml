@@ -203,7 +203,10 @@ paths:
       description: |
         Acts only on a closed issue: on one that is not closed it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
-        working. Takes no body.
+        working.
+
+        Takes no body, and refuses one rather than ignoring it: a body the
+        server never reads is a thing the client believes it said.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -762,6 +765,14 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Facet' }
+    UnsupportedMediaType:
+      description: |
+        The request carries a body without a JSON content type. A missing
+        `Content-Type` counts: a body claiming nothing claims nothing useful.
+        A request that sends no body is never asked to describe one.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     BadRequest:
       description: |
         The request asked for something invalid — an unknown enum value, text
@@ -992,7 +1003,9 @@ components:
         key: { $ref: '#/components/schemas/ProjectKey' }
         name:
           type: string
-          description: Defaults to the key and is never empty.
+          description: |
+            Defaults to the key and is never empty. Stored exactly as it
+            arrives: unlike a title, it is not trimmed.
           minLength: 1
           maxLength: 500
         description: { type: string }

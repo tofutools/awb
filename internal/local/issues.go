@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -192,6 +193,12 @@ func resolveFilterParent(tx *storage.Tx, filter *domain.Filter) error {
 func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.IssuePatch,
 	ifMatch string) (*domain.Issue, error) {
 	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+		// Checked here, inside the write transaction, so a concurrent
+		// transition cannot slip between the comparison and the write.
+		if err := checkUnchanged(issue, req); err != nil {
+			return err
+		}
+
 		fields := storage.Fields(issue)
 
 		if req.Title != nil {
@@ -225,6 +232,31 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 
 		return tx.UpdateIssue(issue, fields)
 	})
+}
+
+// checkUnchanged enforces the "may appear but may not change" rule: a patch
+// that genuinely tries to close an issue or rewrite its labels is refused
+// rather than silently dropped.
+func checkUnchanged(issue *domain.Issue, req backend.IssuePatch) error {
+	if req.ExpectStatus != nil && *req.ExpectStatus != issue.Status {
+		return awberr.Usagef(
+			"status cannot be changed here: use claim, release, close or reopen")
+	}
+	if req.ExpectAssignee != nil && *req.ExpectAssignee != issue.Assignee {
+		return awberr.Usagef("assignee cannot be changed here: use claim or release")
+	}
+	if req.ExpectCloseReason != nil && *req.ExpectCloseReason != issue.CloseReason {
+		return awberr.Usagef("close_reason cannot be changed here: use close")
+	}
+	if req.ExpectLabels != nil {
+		// Compared as the sorted form, which is what a client read.
+		sent := slices.Clone(*req.ExpectLabels)
+		slices.Sort(sent)
+		if !slices.Equal(sent, issue.Labels) {
+			return awberr.Usagef("labels cannot be changed here: add and remove them one at a time")
+		}
+	}
+	return nil
 }
 
 // DeleteIssue hard deletes an issue and its relations. It never refuses on
