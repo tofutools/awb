@@ -8,9 +8,11 @@ go 1.25.0
 replace github.com/mikaelstaldal/go-server-common => ../go-server-common
 
 require (
+	github.com/goccy/go-yaml v1.19.2
 	github.com/mikaelstaldal/go-server-common v0.0.0-00010101000000-000000000000
 	github.com/stretchr/testify v1.12.1
 	github.com/yuin/goldmark v1.8.5
+	modernc.org/sqlite v1.52.0
 )
 
 require (
@@ -24,5 +26,4 @@ require (
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.52.0 // indirect
 )
