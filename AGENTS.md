@@ -2,13 +2,69 @@
 
 ## About
 
-Agent Work Board (awb) is an agent-first issue tracker. 
+Agent Work Board (awb) is an agent-first issue tracker: a single Go binary over
+SQLite, with a command line interface, an optional HTTP server and a bundled
+read-only web UI.
 
 ## Project status
 
-This project is in the specification phase. Only work with the specification in spec/SPEC.md. Do not write any 
-code or other artifacts yet. Focus on requirement and architecture, tricky implementation details can be deferred to a 
-later refinement phase.
+Implementation phase. Version 1 is implemented.
+
+`spec/SPEC.md` is authoritative for behaviour. If the code and the spec
+disagree, that is a bug in one of them — decide which, fix it, and do not let
+them drift. Code comments cite the section they implement (`SPEC §4.3`), so
+changing behaviour means finding and revisiting that section.
+
+## Build
+
+`./build.sh` is the whole build: it compiles the frontend, builds the binary,
+runs the Go and frontend tests, and lints. It is silent on success and prints
+the failing step's output on failure. `-o DIR` sets where the binary goes.
+
+Prerequisites on `$PATH`: `go`, `tsc`, `golangci-lint`, `node`. No package
+manager is ever invoked: the browser bundles under `web/static/vendor/` are
+pre-built committed artifacts.
+
+## Layout
+
+| Path | Holds |
+| --- | --- |
+| `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the `--compact` encoders. |
+| `internal/storage` | The schema, the migrations and all SQL. |
+| `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
+| `internal/backend` | The one interface every command is written against. |
+| `internal/remote` | The same interface over HTTP, for `--db https://…`. |
+| `internal/cli` | The cobra tree, the three output modes, `serve`. |
+| `internal/handler` | The JSON API. |
+| `internal/config` | The two config files, precedence, identity, colour. |
+| `internal/awberr` | The error taxonomy both surfaces report. |
+| `internal/api` | The OpenAPI document, embedded. |
+| `web/` | The frontend: `ts/` sources, `static/` build output, `embed.go`. |
+
+Two structural rules hold the design together:
+
+* **One backend interface, two implementations.** Every command is written
+  against `internal/backend`, so it cannot tell direct mode from remote mode
+  apart, and the HTTP handlers sit on the same interface over the same local
+  implementation. That is what makes "remote mode behaves identically" and
+  "the API mirrors the CLI" structural rather than something to maintain by
+  hand. Do not give a command a second code path.
+* **The domain layer does no I/O.** Rules live there and are shared wholesale
+  by both surfaces. When a rule needs to read the graph, the rule stays in
+  `domain` as a function over sets and the traversal goes in `storage`.
+
+## Conventions
+
+* Cross-cutting HTTP middleware — auth, CSRF, gzip, security headers, recovery,
+  static serving, SQLite opening and migration — comes from
+  `github.com/mikaelstaldal/go-server-common`. Prefer it over reimplementing.
+* Tests use `testify`: `require` for fatal assertions, `assert` for non-fatal.
+* Frontend tests are `node --test` over `web/ts/tests/*.test.mjs`.
+* Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
+  they guard happen inside one writer's exclusive turn.
+* A released migration batch is never edited, only followed by another.
+* The default table output is explicitly not a compatibility surface. `--json`
+  and `--compact` are; changing either is a breaking change.
 
 ## Rules
 
