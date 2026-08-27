@@ -34,6 +34,11 @@ tasks:
     cmds:
       - env CGO_ENABLED=0 go install -trimpath -buildvcs=true .
 
+  init-db:
+    desc: Initialize the awb database
+    cmds:
+      - go run . init {{.CLI_ARGS}}
+
   test:
     desc: Run all tests
     cmds:
