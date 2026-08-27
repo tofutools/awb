@@ -50,6 +50,8 @@ The top-level organising unit. Every issue belongs to exactly one project.
 | `key` | Short identifier, e.g. `awb`. Lowercase ASCII letters, digits and hyphens, starting with a letter, at most 16 characters. Unique. Used as the issue ID prefix. Immutable. |
 | `name` | Human-readable name. Defaults to the key and is never empty (§4.1). |
 | `description` | Optional markdown text. |
+| `created_at` | Set automatically, in the form and with the guarantees §2.2 gives an issue's. |
+| `updated_at` | Set automatically whenever a stored field of the project actually changes, with the form and the strictly-increasing-per-project guarantee §2.2 gives an issue's. A write that changes nothing leaves it alone, and creating, changing or deleting an issue the project holds does not touch it — `active_issues` is derived, not stored. |
 
 ### 2.2 Issue
 
@@ -60,11 +62,11 @@ The top-level organising unit. Every issue belongs to exactly one project.
 | `title` | string | Required, single line. Leading and trailing whitespace is trimmed, and a title that is empty after trimming, or that contains a line break, is rejected. |
 | `description` | markdown | Optional. The only free text field on the issue. Links to pull requests, CI runs, logs and documents are written as ordinary Markdown links inside it. |
 | `type` | enum | `bug`, `feature`, `task`, `chore`. Default `task`. |
-| `status` | enum | `open`, `in_progress`, `closed`. Default `open`. Changed only by `claim`, `release`, `close` and `reopen`. |
-| `close_reason` | string | Optional. Set by `close --reason`, and cleared by `reopen` and by any other transition out of `closed` (§4.3). Empty otherwise: a non-closed issue never carries one. |
+| `status` | enum | `open`, `in_progress`, `closed`. Default `open`. Changed only by `create --assignee`, `claim`, `release`, `close` and `reopen`. |
+| `close_reason` | string | Optional single line, trimmed and rejecting a line break as `title` does, but unlike `title` it may be empty: a value that is empty after trimming clears it (§4.1). Set by `close --reason`, and cleared by `reopen` and by any other transition out of `closed` (§4.3). Empty otherwise: a non-closed issue never carries one. |
 | `priority` | integer | `0` (highest) to `3` (lowest). Default `2`. |
 | `labels` | set of strings | Free-form, but restricted to lowercase ASCII letters, digits, hyphens, underscores, dots and slashes. A label outside that set is rejected rather than normalised. |
-| `assignee` | string | Free-form, e.g. `mikael` or `claude-1`. Same character set as a label, and like a label rejected rather than normalised, so `claim --as Mikael` is a usage error. Empty means unassigned. |
+| `assignee` | string | Free-form, e.g. `mikael` or `claude-1`. Same character set as a label, and like a label rejected rather than normalised, so `claim --as Mikael` is a usage error. Empty means unassigned. Changed only by `create --assignee`, `claim`, `release` and `reopen`, so it never drifts from `status` (§4.3). |
 | `created_at` | timestamp | Set automatically (UTC, RFC 3339 with millisecond precision, e.g. `2026-08-26T09:12:03.412Z`). |
 | `updated_at` | timestamp | Set automatically whenever a stored field of the issue, including its labels, actually changes. A write that changes nothing leaves it alone, and adding or removing a relation does not change either endpoint. Strictly increasing per issue: if the clock yields a value that is not greater than the stored one — the system clock may have a coarser resolution than a millisecond — the stored value plus one millisecond is written instead. |
 
@@ -72,8 +74,9 @@ Only timestamp ordering is guaranteed. Rapid writes on a coarse clock can push `
 slightly ahead of wall time, so timestamps are reliable as versions and ordering keys, but as time
 measurements only to the second.
 
-`blocked` is **not** a stored status. It is derived: an issue is blocked when at least one issue it
-is `blocked-by` is not closed. This makes it impossible for the recorded state to disagree with the
+`blocked` is **not** a stored status. It is derived: an issue is blocked when it is itself not
+closed and at least one issue it is `blocked-by` is not closed. A closed issue is therefore never
+blocked and its `blockers` are empty, whatever its `blocked-by` relations still say. This makes it impossible for the recorded state to disagree with the
 dependency graph.
 
 The fixed vocabulary above is not configurable. Everything a team wants to express beyond it goes
@@ -90,7 +93,7 @@ table, in `awb create`, in `awb dep add` and in the API.
 | Type | Meaning |
 | --- | --- |
 | `blocked-by` | `A blocked-by B`: A cannot start until B is closed. Drives readiness. |
-| `parent` | `A parent B`: B is the parent of A, which is part of decomposing B. |
+| `parent` | `A parent B`: B is the parent of A, which is part of decomposing B. Decomposition only; it does not drive readiness. |
 | `discovered-from` | `A discovered-from B`: A was found while working on B. Provenance only. |
 | `related` | `A related B`: loose, symmetric association. No behaviour attached. |
 
@@ -99,14 +102,21 @@ command that would create a cycle fails with exit code 4, as does a relation fro
 itself. Adding a relation that already exists succeeds and changes nothing.
 
 An issue also may not be `blocked-by` any ancestor or descendant in the `parent` graph. This
-inverts decomposition and can deadlock readiness even though each graph is acyclic. The rule covers
-the full ancestor/descendant chain and violations exit 4 like cycles.
+inverts decomposition — a child waiting for its own parent, or a parent for its own child,
+describes work that cannot sensibly be ordered — even though each graph is acyclic. The rule covers
+the full ancestor/descendant chain and violations exit 4 like cycles. It is about the `blocked-by`
+edge itself and not about what that edge transitively reaches, so it is checked by testing the
+other endpoint for membership in the issue's ancestor and descendant sets rather than by a
+reachability search across both graphs. Both this rule and the two
+acyclicity rules are checked on every operation that adds or replaces an edge in either graph — a
+`parent` edge can violate them just as a `blocked-by` edge can.
 
 An issue has at most one parent; `dep add` on an issue that already has one fails with exit code 4
 unless `--force` is given, which replaces it. Relations are deleted with either endpoint issue.
 
 A relation is stored once but shown on both issues; `direction` identifies the viewed endpoint
-(§4.6). A symmetric `related` pair is stored canonically with the smaller ID as subject. Adding it
+(§4.6). A symmetric `related` pair is stored canonically with the smaller ID — comparing the whole ID
+string byte for byte — as subject. Adding it
 from either end is therefore idempotent, removal works in either order, and both views use
 `direction: out`.
 
@@ -133,21 +143,24 @@ JSON representation (§4.6).
 
 An issue is **ready** when all of the following hold:
 
-* `status` is `open`,
-* it is not blocked (§2.2),
-* it has no direct child that is not closed — a decomposed issue is worked through its children,
-  not directly. Only direct children count, as with `--parent` (§4.3); a closed child hides its own
-  open children from this test, which is a consequence of `close` never looking at another issue.
+* `status` is `open`, and
+* it is not blocked (§2.2).
 
-Readiness guides listings rather than enforcing workflow. Non-ready issues may still be claimed or
-closed, and closing never inspects related issues. The sole exception is claiming a blocked issue,
-which requires `--force` (§4.3).
+Only `blocked-by` drives readiness. A decomposed issue is ready alongside its children, because a
+parent with open children is often exactly what somebody should pick up — and because making
+decomposition block would mean `close` had to inspect other issues, or that a closed child could
+hide its own open children. A team that wants a parent held back records that as `blocked-by`.
 
-Readiness says nothing about the assignee. `awb ready` nevertheless defaults to unassigned issues,
-because "what should I pick up next" is the question it exists to answer; `awb ready --mine` asks
-the companion question, "which of the issues I hold can I actually work on", and `awb ready
---assignee X` asks it about somebody else. Directory context and the other filters of §4.3 apply to
-`awb ready` exactly as they do to `awb list`.
+Readiness guides listings rather than enforcing workflow. A non-ready issue may still be closed,
+and closing never inspects related issues. The exception is `claim`, which refuses a blocked issue
+and a closed one — as it refuses one held by somebody else — unless `--force` is given (§4.3).
+
+Readiness says nothing about the assignee, but `awb ready` lists only unassigned issues, because
+"what should nobody-in-particular pick up next" is the question it exists to answer. It therefore
+takes no assignee filter: `--mine`, `--assignee` and `--unassigned` are usage errors on it. "Which
+issues do I hold" is `awb list --mine`, and since claiming sets `in_progress` (§4.3) an issue you
+hold is never ready anyway. Directory context and the other filters of §4.3 apply to `awb ready`
+exactly as they do to `awb list`.
 
 `awb ready` is the primary agent entry point.
 
@@ -166,7 +179,14 @@ another.
 
 The database file is created by `awb init` and by nothing else. Any other command that finds it
 missing fails with exit code 1 and a message naming the path, so that a typo in `--db` or `AWB_DB`
-cannot silently produce a second, empty tracker.
+cannot silently produce a second, empty tracker. A zero-length file counts as missing for this
+purpose, so what `touch` or an interrupted `init` leaves behind is not something another command
+quietly fills in; only `init` treats it as a file to create the schema in. The stamp that
+identifies the file — SQLite's `application_id` set to a fixed `awb` value — is written by the
+first migration rather than as a separate step of `init`, so whatever creates the schema also
+carries it. Every command, `init` included, refuses a file that exists, is not empty and does not
+carry the stamp — again exit code 1 — so the same typo cannot point at somebody else's database and
+have `awb`'s migrations applied to it.
 
 Schema migrations are embedded in the binary, numbered, recorded in the database, and applied
 automatically when an existing database is opened. They run inside a transaction that takes the write lock
@@ -185,15 +205,22 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
 
 * Every command is non-interactive and safe to script. Destructive commands require a confirmation
   flag rather than a prompt.
-* Global flags: `--db`, `--json`, `--compact`, `--no-context`, `--project`, `--color`.
-  Where a command defines a flag of the same name — `--project` on `create` — the command's
-  meaning wins.
+* Global flags: `--db`, `--json`, `--compact`, `--no-context`, `--color`, `--no-color`, `--help`
+  and `--version`; the last prints the binary's version and exits. `--project` is deliberately not
+  among them: it is a repeatable filter on the four list-like commands and the single-valued
+  creation target on `create` (§4.3), and every other command rejects it with exit code 2. The
+  commands that take an issue ID address one issue by name and never filter (§5), so there is
+  nothing for it to mean on them.
 * Output modes, of which `--json` and `--compact` are mutually exclusive; giving both is a usage
   error:
-  * default — aligned, coloured table for humans;
+  * default — aligned, coloured table for humans. Its columns, widths and truncation are
+    deliberately unspecified and are not a compatibility surface: nothing should parse it, and it
+    may change between versions. That holds for the default output of every command, `show`,
+    `project ls` and `dep tree` included. `--compact` and `--json` are what a script or an agent
+    reads;
   * `--compact` — one line per issue, no padding, minimal punctuation, designed to consume as
     little agent context as possible:
-    `awb-5c1d84 P1 open bug "Tokeniser drops the trailing newline" @claude-1 #tokeniser !blocked`
+    `awb-5c1d84 P1 in_progress bug "Tokeniser drops the trailing newline" @claude-1 #tokeniser !blocked`
     — the same issue the JSON of §4.6 shows.
   * `--json` — stable JSON, one object or one array per invocation, suitable for `jq` (§4.6).
 * The `--compact` line begins with five mandatory positional fields — id, `P<priority>`, status,
@@ -202,9 +229,14 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   Any further fields are optional and identified by
   their prefix rather than their position, and appear in this fixed order when present:
   `@<assignee>`, one `#<label>` per label in sorted order, `!blocked` and, for `awb blocked`, one
-  `blocked-by:<id>` per blocker in sorted order. The character restrictions on
+  `blocked-by:<id>` per entry of `blockers` (§4.6), in sorted order. The character restrictions on
   labels and assignees (§2.2) keep those tokens free of spaces, so a line is parseable by splitting
   on whitespace outside the quoted title.
+* `awb show --compact` prints that same one line and nothing else, losing the description,
+  relations and links: `--compact` means the cheapest representation there is, and `--json` is what
+  an agent uses when it needs the rest. In the default mode `awb blocked` shows the ids of
+  `blockers` as well, and `awb dep tree` prints the indented tree
+  described below, aligned and coloured like a table rather than as a single column.
 * `--compact` for the commands that do not list issues: `project ls` prints
   `<key> <active_issues> <name>` per line, where `<name>` is a JSON string. `dep tree` prints the
   ordinary compact issue line per node, prefixed by two spaces per level of depth — the root is at
@@ -212,22 +244,30 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   consumer strips the leading spaces, counts them to recover the depth, and then parses the rest of
   the line exactly as above.
 * Mutating commands print nothing on success in the default and `--compact` modes, except `create`,
-  which prints the new ID, and the deleting commands, which print a one-line summary of what was
-  removed. Under `--json` every mutating command prints the resulting object; a deleting command
+  which prints the new ID, and the deleting commands, which print a one-line human-readable summary
+  of what was removed. That summary is the one output with no guaranteed format; a script uses
+  `--json`, which returns the deleted object. Under `--json` every mutating command prints the resulting object; a deleting command
   prints the object as it was immediately before deletion, which for an issue includes the
-  `relations` that went with it.
+  `relations` that went with it. Only `delete` and `project rm` delete an entity that way;
+  `label rm` and `dep rm` are ordinary mutations that print nothing on success and, under `--json`,
+  the resulting issue — the one named first, for `dep rm`. `init`, `serve` and `agent-guide`
+  produce no object and ignore both output-mode flags.
 * Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not found ·
   `4` constraint violation (e.g. dependency cycle).
 * Invalid argument vocabulary (title, label, priority, enum, sort value or project key) exits `2`.
   Constraints that depend on database state (cycles, duplicates, claim or parent conflicts, and
   deletion without required `--cascade`) exit `4`.
-* An empty string clears an optional string value: `--assignee ""` unassigns and
-  `--description ""` blanks the description. An empty `--project` or `--label` is invalid
-  everywhere, being outside those vocabularies (§2.1, §2.2). The one exception is project
-  `--name ""`, which restores the key as its name.
-* On destructive commands, `--force` confirms deletion and `--cascade` permits deleting dependent
-  issues. On `claim`, `release` and `dep add --parent`, `--force` overrides a refusal.
-* No match exits `3`; an ambiguous ID exits `2`; creating a duplicate exits `4`.
+* An empty string clears an optional string value: `--description ""` blanks the description and
+  `--reason ""` the close reason. An empty `--project`, `--label` or `--assignee` is invalid
+  everywhere, being outside those vocabularies (§2.1, §2.2) — `--unassigned` is how a listing asks
+  for the empty assignee. The one exception is project `--name ""`, which restores the key as its
+  name, on `PATCH /api/projects/{key}` exactly as on the command line.
+* On the destructive commands, `--force` confirms deletion; `--cascade`, which only `project rm`
+  has, additionally permits deleting the issues a project holds. On `claim`, `release` and
+  `dep add --parent`, `--force` overrides a refusal.
+* Addressing a single entity that does not exist — an issue ID, or a project key from any source
+  (§7) — exits `3`, even when it appears as a listing's `--project`. An ambiguous ID exits `2` and
+  creating a duplicate exits `4`.
 * An empty list is success (`0`) and renders as an empty table, no compact output, or `[]`.
 * Errors always go to stderr, as a single line in the default and `--compact` modes and as
   `{"error": "..."}` under `--json`. The exit code is the machine-readable classification; the
@@ -237,44 +277,45 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   for `--color never`, and a `NO_COLOR` environment variable of any value is equivalent to `never`.
 * Repeated values of one filter are ORed; different filters are ANDed. No filter accepts
   comma-separated lists. Only `--status`, `--type`, `--priority`, `--label`, `--assignee` and
-  `--project` repeat; other filters and context flags may occur once. Elsewhere `...` marks a
+  `--project` repeat, and only as filters: the `--project` of `awb create` names one project and
+  may occur once. Other filters and context flags may occur once too. Elsewhere `...` marks a
   repeatable flag.
 
 ### 4.2 Setup
 
 | Command | Description |
 | --- | --- |
-| `awb init` | Create the database if absent and bring its schema up to date. The only command that creates it (§3). Takes no arguments and is idempotent. Fails with exit code 2 if the configured database location is an `http(s)` URL. |
+| `awb init` | Create the database if absent, together with any missing parent directory, and bring its schema up to date. The only command that creates it (§3). Takes no arguments and is idempotent. Fails with exit code 2 if the configured database location is an `http(s)` URL. |
 | `awb project add <key> [--name] [--description] [--description-file FILE]` | Create a project. `--name` defaults to the key. |
 | `awb project update <key> [--name] [--description] [--description-file FILE]` | Change a project's name or description. The key itself is immutable. |
 | `awb project ls` | List projects with counts of issues that are not closed. |
 | `awb project rm <key> --force [--cascade]` | Delete a project. Refuses while it holds any issue at all — closed ones included, so the refusal is wider than the count `project ls` shows and `--force` alone can never destroy closed history — unless `--cascade` is also given, which deletes those issues and their relations — including relations to issues in other projects, which may unblock work elsewhere. |
-| `awb agent-guide [--write FILE]` | Print a compact usage block for agents to stdout. `--write` instead writes it into `FILE` (typically `AGENTS.md` or `CLAUDE.md`), creating the file if absent, delimited by marker comments so that a second run replaces the existing block rather than appending a duplicate. |
+| `awb agent-guide [--write FILE]` | Print a compact usage block for agents to stdout. `--write` instead writes it into `FILE` (typically `AGENTS.md` or `CLAUDE.md`), creating the file if absent, delimited by the exact marker lines `<!-- awb:begin -->` and `<!-- awb:end -->`, so that a second run, by any version of the binary, replaces the existing block rather than appending a duplicate. When the file exists and holds no such block, the block is appended at the end, preceded by a blank line. A file holding only one of the two markers, or holding them in the wrong order, fails with exit code 1 rather than gaining a second block. |
 
 ### 4.3 Issues
 
 | Command | Description |
 | --- | --- |
-| `awb create <title> [--type] [--priority] [--label]... [--assignee] [--project] [--description] [--description-file FILE] [--parent ID] [--blocked-by ID]... [--discovered-from ID]... [--related ID]...` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. |
+| `awb create <title> [--type] [--priority] [--label]... [--assignee] [--project] [--description] [--description-file FILE] [--parent ID] [--blocked-by ID]... [--discovered-from ID]... [--related ID]...` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. Creating with an assignee is an atomic create-and-claim: `--assignee` also sets `status=in_progress`, so a new issue is never open and assigned at once (§2.2), and creation is the one place a claim needs no separate command. |
 | `awb show <id>` | Full issue, including relations, derived blocked state and the Markdown links found in the description. |
 | `awb list [filters]` | List issues. |
 | `awb ready [filters]` | List ready issues (§2.5), highest priority first. |
 | `awb blocked [filters]` | List issues that are not closed and are blocked, each with its blockers. |
 | `awb search <terms> [filters]` | Full text search over title and description. |
-| `awb update <id> [--title] [--description] [--description-file FILE] [--type] [--priority] [--assignee]` | Change fields. It cannot change `status`: the four commands below are the only status transitions, which keeps `in_progress` and an assignee from drifting apart. |
-| `awb label add\|rm <id> <label>...` | Manage labels. Adding a label the issue already carries, or removing one it does not, succeeds and changes nothing. |
+| `awb update <id> [--title] [--description] [--description-file FILE] [--type] [--priority]` | Change fields. It cannot change `status` or `assignee`: the four commands below are the only transitions of either, which keeps `in_progress` and an assignee from drifting apart and keeps a claim from being taken silently. Giving no field flag at all succeeds and changes nothing, exactly as an empty `PATCH` does. |
+| `awb label add\|rm <id> <label>` | Manage labels, one per invocation, so the command matches the endpoint of §6.4 one for one and neither surface has to define a partial failure. Adding a label the issue already carries, or removing one it does not, succeeds and changes nothing. |
 | `awb claim <id> [--as NAME] [--force]` | Atomically set assignee and `status=in_progress`. Claiming an issue you already hold succeeds; if it is already `in_progress` nothing changes. Fails with exit code 4 if it is assigned to someone else, blocked, or closed; `--force` overrides all three, and a forced claim on a closed issue clears `close_reason` along with the status, since a non-closed issue never carries one (§2.2). |
 | `awb release <id> [--force]` | Clear the assignee and set status back to `open`. Releasing an issue that is already open and unassigned succeeds and changes nothing. Fails with exit code 4 on a closed issue, or on one assigned to someone else, unless `--force`; a forced release of a closed issue clears `close_reason` too, for the same reason as `claim`. |
 | `awb close <id> [--reason TEXT]` | Set `status=closed` and, if `--reason` is given, `close_reason`. Closing a closed issue succeeds; omitting `--reason` leaves the recorded reason alone and `--reason ""` clears it. The assignee is left alone, since it records who did the work. |
 | `awb reopen <id>` | Set `status=open`, clear `close_reason` and clear the assignee, so that the issue returns to the pool `awb ready` draws from. It acts only on a closed issue: on an issue that is not closed it succeeds and changes nothing, whatever its assignee, so it can never take a claim away from somebody who is working. Clearing the assignee of a closed issue is the point of the command and needs no `--force`, the assignee there being a record of who did the work rather than a claim on it. |
-| `awb delete <id> --force` | Hard delete the issue and its relations. Not recoverable. Reports how many relations went with it, since removing a blocker silently makes other issues ready and orphaning children makes a decomposed parent's work top-level. |
+| `awb delete <id> --force` | Hard delete the issue and its relations. Not recoverable. It never refuses on account of dependents and has no `--cascade`: it orphans any children and drops every relation. Reports how many relations went with it, since removing a blocker silently makes other issues ready and orphaning children makes a decomposed parent's work top-level. |
 
 `--description` and `--description-file` are mutually exclusive; `--description-file -` reads the
 description from stdin. Both replace the description outright. The same holds for the description
 of a project (§4.2). This is the only use of stdin, and is not the bulk import excluded by §1.2.
 
 Filters accepted by `list`, `ready`, `blocked` and `search`:
-`--status`, `--include-closed`, `--type`, `--priority`, `--priority-max`, `--label`, `--assignee`,
+`--status` and `--include-closed` (on `list` and `search` only, see below), `--type`, `--priority`, `--priority-max`, `--label`, `--assignee`,
 `--mine`, `--unassigned`, `--project`, `--parent`, `--limit`, `--sort`. The global `--no-context`
 (§5) applies to all four as well.
 
@@ -291,24 +332,28 @@ Filters accepted by `list`, `ready`, `blocked` and `search`:
   or CLI offset, so every match remains reachable; use `--compact` to reduce output size.
 * `--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
   It is shorthand for `--assignee <identity>`. `--mine`, `--assignee` and `--unassigned` are
-  mutually exclusive: giving more than one of them is a usage error. Giving any of them to
-  `awb ready` replaces that command's default of `--unassigned` (§2.5).
+  mutually exclusive: giving more than one of them is a usage error, as is giving any of them to
+  `awb ready` (§2.5).
 * `--sort` takes one of `priority`, `created`, `updated`, `id` or, for `search` only, `relevance`,
   optionally prefixed with `-` for descending order. Every sort ends with `id` ascending as a
   final tiebreak, so the order is total and two invocations against unchanged data agree.
   `priority` inserts `created_at` ascending before that tiebreak — oldest first within a priority —
   so `--sort priority` is exactly the default order below; the other keys use the tiebreak alone.
   `relevance` is the one key whose bare form is descending, because best match first is what it
-  means; `-relevance` is accepted and is worst match first.
+  means; `-relevance` is accepted and is worst match first. The `-` prefix reverses the named key
+  only: the `created_at` and `id` tiebreaks stay ascending whatever it says.
 
 Defaults: results are sorted as `--sort priority`, that is by priority ascending, then `created_at`
 ascending, then `id` ascending — except `search`, which defaults to `relevance`. `awb ready` and
-`awb blocked` fix the status set themselves (§2.5) and reject `--status` and `--include-closed`;
-`awb ready` additionally defaults to `--unassigned`.
+`awb blocked` fix the status set themselves — `ready` to `open` (§2.5), `blocked` to the two
+statuses that are not closed — and therefore reject `--status` and `--include-closed`;
+`awb ready` additionally fixes the assignee filter to unassigned and rejects `--mine`,
+`--assignee` and `--unassigned`. A flag that a command rejects this way is a usage error
+(exit code 2, `400`), as is `--sort relevance` outside `search`.
 Nothing is ever archived or purged — closed issues remain queryable forever.
 
 `awb search` treats its arguments as literal terms rather than as FTS5 syntax: each argument is
-quoted before it reaches the query, and an issue matches when the title and description together
+wrapped in double quotes, with any double quote inside it doubled, before it reaches the query, and an issue matches when the title and description together
 contain all of them. No operator, wildcard or column prefix is passed through, so no user or agent
 input can produce a query syntax error.
 
@@ -316,7 +361,10 @@ Matching is by whole token, using the FTS5 `unicode61` tokenizer with its defaul
 case- and diacritic-insensitive, splitting on non-alphanumeric characters, no stemming and no
 prefix matching. `awb search parser` finds "Parser" and "parser," but neither `pars` nor `parsers`
 finds "parser". Since no wildcard reaches the query, an agent that wants a wider net widens its
-terms rather than its syntax. `awb search` with no terms is a usage error.
+terms rather than its syntax. `awb search` with no terms is a usage error, and so is a term the
+tokenizer reduces to nothing, such as `-` or `,`: dropping it silently would widen the search
+without saying so, and passing an empty term through would either error or match everything
+depending on the driver. Both exit 2, and `GET /api/search` answers `400` for the same two cases.
 
 ### 4.4 Relations
 
@@ -326,15 +374,17 @@ terms rather than its syntax. `awb search` with no terms is a usage error.
 | `awb dep add <id> --parent <id> [--force]` | Set the parent of the first issue to the second. |
 | `awb dep add <id> --related <id>` | Record a loose association. |
 | `awb dep add <id> --discovered-from <id>` | Record provenance. |
-| `awb dep rm <id> <type> <id>` | Remove a relation, where `<type>` is `blocked-by`, `parent`, `related` or `discovered-from`. |
+| `awb dep rm <id> --blocked-by\|--parent\|--related\|--discovered-from <id>` | Remove a relation, taking the same one relation flag as `dep add`. |
 | `awb dep tree <id>` | Print the subtree of children rooted at that issue, with status and blocked markers. |
 
 Every one of these reads "*first id* — *relation* — *second id*", the single convention of §2.3;
 the relation flags of `awb create` read the same way about the issue being created. `dep rm` takes
-its two ids in that same order, so removing a relation is the `add` command with `rm` substituted.
+the same flag and the same two ids in the same order, so removing a relation is literally the `add`
+command with `rm` substituted.
 
-`dep add` takes exactly one relation flag per invocation; giving two is a usage error. `dep rm` of
-a relation that does not exist succeeds and changes nothing, like `label rm`.
+`dep add` and `dep rm` take exactly one relation flag per invocation; giving two, or none, is a
+usage error. `dep rm` of a relation that does not exist succeeds and changes nothing, like
+`label rm`.
 
 `dep tree` descends from the named issue to its full depth, following children across project
 boundaries, and does not show ancestors. It shows the whole subtree, closed children included and
@@ -362,7 +412,7 @@ one.
   "title": "Tokeniser drops the trailing newline",
   "description": "Reproduced on Linux and macOS. See [CI run](https://ci/1).",
   "type": "bug",
-  "status": "open",
+  "status": "in_progress",
   "priority": 1,
   "labels": ["tokeniser"],
   "assignee": "claude-1",
@@ -395,11 +445,16 @@ one.
   `direction`; `links` keeps the order of §2.4. Two invocations against unchanged data therefore
   produce byte-identical output. A list of projects is ordered by `key` ascending, in every output
   mode and on the corresponding endpoint, which is also what makes that endpoint pageable (§6.2).
-* `Project` is `{"key", "name", "description", "active_issues"}`, where `active_issues` counts the
-  issues that are not closed. An error is `{"error": "..."}` on stderr; the exit code, or the HTTP
+* `Project` is
+  `{"key", "name", "description", "active_issues", "created_at", "updated_at"}`, where
+  `active_issues` counts the issues that are not closed and the two timestamps are §2.1's.
+  `active_issues` is derived and read-only, the timestamps are set automatically, and none of the
+  three can be written. An error is `{"error": "..."}` on stderr; the exit code, or the HTTP
   status, carries the classification.
-* `awb dep tree --json` returns one `Issue` object extended with a `children` array of the same
-  shape, recursively.
+* `awb dep tree --json` and `GET /api/issues/{id}/tree` return an `IssueTree`: one `Issue`
+  extended with a `children` array of `IssueTree`, recursively, ordered as §4.4 orders siblings. A
+  leaf carries `"children": []`, and no other surface carries `children` at all — the `Issue` that
+  `show` and the list-like commands return does not have the field.
 
 ## 5. Directory context
 
@@ -494,7 +549,8 @@ GET    /api/issues/{id}/tree
 GET    /api/ready
 GET    /api/blocked
 GET    /api/search?q=...&q=...
-GET    /api/projects        POST /api/projects        PATCH /api/projects/{key}    DELETE …
+GET    /api/projects        POST /api/projects
+GET    /api/projects/{key}  PATCH /api/projects/{key}  DELETE /api/projects/{key}
 GET    /api/labels
 GET    /api/assignees
 ```
@@ -507,9 +563,13 @@ reason — a whole-set replace would silently discard a concurrent edit. The lab
 travels as a query parameter rather than a path segment because a label may contain a slash (§2.2).
 
 Every request may carry an `X-Awb-Identity` header holding the caller's resolved identity (§7).
-Version 1 does not authenticate it and mostly ignores it — the client already sends explicit
-`assignee` values — but it is the field a version 2 server would authenticate and attribute, and
-having it on the wire from the first release is one of the preparations of §10.3.
+Version 1 neither authenticates nor reads it — the client already sends explicit `assignee` values
+— but it is the field a version 2 server would authenticate and attribute, and having it on the
+wire from the first release is one of the preparations of §10.3.
+
+An `{id}` or `{other}` path segment accepts an unambiguous prefix or bare hash exactly as a
+command does (§8), answering `400` when it matches more than one issue and `404` when it matches
+none, so the CLI needs no extra round trip in remote mode.
 
 Everything under `/api/` is the JSON API and `/openapi.json` and `/openapi.yaml` are the document;
 every other path belongs to the web UI.
@@ -538,13 +598,16 @@ The HTTP API is specified by an OpenAPI 3.1 document, so third-party user interf
 integrations can be built against it and clients can be generated from it. The document lives in
 the repository, is embedded in the binary, and is served at `/openapi.json` and `/openapi.yaml`.
 
-* Its component schemas are the CLI's `--json` structures: `Issue`, `Relation`, `Project`,
-  `Error`, plus `Facet` for the two endpoints the CLI has no counterpart for (§6.2) and the request
-  bodies of §6.4. There is no second, HTTP-only *response* representation of anything the CLI also
+* Its component schemas are the CLI's `--json` structures: `Issue`, `IssueTree`, `Relation`,
+  `Project`, `Error`, plus `Facet` for the two endpoints the CLI has no counterpart for (§6.2) and
+  the request bodies of §6.4. There is no second, HTTP-only *response* representation of anything the CLI also
   returns — if the shapes ever diverge, the JSON output is what changed and both must be corrected
   together.
 * Enumerations (`type`, `status`, relation types) and the priority range are declared in the schema,
   so a generated client validates the same vocabulary the CLI enforces.
+* The two creating endpoints, `POST /api/issues` and `POST /api/projects`, answer `201` with the
+  new object and a `Location` header naming it. Every other successful request answers `200` with a
+  body; there is no `204` anywhere, since even a `DELETE` returns an object (§6.4).
 * Errors use the exit-code taxonomy of §4.1 mapped onto status codes: `400` usage, `404` not found,
   `409` constraint violation, `500` runtime error, with an `Error` body. `412` is the one status
   with no exit code behind it: it answers a failed `If-Match` (§6.2), which only a client that sends
@@ -568,26 +631,40 @@ exist and are supported even though the bundled UI only reads.
   than about the data — `init`, `serve` and `agent-guide`.
 * **Safe concurrent editing.** A form-based UI reads an issue, the user edits it for a while, and
   the UI writes it back; a plain `PATCH` would silently overwrite whatever changed meanwhile. So
-  `GET /api/issues/{id}` returns a strong `ETag` whose quoted value is the issue's `updated_at`
-  string, and `PATCH` honours
-  `If-Match`, answering `412` when the issue has moved on. What makes that reliable is not the
+  `GET /api/issues/{id}` returns a weak `ETag`, `W/"<updated_at>"`, and every request that mutates
+  one issue — `PATCH`, the four transitions, the label and relation endpoints and
+  `DELETE /api/issues/{id}` — honours `If-Match`, answering `412` when the issue has moved on. What makes that reliable is not the
   millisecond resolution of `updated_at` but its being strictly increasing per issue (§2.2): two
   successive versions of one issue can never carry the same timestamp, whatever the host clock's
-  real resolution is, so an ETag identifies a version rather than an instant. That is also what
-  lets a client cache a response and a version 2 mechanism order the versions of a row. `If-Match`
+  real resolution is, so the tag identifies a version rather than an instant. That is also what
+  lets a version 2 mechanism order the versions of a row. It is weak rather than strong, and no
+  use as a cache validator, precisely because it does not cover the whole body: it guards the
+  issue's own stored fields, and two bodies differing only in `relations`, `blocked` or `blockers`
+  carry the same tag. `If-Match`
   is optional — a caller that omits it, as the CLI always does, gets last-write-wins — but a UI is
-  expected to send it. Every successful endpoint response whose body is one `Issue`, including a
+  expected to send it. Every successful endpoint response whose body is one `Issue` or one
+  `Project`, including a
   mutation response, carries the ETag for the returned version, so a client can make another
   conditional edit without first repeating the GET. It guards the issue's own stored fields,
   which is what a form edits; a
   relation added meanwhile does not move `updated_at` (§2.2) and so does not invalidate the ETag,
   and neither does `blocked` flipping because somebody closed a blocker. This is the same concern
   that already makes `claim` a compare-and-set and labels individually mutable.
+  A project is edited through the same form-read-write cycle and gets the same treatment.
+  `GET /api/projects/{key}` returns a weak `ETag`, `W/"<updated_at>"`, built from the project's own
+  `updated_at` (§2.1), and `PATCH /api/projects/{key}` and `DELETE /api/projects/{key}` honour
+  `If-Match` and answer `412` when the project has moved on. It is the issue rule with the entity
+  changed, down to the detail that the tag covers the project's stored fields alone: `active_issues`
+  moving because somebody created or closed an issue does not invalidate it, exactly as a new
+  relation does not invalidate an issue's.
 * **Enough for the chrome, not just the content.** Editing UIs need to populate filter menus and
   autocomplete: `GET /api/labels` and `GET /api/assignees` return the distinct values in use as
   `{"value", "count"}` objects, sorted by value. Both honour the same filters as
-  `GET /api/issues`, and `count` counts the issues matching those filters — so with no filters it
-  counts the issues that are not closed, that being the default everywhere. `GET /api/assignees`
+  `GET /api/issues`, including the facet's own — `?label=parser` lists the labels that co-occur
+  with `parser`, so a UI can narrow progressively. `count` counts the issues matching those
+  filters, so with no filters it counts the issues that are not closed, that being the default
+  everywhere; a value with a count of zero is not listed at all, "in use" meaning in use under the
+  filters in force. `GET /api/assignees`
   has no row for the empty assignee; unassigned is a filter (`unassigned=true`), not a value. Where
   these two endpoints are paged, `limit` and `offset` page the facet rows themselves and never the
   issues behind them, so `count` is the same whatever page it appears on.
@@ -596,7 +673,9 @@ exist and are supported even though the bundled UI only reads.
   and `offset` and returns the unpaged total in an `X-Total-Count` header, so a UI can show
   "1–50 of 214" and page through without loading everything. `GET /api/issues/{id}/tree` is not
   one of them: a tree is returned whole (§4.4). `limit` and `offset` must be non-negative integers;
-  `limit=0` returns no rows while preserving the unpaged total in `X-Total-Count`.
+  `limit=0` returns no rows while preserving the unpaged total in `X-Total-Count`. There is no
+  default `limit`: omitting it returns every row, as the command line does (§4.3), so a remote-mode
+  listing is never silently truncated.
 * **Markdown source, never HTML.** The API returns and accepts the description exactly as stored, so
   an editor round-trips it losslessly. Rendering — and sanitising (§9) — is the UI's job. The
   derived `links` array (§2.4) stays available for clients that want the links without a parser.
@@ -609,8 +688,9 @@ exist and are supported even though the bundled UI only reads.
   use neither the optimistic concurrency nor the paging above.
 
 `offset`, `X-Total-Count`, `limit` on the array endpoint the CLI has no `--limit` for
-(`/api/projects`), the two facet endpoints and the `ETag`/`If-Match` handshake are
-the only places where the API is wider than the CLI. Everything else stays one-to-one, and all of
+(`/api/projects`), `GET /api/projects/{key}` for which the CLI has no `project show`, the two facet
+endpoints, the `ETag`/`If-Match` handshake, the `expect_assignee` of §6.4 and the `X-Awb-Identity`
+header are the only places where the API is wider than the CLI. Everything else stays one-to-one, and all of
 them are declared in the OpenAPI document like the rest.
 
 Two things a write UI needs that are deliberately *not* API concerns. Directory context is resolved
@@ -637,22 +717,28 @@ changes deliberately carry one label per request so concurrent edits cannot repl
   `relations` array of `{"type", "other"}` pairs, read with the new issue as the subject exactly as
   `awb create`'s relation flags are. Everything but `project` and `title` may be omitted and then
   takes the default of §2.2. The whole body is applied in one transaction, so the API creates an
-  issue with its labels and relations in a single call, as the CLI does.
-* `PATCH /api/issues/{id}` takes only what `awb update` can change: `title`, `description`, `type`,
-  `priority`, `assignee`. `labels`, `relations`, `status` and `close_reason` may appear but
-  may not change: each is ignored when it equals what is stored — the two arrays compared as the
-  sorted forms of §4.6 — and rejected with `400` when it differs, because labels and relations are
-  mutated individually and the transitions are their own endpoints. The derived and immutable
-  fields (`id`, `project`, `created_at`, `updated_at`, `blocked`, `blockers`, `links`) are ignored
-  whatever they say. Together those rules let a UI send back the object it read with only the
+  issue with its labels and relations in a single call, as the CLI does. A non-empty `assignee`
+  sets `status` to `in_progress`, exactly as `awb create --assignee` does.
+* `PATCH /api/issues/{id}` takes only what `awb update` can change: `title`, `description`, `type`
+  and `priority`. `labels`, `status`, `assignee` and `close_reason` may appear but
+  may not change: each is ignored when it equals what is stored — `labels` compared as the sorted
+  form of §4.6 — and rejected with `400` when it differs, because labels are mutated individually
+  and the transitions are their own endpoints. The derived and immutable
+  fields (`id`, `project`, `created_at`, `updated_at`, `blocked`, `blockers`, `relations`, `links`)
+  are ignored whatever they say — `relations` among them because a relation added meanwhile does
+  not move `updated_at` (§6.2), so rejecting a stale one would fail a `PATCH` whose `If-Match` is
+  still good. Together those rules let a UI send back the object it read with only the
   fields it edited changed, while a `PATCH` that genuinely tries to close an issue or rewrite its
   labels is refused rather than silently dropped. Any unrecognised field name is rejected with
-  `400`.
+  `400`; so it is in every other request body below.
 * `POST /api/issues/{id}/claim` takes `{"assignee", "expect_assignee", "force"}`. `assignee` is
-  required — the client resolves its own identity (§6). `expect_assignee` is the compare-and-set:
+  required — the client resolves its own identity (§7). `expect_assignee` is the compare-and-set:
   when present, the claim proceeds only if the current assignee is exactly that value, `""` meaning
   unassigned, and otherwise answers `409`. `force` defaults to `false` and does what `--force` does.
-* `POST /api/issues/{id}/release` takes `{"force"}`; `POST /api/issues/{id}/reopen` takes no body.
+* `POST /api/issues/{id}/release` takes `{"assignee", "force"}`. `assignee` is the caller's
+  resolved identity (§7), as on `claim`, and is what the "assigned to someone else" refusal
+  compares against; it may be omitted when `force` is true, that refusal being the only thing it
+  serves. `POST /api/issues/{id}/reopen` takes no body.
 * `POST /api/issues/{id}/close` takes `{"reason"}`, with the semantics of `--reason` (§4.3): absent
   leaves any recorded reason alone, `""` clears it.
 * `POST /api/issues/{id}/labels` takes `{"label"}`, one label per call.
@@ -660,10 +746,14 @@ changes deliberately carry one label per request so concurrent edits cannot repl
   subject, where `force` replaces an existing parent as `dep add --parent --force` does.
 * `POST /api/projects` takes `{"key", "name", "description"}` and `PATCH /api/projects/{key}` the
   same without `key`, replacing each field it carries and leaving the others alone, like
-  `project update`. `active_issues` is derived and ignored.
+  `project update`. `active_issues`, `created_at` and `updated_at` are derived and are ignored
+  whatever they say, so a UI can send back the object it read.
 
-Every mutating endpoint answers with the resulting object, and every `DELETE` with the object as it
-was immediately before deletion, which is the `--json` behaviour of §4.1.
+Every mutating endpoint answers with the resulting object, including the label and relation
+removals — a client that renders the response must see the change. Only the two that delete the
+addressed entity, `DELETE /api/issues/{id}` and `DELETE /api/projects/{key}`, answer with the
+object as it was immediately before deletion, which is the `--json` behaviour of §4.1; those two
+bodies carry no `ETag`, the version they describe being gone.
 
 ## 7. Configuration
 
@@ -697,8 +787,9 @@ When `identity` is unset it defaults to the OS username, lower-cased and strippe
 outside the assignee set of §2.2, so that a name like `Mikael` or a Windows `DOMAIN\user` still
 yields a usable identity. That is a value the user never typed, which is why it is folded rather
 than refused; a value given on the command line or in a configuration file is still rejected
-(§2.2). If nothing is left after stripping, the commands that need one — `--mine`
-and `claim` without `--as` — fail with exit code 1 and ask for `identity` to be set.
+(§2.2). If nothing is left after stripping, the commands that need one — `--mine`,
+`claim` without `--as`, and `release` without `--force`, which compares the stored assignee against
+it (§4.3) — fail with exit code 1 and ask for `identity` to be set.
 
 ### 7.2 Local configuration
 
@@ -723,7 +814,8 @@ it. Because it therefore may not have been written by the person running the com
 **not** set `db`, `identity` or `color`: a directory can shape what you see, but cannot redirect
 where your issues are stored or claim to be you. Those keys are ignored if present, without an
 error and without a warning, exactly like unknown keys — which are also ignored, so future versions
-can add settings without breaking older binaries.
+can add settings without breaking older binaries. Ignored means unread: their values are not
+type-checked either, so only `project` and `label` can make this file fail a command.
 
 ### 7.3 Precedence
 
