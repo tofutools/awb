@@ -233,4 +233,15 @@ the complete set, as does running `task` without a task name. Set `OUTPUT_DIR`
 to choose where a binary is written, for example
 `task build OUTPUT_DIR=dist`.
 
+The development server binds loopback by default. To make it reachable from
+other machines, set `ADDR` for either server task:
+
+```console
+$ task run ADDR=0.0.0.0:7777
+$ task watch ADDR=0.0.0.0:7777
+```
+
+This exposes the server without authentication unless `--basic-auth-file` is
+also passed after `--`.
+
 [License](LICENSE) (MIT)
