@@ -37,7 +37,7 @@ run tsc --project web/ts/tsconfig.json
 run node --test 'web/ts/tests/*.test.mjs'
 
 # 3. Build the single binary; the frontend is embedded via web/embed.go.
-run env CGO_ENABLED=0 go build -trimpath -buildvcs=true -tags netgo \
+run env CGO_ENABLED=0 go build -trimpath -buildvcs=true \
   -o "$OUTPUT_DIR/awb" .
 
 # 4. Run the Go tests.

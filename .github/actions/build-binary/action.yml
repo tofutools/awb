@@ -69,6 +69,6 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$OUTPUT_DIR"
-        env CGO_ENABLED=0 go build -trimpath -buildvcs=true -tags netgo \
+        env CGO_ENABLED=0 go build -trimpath -buildvcs=true \
           -ldflags "-X main.version=$VERSION" \
           -o "$OUTPUT_DIR/awb" .
