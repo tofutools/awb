@@ -221,6 +221,7 @@ The component tasks are available separately:
 | Task | What it does |
 | --- | --- |
 | `task build` | Compile the frontend and build `awb`. |
+| `task install` | Compile the frontend and install `awb` to `GOBIN` or `GOPATH/bin`. |
 | `task test` | Run the frontend and Go tests. |
 | `task lint` | Run `golangci-lint`. |
 | `task run` | Compile the frontend and run the development server. |

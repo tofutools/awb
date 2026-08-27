@@ -28,6 +28,12 @@ tasks:
         vars:
           OUTPUT_DIR: "{{.OUTPUT_DIR}}"
 
+  install:
+    desc: Install awb to GOBIN or GOPATH/bin
+    deps: [fe:build]
+    cmds:
+      - env CGO_ENABLED=0 go install -trimpath -buildvcs=true -tags netgo .
+
   test:
     desc: Run all tests
     cmds:
