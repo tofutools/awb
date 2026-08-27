@@ -54,6 +54,24 @@ func checkContentType(r *http.Request) error {
 	return nil
 }
 
+// Two different questions are asked about a request body, and they must not be
+// confused.
+//
+// *Was a body carried?* That is about bytes on the wire: a body of whitespace
+// is still a body, and still has to declare what it is. It decides whether a
+// content type is required and whether an endpoint that takes no body has been
+// sent one.
+//
+// *Does the body hold a JSON value?* That is about content, and only whitespace
+// holds nothing. It decides whether a required body is missing.
+//
+// Deciding presence by the trimmed length would let a whitespace body slip past
+// both the content-type rule and the no-body rule.
+
+func bodyWasCarried(raw []byte) bool { return len(raw) > 0 }
+
+func holdsNoValue(raw []byte) bool { return len(bytes.TrimSpace(raw)) == 0 }
+
 // decodeBody reads a required JSON request body into out, applying the API's
 // strict body rules.
 //
@@ -67,39 +85,47 @@ func decodeBody(r *http.Request, out any) error {
 	if err != nil {
 		return err
 	}
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return awberr.Usagef("a request body is required")
+	if bodyWasCarried(raw) {
+		if err := checkContentType(r); err != nil {
+			return err
+		}
 	}
-	if err := checkContentType(r); err != nil {
-		return err
+	if holdsNoValue(raw) {
+		return awberr.Usagef("a request body is required")
 	}
 	return decodeRaw(raw, out)
 }
 
 // decodeOptionalBody is decodeBody for an endpoint whose body may be omitted
-// entirely, such as claim.
+// entirely, such as claim. A body that was carried must still declare what it
+// is; one that holds no value is the same as none at all, and the defaults
+// apply.
 func decodeOptionalBody(r *http.Request, out any) error {
 	raw, err := readBody(r)
 	if err != nil {
 		return err
 	}
-	if len(bytes.TrimSpace(raw)) == 0 {
+	if !bodyWasCarried(raw) {
 		return nil
 	}
 	if err := checkContentType(r); err != nil {
 		return err
 	}
+	if holdsNoValue(raw) {
+		return nil
+	}
 	return decodeRaw(raw, out)
 }
 
 // rejectBody refuses a body on an endpoint that takes none. Ignoring one would
-// let a client believe it had said something the server never read.
+// let a client believe it had said something the server never read, so what is
+// refused is any body at all rather than any body that says something.
 func rejectBody(r *http.Request) error {
 	raw, err := readBody(r)
 	if err != nil {
 		return err
 	}
-	if len(bytes.TrimSpace(raw)) > 0 {
+	if bodyWasCarried(raw) {
 		return awberr.Usagef("this endpoint takes no request body")
 	}
 	return nil

@@ -677,3 +677,61 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"title":"renamed"`)
 }
+
+// A body of whitespace is still a body: it has to declare what it is, and an
+// endpoint that takes no body has still been sent one. Regression: presence was
+// decided by the trimmed length, so a whitespace body slipped past both rules —
+// an untyped one claimed an issue and a reopen with one went through.
+func TestWhitespaceBodyCountsAsABody(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	_, _ = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close", `{}`)
+
+	// It carries no JSON value, so a required body is still missing...
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, "   ")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, "request body is required")
+
+	// ...but it was carried, so it must declare what it is.
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPatch, "/api/issues/" + issue.ID},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/claim"},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/close"},
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), tc.method,
+			a.server.URL+tc.path, strings.NewReader("  \n "))
+		require.NoError(t, err)
+		req.Header.Del("Content-Type")
+
+		resp, err := a.server.Client().Do(req)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, tc.path)
+	}
+
+	// And an endpoint that takes no body refuses it whatever it holds.
+	for _, body := range []string{"   ", "\n", "\t"} {
+		resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "%q", body)
+		assert.Contains(t, payload, "no request body")
+	}
+
+	// Nothing above changed the issue.
+	_, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	assert.Contains(t, payload, `"status":"closed"`)
+	assert.Contains(t, payload, `"assignee":""`)
+}
+
+// A body that holds no value, but declares itself properly, is the same as no
+// body at all where the body is optional.
+func TestWhitespaceBodyOnAnOptionalEndpointUsesDefaults(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "  \n ")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	var claimed domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &claimed))
+	assert.Equal(t, "mikael", claimed.Assignee, "the request's identity, as with no body")
+}
