@@ -178,8 +178,6 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 	mux := http.NewServeMux()
 	handler.New(backendFor).Routes(mux)
 
-	apiHandler := handler.NoStore(mux)
-
 	staticFS, err := web.StaticFS()
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
@@ -189,14 +187,23 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 		return nil, awberr.Wrap(awberr.Runtime, err, "serve the bundled web UI")
 	}
 
+	// Compression is applied per route rather than once around everything,
+	// because StaticHandler already gzips what it serves and wrapping it again
+	// would encode the body twice. A browser decodes one layer and is left with
+	// the other; curl, which does not ask for gzip by default, sees nothing
+	// wrong. Keeping the two apart is what stops that.
+	withAPI := func(h http.Handler) http.Handler {
+		return recovery.Middleware(httputil.Gzip(handler.NoStore(h)))
+	}
+
 	// Everything under /api/ is the JSON API and /openapi.json and
 	// /openapi.yaml are the document; every other path belongs to the web UI
 	// (SPEC §6).
 	root := http.NewServeMux()
-	root.Handle("/api/", apiHandler)
-	root.Handle("GET /openapi.json", api.JSONHandler())
-	root.Handle("GET /openapi.yaml", api.YAMLHandler())
-	root.Handle("/", web.SPAHandler(uiHandler, staticFS))
+	root.Handle("/api/", withAPI(mux))
+	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(api.JSONHandler())))
+	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(api.YAMLHandler())))
+	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS)))
 
 	csp, err := contentSecurityPolicy()
 	if err != nil {
@@ -204,7 +211,6 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 	}
 
 	chain := handler.CORS(corsOrigins, root)
-	chain = recovery.Middleware(httputil.Gzip(chain))
 
 	// A request that is not a safe method must carry an Origin or Referer
 	// naming the server itself or an allowed --cors-origin, because a browser

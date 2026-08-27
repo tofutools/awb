@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "noEmitOnError": true,
+    "removeComments": false,
+    "outDir": "../static",
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "markdown-it": ["./vendor/markdown-it.d.ts"],
+      "dompurify": ["./vendor/dompurify.d.ts"]
+    }
+  },
+  "include": ["*.ts"],
+  "exclude": ["vendor", "tests"]
+}
