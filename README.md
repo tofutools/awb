@@ -204,6 +204,10 @@ explicitly.
 
 ## Development
 
-`spec/SPEC.md` is authoritative for behaviour, and `AGENTS.md` describes the
-layout and the conventions. `./build.sh` compiles the frontend, builds the
-binary, runs every test and lints; it is silent when it all passes.
+`spec/ARCHITECTURE.md` describes the shape of the system and why it is that
+shape; `spec/TODO.md` lists what is left for future versions; `AGENTS.md`
+describes the layout and the conventions. The code and its tests are
+authoritative for behaviour.
+
+`./build.sh` compiles the frontend, builds the binary, runs every test and
+lints; it is silent when it all passes.

@@ -2,11 +2,11 @@
 // anything: which database to use, who the caller is, what the working
 // directory means, and whether to colour the output.
 //
-// It implements SPEC §5 and §7. The precedence is always the same — command
-// line flags, then environment variables, then the local configuration file,
-// then the user configuration file, then the built-in defaults — and the two
-// files differ in what they are allowed to say, because one of them may have
-// been committed by somebody else.
+// The precedence is always the same — command line flags, then environment
+// variables, then the local configuration file, then the user configuration
+// file, then the built-in defaults — and the two files differ in what they are
+// allowed to say, because one of them may have been committed by somebody
+// else.
 package config
 
 import (
@@ -24,9 +24,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// LocalFileName is the file whose presence is the whole of the directory-context
-// mechanism (SPEC §5). Only this exact spelling is looked for; ".awb.yml" is
-// not searched.
+// LocalFileName is the file whose presence is the whole of the
+// directory-context mechanism. Only this exact spelling is looked for;
+// ".awb.yml" is not searched.
 const LocalFileName = ".awb.yaml"
 
 // ColorMode is when to colour the default output mode.
@@ -48,7 +48,7 @@ func ParseColorMode(s string) (ColorMode, error) {
 	}
 }
 
-// userFile is the user configuration file of SPEC §7.1. Every key is optional.
+// userFile is the user configuration file. Every key is optional.
 type userFile struct {
 	DB       *string `yaml:"db"`
 	User     *string `yaml:"user"`
@@ -58,15 +58,15 @@ type userFile struct {
 	Color    *string `yaml:"color"`
 }
 
-// localFile is the local configuration file of SPEC §7.2.
+// localFile is the local configuration file.
 //
 // It holds only project and label on purpose. The file is meant to be
-// committed, so it may not have been written by the person running the command,
-// and it therefore may not set db, user, password, identity or color: a
-// directory can shape what you see, but cannot redirect where your issues are
-// stored, claim to be you, or make you send a password somewhere. Those keys
-// are ignored if present, exactly like unknown keys — and ignored means unread,
-// so their values are not type-checked either.
+// committed, so it may not have been written by the person running the
+// command, and it therefore may not set db, user, password, identity or color:
+// a directory can shape what you see, but cannot redirect where your issues
+// are stored, claim to be you, or make you send a password somewhere. Those
+// keys are ignored if present, exactly like unknown keys — and ignored means
+// unread, so their values are not type-checked either.
 type localFile struct {
 	Project *string `yaml:"project"`
 	Label   *string `yaml:"label"`
@@ -88,8 +88,8 @@ type Config struct {
 	// RemoteURL is set when DB is a URL, already validated and normalised.
 	RemoteURL *url.URL
 
-	// User and Password are the basic-authentication credentials the CLI
-	// presents in remote mode. They are ignored when DB is a path.
+	// User and Password are the basic-authentication credentials the CLI presents
+	// in remote mode. They are ignored when DB is a path.
 	User     string
 	Password string
 
@@ -99,11 +99,11 @@ type Config struct {
 	Identity string
 
 	// CreateProject is the default project for awb create, resolved through the
-	// full precedence chain of §7.3.
+	// full precedence chain.
 	CreateProject string
 
-	// ContextProject and ContextLabel are the directory's own scope (§5). They
-	// are empty when --no-context was given or no local file was found.
+	// ContextProject and ContextLabel are the directory's own scope. They are
+	// empty when --no-context was given or no local file was found.
 	ContextProject string
 	ContextLabel   string
 
@@ -121,7 +121,7 @@ func (c *Config) Remote() bool { return c.RemoteURL != nil }
 // Load resolves the configuration for one invocation.
 //
 // workingDir is the directory the command was run in; it is resolved through
-// symlinks before the upward search of §5 begins.
+// symlinks before the upward search begins.
 func Load(flags Flags, workingDir string) (*Config, error) {
 	userCfg, userPath, err := loadUserFile()
 	if err != nil {
@@ -156,18 +156,17 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	return cfg, nil
 }
 
-// configError reports a problem with a configuration file. SPEC §7: an
-// unreadable, malformed or wrongly typed file, or a recognised key whose value
-// violates that setting's vocabulary, fails the command with exit code 1 and a
-// message naming the file — because silently falling back to defaults would
-// hide the reason a command wrote to the wrong database or picked the wrong
-// project.
+// configError reports a problem with a configuration file. An unreadable,
+// malformed or wrongly typed file, or a recognised key whose value violates
+// that setting's vocabulary, fails the command with exit code 1 and a message
+// naming the file — because silently falling back to defaults would hide the
+// reason a command wrote to the wrong database or picked the wrong project.
 func configError(path string, err error) error {
 	return awberr.Runtimef("%s: %s", path, err.Error())
 }
 
 // usageError reports the same bad value arriving from a flag or an environment
-// variable, which is a usage error rather than a configuration one (§7).
+// variable, which is a usage error rather than a configuration one.
 func usageError(source string, err error) error {
 	return awberr.Usagef("%s: %s", source, err.Error())
 }
@@ -185,15 +184,15 @@ func loadUserFile() (*userFile, string, error) {
 	return &cfg, path, nil
 }
 
-// loadLocalFile performs the upward search of SPEC §5: start at the working
-// directory with symlinks resolved and walk up towards the filesystem root
-// looking for .awb.yaml. The first one found is the local configuration file,
-// and the search stops there — files further up are neither read nor merged.
+// loadLocalFile performs the upward search: start at the working directory
+// with symlinks resolved and walk up towards the filesystem root looking for
+// .awb.yaml. The first one found is the local configuration file, and the
+// search stops there — files further up are neither read nor merged.
 func loadLocalFile(workingDir string) (*localFile, string, error) {
 	dir, err := filepath.EvalSymlinks(workingDir)
 	if err != nil {
-		// A working directory that cannot be resolved simply yields no
-		// context; it is not worth failing a command that needs none.
+		// A working directory that cannot be resolved simply yields no context; it
+		// is not worth failing a command that needs none.
 		dir = workingDir
 	}
 
@@ -234,7 +233,7 @@ func readYAML(path string, out any) (bool, error) {
 }
 
 func resolveDB(cfg *Config, flags Flags, userCfg *userFile, userPath string) error {
-	// The local configuration file cannot set db (§7.2), so it takes no part.
+	// The local configuration file cannot set db, so it takes no part.
 	switch {
 	case flags.DB != nil:
 		if err := setDB(cfg, *flags.DB); err != nil {
@@ -255,7 +254,7 @@ func resolveDB(cfg *Config, flags Flags, userCfg *userFile, userPath string) err
 }
 
 // setDB records a database location, which is either a filesystem path or an
-// http(s) URL (SPEC §3).
+// http(s) URL.
 func setDB(cfg *Config, value string) error {
 	if value == "" {
 		return errors.New("database location must not be empty")
@@ -278,16 +277,15 @@ func setDB(cfg *Config, value string) error {
 		return fmt.Errorf("invalid database URL %q: it must carry no query or fragment", value)
 	}
 	// Userinfo is refused rather than being a second place to keep a password,
-	// and the one most likely to leak into a shell history or a process
-	// listing (§7.1).
+	// and the one most likely to leak into a shell history or a process listing.
 	if parsed.User != nil {
 		return fmt.Errorf(
 			"invalid database URL %q: put credentials in \"user\" and \"password\", or AWB_USER and AWB_PASSWORD",
 			value)
 	}
 
-	// A remote URL may carry a path, which is the base the API paths hang
-	// under. A trailing slash is optional and means the same either way.
+	// A remote URL may carry a path, which is the base the API paths hang under.
+	// A trailing slash is optional and means the same either way.
 	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
 
 	cfg.DB = value
@@ -298,7 +296,7 @@ func setDB(cfg *Config, value string) error {
 func resolveCredentials(cfg *Config, userCfg *userFile, userPath string) error {
 	// Either may stand alone: a server may want a username with an empty
 	// password, and AWB_PASSWORD exists so the secret need not be written into
-	// the file at all (§7.1).
+	// the file at all.
 	switch {
 	case os.Getenv("AWB_USER") != "":
 		value := os.Getenv("AWB_USER")
@@ -321,10 +319,10 @@ func resolveCredentials(cfg *Config, userCfg *userFile, userPath string) error {
 	return nil
 }
 
-// resolveIdentity applies SPEC §7.1. When identity is unset it defaults to user
-// if that is set, and otherwise to the OS username, lower-cased and stripped of
-// any character outside the assignee set — a value the user never typed, which
-// is why it is folded rather than refused.
+// resolveIdentity resolves who the caller is. When identity is unset it
+// defaults to user if that is set, and otherwise to the OS username,
+// lower-cased and stripped of any character outside the assignee set — a value
+// the user never typed, which is why it is folded rather than refused.
 func resolveIdentity(cfg *Config, userCfg *userFile, userPath string) error {
 	switch {
 	case os.Getenv("AWB_IDENTITY") != "":
@@ -360,10 +358,10 @@ func FoldOSUsername() string {
 	return domain.FoldToAssignee(current.Username)
 }
 
-// resolveContext applies SPEC §5. --no-context ignores the project and label of
-// the local configuration file for this invocation, restoring the view of the
-// whole database — but it does not stop the file from being read, so a
-// malformed one still fails the command.
+// resolveContext reads the directory's own scope. --no-context ignores the
+// project and label of the local configuration file for this invocation,
+// restoring the view of the whole database — but it does not stop the file
+// from being read, so a malformed one still fails the command.
 func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath string) error {
 	if flags.NoContext {
 		return nil
@@ -383,12 +381,12 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 	return nil
 }
 
-// resolveCreateProject applies the order of SPEC §5 and §7.3 for awb create's
-// default project: --project, else AWB_PROJECT, else project in the local
+// resolveCreateProject applies the precedence chain for awb create's default
+// project: --project, else AWB_PROJECT, else project in the local
 // configuration file, else project in the user configuration file.
 //
-// --project is a per-command flag rather than a global one, so it is applied by
-// the command itself; what is resolved here is everything below it.
+// --project is a per-command flag rather than a global one, so it is applied
+// by the command itself; what is resolved here is everything below it.
 //
 // Note the documented consequence: an exported AWB_PROJECT outranks the
 // directory's own project, so awb create run in a directory scoped to another
@@ -402,8 +400,8 @@ func resolveCreateProject(cfg *Config, userCfg *userFile, userPath string) error
 		cfg.CreateProject = value
 		return nil
 	}
-	// --no-context removes the local file from this chain but not the rest,
-	// which is what ContextProject already being empty expresses.
+	// --no-context removes the local file from this chain but not the rest, which
+	// is what ContextProject already being empty expresses.
 	if cfg.ContextProject != "" {
 		cfg.CreateProject = cfg.ContextProject
 		return nil
@@ -417,8 +415,8 @@ func resolveCreateProject(cfg *Config, userCfg *userFile, userPath string) error
 	return nil
 }
 
-// resolveColor applies the chain of SPEC §4.1, in which NO_COLOR sits between
-// the command line and everything else: --color and --no-color override it, an
+// resolveColor applies the colour chain, in which NO_COLOR sits between the
+// command line and everything else: --color and --no-color override it, an
 // explicit flag being what the person running the command means, and it
 // overrides AWB_COLOR, the configuration file and the default.
 func resolveColor(cfg *Config, flags Flags, userCfg *userFile, userPath string) error {
@@ -462,7 +460,7 @@ func resolveColor(cfg *Config, flags Flags, userCfg *userFile, userPath string) 
 	return nil
 }
 
-// configHome is $XDG_CONFIG_HOME, falling back to ~/.config (SPEC §7.1).
+// configHome is $XDG_CONFIG_HOME, falling back to ~/.config.
 func configHome() string {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
 		return dir
@@ -474,7 +472,7 @@ func configHome() string {
 	return filepath.Join(home, ".config")
 }
 
-// dataHome is $XDG_DATA_HOME, falling back to ~/.local/share (SPEC §3).
+// dataHome is $XDG_DATA_HOME, falling back to ~/.local/share.
 func dataHome() string {
 	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
 		return dir

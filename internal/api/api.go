@@ -1,8 +1,7 @@
 // Package api embeds the OpenAPI document that specifies the HTTP API.
 //
-// SPEC §6.1 makes that document authoritative for the API and requires it to
-// live in the repository, be embedded in the binary, and be served at
-// /openapi.json and /openapi.yaml.
+// The document is authoritative for the API. It lives in the repository, is
+// embedded in the binary, and is served at /openapi.json and /openapi.yaml.
 package api
 
 import (

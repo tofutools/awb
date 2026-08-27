@@ -5,11 +5,10 @@ import (
 	"strings"
 )
 
-// limitOffsetClause renders the paging SPEC §6.2 requires of every array
-// endpoint. There is no default limit: omitting it returns every row, as the
-// command line does, so a remote-mode listing is never silently truncated. A
-// limit of zero returns no rows while the caller still reports the unpaged
-// total.
+// limitOffsetClause renders the paging every array endpoint offers. There is
+// no default limit: omitting it returns every row, as the command line does,
+// so a remote-mode listing is never silently truncated. A limit of zero
+// returns no rows while the caller still reports the unpaged total.
 //
 // SQLite needs a LIMIT before it will accept an OFFSET, and -1 is its "no
 // limit" value.
@@ -35,8 +34,8 @@ func placeholders(n int) string {
 
 // isUniqueViolation reports whether err is SQLite refusing a duplicate key.
 //
-// The pure-Go driver reports constraint failures as text rather than as a typed
-// error, so this matches on the message. It is used only to turn an
+// The pure-Go driver reports constraint failures as text rather than as a
+// typed error, so this matches on the message. It is used only to turn an
 // already-exists into the right classification, and a miss would show up as a
 // runtime error rather than as a wrong answer.
 func isUniqueViolation(err error) bool {
@@ -49,7 +48,7 @@ func isUniqueViolation(err error) bool {
 }
 
 // isCheckViolation reports whether err is SQLite refusing a CHECK constraint,
-// which for awb means an invariant of SPEC §2.2 was about to be broken.
+// which for awb means a model invariant was about to be broken.
 func isCheckViolation(err error) bool {
 	if err == nil {
 		return false

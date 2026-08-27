@@ -9,26 +9,26 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// Now returns the current time in the form SPEC §2.2 fixes.
+// Now returns the current time in the form awb stores.
 func Now() string { return domain.FormatTime(time.Now()) }
 
 // bumpedTimestamp returns the timestamp to store for a row whose previous
-// updated_at was stored, keeping the value strictly increasing per row
-// (SPEC §2.2). If the clock yields a value that is not greater than the stored
-// one — the system clock may have a coarser resolution than a millisecond — the
-// stored value plus one millisecond is written instead.
+// updated_at was stored, keeping the value strictly increasing per row. If the
+// clock yields a value that is not greater than the stored one — the system
+// clock may have a coarser resolution than a millisecond — the stored value
+// plus one millisecond is written instead.
 //
-// This is what makes an ETag identify a version rather than an instant
-// (SPEC §6.2): two successive versions of one row can never carry the same
-// timestamp, whatever the host clock's real resolution is.
+// This is what makes an ETag identify a version rather than an instant: two
+// successive versions of one row can never carry the same timestamp, whatever
+// the host clock's real resolution is.
 func bumpedTimestamp(stored, now string) string {
 	if now > stored {
 		return now
 	}
 	t, err := domain.ParseTime(stored)
 	if err != nil {
-		// A stored timestamp always parses; if one somehow does not, moving
-		// forward by taking the clock's value is better than failing a write.
+		// A stored timestamp always parses; if one somehow does not, moving forward
+		// by taking the clock's value is better than failing a write.
 		return now
 	}
 	return domain.FormatTime(t.Add(time.Millisecond))
@@ -67,8 +67,8 @@ func (t *Tx) ProjectExists(key string) (bool, error) {
 }
 
 // ListProjects returns every project ordered by key ascending, which is what
-// makes the corresponding endpoint pageable (SPEC §4.6). limit and offset page
-// the result; total is the unpaged count.
+// makes the corresponding endpoint pageable. limit and offset page the result;
+// total is the unpaged count.
 func (t *Tx) ListProjects(limit, offset *int) (projects []domain.Project, total int, err error) {
 	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM projects`).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count projects")
@@ -117,9 +117,9 @@ func (t *Tx) InsertProject(key, name, description string) error {
 	return nil
 }
 
-// UpdateProject writes a project's name and description, moving updated_at only
-// when something actually changed (SPEC §2.1). Creating, changing or deleting
-// an issue the project holds does not touch it: active_issues is derived, not
+// UpdateProject writes a project's name and description, moving updated_at
+// only when something actually changed. Creating, changing or deleting an
+// issue the project holds does not touch it: active_issues is derived, not
 // stored.
 func (t *Tx) UpdateProject(p *domain.Project, name, description string) error {
 	if name == p.Name && description == p.Description {
@@ -141,7 +141,7 @@ func (t *Tx) UpdateProject(p *domain.Project, name, description string) error {
 // CountIssuesInProject counts every issue the project holds, closed ones
 // included. That is deliberately wider than the active count project ls shows:
 // project rm refuses while a project holds any issue at all, so --force alone
-// can never destroy closed history (SPEC §4.2).
+// can never destroy closed history.
 func (t *Tx) CountIssuesInProject(key string) (int, error) {
 	var n int
 	err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM issues WHERE project = ?`, key).Scan(&n)

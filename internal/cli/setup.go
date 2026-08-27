@@ -31,16 +31,15 @@ func newInitCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// init produces no object and ignores both output-mode flags on
-			// success (SPEC §4.1).
+			// init produces no object and ignores both output-mode flags on success.
 			return db.Close()
 		},
 	}
 }
 
-// The exact marker lines agent-guide --write delimits its block with, so that a
-// second run, by any version of the binary, replaces the existing block rather
-// than appending a duplicate (SPEC §4.2).
+// The exact marker lines agent-guide --write delimits its block with, so that
+// a second run, by any version of the binary, replaces the existing block
+// rather than appending a duplicate.
 const (
 	guideBeginMarker = "<!-- awb:begin -->"
 	guideEndMarker   = "<!-- awb:end -->"
@@ -73,9 +72,9 @@ func newAgentGuideCommand(e *env) *cobra.Command {
 // writeGuideBlock inserts or replaces awb's block in path.
 //
 // When the file exists and holds no such block, the block is appended at the
-// end, preceded by a blank line. A file holding only one of the two markers, or
-// holding them in the wrong order, fails rather than gaining a second block
-// (SPEC §4.2).
+// end, preceded by a blank line. A file holding only one of the two markers,
+// or holding them in the wrong order, fails rather than gaining a second
+// block.
 func writeGuideBlock(path, guide string) error {
 	block := guideBeginMarker + "\n" + strings.TrimRight(guide, "\n") + "\n" + guideEndMarker + "\n"
 

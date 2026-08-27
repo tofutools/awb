@@ -1,15 +1,14 @@
 // Package backend is the one interface every awb command is written against.
 //
-// SPEC §6 requires that setting --db to a server's URL makes the CLI operate
-// against it with every command behaving identically to direct mode. The way to
-// guarantee that, rather than maintain it by hand, is to give the command line
-// a single interface with two implementations: internal/local over the SQLite
-// database, and internal/remote over the HTTP API. A command is written once
-// and cannot behave differently in the two modes, because it cannot tell them
-// apart.
+// Setting --db to a server's URL must make the CLI operate against it with
+// every command behaving identically to direct mode. The way to guarantee
+// that, rather than maintain it by hand, is to give the command line a single
+// interface with two implementations: internal/local over the SQLite database,
+// and internal/remote over the HTTP API. A command is written once and cannot
+// behave differently in the two modes, because it cannot tell them apart.
 //
 // The HTTP handlers sit on the same interface, over the local implementation,
-// so the API and the CLI exercise one code path (SPEC §9).
+// so the API and the CLI exercise one code path.
 package backend
 
 import (
@@ -20,13 +19,13 @@ import (
 
 // Backend is every operation awb can perform on the data.
 //
-// The ifMatch parameters carry the optional conditional-edit precondition of
-// SPEC §6.2: the ETag a client read, or "" for no precondition. The CLI always
-// passes "" and gets last-write-wins; a web UI passes the tag it read.
+// The ifMatch parameters carry the optional conditional-edit precondition: the
+// ETag a client read, or "" for no precondition. The CLI always passes "" and
+// gets last-write-wins; a web UI passes the tag it read.
 type Backend interface {
 	// Identity is who the backend attributes an unattributed action to: the
-	// caller's own identity locally, and the server's answer to
-	// GET /api/identity remotely (SPEC §6.2).
+	// caller's own identity locally, and the server's answer to GET /api/identity
+	// remotely.
 	Identity(ctx context.Context) (string, error)
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
@@ -58,13 +57,13 @@ type Backend interface {
 	LabelFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 	AssigneeFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 
-	// Close releases whatever the backend holds: the database file, or the
-	// idle connections of an HTTP client.
+	// Close releases whatever the backend holds: the database file, or the idle
+	// connections of an HTTP client.
 	Close() error
 }
 
-// IssuePage is a listing with the unpaged total that X-Total-Count carries
-// (SPEC §6.2), so a UI can show "1–50 of 214".
+// IssuePage is a listing with the unpaged total that X-Total-Count carries, so
+// a UI can show "1–50 of 214".
 type IssuePage struct {
 	Issues []domain.Issue
 	Total  int
@@ -83,9 +82,9 @@ type FacetPage struct {
 	Total  int
 }
 
-// IssueCreate is the body of awb create and of POST /api/issues (SPEC §6.4).
-// Everything but Project and Title may be left at its zero value and then takes
-// the default of §2.2.
+// IssueCreate is the body of awb create and of POST /api/issues. Everything
+// but Project and Title may be left at its zero value and then takes its
+// documented default.
 type IssueCreate struct {
 	Project     string
 	Title       string
@@ -111,7 +110,7 @@ type NewRelation struct {
 // IssuePatch is what awb update and PATCH /api/issues/{id} may change. It
 // cannot change status or assignee: the four transitions are the only way to
 // move either, which keeps in_progress and an assignee from drifting apart and
-// keeps a claim from being taken silently (SPEC §4.3).
+// keeps a claim from being taken silently.
 //
 // A nil field is left alone; a non-nil one is written, so an empty string
 // clears an optional value.
@@ -138,13 +137,13 @@ type ProjectPatch struct {
 
 // ClaimRequest is the body of awb claim and POST /api/issues/{id}/claim.
 type ClaimRequest struct {
-	// Assignee names who takes the issue. The CLI always states it explicitly,
-	// so that a remote claim records exactly what a local one would (SPEC §6).
+	// Assignee names who takes the issue. The CLI always states it explicitly, so
+	// that a remote claim records exactly what a local one would.
 	Assignee string
-	// ExpectAssignee is the compare-and-set: when non-nil the claim proceeds
-	// only if the current assignee is exactly that value, "" meaning
-	// unassigned, and otherwise conflicts. It is what stops two agents racing
-	// for the same issue from both winning (SPEC §6.4).
+	// ExpectAssignee is the compare-and-set: when non-nil the claim proceeds only
+	// if the current assignee is exactly that value, "" meaning unassigned, and
+	// otherwise conflicts. It is what stops two agents racing for the same issue
+	// from both winning.
 	ExpectAssignee *string
 	// Force overrides a refusal on an issue that is held by somebody else,
 	// blocked, or closed.
@@ -162,24 +161,22 @@ type ReleaseRequest struct {
 
 // CloseRequest is the body of awb close and POST /api/issues/{id}/close.
 type CloseRequest struct {
-	// Reason is nil when --reason was not given, which leaves any recorded
-	// reason alone; a pointer to "" clears it.
+	// Reason is nil when --reason was not given, which leaves any recorded reason
+	// alone; a pointer to "" clears it.
 	Reason *string
 }
 
-// RelationRequest is the body of awb dep add and
-// POST /api/issues/{id}/relations, read with the addressed issue as the
-// subject.
+// RelationRequest is the body of awb dep add and POST
+// /api/issues/{id}/relations, read with the addressed issue as the subject.
 type RelationRequest struct {
 	Type  domain.RelationType
 	Other string
-	// Force replaces an existing parent, which is the only refusal it
-	// overrides.
+	// Force replaces an existing parent, which is the only refusal it overrides.
 	Force bool
 }
 
-// DeletedIssue is what a delete returns: the issue as it was immediately before
-// deletion, and how many relations went with it (SPEC §4.3).
+// DeletedIssue is what a delete returns: the issue as it was immediately
+// before deletion, and how many relations went with it.
 type DeletedIssue struct {
 	Issue            domain.Issue
 	RelationsRemoved int

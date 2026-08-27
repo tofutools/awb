@@ -103,9 +103,9 @@ func (h *Handler) patchProject(w http.ResponseWriter, r *http.Request) {
 	writeProject(w, http.StatusOK, project)
 }
 
-// deleteProject takes --cascade as a boolean query parameter. There is no force
-// parameter: the HTTP method is the confirmation that --force supplies on the
-// command line (SPEC §6).
+// deleteProject takes --cascade as a boolean query parameter. There is no
+// force parameter: the HTTP method is the confirmation that --force supplies
+// on the command line.
 func (h *Handler) deleteProject(w http.ResponseWriter, r *http.Request) {
 	cascade, err := boolParam(r.URL.Query(), "cascade")
 	if err != nil {

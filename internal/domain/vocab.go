@@ -1,8 +1,7 @@
-// Package domain holds awb's rules: the fixed vocabulary of SPEC §2, the text
-// gate of §2.6, the identifier scheme of §8, the link extraction of §2.4, the
-// relation graph of §2.3 and the readiness of §2.5. It reads and writes
-// nothing, so the command line and the HTTP API can share it wholesale and
-// cannot drift apart.
+// Package domain holds awb's rules: the fixed vocabulary, the text gate, the
+// identifier scheme, link extraction, the relation graph and readiness. It
+// reads and writes nothing, so the command line and the HTTP API can share it
+// wholesale and cannot drift apart.
 package domain
 
 import (
@@ -12,9 +11,8 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// Type is an issue's kind (SPEC §2.2). Nothing in awb treats any of them
-// specially; an epic is simply a large piece of work decomposed through
-// has-parent.
+// Type is an issue's kind. Nothing in awb treats any of them specially; an
+// epic is simply a large piece of work decomposed through has-parent.
 type Type string
 
 const (
@@ -28,7 +26,7 @@ const (
 	DefaultType = TypeTask
 )
 
-// Types lists every issue type, in the order SPEC §2.2 gives them.
+// Types lists every issue type, in their canonical order.
 var Types = []Type{TypeEpic, TypeFeature, TypeBug, TypeTask, TypeChore}
 
 // ParseType validates s as an issue type.
@@ -39,9 +37,9 @@ func ParseType(s string) (Type, error) {
 	return "", awberr.Usagef("invalid type %q: must be one of %s", s, join(Types))
 }
 
-// Status is where an issue stands (SPEC §2.2). It is changed only by the
-// transitions of §4.3, never by update, which is what keeps it from drifting
-// away from the assignee.
+// Status is where an issue stands. It is changed only by the four transitions,
+// never by update, which is what keeps it from drifting away from the
+// assignee.
 type Status string
 
 const (
@@ -53,11 +51,12 @@ const (
 	DefaultStatus = StatusOpen
 )
 
-// Statuses lists every status, in the order SPEC §2.2 gives them.
+// Statuses lists every status, in their canonical order.
 var Statuses = []Status{StatusOpen, StatusInProgress, StatusClosed}
 
 // ParseStatus validates s as a status. There is deliberately no magic "all"
-// value: the vocabulary here is exactly the enum the OpenAPI document declares.
+// value: the vocabulary here is exactly the enum the OpenAPI document
+// declares.
 func ParseStatus(s string) (Status, error) {
 	if slices.Contains(Statuses, Status(s)) {
 		return Status(s), nil
@@ -86,27 +85,27 @@ func ParsePriority(p int) (int, error) {
 	return p, nil
 }
 
-// RelationType names a directed link between two issues (SPEC §2.3). Every one
-// of them is named from the point of view of its subject and reads
-// "subject — type — other", which is the single convention the whole tool uses.
+// RelationType names a directed link between two issues. Every one of them is
+// named from the point of view of its subject and reads "subject — type —
+// other", which is the single convention the whole tool uses.
 type RelationType string
 
 const (
-	// RelBlockedBy: "A blocked-by B" — A cannot start until B is closed. The
-	// only relation that drives readiness.
+	// RelBlockedBy: "A blocked-by B" — A cannot start until B is closed. The only
+	// relation that drives readiness.
 	RelBlockedBy RelationType = "blocked-by"
-	// RelHasParent: "A has-parent B" — B is the parent of A. Decomposition
-	// only; it does not drive readiness.
+	// RelHasParent: "A has-parent B" — B is the parent of A. Decomposition only;
+	// it does not drive readiness.
 	RelHasParent RelationType = "has-parent"
-	// RelDiscoveredFrom: "A discovered-from B" — A was found while working on
-	// B. Provenance only.
+	// RelDiscoveredFrom: "A discovered-from B" — A was found while working on B.
+	// Provenance only.
 	RelDiscoveredFrom RelationType = "discovered-from"
 	// RelRelated: "A related B" — a loose, symmetric association with no
 	// behaviour attached.
 	RelRelated RelationType = "related"
 )
 
-// RelationTypes lists every relation type, in the order SPEC §2.3 gives them.
+// RelationTypes lists every relation type, in their canonical order.
 var RelationTypes = []RelationType{RelBlockedBy, RelHasParent, RelDiscoveredFrom, RelRelated}
 
 // ParseRelationType validates s as a relation type.
@@ -129,9 +128,9 @@ func (t RelationType) Acyclic() bool { return t != RelRelated }
 // so adding it from either end is the same edge.
 func (t RelationType) Symmetric() bool { return t == RelRelated }
 
-// Direction says which end of a stored relation an issue is: out when it is the
-// subject — the one named first — and in when the other issue is. A symmetric
-// relation is always out.
+// Direction says which end of a stored relation an issue is: out when it is
+// the subject — the one named first — and in when the other issue is. A
+// symmetric relation is always out.
 type Direction string
 
 const (

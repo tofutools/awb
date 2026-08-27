@@ -1,8 +1,8 @@
 // The client for awb's HTTP API. The UI is a client of that API and gets no
 // privileged access to the database, which is what keeps the API honest:
-// making this UI writable later is a change to the UI alone (SPEC §6.3).
+// making this UI writable later is a change to the UI alone.
 
-/** The one issue shape both surfaces return (SPEC §4.6). */
+/** The one issue shape both surfaces return. */
 export interface Issue {
   id: string;
   project: string;

@@ -10,8 +10,7 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// The mapping SPEC §4.1 and §6.1 fix, in one table, so neither surface can
-// drift from it.
+// The whole mapping in one table, so neither surface can drift from it.
 func TestKindMapping(t *testing.T) {
 	cases := []struct {
 		kind   awberr.Kind
@@ -30,8 +29,8 @@ func TestKindMapping(t *testing.T) {
 	}
 }
 
-// The six statuses with no exit code behind them all fold into 1, which is what
-// the CLI reports in remote mode.
+// The six statuses with no exit code behind them all fold into 1, which is
+// what the CLI reports in remote mode.
 func TestKindFromHTTPStatusFoldsTheRest(t *testing.T) {
 	for _, status := range []int{
 		http.StatusUnauthorized, http.StatusForbidden, http.StatusMethodNotAllowed,

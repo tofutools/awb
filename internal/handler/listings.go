@@ -12,22 +12,22 @@ import (
 )
 
 // listOptions says which parameters an endpoint accepts, mirroring the
-// per-command rules of SPEC §4.3. A parameter an endpoint rejects is a 400,
+// per-command rules of the CLI. A parameter an endpoint rejects is a 400,
 // exactly as the corresponding flag is a usage error.
 type listOptions struct {
 	status    bool
 	assignee  bool
 	relevance bool
-	// sortable is false for the facet endpoints, where the row order is fixed
-	// at value ascending.
+	// sortable is false for the facet endpoints, where the row order is fixed at
+	// value ascending.
 	sortable bool
 	// terms is true only for search.
 	terms bool
 }
 
 // parseFilter turns query parameters into a domain filter. They carry the same
-// names as the corresponding CLI filter flags, in the same kebab-case spelling,
-// and a repeatable filter is repeated rather than comma-separated (SPEC §6).
+// names as the corresponding CLI filter flags, in the same kebab-case
+// spelling, and a repeatable filter is repeated rather than comma-separated.
 func parseFilter(r *http.Request, opts listOptions) (*domain.Filter, error) {
 	query := r.URL.Query()
 	filter := &domain.Filter{}
@@ -129,9 +129,8 @@ func parseFilter(r *http.Request, opts listOptions) (*domain.Filter, error) {
 	}
 
 	if opts.terms {
-		// q is repeated once per positional argument of awb search, each value
-		// one literal term that may itself contain spaces. A request with no q
-		// is a 400.
+		// q is repeated once per positional argument of awb search, each value one
+		// literal term that may itself contain spaces. A request with no q is a 400.
 		terms := query["q"]
 		if len(terms) == 0 {
 			return nil, awberr.Usagef("at least one q parameter is required")
@@ -183,7 +182,7 @@ func rejectUnaccepted(query url.Values, opts listOptions) error {
 }
 
 // boolParam reads a boolean parameter, which is written name=true or
-// name=false (SPEC §6).
+// name=false.
 func boolParam(query url.Values, name string) (bool, error) {
 	value := query.Get(name)
 	switch value {
@@ -263,7 +262,7 @@ func (h *Handler) serveListing(w http.ResponseWriter, r *http.Request, opts list
 // The two facet endpoints honour the selection parameters of GET /api/issues,
 // the facet's own included, so ?label=parser lists the labels that co-occur
 // with parser and a UI can narrow progressively. sort is not accepted at all,
-// the row order being fixed at value ascending (SPEC §6.2).
+// the row order being fixed at value ascending.
 //
 // limit and offset page the facet rows rather than the issues behind them, so
 // count is the same whatever page it appears on.

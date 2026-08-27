@@ -1,5 +1,5 @@
-// The bundled read-only web UI (SPEC §6.3): projects, issues, search and
-// dependency trees, over the same HTTP API anything else would use.
+// The bundled read-only web UI: projects, issues, search and dependency trees,
+// over the same HTTP API anything else would use.
 
 import { api, ApiError, type Facet, type Filters, type Issue, type IssueTree, type Project } from "./api.js";
 import { renderMarkdown } from "./markdown.js";
@@ -12,7 +12,7 @@ interface Route {
 
 const app = document.getElementById("app") as HTMLElement;
 
-/** identity is the caller the server attributes requests to (SPEC §6.2). */
+/** identity is the caller the server attributes requests to. */
 let identity = "";
 
 function parseRoute(): Route {
@@ -221,8 +221,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     view.append(body);
   }
 
-  // The derived links array is rendered explicitly as well as inside the prose,
-  // so the authoritative list is always visible (SPEC §2.4).
+  // The derived links array is rendered explicitly as well as inside the
+  // prose, so the authoritative list is always visible.
   if (issue.links.length > 0) {
     view.append(element("h2", "", "Links"));
     const list = element("ul", "links");
@@ -242,7 +242,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     view.append(element("h2", "", "Relations"));
     const list = element("ul", "relations");
     for (const relation of issue.relations) {
-      // Every relation reads "subject — type — other", whichever end is viewed.
+      // Every relation reads "subject — type — other", whichever end is
+      // viewed.
       const [subject, other] =
         relation.direction === "in" ? [relation.other, issue.id] : [issue.id, relation.other];
       const row = element("li");

@@ -15,7 +15,7 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The three output modes of SPEC §4.1.
+// The three output modes.
 //
 // The default mode is an aligned, coloured table for humans. Its columns,
 // widths and truncation are deliberately unspecified and are not a
@@ -56,8 +56,8 @@ func (s *styles) apply(style lipgloss.Style, text string) string {
 	return style.Render(text)
 }
 
-// newStyles decides whether to colour, per the chain of SPEC §4.1. In auto
-// mode colour is used when stdout is a terminal.
+// newStyles decides whether to colour, per the colour chain. In auto mode
+// colour is used when stdout is a terminal.
 func newStyles(mode config.ColorMode, out io.Writer) *styles {
 	enabled := false
 	switch mode {
@@ -193,8 +193,8 @@ func clampPriority(p int) int {
 	return p
 }
 
-// truncate shortens a cell for the default mode, which is explicitly allowed to
-// truncate.
+// truncate shortens a cell for the default mode, which is explicitly allowed
+// to truncate.
 func truncate(s string, width int) string {
 	runes := []rune(s)
 	if len(runes) <= width {
@@ -208,7 +208,7 @@ func truncate(s string, width int) string {
 // Under --compact it prints the same single line a listing would and nothing
 // else, losing the description, relations and links: --compact means the
 // cheapest representation there is, and --json is what an agent uses when it
-// needs the rest (SPEC §4.1).
+// needs the rest.
 func (e *env) printIssue(issue *domain.Issue) error {
 	switch {
 	case e.json:
@@ -264,8 +264,8 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	if len(issue.Relations) > 0 {
 		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", st.apply(st.header, "Relations"))
 		for _, rel := range issue.Relations {
-			// Every relation reads "subject — type — other", the single
-			// convention of SPEC §2.3, whichever end is being viewed.
+			// Every relation reads "subject — type — other", the single convention
+			// everywhere, whichever end is being viewed.
 			subject, other := issue.ID, rel.Other
 			if rel.Direction == domain.DirectionIn {
 				subject, other = rel.Other, issue.ID
@@ -283,8 +283,8 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-// printProjects renders a project listing. Under --compact each line is
-// "<key> <active_issues> <name>", where the name is a JSON string.
+// printProjects renders a project listing. Under --compact each line is "<key>
+// <active_issues> <name>", where the name is a JSON string.
 func (e *env) printProjects(projects []domain.Project) error {
 	switch {
 	case e.json:
@@ -320,8 +320,8 @@ func (e *env) printProjects(projects []domain.Project) error {
 //
 // Under --compact each node is the ordinary compact issue line prefixed by two
 // spaces per level of depth, the root unindented. That prefix is the one thing
-// that may precede the id, so a consumer strips the leading spaces, counts them
-// to recover the depth, and parses the rest of the line as usual (SPEC §4.1).
+// that may precede the id, so a consumer strips the leading spaces, counts
+// them to recover the depth, and parses the rest of the line as usual.
 func (e *env) printTree(tree *domain.IssueTree) error {
 	switch {
 	case e.json:
@@ -356,7 +356,7 @@ func (e *env) walkTree(node *domain.IssueTree, depth int, visit func(*domain.Iss
 // mutated reports the result of a mutating command.
 //
 // Mutating commands print nothing on success in the default and compact modes;
-// under --json every one of them prints the resulting object (SPEC §4.1).
+// under --json every one of them prints the resulting object.
 func (e *env) mutated(issue *domain.Issue) error {
 	if e.json {
 		return e.writeJSON(issue)

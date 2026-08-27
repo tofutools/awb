@@ -136,8 +136,8 @@ func TestNullIsRejected(t *testing.T) {
 	}
 }
 
-// A JSON escape denoting an unpaired surrogate is rejected rather than repaired
-// into U+FFFD.
+// A JSON escape denoting an unpaired surrogate is rejected rather than
+// repaired into U+FFFD.
 func TestUnpairedSurrogateIsRejected(t *testing.T) {
 	a := newAPI(t)
 
@@ -191,8 +191,8 @@ func TestPatchIssue(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
 	assert.Equal(t, "renamed", updated.Title)
 
-	// The unchangeable fields are ignored when they equal what is stored, so a
-	// UI can send back the object it read.
+	// The unchangeable fields are ignored when they equal what is stored, so a UI
+	// can send back the object it read.
 	roundTrip, err := json.Marshal(updated)
 	require.NoError(t, err)
 	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, string(roundTrip))
@@ -220,7 +220,7 @@ func TestPatchAcceptsLabelsInAnyOrder(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
 
-// The ETag/If-Match handshake of SPEC §6.2.
+// The ETag/If-Match handshake.
 func TestConditionalEdit(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)
@@ -496,8 +496,8 @@ func TestProjects(t *testing.T) {
 	resp, _ = a.do(http.MethodPost, "/api/projects", `{"key":"web"}`)
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
-	// Deletion refuses while the project holds issues, and cascade is a
-	// boolean query parameter.
+	// Deletion refuses while the project holds issues, and cascade is a boolean
+	// query parameter.
 	a.createIssue(`{"project":"web","title":"t"}`)
 	resp, _ = a.do(http.MethodDelete, "/api/projects/web", "")
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
@@ -507,7 +507,7 @@ func TestProjects(t *testing.T) {
 	assert.Empty(t, resp.Header.Get("ETag"))
 }
 
-// The status taxonomy of SPEC §6.1.
+// The status taxonomy.
 func TestErrorStatuses(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)
@@ -548,8 +548,8 @@ func TestErrorStatuses(t *testing.T) {
 	}
 }
 
-// An {id} path segment accepts an unambiguous prefix or a bare hash, so the CLI
-// needs no extra round trip in remote mode.
+// An {id} path segment accepts an unambiguous prefix or a bare hash, so the
+// CLI needs no extra round trip in remote mode.
 func TestPathAcceptsPrefixes(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)

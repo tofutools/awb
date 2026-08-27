@@ -11,16 +11,16 @@ import (
 )
 
 // HashLen is the number of hexadecimal characters in an issue ID's hash part.
-// SPEC §8 fixes it at six, which is about 16 million values per project — few
+// It is fixed at six, which is about 16 million values per project — few
 // enough that collision handling is required, which is why MintHash draws a
 // fresh salt and the insert retries.
 const HashLen = 6
 
-// SaltLen is the number of random bytes mixed into a hash (SPEC §8).
+// SaltLen is the number of random bytes mixed into a hash.
 const SaltLen = 16
 
 // MintHash derives the hash part of an issue ID from the issue's content and a
-// random salt, following the Beads hash-ID scheme SPEC §8 pins:
+// random salt, following the Beads hash-ID scheme:
 //
 //  1. concatenate the title's UTF-8 byte length as an unsigned 64-bit
 //     big-endian integer, the title's UTF-8 bytes, the 24 ASCII bytes of
@@ -29,10 +29,10 @@ const SaltLen = 16
 //  2. take the SHA-256 digest of that sequence;
 //  3. keep the first six characters of its lowercase hexadecimal encoding.
 //
-// Length-prefixing the only variable-length field makes the framing unambiguous
-// without reserving a character that titles could otherwise use. The title and
-// timestamp make IDs independently mintable without a counter; the salt
-// distinguishes otherwise identical creations.
+// Length-prefixing the only variable-length field makes the framing
+// unambiguous without reserving a character that titles could otherwise use.
+// The title and timestamp make IDs independently mintable without a counter;
+// the salt distinguishes otherwise identical creations.
 //
 // IDs are not content-addressed and must not be reconstructed.
 func MintHash(title, createdAt string, salt []byte) string {
@@ -47,7 +47,7 @@ func MintHash(title, createdAt string, salt []byte) string {
 }
 
 // NewSalt draws SaltLen bytes from crypto/rand. math/rand is deliberately not
-// used (SPEC §9).
+// used.
 func NewSalt() ([]byte, error) {
 	salt := make([]byte, SaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -60,8 +60,7 @@ func NewSalt() ([]byte, error) {
 func MakeID(projectKey, hash string) string { return projectKey + "-" + hash }
 
 // SplitID separates an issue ID into its project key and hash. Because a
-// project key may itself contain hyphens, an ID is split on its *last* hyphen
-// (SPEC §8).
+// project key may itself contain hyphens, an ID is split on its *last* hyphen.
 func SplitID(id string) (projectKey, hash string, ok bool) {
 	i := strings.LastIndex(id, "-")
 	if i <= 0 || i == len(id)-1 {
@@ -88,11 +87,11 @@ func IsHex(s string) bool {
 }
 
 // IssueRef is a reference to one issue as the caller wrote it: a full ID, an
-// unambiguous ID prefix, or a bare hash or hash prefix (SPEC §8). Any non-empty
-// prefix is allowed.
+// unambiguous ID prefix, or a bare hash or hash prefix. Any non-empty prefix
+// is allowed.
 type IssueRef struct {
-	// Project is the project key when the reference carried one, and "" when
-	// it is a bare hash that has to be matched across the whole database.
+	// Project is the project key when the reference carried one, and "" when it
+	// is a bare hash that has to be matched across the whole database.
 	Project string
 	// Hash is the hash or hash prefix to match.
 	Hash string

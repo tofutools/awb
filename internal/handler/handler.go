@@ -1,6 +1,6 @@
 // Package handler is the HTTP adapter. It sits on the same backend interface
 // the CLI uses, over the local implementation, so the API and the command line
-// exercise one set of operations and cannot drift apart (SPEC §9).
+// exercise one set of operations and cannot drift apart.
 package handler
 
 import (
@@ -15,10 +15,10 @@ import (
 	"github.com/tofutools/awb/internal/local"
 )
 
-// Handler serves the JSON API of SPEC §6.
+// Handler serves the JSON API.
 type Handler struct {
-	// backendFor gives each request a backend acting as that request's
-	// identity, which is the authenticated username or the server's fixed one.
+	// backendFor gives each request a backend acting as that request's identity,
+	// which is the authenticated username or the server's fixed one.
 	backendFor func(*http.Request) backend.Backend
 }
 
@@ -30,8 +30,8 @@ func New(backendFor func(*http.Request) backend.Backend) *Handler {
 // Routes registers every API endpoint on mux, under the /api/ prefix.
 //
 // Go's ServeMux answers 405 by itself when a path matches a pattern but the
-// method does not, which is one of the six statuses SPEC §6.1 lists as having
-// no exit code behind them.
+// method does not, which is one of the statuses that has no exit code behind
+// it.
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/issues", h.listIssues)
 	mux.HandleFunc("POST /api/issues", h.createIssue)
@@ -76,10 +76,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = enc.Encode(value)
 }
 
-// writeError maps a failure onto its status and the Error body of SPEC §4.6.
+// writeError maps a failure onto its status and the Error body.
 //
-// The four kinds carry the exit-code taxonomy; a failed precondition is the one
-// extra case, answered 412, which has no exit code of its own.
+// The four kinds carry the exit-code taxonomy; a failed precondition is the
+// one extra case, answered 412, which has no exit code of its own.
 func writeError(w http.ResponseWriter, err error) {
 	status := awberr.KindOf(err).HTTPStatus()
 	if errors.Is(err, awberr.ErrPreconditionFailed) {
@@ -95,8 +95,7 @@ func writeError(w http.ResponseWriter, err error) {
 }
 
 // writeIssue sends one issue with the ETag for the version it describes, so a
-// client can make another conditional edit without first repeating the GET
-// (SPEC §6.2).
+// client can make another conditional edit without first repeating the GET.
 func writeIssue(w http.ResponseWriter, status int, issue *domain.Issue) {
 	w.Header().Set("ETag", local.ETag(issue.UpdatedAt))
 	writeJSON(w, status, issue)
@@ -111,8 +110,8 @@ func writeProject(w http.ResponseWriter, status int, project *domain.Project) {
 	writeJSON(w, status, project)
 }
 
-// writeList sends an array with the unpaged total, so a UI can show
-// "1–50 of 214" and page through without loading everything.
+// writeList sends an array with the unpaged total, so a UI can show "1–50 of
+// 214" and page through without loading everything.
 func writeList(w http.ResponseWriter, value any, total int) {
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	writeJSON(w, http.StatusOK, value)

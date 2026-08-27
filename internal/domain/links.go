@@ -11,9 +11,9 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// markdown is the parser SPEC §2.4 pins: CommonMark plus GFM's tables, task
-// lists, strikethrough, autolink extension and disallowed-raw-HTML rule, and
-// nothing beyond that. extension.GFM is exactly that set.
+// markdown is the pinned parser: CommonMark plus GFM's tables, task lists,
+// strikethrough, autolink extension and disallowed-raw-HTML rule, and nothing
+// beyond that. extension.GFM is exactly that set.
 //
 // The dialect is pinned because links is a specified output: the same
 // description must always yield the same array, whoever parses it. The web UI
@@ -24,7 +24,7 @@ var markdown = sync.OnceValue(func() goldmark.Markdown {
 })
 
 // ExtractLinks returns the Markdown links in a description, in the order they
-// first occur (SPEC §2.4).
+// first occur.
 //
 // It takes inline links, reference links and autolinks of both kinds —
 // CommonMark's <https://example.com/1> and GFM's bare https://example.com/1 —
@@ -37,8 +37,8 @@ var markdown = sync.OnceValue(func() goldmark.Markdown {
 // whitespace collapsed, so [**CI** run](u) yields "CI run". An image inside a
 // link contributes nothing, images being ignored, so [![alt](i.png)](u) is
 // extracted with an empty text. Raw HTML is not a source of links either: an
-// <a href=...> written out by hand is raw HTML to the parser and not a Markdown
-// link.
+// <a href=...> written out by hand is raw HTML to the parser and not a
+// Markdown link.
 func ExtractLinks(description string) []Link {
 	if description == "" {
 		return []Link{}
@@ -57,16 +57,16 @@ func ExtractLinks(description string) []Link {
 		links = append(links, Link{Text: linkText, URL: url})
 	}
 
-	// ast.Walk is a preorder depth-first traversal, so links arrive in the
-	// order they occur in the source.
+	// ast.Walk is a preorder depth-first traversal, so links arrive in the order
+	// they occur in the source.
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 		switch v := n.(type) {
 		case *ast.Image:
-			// Images are ignored, alt text included, so nothing under one
-			// contributes a link or a character of text.
+			// Images are ignored, alt text included, so nothing under one contributes a
+			// link or a character of text.
 			return ast.WalkSkipChildren, nil
 		case *ast.Link:
 			add(string(v.Destination), plainText(v, source))
@@ -80,7 +80,7 @@ func ExtractLinks(description string) []Link {
 }
 
 // autoLinkURL is the destination the GFM autolink extension yields, including
-// the prefixes SPEC §2.4 calls out: the http:// goldmark puts in front of a
+// the two prefixes worth calling out: the http:// goldmark puts in front of a
 // www. host, and the mailto: in front of an email address. Those prefixes come
 // from the parser and are the one case where a destination is not a substring
 // of the description.

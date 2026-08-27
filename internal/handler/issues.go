@@ -9,20 +9,20 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The request bodies of SPEC §6.4.
+// The API's request bodies.
 //
-// Every one of them is decoded with unknown fields rejected, so a body carrying
-// a field this API does not recognise is a 400 rather than something silently
-// ignored.
+// Every one of them is decoded with unknown fields rejected, so a body
+// carrying a field this API does not recognise is a 400 rather than something
+// silently ignored.
 
 // issueCreate is POST /api/issues.
 //
 // It carries the writable fields of an Issue plus labels and an initial
 // relations array, read with the new issue as the subject. Nothing else is
 // recognised: id, status, close_reason, the timestamps and the derived fields
-// are rejected under the unknown-field rule rather than ignored, there being no
-// object-it-read to send back here — status follows from assignee and the rest
-// are the server's to assign.
+// are rejected under the unknown-field rule rather than ignored, there being
+// no object-it-read to send back here — status follows from assignee and the
+// rest are the server's to assign.
 type issueCreate struct {
 	Project     string           `json:"project"`
 	Title       string           `json:"title"`
@@ -135,7 +135,7 @@ func (h *Handler) createIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The two creating endpoints answer 201 with the new object and a Location
-	// header naming it (SPEC §6.1).
+	// header naming it.
 	w.Header().Set("Location", "/api/issues/"+issue.ID)
 	writeIssue(w, http.StatusCreated, issue)
 }
@@ -159,8 +159,8 @@ func (h *Handler) patchIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The fields that may appear but may not change are compared against what
-	// is stored, which means reading the issue first.
+	// The fields that may appear but may not change are compared against what is
+	// stored, which means reading the issue first.
 	current, err := be.GetIssue(r.Context(), id)
 	if err != nil {
 		writeError(w, err)
@@ -184,9 +184,9 @@ func (h *Handler) patchIssue(w http.ResponseWriter, r *http.Request) {
 	writeIssue(w, http.StatusOK, issue)
 }
 
-// checkUnchangeable enforces the "may appear but may not change" rule of SPEC
-// §6.4. A PATCH that genuinely tries to close an issue or rewrite its labels is
-// refused rather than silently dropped.
+// checkUnchangeable enforces the "may appear but may not change" rule. A PATCH
+// that genuinely tries to close an issue or rewrite its labels is refused
+// rather than silently dropped.
 func checkUnchangeable(body *issuePatch, current *domain.Issue) error {
 	if body.Status != nil && *body.Status != current.Status {
 		return awberr.Usagef(
@@ -200,7 +200,7 @@ func checkUnchangeable(body *issuePatch, current *domain.Issue) error {
 		return awberr.Usagef("close_reason cannot be changed here: use the close endpoint")
 	}
 	if body.Labels != nil {
-		// Compared as the sorted form of SPEC §4.6, which is what a client read.
+		// Compared as the sorted form, which is what a client read.
 		sent := slices.Clone(*body.Labels)
 		slices.Sort(sent)
 		if !slices.Equal(sent, current.Labels) {
@@ -217,8 +217,8 @@ func (h *Handler) deleteIssue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	// A delete answers with the object as it was immediately before deletion,
-	// and carries no ETag: the version it describes is gone (SPEC §6.4).
+	// A delete answers with the object as it was immediately before deletion, and
+	// carries no ETag: the version it describes is gone.
 	writeJSON(w, http.StatusOK, &deleted.Issue)
 }
 
@@ -229,9 +229,9 @@ func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// assignee may be omitted, in which case the request's identity is used:
-	// the authenticated username, or the server's fixed identity when it
-	// authenticates nobody (SPEC §6.4).
+	// assignee may be omitted, in which case the request's identity is used: the
+	// authenticated username, or the server's fixed identity when it
+	// authenticates nobody.
 	be := h.backendFor(r)
 	if body.Assignee == "" {
 		identity, err := be.Identity(r.Context())
@@ -320,7 +320,7 @@ func (h *Handler) addLabel(w http.ResponseWriter, r *http.Request) {
 }
 
 // removeLabel takes the label as a query parameter rather than a path segment,
-// because a label may contain a slash (SPEC §2.2, §6).
+// because a label may contain a slash.
 func (h *Handler) removeLabel(w http.ResponseWriter, r *http.Request) {
 	label := r.URL.Query().Get("label")
 	if label == "" {
@@ -361,8 +361,7 @@ func (h *Handler) removeRelation(w http.ResponseWriter, r *http.Request) {
 }
 
 // tree returns an IssueTree whole; it is not paged, and carries no ETag,
-// because an IssueTree aggregates many issues and no one version tags it
-// (SPEC §6.2).
+// because an IssueTree aggregates many issues and no one version tags it.
 func (h *Handler) tree(w http.ResponseWriter, r *http.Request) {
 	tree, err := h.backendFor(r).Tree(r.Context(), r.PathValue("id"))
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The line SPEC §4.1 prints verbatim, for the issue whose JSON §4.6 shows.
+// The canonical compact line, for the issue the JSON shape documents.
 func TestCompactLineSpecExample(t *testing.T) {
 	issue := &domain.Issue{
 		ID:       "awb-5c1d84",

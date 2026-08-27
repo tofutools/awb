@@ -1,7 +1,7 @@
 // Command awb is an agent-first issue tracker: a single binary over SQLite,
 // with a command line interface for coding agents, humans and scripts.
 //
-// See spec/SPEC.md for the specification this implements.
+// See spec/ARCHITECTURE.md for the shape of the system.
 package main
 
 import (

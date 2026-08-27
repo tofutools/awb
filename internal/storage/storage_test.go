@@ -98,8 +98,8 @@ func TestGetIssueNotFound(t *testing.T) {
 	assert.Equal(t, 3, exitOf(err))
 }
 
-// The CHECK constraints of SPEC §2.2 make the invalid states unrepresentable,
-// so nothing above the storage layer has to keep status and assignee in step.
+// The CHECK constraints make the invalid states unrepresentable, so nothing
+// above the storage layer has to keep status and assignee in step.
 func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
@@ -146,8 +146,8 @@ func fields(status domain.Status, assignee, reason string) storage.IssueFields {
 	}
 }
 
-// SPEC §2.2: updated_at moves only when a stored field actually changes, and is
-// strictly increasing per issue whatever the clock's resolution is.
+// updated_at moves only when a stored field actually changes, and is strictly
+// increasing per issue whatever the clock's resolution is.
 func TestUpdatedAtOnlyMovesOnRealChange(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
@@ -826,6 +826,6 @@ func TestProjectDeletionRefusesWhileItHoldsAnyIssue(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// exitOf reports the exit code a failure carries, which is the machine-readable
-// half of the taxonomy both surfaces share.
+// exitOf reports the exit code a failure carries, which is the
+// machine-readable half of the taxonomy both surfaces share.
 func exitOf(err error) int { return awberr.ExitCode(err) }

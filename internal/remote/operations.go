@@ -10,9 +10,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The request bodies of SPEC §6.4. They are declared here rather than reused
-// from the backend package because the wire names are part of the API contract
-// and must not follow a Go field rename.
+// The API's request bodies. They are declared here rather than reused from the
+// backend package because the wire names are part of the API contract and must
+// not follow a Go field rename.
 //
 // Every field turns on presence or absence, and null is neither: a description
 // or a close reason is cleared with "" and left alone by omission.
@@ -108,7 +108,7 @@ func (b *Backend) GetIssue(ctx context.Context, ref string) (*domain.Issue, erro
 }
 
 // ListIssues sends the filter as query parameters, which carry the same names
-// as the corresponding CLI flags in the same kebab-case spelling (SPEC §6).
+// as the corresponding CLI flags in the same kebab-case spelling.
 //
 // ready and blocked are their own endpoints, so the readiness selector picks
 // the path rather than becoming a parameter.
@@ -216,8 +216,8 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 	if err != nil {
 		return nil, err
 	}
-	// The server does not report a relation count; the deleted object carries
-	// the relations that went with it, which is what --json prints.
+	// The server does not report a relation count; the deleted object carries the
+	// relations that went with it, which is what --json prints.
 	return &backend.DeletedIssue{Issue: *issue, RelationsRemoved: len(issue.Relations)}, nil
 }
 
@@ -249,7 +249,7 @@ func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*do
 }
 
 // RemoveLabel sends the label as a query parameter rather than a path segment,
-// because a label may contain a slash (SPEC §2.2, §6).
+// because a label may contain a slash.
 func (b *Backend) RemoveLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
 	target := b.endpoint("/api/issues/"+url.PathEscape(ref)+"/labels", url.Values{"label": {label}})
 	var issue domain.Issue
@@ -331,9 +331,9 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 	return &project, nil
 }
 
-// DeleteProject sends --cascade as a boolean query parameter. There is no force
-// parameter anywhere: the HTTP method is the confirmation that --force supplies
-// on the command line (SPEC §6).
+// DeleteProject sends --cascade as a boolean query parameter. There is no
+// force parameter anywhere: the HTTP method is the confirmation that --force
+// supplies on the command line.
 func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 	ifMatch string) (*backend.DeletedProject, error) {
 	query := url.Values{}
@@ -363,7 +363,7 @@ func (b *Backend) AssigneeFacets(ctx context.Context, filter *domain.Filter) (ba
 func (b *Backend) facets(ctx context.Context, path string, filter *domain.Filter) (backend.FacetPage, error) {
 	query := filterQuery(filter, path)
 	// sort is not accepted on a facet endpoint, the row order being fixed at
-	// value ascending (SPEC §6.2).
+	// value ascending.
 	query.Del("sort")
 
 	facets := []domain.Facet{}

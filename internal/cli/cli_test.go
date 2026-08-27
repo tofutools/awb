@@ -26,8 +26,8 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 	root := t.TempDir()
 
-	// Isolate every source the configuration reads, so a test never picks up
-	// the developer's own settings.
+	// Isolate every source the configuration reads, so a test never picks up the
+	// developer's own settings.
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	t.Setenv("AWB_DB", filepath.Join(root, "awb.db"))
@@ -35,8 +35,8 @@ func newHarness(t *testing.T) *harness {
 	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_COLOR"} {
 		t.Setenv(name, "")
 	}
-	// The default table mode is coloured only when stdout is a terminal, which
-	// it never is here; pinning it keeps the golden output honest anyway.
+	// The default table mode is coloured only when stdout is a terminal, which it
+	// never is here; pinning it keeps the golden output honest anyway.
 	t.Setenv("NO_COLOR", "1")
 
 	work := filepath.Join(root, "work")
@@ -71,7 +71,7 @@ func (h *harness) create(args ...string) string {
 	return strings.TrimSpace(h.mustRun(append([]string{"create"}, args...)...))
 }
 
-// SPEC §11, run verbatim.
+// The end-to-end example from the README, run verbatim.
 func TestWorkedExample(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
@@ -130,8 +130,8 @@ func TestJSONMutationsPrintTheObject(t *testing.T) {
 	assert.Equal(t, domain.StatusInProgress, issue.Status)
 	assert.Equal(t, "mikael", issue.Assignee)
 
-	// A deleting command prints the object as it was immediately before
-	// deletion, relations included.
+	// A deleting command prints the object as it was immediately before deletion,
+	// relations included.
 	other := h.create("other", "--project", "awb")
 	h.mustRun("dep", "add", id, "--blocked-by", other)
 
@@ -365,8 +365,8 @@ func TestAgentGuideCreatesTheFile(t *testing.T) {
 	assert.True(t, strings.HasPrefix(string(written), "<!-- awb:begin -->"))
 }
 
-// A file holding only one of the two markers fails rather than gaining a second
-// block.
+// A file holding only one of the two markers fails rather than gaining a
+// second block.
 func TestAgentGuideRefusesAHalfMarkedFile(t *testing.T) {
 	h := newHarness(t)
 

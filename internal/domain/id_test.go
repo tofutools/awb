@@ -10,9 +10,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// A fixed vector, so a change to the derivation of SPEC §8 cannot pass
-// unnoticed. The inputs are the title, the created_at in its exact 24-byte
-// millisecond form, and 16 salt bytes.
+// A fixed vector, so a change to the derivation cannot pass unnoticed. The
+// inputs are the title, the created_at in its exact 24-byte millisecond form,
+// and 16 salt bytes.
 func TestMintHashFixedVector(t *testing.T) {
 	salt, err := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
 	require.NoError(t, err)

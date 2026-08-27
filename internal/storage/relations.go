@@ -9,8 +9,8 @@ import (
 )
 
 // RelationExists reports whether this exact stored edge is present. The caller
-// canonicalises a symmetric relation first, so adding one from either end finds
-// the same edge.
+// canonicalises a symmetric relation first, so adding one from either end
+// finds the same edge.
 func (t *Tx) RelationExists(subject string, relType domain.RelationType, other string) (bool, error) {
 	var one int
 	err := t.q.QueryRowContext(t.ctx,
@@ -41,11 +41,11 @@ func (t *Tx) ParentOf(id string) (string, bool, error) {
 
 // InsertRelation stores an edge. Adding one that already exists succeeds and
 // changes nothing; adding or removing a relation does not change either
-// endpoint's updated_at (SPEC §2.2).
+// endpoint's updated_at.
 //
 // The idempotent re-add is done by looking first rather than with INSERT OR
 // IGNORE, because the relations table carries a second unique index — at most
-// one has-parent per subject (SPEC §2.3) — and IGNORE would swallow a genuine
+// one has-parent per subject — and IGNORE would swallow a genuine
 // second-parent conflict along with the harmless duplicate. The caller checks
 // for an existing different parent and reports it better; this is the backstop
 // that keeps the storage layer from silently dropping the write.
@@ -73,8 +73,8 @@ func (t *Tx) InsertRelation(subject string, relType domain.RelationType, other s
 	return nil
 }
 
-// DeleteRelation removes an edge. Removing one that does not exist succeeds and
-// changes nothing.
+// DeleteRelation removes an edge. Removing one that does not exist succeeds
+// and changes nothing.
 func (t *Tx) DeleteRelation(subject string, relType domain.RelationType, other string) error {
 	_, err := t.q.ExecContext(t.ctx,
 		`DELETE FROM relations WHERE subject = ? AND type = ? AND other = ?`,
@@ -87,7 +87,7 @@ func (t *Tx) DeleteRelation(subject string, relType domain.RelationType, other s
 
 // Reaches reports whether "from" reaches "to" by following relType edges from
 // subject to other, which is what decides whether adding "to relType from"
-// would close a cycle (SPEC §2.3).
+// would close a cycle.
 //
 // Each relation type is a graph of its own and is walked separately.
 func (t *Tx) Reaches(relType domain.RelationType, from, to string) (bool, error) {
@@ -186,7 +186,7 @@ func (t *Tx) walk(query string, args ...any) (map[string]struct{}, error) {
 // BlockedByEdges returns every stored blocked-by edge. It is read when a
 // has-parent edge is added or replaced, where the edge that ends up violating
 // the decomposition rule is some existing blocked-by edge neither of whose
-// endpoints is an endpoint of the edge being added (SPEC §2.3).
+// endpoints is an endpoint of the edge being added.
 func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 	rows, err := t.q.QueryContext(t.ctx,
 		`SELECT subject, other FROM relations WHERE type = 'blocked-by'`)
@@ -206,8 +206,8 @@ func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 	return edges, awberr.Wrap(awberr.Runtime, rows.Err(), "read the dependency graph")
 }
 
-// Children returns the direct children of an issue, ordered as SPEC §4.4 orders
-// siblings: priority ascending, then created_at ascending, then id ascending.
+// Children returns the direct children of an issue, ordered as siblings are
+// ordered everywhere: priority ascending, then created_at, then id.
 func (t *Tx) Children(id string) ([]*domain.Issue, error) {
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT `+issueColumns+`
@@ -231,8 +231,8 @@ func (t *Tx) Children(id string) ([]*domain.Issue, error) {
 }
 
 // Tree returns the subtree of children rooted at an issue, to its full depth,
-// following children across project boundaries and showing closed children too
-// (SPEC §4.4). It does not show ancestors.
+// following children across project boundaries and showing closed children
+// too. It does not show ancestors.
 //
 // The whole subtree is gathered first and hydrated in one pass, so the derived
 // fields of every node are filled in before any of them is copied into the
@@ -248,8 +248,8 @@ func (t *Tx) Tree(id string) (*domain.IssueTree, error) {
 	seen := make(map[string]struct{})
 
 	// The has-parent graph is acyclic by construction — the unique index gives
-	// each issue at most one parent and SPEC §2.3's cycle check guards the
-	// rest — but seen makes the walk terminate regardless.
+	// each issue at most one parent and the cycle check guards the rest — but
+	// seen makes the walk terminate regardless.
 	var gather func(*domain.Issue) error
 	gather = func(issue *domain.Issue) error {
 		if _, repeat := seen[issue.ID]; repeat {

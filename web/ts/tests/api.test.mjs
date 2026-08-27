@@ -1,6 +1,6 @@
 // The API client's query building, which has to match the CLI's flags exactly:
 // a repeatable filter is repeated rather than comma-separated, and the names
-// are the kebab-case ones the server accepts (SPEC §6).
+// are the kebab-case ones the server accepts.
 
 import assert from "node:assert/strict";
 import test from "node:test";

@@ -1,0 +1,347 @@
+# Architecture
+
+`awb` is an agent-first issue tracker: one Go binary over SQLite, offering a
+command line, an HTTP API and a bundled read-only web UI.
+
+This document describes the shape of the system and the reasoning behind it. It
+is deliberately free of implementation detail: the code and its tests are
+authoritative for behaviour, and `AGENTS.md` maps the packages.
+
+## 1. What the design is for
+
+Three assumptions drive everything else.
+
+**Agents are the primary caller.** Every operation is one non-interactive
+command with a stable, parseable output and a meaningful exit code. Output modes
+exist that minimise context consumption, because context is the scarce resource
+for the tool's main user.
+
+**The vocabulary must fit in a few lines of instruction.** A fixed set of types,
+statuses, priorities and relation types, none of it configurable. Everything a
+team wants to express beyond it goes into labels. This is what makes the tool
+teachable in a paragraph, and it is why no amount of demand should turn any of
+those enumerations into configuration.
+
+**One database, no ceremony.** One SQLite file per user, shared by all their
+projects, reachable over HTTP by things other than the CLI. No server required,
+no configuration required, no version control involved.
+
+It targets individuals, small teams and open source projects. It deliberately
+does not target enterprises: there is no permission model, no configurable
+workflow engine, no custom fields and no reporting suite.
+
+## 2. The domain
+
+### Projects and issues
+
+A **project** is the top-level organising unit; every issue belongs to exactly
+one, and its key is the issue ID prefix and is immutable. An **issue** carries a
+title, an optional Markdown description, a type, a status, a priority, a set of
+labels and an assignee.
+
+The description is the only free text on an issue. References to pull requests,
+CI runs, logs and design documents are ordinary Markdown links inside it, so
+there is no attachment or link entity, no file contents in the database and no
+link records to keep in step with anything.
+
+### Identifiers
+
+An issue ID is `<project-key>-<hash>`, where the hash is derived from the
+issue's own content and a random salt. That derivation matters architecturally
+for one reason: **IDs are independently mintable**. No counter, no coordination,
+no central allocator — which is what would let two databases be merged, or a
+second machine mint IDs, without a design change. IDs are not content-addressed
+and must never be reconstructed; the salt is what makes two identical creations
+distinct.
+
+Any unambiguous prefix, or a bare hash, works wherever an ID does. Uniqueness of
+a bare hash is a property of the data at a moment rather than a guarantee, so an
+ambiguous reference is reported rather than resolved by guessing.
+
+### Relations
+
+A relation is a directed link between two issues, which may be in different
+projects. There are four, and each is named from the point of view of its
+subject and reads *subject — relation — other*. That single convention holds
+everywhere a relation is named: in the model, on the command line and in the
+API, so there is never a question of which way round an argument goes.
+
+* `blocked-by` — the subject cannot start until the other is closed. The only
+  relation that affects readiness.
+* `has-parent` — decomposition. An issue has at most one parent.
+* `discovered-from` — provenance.
+* `related` — a loose, symmetric association with no behaviour attached.
+
+The three directed graphs must each stay acyclic, and are checked separately:
+work cannot depend on itself, decomposition cannot nest inside itself, and an
+issue cannot be its own origin. One further rule crosses two graphs — an issue
+may not be `blocked-by` an ancestor or descendant of its own decomposition,
+because a child waiting for its parent describes work that cannot be ordered.
+
+### Derived state, not recorded state
+
+**`blocked` is not stored.** An issue is blocked when it is itself not closed
+and something it is `blocked-by` is not closed. Closing a blocker therefore
+makes other issues ready with nothing written to them, and a closed issue is
+never blocked whatever its relations still say.
+
+This is the design's most load-bearing choice: it makes it *impossible* for the
+recorded state to disagree with the dependency graph. The same instinct appears
+throughout — `active_issues` on a project is counted, not maintained; the links
+in a description are parsed, not stored.
+
+**Status and assignee cannot drift apart either.** Four transitions — claim,
+release, close, reopen — are the only things that move either, and the general
+update operation can move neither. The pair is additionally constrained in the
+database itself, so an open-but-assigned issue is unrepresentable rather than
+merely unreachable.
+
+### Readiness
+
+An issue is **ready** when it is open and not blocked. `ready` additionally
+lists only unassigned issues, because "what should nobody in particular pick up
+next" is the question it exists to answer. It is the primary agent entry point,
+and the whole dependency model exists to make its answer trustworthy.
+
+Readiness guides listings rather than enforcing workflow: a non-ready issue can
+still be closed, and closing never inspects related issues. The one exception is
+claiming, which refuses a blocked, closed or already-held issue unless forced.
+
+## 3. Layering
+
+```
+                 command line          HTTP API + web UI
+                       \                      /
+                        \                    /
+                         one backend interface
+                        /                    \
+                   local                    remote
+                 (SQLite)                   (HTTP)
+                     |
+              domain + storage
+```
+
+Two structural rules hold this together, and most of the design's guarantees are
+consequences of them rather than of discipline.
+
+### One interface, two implementations
+
+Every command is written against a single backend interface. One implementation
+is the local SQLite backend; the other is an HTTP client. Pointing the tool at a
+server URL swaps the implementation, and a command **cannot tell them apart**.
+
+That is what makes "remote mode behaves identically to direct mode" structural
+rather than a promise somebody has to keep. It is verified by running the same
+scripted sequence against a file and against a server on that file, and
+comparing output and exit codes byte for byte.
+
+The HTTP handlers sit on the same interface, over the local implementation. So
+the API and the command line are not two implementations of the same rules —
+they are two adapters over one. Neither can gain a behaviour the other lacks
+without the shared layer gaining it first.
+
+### The domain layer does no I/O
+
+Vocabulary, text validation, identifier derivation, link extraction, the graph
+rules and readiness live in a layer that reads and writes nothing. Both surfaces
+share it wholesale, so they cannot accept different strings or enforce different
+graphs.
+
+Where a rule needs to consult stored state — "would this edge close a cycle?" —
+the rule stays in the domain layer as a function over sets, and the traversal
+that gathers those sets lives in storage. The statement of the rule and the
+means of answering it are kept apart on purpose: the rule is then testable
+without a database, and there is exactly one place it is written down.
+
+### Failure is classified once
+
+Four kinds — usage, not found, conflict, runtime — are shared by every layer.
+The command line maps them to exit codes and the API to status codes, and the
+HTTP client maps them back. Because the mapping is defined once, in one place, a
+command's exit code is the same in both modes without either adapter knowing
+about the other.
+
+Statuses that no kind maps onto — authentication, cross-site rejection, failed
+precondition, and the rest — are the ones provoked by *how* a client behaved
+rather than by *what* it asked for. They collapse to the generic runtime code,
+because the command line has no separate meaning for them.
+
+## 4. Storage
+
+A single SQLite file holds everything. There is no per-directory database, so a
+user has one tracker unless they explicitly point at another.
+
+**Only the initialising command creates it.** Every other command that finds the
+file missing fails and names the path, so a typo in a flag or an environment
+variable cannot silently produce a second, empty tracker — a failure mode that
+would otherwise be discovered days later. The file also carries an application
+stamp, so the same typo cannot point at somebody else's database and have this
+one's migrations applied to it.
+
+Schema changes are ordered migration batches recorded in SQLite's own version
+counter, so the schema carries no bookkeeping table and the number is readable
+by anyone with a SQLite shell. A binary refuses a database newer than it
+understands rather than operating on a schema it does not know.
+
+**Invariants live in the database where they can.** Constraints enforce the
+status/assignee pairing, the priority range, the enumerations and the
+at-most-one-parent rule. Whatever the layers above do, the file cannot hold a
+state the model forbids.
+
+Full text search is a SQLite full-text index over titles and descriptions, kept
+in sync by triggers. Search terms are always literal: no operator, wildcard or
+column prefix reaches the query, so no user or agent input can produce a syntax
+error rather than a result.
+
+### Concurrency
+
+Concurrency is SQLite's problem, deliberately. The file is opened in
+write-ahead-log mode with a busy timeout, so several local processes — three
+agents in three terminals — share it safely.
+
+Every mutation is one immediate transaction, taking the write lock *before* it
+reads anything it then validates against. The graph checks, the compare-and-set
+of a claim, the timestamp bump and the identifier collision retry all happen
+inside one writer's exclusive turn, so no concurrent commit can slip between a
+check and the change it guards. A transaction that cannot take the lock fails
+rather than being retried in a loop.
+
+There are no leases, locks or claim expiry. A claim is a single atomic update,
+and a crashed agent leaves an assigned issue that a human or another agent
+releases explicitly. This is a deliberate refusal to guess: an expiry mechanism
+would have to decide how long is too long, and that decision cannot be made
+correctly without knowing what the work was.
+
+### Timestamps as versions
+
+Update timestamps move only when a stored field actually changes, and are forced
+strictly upward when the clock is too coarse to distinguish two writes. Two
+versions of one row can therefore never carry the same timestamp.
+
+That property — not the resolution — is what lets a timestamp serve as a version
+identifier for optimistic concurrency, and what would let a future mechanism
+order the versions of a row. The cost is that timestamps are reliable as
+ordering keys but, under rapid writes, only approximate as measurements of time.
+
+## 5. Surfaces
+
+### Command line
+
+Three output modes, for three readers. The default table is for humans and is
+explicitly **not** a compatibility surface — nothing should parse it and it may
+change freely. A compact one-line-per-issue form is for agents and is designed
+to cost as little context as possible. A JSON form is the stable, complete
+representation. The latter two are the compatibility surface; changing either is
+a breaking change.
+
+Mutating commands print nothing on success, so a script's output is signal.
+Destructive commands take a confirmation flag rather than prompting, because
+prompting would make them unscriptable.
+
+### HTTP API
+
+The API exists so that things other than the command line can reach the
+database: third-party interfaces, dashboards and integrations, and later a
+shared team instance.
+
+It is specified by an OpenAPI document that is embedded in the binary and served
+from it. The document's component schemas *are* the CLI's JSON structures —
+there is no second, HTTP-only representation of anything the CLI also returns.
+If the two ever diverge, the shapes are what changed and both must be corrected
+together. A test enforces this by checking the document's vocabulary against the
+code's.
+
+**The API is specified as if a read/write UI existed**, even though the bundled
+one only reads. That means complete write coverage, optimistic concurrency
+through entity tags and conditional requests, paging with a total count, and
+endpoints for populating filter menus and for a caller's own identity. Version 1
+ships a read-only UI as a scope decision about the *UI*, not about the API, so
+making it writable later is a change to the UI alone.
+
+Two decisions there are worth stating. Status transitions are endpoints rather
+than fields in a general update, and labels are added and removed individually,
+both because a whole-object write would silently discard a concurrent edit. And
+a claim can carry the assignee it expects to replace, so two agents racing for
+one issue cannot both win.
+
+### Web UI
+
+The bundled UI is a client of the same HTTP API and gets no privileged access to
+the database. That is what keeps the API honest: anything the UI can do, an
+integration can do, because the UI is doing it the same way.
+
+Its frontend is compiled ahead of time and embedded, so the shipped artifact
+stays one file. Third-party browser code is committed pre-built; no package
+manager runs at build time.
+
+### Authentication, and the absence of authorization
+
+The server can identify its callers and does nothing else with the result.
+**Every user it knows may do everything every other one may**; credentials serve
+only to say who is calling. Authorization is a version 2 concern, and version 1
+deliberately carries none of it rather than half of it.
+
+Without credentials configured there is no authentication at all and any client
+that can reach the port has full access — which is why the default binds
+loopback. It is still not *anonymous*: the server resolves one identity at
+startup and attributes every request to it, so the layer below never has to
+handle the absence of an identity.
+
+Cross-origin access and cross-site writes are both opt-in, because a browser
+attaches stored credentials to cross-site requests of its own accord.
+
+## 6. Directory context
+
+`awb` knows nothing about Git, or about any version control system. What a
+directory means is written down in that directory, in a small configuration
+file, and everything follows from that: a project to scope to, a label to carry.
+The file is found by searching upward, so putting it at the top of a checkout
+gives that checkout its own scope from every subdirectory.
+
+Not tying this to Git is what makes it work for a directory under no version
+control, one holding several checkouts, or one checkout holding several scopes.
+
+Context is resolved **on the client**, always. A resolved context is nothing but
+ordinary filter values, so the server never inspects a caller's working
+directory and needs no notion of one — which is also why a browser UI, having no
+working directory, simply filters explicitly instead.
+
+Because that file is meant to be committed, it may have been written by somebody
+other than the person running the command. So it may set only scope. It cannot
+redirect where issues are stored, claim to be you, or make you send a password
+somewhere; those keys are not merely overridden but unread.
+
+## 7. Constraints that shape the design
+
+Some of these are as important as anything above, because they are what the
+design is holding *out*.
+
+**Deliberately absent:** versioning, history, merge and offline replication;
+comments; audit logs; sprints, boards, burndowns and time tracking;
+notifications; continuous synchronisation with external trackers; authorization;
+custom fields and workflows; attachments and blobs; bulk import.
+
+**Nothing is ever archived or purged.** Closed issues stay queryable forever.
+
+**Two invocations against unchanged data produce byte-identical output.** Every
+ordering is total, every derived array has a specified order, and this is
+verified rather than assumed. Agents diff outputs; an unstable ordering would
+make that useless.
+
+**Text is stored as it arrived.** Input is validated and rejected, never
+repaired: no normalisation, no case folding, no silently replaced invalid bytes.
+Nothing is stored that the caller did not send, so what comes back out is what
+went in.
+
+## 8. What version 1 leaves for later
+
+Version 1 is one person, one machine, one database file, any number of local
+processes and agents against it. What it deliberately provides *toward* a
+multi-user future is only what has no cost today: independently mintable
+identifiers, atomic operations, schema migrations, version timestamps, a stable
+API contract and an API sufficient for a write UI.
+
+It provides no change log, tombstones, vector clocks or other merge machinery,
+because carrying half a synchronisation design is worse than carrying none.
+
+`TODO.md` lists what remains.

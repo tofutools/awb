@@ -7,7 +7,7 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// filterFlags are the filters SPEC §4.3 gives list, ready, blocked and search.
+// filterFlags are the filters list, ready, blocked and search share.
 //
 // Repeated values of one filter are ORed; different filters are ANDed. No
 // filter accepts comma-separated lists. Only status, type, priority, label,
@@ -29,14 +29,13 @@ type filterFlags struct {
 }
 
 // filterOptions says which of the flags a particular command accepts. A flag a
-// command rejects this way is a usage error, exit code 2 (SPEC §4.3).
+// command rejects this way is a usage error, exit code 2.
 type filterOptions struct {
-	// status is false for ready and blocked, which fix the status set
-	// themselves.
+	// status is false for ready and blocked, which fix the status set themselves.
 	status bool
-	// assignee is false for ready, which fixes the assignee filter to
-	// unassigned: "what should nobody-in-particular pick up next" is the
-	// question it exists to answer.
+	// assignee is false for ready, which fixes the assignee filter to unassigned:
+	// "what should nobody-in-particular pick up next" is the question it exists
+	// to answer.
 	assignee bool
 	// relevance is true only for search.
 	relevance bool
@@ -145,7 +144,7 @@ func (f *filterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 }
 
 // buildAssignee applies the mutually exclusive assignee filters. --mine
-// resolves to the configured identity (SPEC §7).
+// resolves to the configured identity.
 func (f *filterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptions,
 	filter *domain.Filter) error {
 	if !opts.assignee {
@@ -184,11 +183,11 @@ func (f *filterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptio
 }
 
 // buildScope applies --project and --label, and the directory context they
-// default to (SPEC §5).
+// default to.
 //
 // The context project is a default for --project, and an explicit --project
-// replaces it: an issue belongs to exactly one project, so intersecting the two
-// could only ever yield nothing, and the explicit flag is what the person
+// replaces it: an issue belongs to exactly one project, so intersecting the
+// two could only ever yield nothing, and the explicit flag is what the person
 // running the command means. The context label works the same way.
 func (f *filterFlags) buildScope(contextProject, contextLabel string, cmd *cobra.Command,
 	filter *domain.Filter) error {

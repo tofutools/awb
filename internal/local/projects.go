@@ -10,7 +10,7 @@ import (
 )
 
 // CreateProject creates a project. The name defaults to the key and is never
-// empty (SPEC §2.1).
+// empty.
 func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) (*domain.Project, error) {
 	key, err := domain.ValidateProjectKey(req.Key)
 	if err != nil {
@@ -78,7 +78,7 @@ func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend
 }
 
 // UpdateProject changes a project's name or description. The key itself is
-// immutable. An empty name restores the key as the name (SPEC §4.1).
+// immutable. An empty name restores the key as the name.
 func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.ProjectPatch,
 	ifMatch string) (*domain.Project, error) {
 	if _, err := domain.ValidateProjectKey(key); err != nil {
@@ -129,7 +129,7 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 // so the refusal is wider than the count project ls shows and confirmation
 // alone can never destroy closed history — unless cascade is given, which
 // deletes those issues and their relations, including relations to issues in
-// other projects, which may unblock work elsewhere (SPEC §4.2).
+// other projects, which may unblock work elsewhere.
 func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 	ifMatch string) (*backend.DeletedProject, error) {
 	if _, err := domain.ValidateProjectKey(key); err != nil {

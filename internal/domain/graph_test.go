@@ -82,10 +82,10 @@ func TestCheckBlockedByDecomposition(t *testing.T) {
 	assert.NoError(t, domain.CheckBlockedByDecomposition("awb-me", "awb-x", set()))
 }
 
-// Adding or replacing a has-parent edge moves a whole subtree under a new chain
-// of ancestors, and the edge that ends up violating the rule is some *existing*
-// blocked-by edge, neither of whose endpoints is an endpoint of the edge being
-// added.
+// Adding or replacing a has-parent edge moves a whole subtree under a new
+// chain of ancestors, and the edge that ends up violating the rule is some
+// *existing* blocked-by edge, neither of whose endpoints is an endpoint of the
+// edge being added.
 func TestCheckParentDecomposition(t *testing.T) {
 	subtree := set("awb-child", "awb-gchild")
 	chain := set("awb-parent", "awb-gparent")
@@ -114,8 +114,8 @@ func TestCheckParentDecomposition(t *testing.T) {
 			{Subject: "awb-child", Other: "awb-gchild"},
 			{Subject: "awb-parent", Other: "awb-gparent"},
 		}
-		// Both ends inside one set is not this rule's business: whether an
-		// issue may be blocked-by a sibling is not what SPEC §2.3 forbids.
+		// Both ends inside one set is not this rule's business: whether an issue may
+		// be blocked-by a sibling is not what this rule forbids.
 		assert.NoError(t, domain.CheckParentDecomposition(subtree, chain, edges))
 	})
 

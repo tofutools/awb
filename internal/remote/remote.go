@@ -1,12 +1,12 @@
 // Package remote implements the backend over the HTTP API, so that setting
-// --db to a server's URL makes every command behave identically to direct mode
-// (SPEC §6).
+// --db to a server's URL makes every command behave identically to direct
+// mode.
 //
 // Directory context and the CLI's identity are resolved on the client, and the
 // identity is always stated explicitly — as the assignee of claim and release,
-// and as the assignee parameter --mine becomes — so that a remote claim records
-// exactly what the same command would record locally and a server's own
-// identity never stands in for it.
+// and as the assignee parameter --mine becomes — so that a remote claim
+// records exactly what the same command would record locally and a server's
+// own identity never stands in for it.
 package remote
 
 import (
@@ -38,7 +38,7 @@ type Backend struct {
 }
 
 // New builds a client for the server at base, which may carry a path that the
-// API paths hang under (SPEC §3).
+// API paths hang under.
 func New(base *url.URL, user, password, identity string) *Backend {
 	return &Backend{
 		base:     base,
@@ -77,10 +77,10 @@ func (b *Backend) endpoint(path string, query url.Values) string {
 
 // call performs one request and decodes the response into out.
 //
-// The status-to-exit-code mapping of SPEC §6 is inverted here so the CLI's exit
-// codes are identical in both modes: 400 becomes 2, 404 becomes 3, 409 becomes
-// 4, and any other failure — including a transport error or an unreachable
-// server — becomes 1.
+// The status-to-exit-code mapping is inverted here so the CLI's exit codes are
+// identical in both modes: 400 becomes 2, 404 becomes 3, 409 becomes 4, and
+// any other failure — including a transport error or an unreachable server —
+// becomes 1.
 func (b *Backend) call(ctx context.Context, method, url string, body any, ifMatch string,
 	out any) (http.Header, error) {
 	var reader io.Reader
@@ -103,7 +103,7 @@ func (b *Backend) call(ctx context.Context, method, url string, body any, ifMatc
 		req.Header.Set("If-Match", ifMatch)
 	}
 	// A client that has credentials sends them on every request, whether or not
-	// the server asks for them (SPEC §6).
+	// the server asks for them.
 	if b.user != "" || b.password != "" {
 		req.SetBasicAuth(b.user, b.password)
 	}
@@ -146,8 +146,8 @@ func (b *Backend) apiError(resp *http.Response) error {
 	return &awberr.Error{Kind: kind, Msg: fmt.Sprintf("%s: %s", resp.Status, message)}
 }
 
-// totalCount reads the unpaged total the server reports (SPEC §6.2), falling
-// back to the number of rows when the header is absent.
+// totalCount reads the unpaged total the server reports, falling back to the
+// number of rows when the header is absent.
 func totalCount(header http.Header, fallback int) int {
 	value := header.Get("X-Total-Count")
 	if value == "" {

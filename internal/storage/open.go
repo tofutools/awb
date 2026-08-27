@@ -13,7 +13,7 @@ import (
 
 // busyTimeoutMS is how long a statement waits for the write lock before giving
 // up. A transaction that cannot take the lock in that time fails rather than
-// being retried in a loop (SPEC §9).
+// being retried in a loop.
 const busyTimeoutMS = 5000
 
 // DB is an open awb database.
@@ -37,9 +37,9 @@ func (d *DB) Close() error { return d.db.Close() }
 //
 // It refuses a file that is missing or zero-length, so a typo in --db or
 // AWB_DB cannot silently produce a second, empty tracker: only init creates a
-// database (SPEC §3). It also refuses a file that exists, is not empty and does
-// not carry awb's application_id, so the same typo cannot point at somebody
-// else's database and have awb's migrations applied to it.
+// database. It also refuses a file that exists, is not empty and does not
+// carry awb's application_id, so the same typo cannot point at somebody else's
+// database and have awb's migrations applied to it.
 func Open(ctx context.Context, path string) (*DB, error) {
 	empty, err := isEmptyFile(path)
 	if err != nil {
@@ -54,7 +54,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 
 // Init creates the database if it is absent, together with any missing parent
 // directory, and brings its schema up to date. It is the only command that
-// creates one, and it is idempotent (SPEC §3, §4.2).
+// creates one, and it is idempotent.
 func Init(ctx context.Context, path string) (*DB, error) {
 	if err := commonsqlite.CreateDataDir(path); err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "create directory for %s", path)
@@ -62,8 +62,8 @@ func Init(ctx context.Context, path string) (*DB, error) {
 	return openExisting(ctx, path, true)
 }
 
-// openExisting opens path, checks the stamp and migrates. adopt is set by init,
-// which may take over an empty database as well as create one.
+// openExisting opens path, checks the stamp and migrates. adopt is set by
+// init, which may take over an empty database as well as create one.
 func openExisting(ctx context.Context, path string, adopt bool) (*DB, error) {
 	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
@@ -88,13 +88,13 @@ func openExisting(ctx context.Context, path string, adopt bool) (*DB, error) {
 }
 
 // dsn builds the connection string. Foreign keys are on and a busy timeout is
-// set, so several local processes can use the same file safely (SPEC §3). WAL
+// set, so several local processes can use the same file safely. WAL
 // journalling is a property of the file and is set by the first migration.
 func dsn(path string) string {
 	return fmt.Sprintf("%s?_pragma=foreign_keys=on&_pragma=busy_timeout=%d", path, busyTimeoutMS)
 }
 
-// checkStamp applies the file-identity rule of SPEC §3.
+// checkStamp applies the file-identity rule.
 func checkStamp(ctx context.Context, db *sql.DB, path string, adopt bool) error {
 	appID, err := readInt32Pragma(ctx, db, "application_id")
 	if err != nil {
@@ -148,8 +148,8 @@ func countTables(ctx context.Context, db *sql.DB) (int, error) {
 }
 
 // isEmptyFile reports whether path is missing or zero-length. A zero-length
-// file counts as missing (SPEC §3), so what touch leaves behind is not
-// something another command quietly fills in.
+// file counts as missing, so what touch leaves behind is not something another
+// command quietly fills in.
 func isEmptyFile(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {

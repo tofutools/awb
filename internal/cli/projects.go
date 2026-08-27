@@ -11,7 +11,7 @@ import (
 
 // summarise prints the one-line human-readable summary a deleting command
 // gives. It is the one output with no guaranteed format; a script uses --json,
-// which returns the deleted object (SPEC §4.1).
+// which returns the deleted object.
 func (e *env) summarise(format string, args ...any) error {
 	_, _ = fmt.Fprintf(e.stdout, format, args...)
 	return e.stdout.Err()

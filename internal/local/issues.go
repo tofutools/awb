@@ -9,8 +9,8 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// CreateIssue creates an issue with its labels and relations in one transaction
-// (SPEC §4.3).
+// CreateIssue creates an issue with its labels and relations in one
+// transaction.
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	issue := &domain.Issue{
 		Project:  req.Project,
@@ -40,9 +40,9 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 	}
 
-	// Creating with an assignee is an atomic create-and-claim: the assignee
-	// also sets status to in_progress, so a new issue is never open and
-	// assigned at once (SPEC §2.2, §4.3).
+	// Creating with an assignee is an atomic create-and-claim: the assignee also
+	// sets status to in_progress, so a new issue is never open and assigned at
+	// once.
 	if req.Assignee != "" {
 		if issue.Assignee, err = domain.ValidateAssignee(req.Assignee); err != nil {
 			return nil, err
@@ -110,7 +110,7 @@ func validateLabels(labels []string) ([]string, error) {
 
 // validateNewRelations checks the relation vocabulary and the one-parent rule
 // that applies before anything is stored: an issue has at most one parent, and
-// awb create takes one --has-parent (SPEC §6.4).
+// awb create takes one --has-parent.
 func validateNewRelations(relations []backend.NewRelation) ([]backend.NewRelation, error) {
 	parents := 0
 	for _, rel := range relations {
@@ -157,10 +157,9 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 }
 
 // checkFilterProjects reports a filter naming a project that is not there.
-// SPEC §4.1: addressing a single entity that does not exist exits 3 even when
-// it appears as a listing's --project, because a filter naming something that
-// is not there is a mistake to report, not a listing that happens to match
-// nothing.
+// Addressing a single entity that does not exist exits 3 even when it appears
+// as a listing's --project, because a filter naming something that is not
+// there is a mistake to report, not a listing that happens to match nothing.
 func checkFilterProjects(tx *storage.Tx, filter *domain.Filter) error {
 	for _, key := range filter.Projects {
 		exists, err := tx.ProjectExists(key)
@@ -189,7 +188,7 @@ func resolveFilterParent(tx *storage.Tx, filter *domain.Filter) error {
 }
 
 // UpdateIssue changes the fields awb update may change. Giving no field at all
-// succeeds and changes nothing, exactly as an empty PATCH does (SPEC §4.3).
+// succeeds and changes nothing, exactly as an empty PATCH does.
 func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.IssuePatch,
 	ifMatch string) (*domain.Issue, error) {
 	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
@@ -230,8 +229,8 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 
 // DeleteIssue hard deletes an issue and its relations. It never refuses on
 // account of dependents: it orphans any children and drops every relation,
-// reporting how many went, since removing a blocker silently makes other issues
-// ready (SPEC §4.3).
+// reporting how many went, since removing a blocker silently makes other
+// issues ready.
 func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backend.DeletedIssue, error) {
 	var deleted backend.DeletedIssue
 	err := b.write(ctx, func(tx *storage.Tx) error {
@@ -243,9 +242,8 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 			return err
 		}
 
-		// The object returned is the issue as it was immediately before
-		// deletion, which for an issue includes the relations that went with it
-		// (SPEC §4.1).
+		// The object returned is the issue as it was immediately before deletion,
+		// which for an issue includes the relations that went with it.
 		deleted.Issue = *issue
 		deleted.RelationsRemoved, err = tx.DeleteIssue(issue.ID)
 		return err
@@ -257,7 +255,7 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 }
 
 // AddLabel adds one label. Adding one the issue already carries succeeds and
-// changes nothing (SPEC §4.3).
+// changes nothing.
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
 	valid, err := domain.ValidateLabel(label)
 	if err != nil {
@@ -280,7 +278,7 @@ func (b *Backend) RemoveLabel(ctx context.Context, ref, label, ifMatch string) (
 	})
 }
 
-// Tree returns the subtree of children rooted at an issue (SPEC §4.4).
+// Tree returns the subtree of children rooted at an issue.
 func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, error) {
 	var tree *domain.IssueTree
 	err := b.db.Read(ctx, func(tx *storage.Tx) error {
@@ -297,7 +295,7 @@ func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, erro
 	return tree, nil
 }
 
-// LabelFacets lists the labels in use under a filter (SPEC §6.2).
+// LabelFacets lists the labels in use under a filter.
 func (b *Backend) LabelFacets(ctx context.Context, filter *domain.Filter) (backend.FacetPage, error) {
 	return b.facets(ctx, filter, (*storage.Tx).LabelFacets)
 }
@@ -321,8 +319,8 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 		if err != nil {
 			return err
 		}
-		// limit and offset page the facet rows, not the issues behind them, so
-		// count is the same whatever page it appears on (SPEC §6.2).
+		// limit and offset page the facet rows, not the issues behind them, so count
+		// is the same whatever page it appears on.
 		page.Facets, page.Total = storage.PageFacets(facets, filter.Limit, filter.Offset)
 		return nil
 	})

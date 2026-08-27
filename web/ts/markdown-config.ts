@@ -2,8 +2,8 @@
 // frontend tests can exercise the very configuration that ships, rather than a
 // copy of it. web/ts/markdown.ts wires it to the vendored bundles.
 //
-// SPEC §2.4 pins the dialect to GitHub Flavored Markdown — CommonMark plus
-// GFM's tables, task lists, strikethrough, autolink extension and
+// The dialect is pinned to GitHub Flavored Markdown — CommonMark plus GFM's
+// tables, task lists, strikethrough, autolink extension and
 // disallowed-raw-HTML rule, and nothing beyond that — and requires this
 // renderer to be configured to that same set, because `links` is a specified
 // output and what the UI shows as a link must be what `links` lists.

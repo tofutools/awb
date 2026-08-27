@@ -45,6 +45,14 @@ func enumOf(t *testing.T, doc map[string]any, name string) []string {
 	return values
 }
 
+// The document is embedded by a compiler directive, and a directive that stops
+// being one — a stray space after the slashes — disables it silently, leaving an
+// empty byte slice rather than an error. This is the assertion that makes that
+// loud.
+func TestDocumentIsEmbedded(t *testing.T) {
+	require.NotEmpty(t, api.YAML(), "the OpenAPI document is not embedded")
+}
+
 func TestDocumentParses(t *testing.T) {
 	doc := document(t)
 	assert.Equal(t, "3.1.0", doc["openapi"])
@@ -106,7 +114,8 @@ func TestEnumsMatchTheGoVocabulary(t *testing.T) {
 		enumOf(t, doc, "Direction"))
 }
 
-// number reads a YAML scalar as an int, whatever integer type the parser chose.
+// number reads a YAML scalar as an int, whatever integer type the parser
+// chose.
 func number(t *testing.T, value any) int {
 	t.Helper()
 	switch v := value.(type) {
@@ -149,8 +158,8 @@ func TestDefaultsMatch(t *testing.T) {
 	assert.Equal(t, string(domain.DefaultStatus), schema(t, doc, "Status")["default"])
 }
 
-// Every field of the Issue shape §4.6 fixes must be declared and required:
-// every field is always present, so a consumer needs no absence handling.
+// Every field of the Issue shape must be declared and required: every field is
+// always present, so a consumer needs no absence handling.
 func TestIssueSchemaCoversEveryField(t *testing.T) {
 	doc := document(t)
 	issue := schema(t, doc, "Issue")

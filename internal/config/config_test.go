@@ -65,8 +65,8 @@ func TestDefaults(t *testing.T) {
 	assert.Empty(t, cfg.ContextLabel)
 }
 
-// Command line flags, then environment variables, then the local file, then the
-// user file, then the defaults (SPEC §7.3).
+// Command line flags, then environment variables, then the local file, then
+// the user file, then the defaults.
 func TestDBPrecedence(t *testing.T) {
 	configDir, _ := isolate(t)
 	writeUserConfig(t, configDir, "db: /from/user/config\n")
@@ -149,8 +149,8 @@ func TestNoContextIgnoresTheLocalFile(t *testing.T) {
 	assert.Empty(t, cfg.ContextLabel)
 }
 
-// --no-context does not stop the file from being read, so a malformed one still
-// fails the command.
+// --no-context does not stop the file from being read, so a malformed one
+// still fails the command.
 func TestNoContextStillReadsTheFile(t *testing.T) {
 	isolate(t)
 	dir := workdir(t, ".awb.yaml", "project: [malformed\n")
@@ -226,7 +226,7 @@ func TestIdentityFallsBackToTheOSUsername(t *testing.T) {
 	assert.Equal(t, config.FoldOSUsername(), cfg.Identity)
 }
 
-// An identity supplied by the user is rejected rather than folded (SPEC §2.2).
+// An identity supplied by the user is rejected rather than folded.
 func TestIdentityFromConfigIsRejectedNotFolded(t *testing.T) {
 	configDir, _ := isolate(t)
 	writeUserConfig(t, configDir, "identity: Mikael\n")
@@ -307,9 +307,9 @@ func TestCreateProjectVersusContextProject(t *testing.T) {
 	assert.Equal(t, "fromdir", cfg.ContextProject)
 }
 
-// The documented wart of SPEC §5: an exported AWB_PROJECT outranks the
-// directory's own project for create, while the same directory's listings still
-// filter where the file says.
+// The documented wart: an exported AWB_PROJECT outranks the directory's own
+// project for create, while the same directory's listings still filter where
+// the file says.
 func TestEnvProjectOutranksTheDirectory(t *testing.T) {
 	isolate(t)
 	t.Setenv("AWB_PROJECT", "fromenv")
@@ -322,7 +322,8 @@ func TestEnvProjectOutranksTheDirectory(t *testing.T) {
 	assert.Equal(t, "frontend", cfg.ContextLabel)
 }
 
-// --no-context removes the local file from the creation chain but not the rest.
+// --no-context removes the local file from the creation chain but not the
+// rest.
 func TestNoContextLeavesTheUserFileCreationDefault(t *testing.T) {
 	configDir, _ := isolate(t)
 	writeUserConfig(t, configDir, "project: fromuser\n")

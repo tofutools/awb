@@ -1,13 +1,14 @@
-// Rendering an issue description: the configuration of markdown-config.ts wired
-// to the committed vendor bundles, with everything sanitised on the way out.
+// Rendering an issue description: the configuration of markdown-config.ts
+// wired to the committed vendor bundles, with everything sanitised on the way
+// out.
 //
 // The API returns the description exactly as stored, so rendering it — and
-// sanitising it — is this client's job (SPEC §6.2).
+// sanitising it — is this client's job.
 //
-// One caveat worth stating plainly. markdown-it's linkify-it and goldmark's GFM
-// autolink extension are separate implementations of the same algorithm, so at
-// the margin they can disagree about where a bare URL ends. That is why the
-// issue view also renders the API's derived `links` array explicitly: the
+// One caveat worth stating plainly. markdown-it's linkify-it and goldmark's
+// GFM autolink extension are separate implementations of the same algorithm,
+// so at the margin they can disagree about where a bare URL ends. That is why
+// the issue view also renders the API's derived `links` array explicitly: the
 // authoritative list is always on screen, whatever the prose rendering does.
 
 import MarkdownIt from "markdown-it";

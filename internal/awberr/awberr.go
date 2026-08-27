@@ -3,7 +3,7 @@
 // code on the command line and one status code over HTTP, so the CLI and the
 // API can never disagree about what went wrong.
 //
-// The mapping is SPEC §4.1 and §6.1:
+// The mapping is:
 //
 //	Kind      exit  status
 //	Runtime      1     500
@@ -23,20 +23,20 @@ import (
 type Kind int
 
 const (
-	// Runtime is a failure that is nobody's fault in particular: the database
-	// is unreachable, a file cannot be read, a transaction timed out.
+	// Runtime is a failure that is nobody's fault in particular: the database is
+	// unreachable, a file cannot be read, a transaction timed out.
 	Runtime Kind = iota
-	// Usage is a mistake in what the caller asked for: an unknown enum value,
-	// a malformed label, mutually exclusive flags, text failing SPEC §2.6.
+	// Usage is a mistake in what the caller asked for: an unknown enum value, a
+	// malformed label, mutually exclusive flags, text failing the input rules.
 	Usage
 	// NotFound is an entity addressed by name that does not exist.
 	NotFound
-	// Conflict is a constraint that depends on stored state: a dependency
-	// cycle, a duplicate, a claim held by somebody else, a parent already set.
+	// Conflict is a constraint that depends on stored state: a dependency cycle,
+	// a duplicate, a claim held by somebody else, a parent already set.
 	Conflict
 )
 
-// ExitCode is the process exit status for a failure of this kind (SPEC §4.1).
+// ExitCode is the process exit status for a failure of this kind.
 func (k Kind) ExitCode() int {
 	switch k {
 	case Usage:
@@ -52,7 +52,7 @@ func (k Kind) ExitCode() int {
 	}
 }
 
-// HTTPStatus is the response status for a failure of this kind (SPEC §6.1).
+// HTTPStatus is the response status for a failure of this kind.
 func (k Kind) HTTPStatus() int {
 	switch k {
 	case Usage:
@@ -68,9 +68,9 @@ func (k Kind) HTTPStatus() int {
 	}
 }
 
-// KindFromHTTPStatus inverts HTTPStatus for the remote backend (SPEC §6). The
-// statuses that no kind maps onto — 401, 403, 405, 412, 413, 415 and anything
-// else — become Runtime, which is exit code 1: they say something about how the
+// KindFromHTTPStatus inverts HTTPStatus for the remote backend. The statuses
+// that no kind maps onto — 401, 403, 405, 412, 413, 415 and anything else —
+// become Runtime, which is exit code 1: they say something about how the
 // client behaved rather than about what it asked for, and the command line has
 // no separate code for that.
 func KindFromHTTPStatus(status int) Kind {
@@ -153,9 +153,9 @@ func ExitCode(err error) int {
 }
 
 // ErrPreconditionFailed marks a conditional request whose If-Match no longer
-// matches (SPEC §6.2). It has no exit code of its own — the command line never
-// sends If-Match — so it is a Runtime error that the HTTP adapter recognises
-// and answers 412.
+// matches. It has no exit code of its own — the command line never sends
+// If-Match — so it is a Runtime error that the HTTP adapter recognises and
+// answers 412.
 var ErrPreconditionFailed = errors.New("it has changed since you read it")
 
 // PreconditionFailed reports that a conditional request lost its race.

@@ -12,10 +12,10 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// descriptionFlags are --description and --description-file, which are mutually
-// exclusive. Both replace the description outright, taking the bytes exactly as
-// given: a description is never trimmed, so a trailing line feed from a heredoc
-// or an editor is part of it (SPEC §4.3).
+// descriptionFlags are --description and --description-file, which are
+// mutually exclusive. Both replace the description outright, taking the bytes
+// exactly as given: a description is never trimmed, so a trailing line feed
+// from a heredoc or an editor is part of it.
 type descriptionFlags struct {
 	text string
 	file string
@@ -51,8 +51,8 @@ func (d *descriptionFlags) value(e *env, cmd *cobra.Command) (*string, error) {
 }
 
 func (d *descriptionFlags) read(e *env) ([]byte, error) {
-	// This is the only use of stdin, and is not the bulk import excluded by
-	// SPEC §1.2.
+	// This is the only use of stdin, and is not the bulk import that is out of
+	// scope.
 	if d.file == "-" {
 		data, err := io.ReadAll(e.stdin)
 		if err != nil {
@@ -97,8 +97,8 @@ func newCreateCommand(e *env) *cobra.Command {
 				return err
 			}
 
-			// The project is resolved as --project, else AWB_PROJECT, else the
-			// local file, else the user file (SPEC §5).
+			// The project is resolved as --project, else AWB_PROJECT, else the local
+			// file, else the user file.
 			target := cfg.CreateProject
 			if cmd.Flags().Changed("project") {
 				target = project
@@ -127,9 +127,9 @@ func newCreateCommand(e *env) *cobra.Command {
 				req.Description = *description
 			}
 
-			// The context label is not a default but a value: a new issue
-			// carries it in addition to any --label given, so an issue created
-			// here stays visible here whatever else it is labelled (SPEC §5).
+			// The context label is not a default but a value: a new issue carries it in
+			// addition to any --label given, so an issue created here stays visible
+			// here whatever else it is labelled.
 			req.Labels = slices.Clone(labels)
 			if cfg.ContextLabel != "" && !slices.Contains(req.Labels, cfg.ContextLabel) {
 				req.Labels = append(req.Labels, cfg.ContextLabel)
@@ -149,8 +149,8 @@ func newCreateCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(issue)
 			}
-			// create is one of the two exceptions to "mutating commands print
-			// nothing on success": it prints the new ID (SPEC §4.1).
+			// create is one of the two exceptions to "mutating commands print nothing
+			// on success": it prints the new ID.
 			_, err = io.WriteString(e.stdout, issue.ID+"\n")
 			return err
 		},
@@ -414,9 +414,9 @@ func newClaimCommand(e *env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			assignee := as
 			if !cmd.Flags().Changed("as") {
-				// The CLI resolves its identity locally and always states it
-				// explicitly, so a remote claim records exactly what the same
-				// command would record locally (SPEC §6).
+				// The CLI resolves its identity locally and always states it explicitly,
+				// so a remote claim records exactly what the same command would record
+				// locally.
 				var err error
 				if assignee, err = e.identity(); err != nil {
 					return err
@@ -454,8 +454,8 @@ func newReleaseCommand(e *env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req := backend.ReleaseRequest{Force: force}
 			if !force {
-				// The identity serves only the "assigned to someone else"
-				// refusal, so it is needed only when that refusal applies.
+				// The identity serves only the "assigned to someone else" refusal, so it
+				// is needed only when that refusal applies.
 				identity, err := e.identity()
 				if err != nil {
 					return err
@@ -550,8 +550,8 @@ func newDeleteCommand(e *env) *cobra.Command {
 			"makes a decomposed parent's work top-level.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A missing --force depends on the arguments alone and not on
-			// anything the database holds, so it is a usage error (SPEC §4.1).
+			// A missing --force depends on the arguments alone and not on anything the
+			// database holds, so it is a usage error.
 			if !force {
 				return awberr.Usagef("awb delete needs --force: it is not recoverable")
 			}
@@ -565,8 +565,8 @@ func newDeleteCommand(e *env) *cobra.Command {
 				return err
 			}
 			if e.json {
-				// A deleting command prints the object as it was immediately
-				// before deletion, relations included.
+				// A deleting command prints the object as it was immediately before
+				// deletion, relations included.
 				return e.writeJSON(&deleted.Issue)
 			}
 			return e.summarise("Deleted %s and %d relation(s).\n",

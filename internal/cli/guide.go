@@ -1,8 +1,8 @@
 package cli
 
-// AgentGuide is the compact usage block awb agent-guide prints (SPEC §4.2).
+// AgentGuide is the compact usage block awb agent-guide prints.
 //
-// It is deliberately short: SPEC §1.1 asks for a vocabulary an agent can be
+// It is deliberately short: the whole point is a vocabulary an agent can be
 // taught in a few lines of instructions, and every line here costs an agent
 // context on every task. It teaches the vocabulary, the two output modes worth
 // using and the exit codes, and leaves the rest to --help.

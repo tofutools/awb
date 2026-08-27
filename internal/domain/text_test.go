@@ -25,8 +25,8 @@ func TestValidateTitle(t *testing.T) {
 	})
 
 	t.Run("keeps inner content byte for byte", func(t *testing.T) {
-		// No normalisation, and a byte-order mark is ordinary content rather
-		// than a prefix to remove.
+		// No normalisation, and a byte-order mark is ordinary content rather than a
+		// prefix to remove.
 		const withBOM = "a  b c \ufeff"
 		got, err := domain.ValidateTitle(withBOM)
 		require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestValidateLabelAndAssignee(t *testing.T) {
 	}
 }
 
-// SPEC §2.2 spells this one out: claim --as Mikael is a usage error, not a
+// The design spells this one out: claim --as Mikael is a usage error, not a
 // value to fold.
 func TestValidateAssigneeRefusesRatherThanNormalises(t *testing.T) {
 	_, err := domain.ValidateAssignee("Mikael")

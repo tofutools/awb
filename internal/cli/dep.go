@@ -8,9 +8,8 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// relationFlags are the four mutually exclusive relation flags dep add and
-// dep rm share. Exactly one per invocation; giving two, or none, is a usage
-// error (SPEC §4.4).
+// relationFlags are the four mutually exclusive relation flags dep add and dep
+// rm share. Exactly one per invocation; giving two, or none, is a usage error.
 type relationFlags struct {
 	blockedBy      string
 	hasParent      string
@@ -133,8 +132,7 @@ func newDepRemoveCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Under --json this prints the resulting issue — the one named
-			// first (SPEC §4.1).
+			// Under --json this prints the resulting issue — the one named first.
 			issue, err := be.RemoveRelation(cmd.Context(), args[0], relType, other, "")
 			if err != nil {
 				return err

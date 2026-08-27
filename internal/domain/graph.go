@@ -2,7 +2,7 @@ package domain
 
 import "github.com/tofutools/awb/internal/awberr"
 
-// The relation graph rules of SPEC §2.3.
+// The relation graph rules.
 //
 // Traversing the graph is the storage layer's job — it does it in SQL, inside
 // the same BEGIN IMMEDIATE transaction that performs the write, so no
@@ -13,8 +13,8 @@ import "github.com/tofutools/awb/internal/awberr"
 // CanonicalRelation orders the two ends of a relation for storage. A symmetric
 // related pair is stored with the smaller ID — comparing the whole ID string
 // byte for byte — as subject, so adding it from either end is the same edge,
-// removal works in either order, and both views use direction "out". A directed
-// relation is stored as written.
+// removal works in either order, and both views use direction "out". A
+// directed relation is stored as written.
 func CanonicalRelation(t RelationType, subject, other string) (string, string) {
 	if t.Symmetric() && other < subject {
 		return other, subject
@@ -22,8 +22,8 @@ func CanonicalRelation(t RelationType, subject, other string) (string, string) {
 	return subject, other
 }
 
-// CheckSelfRelation refuses a relation from an issue to itself, which SPEC §2.3
-// treats as a cycle and gives exit code 4.
+// CheckSelfRelation refuses a relation from an issue to itself, which counts
+// as a cycle.
 func CheckSelfRelation(t RelationType, subject, other string) error {
 	if subject == other {
 		return awberr.Conflictf("%s cannot be %s itself", subject, t)
@@ -56,10 +56,9 @@ func CheckCycle(t RelationType, subject, other string, otherReachesSubject bool)
 }
 
 // CheckBlockedByDecomposition refuses a blocked-by edge that inverts
-// decomposition (SPEC §2.3): an issue may not be blocked-by any ancestor or
-// descendant in the has-parent graph, because a child waiting for its own
-// parent, or a parent for its own child, describes work that cannot sensibly be
-// ordered.
+// decomposition: an issue may not be blocked-by any ancestor or descendant in
+// the has-parent graph, because a child waiting for its own parent, or a
+// parent for its own child, describes work that cannot sensibly be ordered.
 //
 // Adding a blocked-by edge moves one edge into a fixed decomposition, so it is
 // enough to test the other endpoint for membership in the subject's ancestor
@@ -81,15 +80,15 @@ type BlockedByEdge struct {
 }
 
 // CheckParentDecomposition refuses a has-parent edge that would invert
-// decomposition (SPEC §2.3).
+// decomposition.
 //
-// Adding or replacing a has-parent edge moves a whole subtree under a new chain
-// of ancestors, and the edge that ends up violating the rule is then some
-// *existing* blocked-by edge, neither of whose endpoints is an endpoint of the
-// edge being added. So the check is over the subtree rooted at the child and
-// the new parent's ancestor chain — the child and the new parent included — and
-// the edge is refused when any blocked-by edge has one end in that subtree and
-// the other in that chain.
+// Adding or replacing a has-parent edge moves a whole subtree under a new
+// chain of ancestors, and the edge that ends up violating the rule is then
+// some *existing* blocked-by edge, neither of whose endpoints is an endpoint
+// of the edge being added. So the check is over the subtree rooted at the
+// child and the new parent's ancestor chain — the child and the new parent
+// included — and the edge is refused when any blocked-by edge has one end in
+// that subtree and the other in that chain.
 //
 // Both sets are computed from the graph as it would be after the change, which
 // is also what makes the cheaper CheckBlockedByDecomposition test correct.

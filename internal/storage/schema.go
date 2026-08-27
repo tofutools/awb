@@ -1,7 +1,7 @@
 package storage
 
 // ApplicationID is the stamp that identifies an awb database: SQLite's
-// application_id set to 0x41574200, the ASCII bytes "AWB" and a NUL (SPEC §3).
+// application_id set to 0x41574200, the ASCII bytes "AWB" and a NUL.
 //
 // It is written by the first migration rather than as a separate step of init,
 // so whatever creates the schema also carries it. Every command refuses a file
@@ -10,10 +10,10 @@ package storage
 // applied to it.
 const ApplicationID int32 = 0x41574200
 
-// migrations is the ordered list of statement batches SPEC §3 describes.
-// migrations[0] takes a fresh database to version 1, migrations[1] from 1 to 2,
-// and so on. The version reached is recorded in SQLite's own user_version, so
-// the schema carries no bookkeeping table of its own.
+// migrations is the ordered list of statement batches. migrations[0] takes a
+// fresh database to version 1, migrations[1] from 1 to 2, and so on. The
+// version reached is recorded in SQLite's own user_version, so the schema
+// carries no bookkeeping table of its own.
 //
 // A released batch is never edited, only followed by another.
 var migrations = [][]string{
@@ -21,7 +21,7 @@ var migrations = [][]string{
 }
 
 var schemaV1 = []string{
-	// The stamp of SPEC §3, written by the schema's own first batch.
+	// The application stamp, written by the schema's own first batch.
 	`PRAGMA application_id = 1096237568`,
 
 	`CREATE TABLE projects (
@@ -32,13 +32,13 @@ var schemaV1 = []string{
 		updated_at  TEXT NOT NULL
 	) STRICT`,
 
-	// The two CHECK constraints below are SPEC §2.2's invariants, kept in the
-	// storage layer so the recorded state cannot disagree with itself whatever
-	// a caller does: status and assignee never drift apart, and a non-closed
-	// issue never carries a close reason.
+	// The two CHECK constraints below are the model's invariants, kept in the
+	// storage layer so the recorded state cannot disagree with itself whatever a
+	// caller does: status and assignee never drift apart, and a non-closed issue
+	// never carries a close reason.
 	//
-	// A closed issue may have an assignee or not, its assignee being a record
-	// of who did the work rather than a claim on it.
+	// A closed issue may have an assignee or not, its assignee being a record of
+	// who did the work rather than a claim on it.
 	`CREATE TABLE issues (
 		id           TEXT PRIMARY KEY,
 		project      TEXT NOT NULL REFERENCES projects(key) ON DELETE RESTRICT,
@@ -76,8 +76,8 @@ var schemaV1 = []string{
 	`CREATE INDEX idx_issue_labels_label ON issue_labels (label)`,
 
 	// A relation is stored once and shown on both issues. A symmetric related
-	// pair is stored canonically with the smaller ID as subject (SPEC §2.3),
-	// which is what makes adding it from either end idempotent.
+	// pair is stored canonically with the smaller ID as subject, which is what
+	// makes adding it from either end idempotent.
 	`CREATE TABLE relations (
 		subject TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
 		type    TEXT NOT NULL,
@@ -89,14 +89,13 @@ var schemaV1 = []string{
 
 	`CREATE INDEX idx_relations_other ON relations (type, other)`,
 
-	// SPEC §2.3: an issue has at most one parent.
+	// An issue has at most one parent.
 	`CREATE UNIQUE INDEX idx_relations_one_parent
 		ON relations (subject) WHERE type = 'has-parent'`,
 
-	// Full text search over titles and descriptions (SPEC §3), with the
-	// unicode61 tokenizer at its default settings: case- and
-	// diacritic-insensitive, splitting on non-alphanumeric characters, no
-	// stemming and no prefix matching (SPEC §4.3).
+	// Full text search over titles and descriptions, with the unicode61 tokenizer
+	// at its default settings: case- and diacritic-insensitive, splitting on
+	// non-alphanumeric characters, no stemming and no prefix matching.
 	`CREATE VIRTUAL TABLE issues_fts USING fts5 (
 		title,
 		description,
@@ -105,7 +104,7 @@ var schemaV1 = []string{
 		tokenize = 'unicode61'
 	)`,
 
-	// Kept in sync by triggers (SPEC §3).
+	// Kept in sync by triggers.
 	`CREATE TRIGGER issues_fts_ai AFTER INSERT ON issues BEGIN
 		INSERT INTO issues_fts (rowid, title, description)
 		VALUES (new.rowid, new.title, new.description);

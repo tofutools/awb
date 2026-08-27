@@ -10,10 +10,16 @@ read-only web UI.
 
 Implementation phase. Version 1 is implemented.
 
-`spec/SPEC.md` is authoritative for behaviour. If the code and the spec
-disagree, that is a bug in one of them — decide which, fix it, and do not let
-them drift. Code comments cite the section they implement (`SPEC §4.3`), so
-changing behaviour means finding and revisiting that section.
+**The code and its tests are authoritative for behaviour.** The specification
+that version 1 was built from has served its purpose and is gone; it is in the
+Git history if you ever need it. `spec/ARCHITECTURE.md` describes the shape of
+the system and the reasoning behind it, and `spec/TODO.md` lists what is left
+for future versions.
+
+That means a behavioural rule is documented in exactly one place: the comment
+next to the code that enforces it, and the test that pins it down. When you
+change behaviour, change both, and check whether `ARCHITECTURE.md` still
+describes the system truthfully.
 
 ## Build
 

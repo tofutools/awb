@@ -26,8 +26,7 @@ func scanIssue(row rowScanner) (*domain.Issue, error) {
 	return &i, nil
 }
 
-// GetIssue reads one issue by its exact ID, complete with the derived fields of
-// SPEC §4.6.
+// GetIssue reads one issue by its exact ID, complete with its derived fields.
 func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 	issue, err := t.getIssueRow(id)
 	if err != nil {
@@ -52,11 +51,12 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 }
 
 // ResolveIssueRef turns a reference — a full ID, an ID prefix, or a bare hash
-// or hash prefix — into exactly one issue ID (SPEC §8).
+// or hash prefix — into exactly one issue ID.
 //
 // A reference matching nothing is not found (exit 3, 404); one matching more
-// than one issue is a usage error (exit 2, 400) rather than a guess. Uniqueness
-// of a bare hash is a property of the data at that moment, not a guarantee.
+// than one issue is a usage error (exit 2, 400) rather than a guess.
+// Uniqueness of a bare hash is a property of the data at that moment, not a
+// guarantee.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
 	var (
 		rows *sql.Rows
@@ -101,8 +101,8 @@ func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
 	}
 }
 
-// hydrate fills in the derived fields of SPEC §4.6 for a set of issues, in a
-// fixed number of queries rather than one per issue.
+// hydrate fills in the derived fields for a set of issues, in a fixed number
+// of queries rather than one per issue.
 func (t *Tx) hydrate(issues []*domain.Issue) error {
 	if len(issues) == 0 {
 		return nil
@@ -157,7 +157,7 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 //
 // A relation is stored once and shown on both issues; direction identifies the
 // viewed endpoint. A symmetric related pair is always direction "out", since
-// both ends read the same (SPEC §2.3, §4.6).
+// both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
 	args := append(anyArgs(ids), anyArgs(ids)...)
@@ -187,9 +187,8 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read relations")
 }
 
-// loadBlockers computes the derived blocked state of SPEC §2.2: an issue is
-// blocked when it is itself not closed and at least one issue it is blocked-by
-// is not closed.
+// loadBlockers computes the derived blocked state: an issue is blocked when it
+// is itself not closed and at least one issue it is blocked-by is not closed.
 //
 // A closed issue is therefore never blocked and its blockers are empty,
 // whatever its blocked-by relations still say, which is what makes it
@@ -223,7 +222,7 @@ func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
 }
 
 // InsertIssue stores a new issue, drawing a fresh salt and retrying on a
-// same-project ID collision inside the same transaction (SPEC §8).
+// same-project ID collision inside the same transaction.
 func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	const maxAttempts = 8
 	now := Now()
@@ -277,9 +276,9 @@ func Fields(i *domain.Issue) IssueFields {
 	}
 }
 
-// UpdateIssue writes the stored fields of an issue, moving updated_at only when
-// something actually changed (SPEC §2.2). A write that changes nothing leaves
-// the timestamp alone.
+// UpdateIssue writes the stored fields of an issue, moving updated_at only
+// when something actually changed. A write that changes nothing leaves the
+// timestamp alone.
 func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	if Fields(issue) == fields {
 		return nil
@@ -312,8 +311,8 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 }
 
 // touchIssue moves updated_at for a change that is not to a column of the
-// issues table — a label being added or removed, which SPEC §2.2 counts as a
-// change to the issue.
+// issues table — a label being added or removed, which counts as a change to
+// the issue.
 func (t *Tx) touchIssue(issue *domain.Issue) error {
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx,
@@ -364,7 +363,7 @@ func (t *Tx) RemoveLabel(issue *domain.Issue, label string) error {
 // DeleteIssue removes an issue and, by cascade, its labels and every relation
 // it takes part in. It reports how many relations went with it, since removing
 // a blocker silently makes other issues ready and orphaning children makes a
-// decomposed parent's work top-level (SPEC §4.3).
+// decomposed parent's work top-level.
 func (t *Tx) DeleteIssue(id string) (relationsRemoved int, err error) {
 	if err := t.q.QueryRowContext(t.ctx,
 		`SELECT count(*) FROM relations WHERE subject = ? OR other = ?`, id, id,

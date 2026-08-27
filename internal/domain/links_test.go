@@ -131,7 +131,7 @@ func TestExtractLinks(t *testing.T) {
 }
 
 // A GFM autolink needs a domain with a period, so a hostname like "ci" is not
-// autolinked. That is the extension's own algorithm, which SPEC §2.4 defers to.
+// autolinked. That is the extension's own algorithm, which awb defers to.
 func TestExtractLinksBareHostWithoutPeriodIsNotAutolinked(t *testing.T) {
 	assert.Equal(t, []domain.Link{}, domain.ExtractLinks("see https://ci/1 for details"))
 	assert.Equal(t,

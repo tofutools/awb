@@ -6,7 +6,7 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// SortKey names an ordering for a listing (SPEC §4.3).
+// SortKey names an ordering for a listing.
 type SortKey string
 
 const (
@@ -24,21 +24,21 @@ var SortKeys = []SortKey{SortPriority, SortCreated, SortUpdated, SortID}
 // Sort is one parsed --sort value.
 //
 // Every sort ends with id ascending as a final tiebreak, so the order is total
-// and two invocations against unchanged data agree. priority inserts created_at
-// ascending before that tiebreak — oldest first within a priority — so
-// --sort priority is exactly the default order; the other keys use the tiebreak
-// alone. The Desc prefix reverses the named key only: the created_at and id
-// tiebreaks stay ascending whatever it says.
+// and two invocations against unchanged data agree. priority inserts
+// created_at ascending before that tiebreak — oldest first within a priority —
+// so --sort priority is exactly the default order; the other keys use the
+// tiebreak alone. The Desc prefix reverses the named key only: the created_at
+// and id tiebreaks stay ascending whatever it says.
 type Sort struct {
 	Key  SortKey
 	Desc bool
 }
 
-// DefaultSort is the order every listing but search uses (SPEC §4.3).
+// DefaultSort is the order every listing but search uses.
 var DefaultSort = Sort{Key: SortPriority}
 
-// DefaultSearchSort is search's, relevance being the one key whose bare form is
-// descending, because best match first is what it means.
+// DefaultSearchSort is search's, relevance being the one key whose bare form
+// is descending, because best match first is what it means.
 var DefaultSearchSort = Sort{Key: SortRelevance}
 
 // ParseSort reads a --sort value, optionally prefixed with "-" for descending
@@ -81,29 +81,29 @@ func containsKey(keys []SortKey, key SortKey) bool {
 	return false
 }
 
-// Readiness selects on the derived blocked state of SPEC §2.2, which is what
-// separates awb ready and awb blocked from awb list.
+// Readiness selects on the derived blocked state, which is what separates awb
+// ready and awb blocked from awb list.
 type Readiness int
 
 const (
 	// ReadinessAny does not select on blocked state, which is awb list.
 	ReadinessAny Readiness = iota
 	// ReadinessReady selects issues that are not blocked. Combined with the
-	// status and assignee sets awb ready fixes for itself, that is §2.5's
+	// status and assignee sets awb ready fixes for itself, that is the whole
 	// definition of ready.
 	ReadinessReady
 	// ReadinessBlocked selects issues that are blocked.
 	ReadinessBlocked
 )
 
-// Filter selects issues for a listing (SPEC §4.3). Repeated values of one
-// filter are ORed; different filters are ANDed.
+// Filter selects issues for a listing. Repeated values of one filter are ORed;
+// different filters are ANDed.
 type Filter struct {
 	// Readiness selects on the derived blocked state; the zero value does not.
 	Readiness Readiness
 
-	// Statuses selects exactly these statuses. Empty means the default, which
-	// is every status but closed unless IncludeClosed widens it.
+	// Statuses selects exactly these statuses. Empty means the default, which is
+	// every status but closed unless IncludeClosed widens it.
 	Statuses []Status
 	// IncludeClosed widens whatever status set is in force to include closed
 	// issues.
@@ -111,8 +111,8 @@ type Filter struct {
 
 	Types      []Type
 	Priorities []int
-	// PriorityMax is inclusive and reads as urgency, not as a number: because
-	// 0 is the highest priority, a PriorityMax of 1 means P0 and P1.
+	// PriorityMax is inclusive and reads as urgency, not as a number: because 0
+	// is the highest priority, a PriorityMax of 1 means P0 and P1.
 	PriorityMax *int
 
 	Labels []string
@@ -139,8 +139,8 @@ type Filter struct {
 	Sort Sort
 }
 
-// EffectiveStatuses is the status set the filter selects, resolving the default
-// and IncludeClosed.
+// EffectiveStatuses is the status set the filter selects, resolving the
+// default and IncludeClosed.
 func (f *Filter) EffectiveStatuses() []Status {
 	statuses := f.Statuses
 	if len(statuses) == 0 {

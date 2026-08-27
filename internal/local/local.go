@@ -1,12 +1,11 @@
 // Package local implements the backend over the SQLite database directly. It
 // is what the CLI uses in direct mode and what awb serve puts the HTTP API on
-// top of, so both surfaces exercise one set of operations (SPEC §9).
+// top of, so both surfaces exercise one set of operations.
 //
-// Every mutation is a single BEGIN IMMEDIATE transaction, so the graph checks
-// of SPEC §2.3, the compare-and-set of claim, the strictly-increasing
-// updated_at of §2.2 and the ID collision retry of §8 all read and write inside
-// one writer's exclusive turn, and no concurrent commit can slip between the
-// check and the change.
+// Every mutation is a single BEGIN IMMEDIATE transaction, so the graph checks,
+// the compare-and-set of claim, the strictly-increasing updated_at and the ID
+// collision retry all read and write inside one writer's exclusive turn, and
+// no concurrent commit can slip between the check and the change.
 package local
 
 import (
@@ -22,8 +21,8 @@ import (
 type Backend struct {
 	db *storage.DB
 	// identity is who this backend attributes an unattributed action to: the
-	// CLI's resolved identity (SPEC §7.1), or the identity of the request the
-	// server is answering (SPEC §6).
+	// CLI's resolved identity, or the identity of the request the server is
+	// answering.
 	identity string
 }
 
@@ -56,7 +55,7 @@ func (b *Backend) Identity(_ context.Context) (string, error) {
 func (b *Backend) Close() error { return b.db.Close() }
 
 // resolve turns a reference — a full ID, an ID prefix, or a bare hash — into
-// exactly one issue ID (SPEC §8).
+// exactly one issue ID.
 func resolve(tx *storage.Tx, ref string) (string, error) {
 	parsed, err := domain.ParseIssueRef(ref)
 	if err != nil {
@@ -74,9 +73,9 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 	return tx.GetIssue(id)
 }
 
-// checkIfMatch enforces the optional conditional-edit precondition of SPEC
-// §6.2. An empty ifMatch means no precondition, which is what the CLI always
-// sends and what gives it last-write-wins.
+// checkIfMatch enforces the optional conditional-edit precondition. An empty
+// ifMatch means no precondition, which is what the CLI always sends and what
+// gives it last-write-wins.
 //
 // The tag is a strong one over the entity's own stored fields, so it is
 // compared exactly.
@@ -90,13 +89,13 @@ func checkIfMatch(ifMatch, updatedAt, what string) error {
 	return nil
 }
 
-// ETag is the entity tag of SPEC §6.2: the entity's updated_at in quotes.
+// ETag is the entity tag: the entity's updated_at in quotes.
 //
 // What makes it reliable is not the millisecond resolution of updated_at but
-// its being strictly increasing per row (SPEC §2.2), so the tag identifies a
-// version rather than an instant. It is a strong tag, because If-Match is
-// compared strongly and a weak validator would never match, and it therefore
-// says exactly what it guards: the entity's own stored fields, which are what a
+// its being strictly increasing per row, so the tag identifies a version
+// rather than an instant. It is a strong tag, because If-Match is compared
+// strongly and a weak validator would never match, and it therefore says
+// exactly what it guards: the entity's own stored fields, which are what a
 // form edits.
 func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 

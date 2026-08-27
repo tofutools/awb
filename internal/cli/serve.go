@@ -29,11 +29,11 @@ import (
 	"github.com/tofutools/awb/web"
 )
 
-// Server timeouts and the transport body cap of SPEC §9.
+// Server timeouts and the transport body cap.
 //
 // The cap is a transport limit and not a second validation rule: it sits far
-// above anything the field maxima of §2.6 permit for one issue or one project,
-// so no body those rules would accept is ever refused for its size.
+// above anything the field maxima permit for one issue or one project, so no
+// body those rules would accept is ever refused for its size.
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 15 * time.Second
@@ -113,7 +113,7 @@ func newServeCommand(e *env) *cobra.Command {
 	return cmd
 }
 
-// loadHtpasswd reads the credentials file strictly (SPEC §6).
+// loadHtpasswd reads the credentials file strictly.
 //
 // Every line is read strictly: serve fails, naming the file and the line, when
 // the file cannot be read, when it holds no entry at all, or when any line is
@@ -164,8 +164,7 @@ func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) 
 func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr string,
 	corsOrigins []string) (http.Handler, error) {
 	// Whichever of the two identity mechanisms is in force, the request has
-	// exactly one identity, so the surface below never has to handle its
-	// absence (SPEC §6).
+	// exactly one identity, so the surface below never has to handle its absence.
 	backendFor := func(r *http.Request) backend.Backend {
 		if username, ok := auth.UsernameFromContext(r.Context()); ok {
 			// What a caller states explicitly is still honoured; there being no
@@ -196,9 +195,8 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 		return recovery.Middleware(httputil.Gzip(handler.NoStore(h)))
 	}
 
-	// Everything under /api/ is the JSON API and /openapi.json and
-	// /openapi.yaml are the document; every other path belongs to the web UI
-	// (SPEC §6).
+	// Everything under /api/ is the JSON API and /openapi.json and /openapi.yaml
+	// are the document; every other path belongs to the web UI.
 	root := http.NewServeMux()
 	root.Handle("/api/", withAPI(mux))
 	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(api.JSONHandler())))
@@ -212,11 +210,11 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 
 	chain := handler.CORS(corsOrigins, root)
 
-	// A request that is not a safe method must carry an Origin or Referer
-	// naming the server itself or an allowed --cors-origin, because a browser
-	// attaches basic-authentication credentials to cross-site requests of its
-	// own accord. One carrying neither header is allowed, that being what every
-	// non-browser client sends, and the CLI is one of them (SPEC §6.2).
+	// A request that is not a safe method must carry an Origin or Referer naming
+	// the server itself or an allowed --cors-origin, because a browser attaches
+	// basic-authentication credentials to cross-site requests of its own accord.
+	// One carrying neither header is allowed, that being what every non-browser
+	// client sends, and the CLI is one of them.
 	serverOrigin, err := csrf.ResolveServerOrigin("", hostOf(addr), portOf(addr))
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "resolve the server origin")
@@ -229,8 +227,8 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 	})(chain)
 
 	if htpasswd != nil {
-		// Nothing is exempt: the API, the OpenAPI document and the web UI all
-		// sit behind it (SPEC §6).
+		// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
+		// behind it.
 		chain = htpasswd.Middleware(realm)(chain)
 	}
 

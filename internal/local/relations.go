@@ -9,8 +9,8 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// AddRelation records a relation, read with the addressed issue as the subject
-// (SPEC §2.3, §4.4).
+// AddRelation records a relation, read with the addressed issue as the
+// subject.
 func (b *Backend) AddRelation(ctx context.Context, ref string, req backend.RelationRequest,
 	ifMatch string) (*domain.Issue, error) {
 	relType, err := domain.ParseRelationType(string(req.Type))
@@ -43,8 +43,8 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 	storedSubject, storedOther := domain.CanonicalRelation(relType, subject, other)
 
 	// Adding a relation that already exists succeeds and changes nothing. For
-	// has-parent this is also the "naming the parent it already has" case,
-	// which needs no --force.
+	// has-parent this is also the "naming the parent it already has" case, which
+	// needs no --force.
 	exists, err := tx.RelationExists(storedSubject, relType, storedOther)
 	if err != nil {
 		return err
@@ -58,8 +58,8 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 	}
 
 	if relType.Acyclic() {
-		// Adding "subject relType other" closes a loop exactly when other
-		// already reaches subject by following that same relation.
+		// Adding "subject relType other" closes a loop exactly when other already
+		// reaches subject by following that same relation.
 		reaches, err := tx.Reaches(relType, other, subject)
 		if err != nil {
 			return err
@@ -70,9 +70,9 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 	}
 
 	if relType == domain.RelBlockedBy {
-		// Adding a blocked-by edge moves one edge into a fixed decomposition,
-		// so it is enough to test the other endpoint against the subject's
-		// ancestor and descendant sets (SPEC §2.3).
+		// Adding a blocked-by edge moves one edge into a fixed decomposition, so it
+		// is enough to test the other endpoint against the subject's ancestor and
+		// descendant sets.
 		relatives, err := tx.Ancestors(subject)
 		if err != nil {
 			return err
@@ -94,8 +94,8 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 
 // addParent sets or replaces a parent.
 //
-// An issue has at most one parent; naming a different one fails unless force is
-// given, which replaces it (SPEC §2.3).
+// An issue has at most one parent; naming a different one fails unless force
+// is given, which replaces it.
 func addParent(tx *storage.Tx, child, parent string, force bool) error {
 	existing, hasParent, err := tx.ParentOf(child)
 	if err != nil {
@@ -114,7 +114,7 @@ func addParent(tx *storage.Tx, child, parent string, force bool) error {
 	}
 
 	// Replacing the edge first means the two sets below are computed from the
-	// graph as it would be after the change, which is what SPEC §2.3 requires —
+	// graph as it would be after the change, which is what the rule requires —
 	// and what makes the cheaper blocked-by test correct. The whole thing is
 	// inside one transaction, so a refusal rolls the removal back.
 	if hasParent {
@@ -128,10 +128,9 @@ func addParent(tx *storage.Tx, child, parent string, force bool) error {
 
 	// Adding or replacing a has-parent edge moves a whole subtree under a new
 	// chain of ancestors, and the edge that ends up violating the rule is then
-	// some existing blocked-by edge, neither of whose endpoints is an endpoint
-	// of the edge being added. So the check is over the subtree rooted at the
-	// child and the new parent's ancestor chain, the child and the new parent
-	// included.
+	// some existing blocked-by edge, neither of whose endpoints is an endpoint of
+	// the edge being added. So the check is over the subtree rooted at the child
+	// and the new parent's ancestor chain, the child and the new parent included.
 	subtree, err := tx.Subtree(child)
 	if err != nil {
 		return err
@@ -148,8 +147,8 @@ func addParent(tx *storage.Tx, child, parent string, force bool) error {
 }
 
 // RemoveRelation removes a relation, taking the same two ids in the same order
-// as adding one. Removing one that does not exist succeeds and changes nothing
-// (SPEC §4.4).
+// as adding one. Removing one that does not exist succeeds and changes
+// nothing.
 func (b *Backend) RemoveRelation(ctx context.Context, ref string, relType domain.RelationType,
 	other string, ifMatch string) (*domain.Issue, error) {
 	parsed, err := domain.ParseRelationType(string(relType))
@@ -162,8 +161,8 @@ func (b *Backend) RemoveRelation(ctx context.Context, ref string, relType domain
 		if err != nil {
 			return err
 		}
-		// Removal works in either order for a symmetric relation, because both
-		// ends canonicalise to the same stored edge.
+		// Removal works in either order for a symmetric relation, because both ends
+		// canonicalise to the same stored edge.
 		subject, counterpart := domain.CanonicalRelation(parsed, issue.ID, otherID)
 		return tx.DeleteRelation(subject, parsed, counterpart)
 	})

@@ -157,8 +157,7 @@ func TestClaim(t *testing.T) {
 	assert.Equal(t, "claude-2", forced.Assignee)
 }
 
-// The compare-and-set of SPEC §6.4: two agents racing for the same issue cannot
-// both win.
+// The compare-and-set: two agents racing for the same issue cannot both win.
 func TestClaimCompareAndSet(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")
@@ -419,8 +418,8 @@ func TestParentEdgeRefusedByAnExistingBlockedByEdge(t *testing.T) {
 	child := create(t, b, ctx, "child")
 	grandchild := create(t, b, ctx, "grandchild")
 
-	// blocker is above newParent, so it will become an ancestor of anything
-	// moved under newParent.
+	// blocker is above newParent, so it will become an ancestor of anything moved
+	// under newParent.
 	_, err := b.AddRelation(ctx, newParent.ID,
 		backend.RelationRequest{Type: domain.RelHasParent, Other: blocker.ID}, "")
 	require.NoError(t, err)
@@ -430,8 +429,8 @@ func TestParentEdgeRefusedByAnExistingBlockedByEdge(t *testing.T) {
 		backend.RelationRequest{Type: domain.RelHasParent, Other: child.ID}, "")
 	require.NoError(t, err)
 
-	// ...and is legitimately blocked-by blocker today, the two being unrelated
-	// in the decomposition as it currently stands.
+	// ...and is legitimately blocked-by blocker today, the two being unrelated in
+	// the decomposition as it currently stands.
 	_, err = b.AddRelation(ctx, grandchild.ID,
 		backend.RelationRequest{Type: domain.RelBlockedBy, Other: blocker.ID}, "")
 	require.NoError(t, err)
@@ -443,9 +442,8 @@ func TestParentEdgeRefusedByAnExistingBlockedByEdge(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 
-	// The refusal rolled back cleanly: child still has no parent of its own.
-	// Its incoming has-parent edge, from grandchild, is a different thing and
-	// stays.
+	// The refusal rolled back cleanly: child still has no parent of its own. Its
+	// incoming has-parent edge, from grandchild, is a different thing and stays.
 	issue, err := b.GetIssue(ctx, child.ID)
 	require.NoError(t, err)
 	assert.Contains(t, issue.Relations,
@@ -585,8 +583,8 @@ func TestProjectDeletionAndCascade(t *testing.T) {
 	assert.Equal(t, 1, deleted.IssuesRemoved)
 }
 
-// The conditional-edit precondition of SPEC §6.2. The CLI never sends one and
-// gets last-write-wins; a UI sends the tag it read.
+// The conditional-edit precondition. The CLI never sends one and gets
+// last-write-wins; a UI sends the tag it read.
 func TestIfMatch(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")

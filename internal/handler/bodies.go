@@ -14,21 +14,21 @@ import (
 )
 
 var (
-	// errUnsupportedMediaType is a request carrying a body without a JSON
-	// content type, one of the statuses with no exit code behind it (415).
+	// errUnsupportedMediaType is a request carrying a body without a JSON content
+	// type, one of the statuses with no exit code behind it (415).
 	errUnsupportedMediaType = errors.New("request body must be application/json")
 	// errBodyTooLarge is a body over the transport cap (413).
 	errBodyTooLarge = errors.New("request body is too large")
 )
 
-// decodeBody reads a JSON request body into out, applying the strict rules of
-// SPEC §6.4.
+// decodeBody reads a JSON request body into out, applying the API's strict
+// body rules.
 //
 // Any unrecognised field name is rejected. A field present with a JSON null is
-// a type error, because no field of §4.6 is ever null — an unset string is "" —
-// so there is no third state to encode. A body that is well-formed JSON but
-// wrong, and one that is not well-formed JSON at all, are both 400: those are
-// what the client asked for rather than how it asked.
+// a type error, because no field of an Issue is ever null — an unset string is
+// "" — so there is no third state to encode. A body that is well-formed JSON
+// but wrong, and one that is not well-formed JSON at all, are both 400: those
+// are what the client asked for rather than how it asked.
 func decodeBody(r *http.Request, out any) error {
 	if r.Body == nil {
 		return awberr.Usagef("a request body is required")
@@ -94,7 +94,7 @@ func decodeOptionalBody(r *http.Request, out any) error {
 	return decodeBody(r, out)
 }
 
-// checkJSONText applies the UTF-8 half of SPEC §2.6 to a request body.
+// checkJSONText applies the UTF-8 half of the input rules to a request body.
 //
 // A byte sequence that is not well-formed UTF-8 is rejected rather than
 // repaired, so nothing is stored that the caller did not send. A JSON escape
@@ -112,8 +112,8 @@ func checkJSONText(raw []byte) error {
 // requires every high one to be followed immediately by a matching low one.
 //
 // encoding/json silently replaces an unpaired surrogate with U+FFFD, which
-// would be indistinguishable from a literal U+FFFD the caller meant to send, so
-// the check has to happen on the raw bytes before decoding.
+// would be indistinguishable from a literal U+FFFD the caller meant to send,
+// so the check has to happen on the raw bytes before decoding.
 func checkSurrogateEscapes(raw []byte) error {
 	unpaired := func(value int) error {
 		return awberr.Usagef(
@@ -185,10 +185,10 @@ func parseHex4(b []byte) (int, bool) {
 	return value, true
 }
 
-// checkNoNulls rejects any JSON null anywhere in the body. SPEC §6.4:
-// everything these bodies say turns on a field being present or absent, and
-// null is neither, so a field present with a null is a type error answered 400,
-// exactly as a number would be where a string belongs.
+// checkNoNulls rejects any JSON null anywhere in the body: everything these
+// bodies say turns on a field being present or absent, and null is neither, so
+// a field present with a null is a type error answered 400, exactly as a
+// number would be where a string belongs.
 func checkNoNulls(raw []byte) error {
 	var value any
 	if err := json.Unmarshal(raw, &value); err != nil {

@@ -1,6 +1,5 @@
-// Package cli is the command line adapter. It owns the command tree of SPEC
-// §4, the three output modes of §4.1 and the exit codes — cobra's own defaults
-// decide none of those.
+// Package cli is the command line adapter. It owns the command tree, the three
+// output modes and the exit codes — cobra's own defaults decide none of those.
 package cli
 
 import (
@@ -52,24 +51,24 @@ type env struct {
 	stderr io.Writer
 	stdin  io.Reader
 
-	// workingDir is where the upward search of SPEC §5 starts.
+	// workingDir is where the upward search for directory context starts.
 	workingDir string
 
 	flags   config.Flags
 	json    bool
 	compact bool
 
-	// cfg and be are resolved lazily, because init and agent-guide need
-	// different amounts of it and --help needs none.
+	// cfg and be are resolved lazily, because init and agent-guide need different
+	// amounts of it and --help needs none.
 	cfg *config.Config
 	be  backend.Backend
 }
 
-// Execute runs awb and returns the process exit status (SPEC §4.1).
+// Execute runs awb and returns the process exit status.
 //
-// Errors always go to stderr, as a single line in the default and compact modes
-// and as {"error": "..."} under --json. The exit code is the machine-readable
-// classification; the message is human-readable text.
+// Errors always go to stderr, as a single line in the default and compact
+// modes and as {"error": "..."} under --json. The exit code is the
+// machine-readable classification; the message is human-readable text.
 func Execute(ctx context.Context, version string, args []string,
 	stdout, stderr io.Writer, stdin io.Reader) int {
 	workingDir, err := os.Getwd()
@@ -121,9 +120,9 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			"cheapest output there is and --json is the stable one; the default table is\n" +
 			"for humans and nothing should parse it.",
 		Version: version,
-		// SPEC §4.1 owns error output and the exit codes, so cobra's own
-		// usage-on-error and error printing are switched off and a usage error
-		// exits 2 rather than cobra's 1.
+		// awb owns error output and the exit codes, so cobra's own usage-on-error
+		// and error printing are switched off and a usage error exits 2 rather than
+		// cobra's 1.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
@@ -156,7 +155,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	// A flag cobra does not recognise is a usage error like any other, which is
-	// what makes --project exit 2 on the commands that do not take it (§4.1).
+	// what makes --project exit 2 on the commands that do not take it.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return awberr.Usagef("%s", err.Error())
 	})
@@ -199,7 +198,7 @@ func (e *env) config() (*config.Config, error) {
 
 // backend opens whichever backend the configuration points at. Direct mode
 // opens the database file; remote mode builds an HTTP client. Every command
-// behaves identically either way, because it cannot tell them apart (SPEC §6).
+// behaves identically either way, because it cannot tell them apart.
 func (e *env) backend(ctx context.Context) (backend.Backend, error) {
 	if e.be != nil {
 		return e.be, nil
@@ -223,7 +222,7 @@ func (e *env) backend(ctx context.Context) (backend.Backend, error) {
 }
 
 // requireLocal refuses a remote database for the two commands that are about a
-// local file rather than about the data (SPEC §4.2, §4.5).
+// local file rather than about the data.
 func (e *env) requireLocal(what string) (*config.Config, error) {
 	cfg, err := e.config()
 	if err != nil {
@@ -236,7 +235,7 @@ func (e *env) requireLocal(what string) (*config.Config, error) {
 }
 
 // identity returns the caller's identity, failing before anything is sent when
-// there is none (SPEC §6, §7.1).
+// there is none.
 func (e *env) identity() (string, error) {
 	cfg, err := e.config()
 	if err != nil {

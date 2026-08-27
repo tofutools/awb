@@ -2,10 +2,10 @@
 // this covers the real rendering rather than a copy of it.
 //
 // It exercises the configuration alone, without DOMPurify, because sanitising
-// needs a DOM this test has no way to provide. That is deliberate: the point of
-// html:false is that the *parser* never emits attacker-controlled markup in the
-// first place, so the escaping below is a real defence rather than something
-// the sanitiser has to clean up afterwards.
+// needs a DOM this test has no way to provide. That is deliberate: the point
+// of html:false is that the *parser* never emits attacker-controlled markup in
+// the first place, so the escaping below is a real defence rather than
+// something the sanitiser has to clean up afterwards.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -23,7 +23,7 @@ test("renders CommonMark", () => {
   assert.match(md.render("> quoted"), /<blockquote>/);
 });
 
-// The GFM set SPEC §2.4 pins, one test per extension.
+// The pinned GFM set, one test per extension.
 
 test("renders GFM tables", () => {
   const html = md.render("| a | b |\n| - | - |\n| 1 | 2 |\n");
@@ -61,9 +61,9 @@ test("renders CommonMark autolinks", () => {
 // The XSS gate. Raw HTML is escaped outright, which is stricter than GFM's
 // disallowed-raw-HTML rule and safe in the same direction.
 //
-// The check is on the tags actually emitted, not on text that merely looks like
-// markup: escaped text may well contain the characters "onclick=" without any
-// of it being live.
+// The check is on the tags actually emitted, not on text that merely looks
+// like markup: escaped text may well contain the characters "onclick=" without
+// any of it being live.
 
 /** The tags the renderer is ever allowed to emit. */
 const emittableTags = new Set([
@@ -116,8 +116,8 @@ test("does not linkify a javascript: URL into an anchor", () => {
 });
 
 // A hand-written anchor is escaped rather than honoured, so its href, its text
-// and any attributes it carried are all inert. This is the same rule that makes
-// the API's derived links array ignore raw HTML.
+// and any attributes it carried are all inert. This is the same rule that
+// makes the API's derived links array ignore raw HTML.
 //
 // One divergence is worth stating rather than hiding: because the tag is
 // escaped to *text*, linkify then sees the URL inside it as a bare URL and

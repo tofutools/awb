@@ -16,22 +16,21 @@ type queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Tx is the handle the query helpers hang off. Every statement of one operation
-// goes through the same Tx, and therefore the same connection and the same
-// transaction.
+// Tx is the handle the query helpers hang off. Every statement of one
+// operation goes through the same Tx, and therefore the same connection and
+// the same transaction.
 type Tx struct {
 	ctx context.Context
 	q   queryer
 }
 
-// Write runs fn inside a BEGIN IMMEDIATE transaction (SPEC §9).
+// Write runs fn inside a BEGIN IMMEDIATE transaction.
 //
 // IMMEDIATE takes the write lock before fn reads anything, which is what makes
-// every check fn performs good at the moment it writes: the graph checks of
-// §2.3, the compare-and-set of claim, the strictly-increasing updated_at of
-// §2.2 and the ID collision retry of §8 all read and write inside one writer's
-// exclusive turn, and no concurrent commit can slip between the check and the
-// change.
+// every check fn performs good at the moment it writes: the graph checks, the
+// compare-and-set of claim, the strictly-increasing updated_at and the ID
+// collision retry all read and write inside one writer's exclusive turn, and
+// no concurrent commit can slip between the check and the change.
 //
 // A transaction that cannot take the lock within the busy timeout fails rather
 // than being retried in a loop.
