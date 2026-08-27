@@ -52,10 +52,15 @@ tasks:
 
   run:
     desc: Build the frontend and run the development server
-    aliases: [dev]
     cmds:
       - task: fe:build
       - task: be:run
+
+  watch:
+    desc: Restart the development server when source files change
+    aliases: [dev]
+    cmds:
+      - watchexec --restart --exts go,ts,html,css,yaml,yml -- task run -- {{.CLI_ARGS}}
 
   be:build:
     desc: Build the awb binary
@@ -82,8 +87,3 @@ tasks:
     deps: [fe:build]
     cmds:
       - node --test 'web/ts/tests/*.test.mjs'
-
-  fe:watch:
-    desc: Recompile the TypeScript frontend when its sources change
-    cmds:
-      - tsc --project web/ts/tsconfig.json --watch

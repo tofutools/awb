@@ -226,7 +226,7 @@ The component tasks are available separately:
 | `task test` | Run the frontend and Go tests. |
 | `task lint` | Run `golangci-lint`. |
 | `task run` | Compile the frontend and run the development server. |
-| `task fe:watch` | Recompile the frontend when its TypeScript changes. |
+| `task watch` | Restart the development server after backend or frontend changes. |
 
 Backend and frontend steps can also be run individually; `task --list` shows
 the complete set, as does running `task` without a task name. Set `OUTPUT_DIR`
