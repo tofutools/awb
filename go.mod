@@ -1,16 +1,11 @@
 module github.com/tofutools/awb
 
-go 1.25.0
-
-// TEMPORARY: awb needs three additions to go-server-common that are not in
-// v1.8.1 — sqlite.MigrateStrict, csrf.MiddlewareOrigins and
-// auth.LoadHtpasswdStrict. Drop this once they are released upstream.
-replace github.com/mikaelstaldal/go-server-common => ../go-server-common
+go 1.26.6
 
 require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/goccy/go-yaml v1.19.2
-	github.com/mikaelstaldal/go-server-common v0.0.0-00010101000000-000000000000
+	github.com/mikaelstaldal/go-server-common v1.9.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/yuin/goldmark v1.8.5

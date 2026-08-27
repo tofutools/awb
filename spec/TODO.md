@@ -6,15 +6,6 @@ What is left after version 1. `ARCHITECTURE.md` describes what exists.
 
 These are loose ends in what has shipped, not new scope.
 
-* **Release the `go-server-common` additions and drop the `replace`
-  directive.** `awb` depends on three things that are not in the released
-  library: a migration that takes the write lock before re-reading the schema
-  version and refuses one it does not understand, an origin check that accepts
-  a set of origins rather than one, and a credentials loader that fails on any
-  line it does not fully understand instead of skipping it. They are written and
-  tested; until they are released, `go.mod` carries a local `replace`, and while
-  it does, `go install` does not work.
-
 * **Autolink boundaries can differ between the two Markdown implementations.**
   The derived link list and the web UI's rendering use different libraries, so
   at the margin they can disagree about where a bare URL ends — most visibly

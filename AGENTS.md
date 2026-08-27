@@ -27,9 +27,9 @@ describes the system truthfully.
 runs the Go and frontend tests, and lints. It is silent on success and prints
 the failing step's output on failure. `-o DIR` sets where the binary goes.
 
-Prerequisites on `$PATH`: `go`, `tsc`, `golangci-lint`, `node`. No package
-manager is ever invoked: the browser bundles under `web/static/vendor/` are
-pre-built committed artifacts.
+Prerequisites on `$PATH`: `go` (1.26.6 or later), `tsc`, `golangci-lint`,
+`node`. No package manager is ever invoked: the browser bundles under
+`web/static/vendor/` are pre-built committed artifacts.
 
 ## Layout
 

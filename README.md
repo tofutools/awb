@@ -30,16 +30,14 @@ awb-77e0b2 P2 open task "Add fuzz tests for parser"
 
 ## Install
 
-Build from a checkout:
-
 ```console
-$ ./build.sh
+$ go install github.com/tofutools/awb@latest
 ```
 
-That produces a single static binary with the web UI embedded — no cgo, so it
-cross-compiles. `go install github.com/tofutools/awb@latest` is the intended
-route and works once the `go-server-common` dependency is released; see the
-note at the top of `go.mod`.
+Or build from a checkout with `./build.sh`, which produces the same single
+static binary with the web UI embedded — no cgo, so it cross-compiles.
+
+Building needs Go 1.26.6 or later.
 
 ## Quickstart
 
