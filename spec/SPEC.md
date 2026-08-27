@@ -32,7 +32,7 @@ but differs in three ways:
 
 Versioning, history, merge or offline replication; comments; audit logs; planning and reporting
 features such as sprints, boards, burndowns and time tracking; notifications; continuous external
-tracker synchronisation; accounts and permissions; custom fields or workflows; an MCP server;
+tracker synchronisation; authorization and permissions; custom fields or workflows; an MCP server;
 bulk stdin import; attachments and blobs.
 
 The web UI shipped in version 1 is read-only. That is a scope decision about the bundled UI, not
@@ -61,10 +61,10 @@ The top-level organising unit. Every issue belongs to exactly one project.
 | `project` | project key | Required. Immutable after creation. |
 | `title` | string | Required, single line. Leading and trailing whitespace is trimmed, and a title that is empty after trimming, or that contains a line break, is rejected. |
 | `description` | markdown | Optional. The only free text field on the issue. Links to pull requests, CI runs, logs and documents are written as ordinary Markdown links inside it. |
-| `type` | enum | `bug`, `feature`, `task`, `chore`. Default `task`. |
+| `type` | enum | `epic`, `feature`, `bug`, `task`, `chore`. Default `task`. An `epic` is a large piece of work decomposed through `has-parent` (§2.3); nothing in the tool treats it specially. |
 | `status` | enum | `open`, `in_progress`, `closed`. Default `open`. Changed only by `create --assignee`, `claim`, `release`, `close` and `reopen`. |
 | `close_reason` | string | Optional single line, trimmed and rejecting a line break as `title` does, but unlike `title` it may be empty: a value that is empty after trimming clears it (§4.1). Set by `close --reason`, and cleared by `reopen` and by any other transition out of `closed` (§4.3). Empty otherwise: a non-closed issue never carries one. |
-| `priority` | integer | `0` (highest) to `3` (lowest). Default `2`. |
+| `priority` | integer | `0` (highest) to `4` (lowest). Default `2`. |
 | `labels` | set of strings | Free-form, but restricted to lowercase ASCII letters, digits, hyphens, underscores, dots and slashes. A label outside that set is rejected rather than normalised. |
 | `assignee` | string | Free-form, e.g. `mikael` or `claude-1`. Same character set as a label, and like a label rejected rather than normalised, so `claim --as Mikael` is a usage error. Empty means unassigned. Changed only by `create --assignee`, `claim`, `release` and `reopen`, so it never drifts from `status` (§4.3). |
 | `created_at` | timestamp | Set automatically (UTC, RFC 3339 with millisecond precision, e.g. `2026-08-26T09:12:03.412Z`). |
@@ -93,23 +93,27 @@ table, in `awb create`, in `awb dep add` and in the API.
 | Type | Meaning |
 | --- | --- |
 | `blocked-by` | `A blocked-by B`: A cannot start until B is closed. Drives readiness. |
-| `parent` | `A parent B`: B is the parent of A, which is part of decomposing B. Decomposition only; it does not drive readiness. |
+| `has-parent` | `A has-parent B`: B is the parent of A, which is part of decomposing B. Decomposition only; it does not drive readiness. |
 | `discovered-from` | `A discovered-from B`: A was found while working on B. Provenance only. |
 | `related` | `A related B`: loose, symmetric association. No behaviour attached. |
 
-The `blocked-by` and `parent` graphs must each remain acyclic, and are checked separately. A
-command that would create a cycle fails with exit code 4, as does a relation from an issue to
-itself. Adding a relation that already exists succeeds and changes nothing.
+The `blocked-by`, `has-parent` and `discovered-from` graphs must each remain acyclic, and are
+checked separately: work cannot depend on itself, decomposition cannot nest inside itself, and an
+issue cannot be, however indirectly, its own origin. A command that would create a cycle fails
+with exit code 4, as does a relation from an issue to itself. Adding a relation that already
+exists succeeds and changes nothing. Only `related` is unconstrained, having no direction to run
+in a circle.
 
-An issue also may not be `blocked-by` any ancestor or descendant in the `parent` graph. This
+An issue also may not be `blocked-by` any ancestor or descendant in the `has-parent` graph. This
 inverts decomposition — a child waiting for its own parent, or a parent for its own child,
 describes work that cannot sensibly be ordered — even though each graph is acyclic. The rule covers
 the full ancestor/descendant chain and violations exit 4 like cycles. It is about the `blocked-by`
 edge itself and not about what that edge transitively reaches, so it is checked by testing the
 other endpoint for membership in the issue's ancestor and descendant sets rather than by a
-reachability search across both graphs. Both this rule and the two
-acyclicity rules are checked on every operation that adds or replaces an edge in either graph — a
-`parent` edge can violate them just as a `blocked-by` edge can.
+reachability search across both graphs. This rule concerns those two graphs alone;
+`discovered-from` takes no part in it. Every rule here is checked on each operation that adds or
+replaces an edge in the graph it governs — a `has-parent` edge can violate the mixed rule just as
+a `blocked-by` edge can.
 
 An issue has at most one parent; `dep add` on an issue that already has one fails with exit code 4
 unless `--force` is given, which replaces it. Relations are deleted with either endpoint issue.
@@ -164,6 +168,33 @@ exactly as they do to `awb list`.
 
 `awb ready` is the primary agent entry point.
 
+### 2.6 Text input
+
+Every text value that reaches the database is validated on the way in, and identically on both
+surfaces: the rules below live in the domain layer (§9), so the command line and the API accept and
+reject exactly the same strings. They cover every string of §2.1, §2.2 and §4.3 — `title`,
+`description`, `close_reason`, a project `key`, `name` and `description`, labels, assignees and
+search terms — and a value that fails any of them is a usage error: exit code 2 on the command
+line, `400` over HTTP.
+
+* **Valid UTF-8.** A byte sequence that is not well-formed UTF-8 is rejected. It is never repaired
+  and an invalid byte is never replaced with U+FFFD, so nothing is stored that the caller did not
+  send. Command line arguments and the contents of a `--description-file` are checked exactly as a
+  JSON request body is, an argument being bytes rather than text on POSIX.
+* **No Unicode control characters.** A rune in general category `Cc` — the C0 range, `DEL` and the
+  C1 range — is rejected. The one exception is `description`, which may contain tab (U+0009), line
+  feed (U+000A) and carriage return (U+000D), those being what Markdown text is made of. The
+  exception is that field's alone: it is why §2.2 rejects a `title` or a `close_reason` containing
+  a line break, and NUL is refused everywhere, being `Cc` itself.
+* **Nothing else is touched.** There is no Unicode normalisation, no case folding, no
+  bidirectional-override or confusable filtering and no stripping of zero-width characters. Beyond
+  the trimming §2.2 specifies for `title` and `close_reason`, an accepted value is stored byte for
+  byte as it arrived and comes back out the same way — a byte-order mark included, that being
+  ordinary content and not a prefix to remove.
+
+Labels, assignees and project keys are narrower still, their own character sets (§2.1, §2.2) having
+already excluded everything above. For the free text fields these rules are the whole of the gate.
+
 ## 3. Storage
 
 A single SQLite database file holds projects, issues and relations.
@@ -188,10 +219,17 @@ carries it. Every command, `init` included, refuses a file that exists, is not e
 carry the stamp — again exit code 1 — so the same typo cannot point at somebody else's database and
 have `awb`'s migrations applied to it.
 
-Schema migrations are embedded in the binary, numbered, recorded in the database, and applied
-automatically when an existing database is opened. They run inside a transaction that takes the write lock
-first, so that several processes opening a stale database at once cannot race. A binary refuses to
-open a database whose recorded schema version is newer than the highest migration it carries,
+Schema migrations are embedded in the binary as an ordered list of statement batches: the first
+takes a fresh database to version 1, the second from 1 to 2, and so on. The version reached is
+recorded in SQLite's own `user_version`, so the schema carries no bookkeeping table of its own and
+the number is readable with `sqlite3` by somebody who knows nothing about `awb`. An existing
+database is migrated automatically when it is opened, each batch in its own transaction, so a
+failure leaves the file at the last version that committed. A released batch is never edited, only
+followed by another.
+
+Migrating takes the write lock first and re-reads `user_version` inside that transaction, so
+several processes opening a stale database at once cannot apply the same batch twice. A binary
+refuses to open a database whose `user_version` is higher than the number of batches it carries,
 failing with exit code 1 rather than operating on a schema it does not understand.
 
 The database is opened with WAL journalling, foreign keys enabled and a busy timeout, so several
@@ -254,7 +292,8 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   produce no object and ignore both output-mode flags.
 * Exit codes: `0` success · `1` runtime error · `2` usage error · `3` not found ·
   `4` constraint violation (e.g. dependency cycle).
-* Invalid argument vocabulary (title, label, priority, enum, sort value or project key) exits `2`.
+* Invalid argument vocabulary (title, label, priority, enum, sort value or project key), and text
+  that fails §2.6, exit `2`.
   Constraints that depend on database state (cycles, duplicates, claim or parent conflicts, and
   deletion without required `--cascade`) exit `4`.
 * An empty string clears an optional string value: `--description ""` blanks the description and
@@ -264,7 +303,7 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
   name, on `PATCH /api/projects/{key}` exactly as on the command line.
 * On the destructive commands, `--force` confirms deletion; `--cascade`, which only `project rm`
   has, additionally permits deleting the issues a project holds. On `claim`, `release` and
-  `dep add --parent`, `--force` overrides a refusal.
+  `dep add --has-parent`, `--force` overrides a refusal.
 * Addressing a single entity that does not exist — an issue ID, or a project key from any source
   (§7) — exits `3`, even when it appears as a listing's `--project`. An ambiguous ID exits `2` and
   creating a duplicate exits `4`.
@@ -296,7 +335,7 @@ Full text search over titles and descriptions uses SQLite FTS5, kept in sync by 
 
 | Command | Description |
 | --- | --- |
-| `awb create <title> [--type] [--priority] [--label]... [--assignee] [--project] [--description] [--description-file FILE] [--parent ID] [--blocked-by ID]... [--discovered-from ID]... [--related ID]...` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. Creating with an assignee is an atomic create-and-claim: `--assignee` also sets `status=in_progress`, so a new issue is never open and assigned at once (§2.2), and creation is the one place a claim needs no separate command. |
+| `awb create <title> [--type] [--priority] [--label]... [--assignee] [--project] [--description] [--description-file FILE] [--has-parent ID] [--blocked-by ID]... [--discovered-from ID]... [--related ID]...` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. Creating with an assignee is an atomic create-and-claim: `--assignee` also sets `status=in_progress`, so a new issue is never open and assigned at once (§2.2), and creation is the one place a claim needs no separate command. |
 | `awb show <id>` | Full issue, including relations, derived blocked state and the Markdown links found in the description. |
 | `awb list [filters]` | List issues. |
 | `awb ready [filters]` | List ready issues (§2.5), highest priority first. |
@@ -326,8 +365,9 @@ Filters accepted by `list`, `ready`, `blocked` and `search`:
 * `--priority` selects one priority exactly and may be repeated. `--priority-max` is inclusive and
   reads as urgency, not as a number: because `0` is the highest priority, `--priority-max 1`
   means P0 and P1. There is deliberately no `--priority-min`; nobody asks for the unimportant half.
-* `--parent <id>` selects the direct children of that issue, not the whole subtree. `awb dep tree`
-  is how you see a subtree.
+* `--parent <id>` selects the direct children of that issue — the issues whose `has-parent`
+  relation names it — not the whole subtree. `awb dep tree` is how you see a subtree. It is spelled
+  for the field it matches, as `--assignee` and `--project` are, not for the relation reading.
 * `--limit <n>` caps results and must be non-negative; zero returns none. There is no default limit
   or CLI offset, so every match remains reachable; use `--compact` to reduce output size.
 * `--mine` resolves to the configured identity (§7), which is also the default `--as` for `claim`.
@@ -371,10 +411,10 @@ depending on the driver. Both exit 2, and `GET /api/search` answers `400` for th
 | Command | Description |
 | --- | --- |
 | `awb dep add <id> --blocked-by <id>` | Record that the first issue cannot start until the second is closed. |
-| `awb dep add <id> --parent <id> [--force]` | Set the parent of the first issue to the second. |
+| `awb dep add <id> --has-parent <id> [--force]` | Set the parent of the first issue to the second. |
 | `awb dep add <id> --related <id>` | Record a loose association. |
 | `awb dep add <id> --discovered-from <id>` | Record provenance. |
-| `awb dep rm <id> --blocked-by\|--parent\|--related\|--discovered-from <id>` | Remove a relation, taking the same one relation flag as `dep add`. |
+| `awb dep rm <id> --blocked-by\|--has-parent\|--related\|--discovered-from <id>` | Remove a relation, taking the same one relation flag as `dep add`. |
 | `awb dep tree <id>` | Print the subtree of children rooted at that issue, with status and blocked markers. |
 
 Every one of these reads "*first id* — *relation* — *second id*", the single convention of §2.3;
@@ -397,7 +437,7 @@ ascending — and `--sort` is not accepted, so the tree is reproducible like eve
 
 | Command | Description |
 | --- | --- |
-| `awb serve [--addr 127.0.0.1:7777] [--cors-origin ORIGIN]...` | Serve the HTTP API and the bundled read-only web UI over the local database. Fails with exit code 2 if the configured database location is an `http(s)` URL, like `init`. `--cors-origin` allows that exact origin to call the API from a browser; it is repeatable, empty by default and does not accept `*`, so a separately hosted web UI is opt-in rather than any page in the browser being able to read the database. |
+| `awb serve [--addr 127.0.0.1:7777] [--cors-origin ORIGIN]... [--identity NAME] [--basic-auth-file FILE] [--basic-auth-realm NAME]` | Serve the HTTP API and the bundled read-only web UI over the local database. Fails with exit code 2 if the configured database location is an `http(s)` URL, like `init`. `--cors-origin` allows that exact origin to call the API from a browser; it is repeatable, empty by default and does not accept `*`, so a separately hosted web UI is opt-in rather than any page in the browser being able to read the database. `--basic-auth-file` turns on HTTP basic authentication against that htpasswd file, and `--basic-auth-realm` names the realm it presents, defaulting to `awb`. `--identity` names the single identity an unauthenticated server attributes every request to, and is mutually exclusive with `--basic-auth-file` (§6). |
 
 ### 4.6 JSON representation
 
@@ -525,12 +565,51 @@ exceptions are `init` and `serve`, which are about a local database file and ref
 code 2 (§4.2, §4.5). The CLI inverts the mapping of §6.1 to keep its exit codes identical in both
 modes — `400` becomes 2, `404` becomes 3, `409` becomes 4, and any other failure, including a
 transport error or an unreachable server, becomes 1 — and prints the `Error` message it received.
+It presents the credentials of §7.1 when it has them, and a `401` or `403` is one of the failures
+that becomes exit code 1: wrong credentials are reported, never retried or prompted for.
 
-**There is no authentication and no authorization.** Any client that can reach the port has full
-read and write access. The server therefore binds `127.0.0.1` by default and is documented as a
-local surface for the machine's own user; exposing it beyond that requires an external reverse
-proxy supplying TLS and access control. A built-in answer to shared access belongs to version 2
-(§10).
+**There is authentication but no authorization.** `awb serve` can identify its callers and does
+nothing else with the result: every user it knows may do everything every other one may, and
+credentials serve only to say who is calling.
+
+* `--basic-auth-file` names an htpasswd file of `username:bcrypt-hash` entries, the format
+  `htpasswd -B` writes. Only bcrypt is accepted. `serve` fails with exit code 1, naming the file,
+  when it cannot be read or holds no usable entry, rather than starting a server nobody can enter.
+* Every username in it must be a valid assignee (§2.2), because that is what it becomes. One that
+  is not fails `serve` the same way — refused rather than folded, exactly as §2.2 refuses
+  `claim --as Mikael`.
+* A request without acceptable credentials is answered `401` with a
+  `WWW-Authenticate: Basic realm="<realm>"` header, and every such response is logged with the
+  client address so that a tool like `fail2ban` can watch for brute force. Nothing is exempt: the
+  API, the OpenAPI document and the web UI all sit behind it.
+* The authenticated username is the request's identity. What a caller states explicitly is still
+  honoured: there being no authorization, one user may claim an issue for another, exactly as one
+  person may on the command line.
+
+Without `--basic-auth-file` there is no authentication, and any client that can reach the port has
+full read and write access. That is the default, and the server binds `127.0.0.1` to match:
+unauthenticated it is a local surface for the machine's own user. It is still not an *anonymous*
+one, because that user has a name — the server resolves one identity at startup and attributes
+every request to it, exactly as if a single account had logged in. It resolves from the same
+sources, in the same order, as the CLI's identity (§7.1, §7.3): `--identity`, else `AWB_IDENTITY`,
+else `identity` in the user configuration file, else the OS username of the process running
+`serve`, folded to the assignee set as §7.1 folds it. The `user` of §7.1 plays no part, being a
+remote-mode credential where `serve` refuses a remote database. An explicit `--identity` outside that set is a usage error rather than something
+to fold, and a resolution that yields nothing at all fails `serve` with exit code 1 asking for
+`--identity`, rather than starting a server whose every claim would fail.
+
+`--identity` and `--basic-auth-file` are mutually exclusive and giving both is a usage error. One
+fixes an identity for a server that does not ask who is calling; the other makes the caller say.
+Whichever is in force, the request has exactly one identity, so the surface below it never has to
+handle the absence of one.
+
+Basic
+authentication sends the password in a header that is merely encoded, not encrypted, so it is worth
+having over the loopback interface or behind TLS and worth nothing on a plain-HTTP network. The
+server does not terminate TLS, so a deployment beyond one machine still puts a reverse proxy in
+front of it; what `--basic-auth-file` removes is the need for that proxy to do the identifying too.
+A shared multi-user instance, with authorization to go with the authentication, belongs to version
+2 (§10).
 
 API shape (illustrative; the OpenAPI document is authoritative):
 
@@ -562,10 +641,11 @@ assignee field would be a lost update. Labels are added and removed individually
 reason — a whole-set replace would silently discard a concurrent edit. The label being removed
 travels as a query parameter rather than a path segment because a label may contain a slash (§2.2).
 
-Every request may carry an `X-Awb-Identity` header holding the caller's resolved identity (§7).
-Version 1 neither authenticates nor reads it — the client already sends explicit `assignee` values
-— but it is the field a version 2 server would authenticate and attribute, and having it on the
-wire from the first release is one of the preparations of §10.3.
+When the caller's identity is on the wire at all it travels in the standard `Authorization` header;
+there is no `awb`-specific identity header. A client that has credentials sends them on every
+request as `Authorization: Basic <base64 of user:password>`, whether or not the server asks for
+them. An unauthenticated server's identity is not on the wire in any form — it is fixed when the
+server starts and a client cannot see it, let alone choose it.
 
 An `{id}` or `{other}` path segment accepts an unambiguous prefix or bare hash exactly as a
 command does (§8), answering `400` when it matches more than one issue and `404` when it matches
@@ -608,10 +688,14 @@ the repository, is embedded in the binary, and is served at `/openapi.json` and 
 * The two creating endpoints, `POST /api/issues` and `POST /api/projects`, answer `201` with the
   new object and a `Location` header naming it. Every other successful request answers `200` with a
   body; there is no `204` anywhere, since even a `DELETE` returns an object (§6.4).
+* The `Basic` HTTP security scheme is declared and applied to every operation, so a generated
+  client knows to carry credentials. It is declared optional, because a server started without
+  `--basic-auth-file` accepts requests that carry none (§6).
 * Errors use the exit-code taxonomy of §4.1 mapped onto status codes: `400` usage, `404` not found,
-  `409` constraint violation, `500` runtime error, with an `Error` body. `412` is the one status
-  with no exit code behind it: it answers a failed `If-Match` (§6.2), which only a client that sends
-  one can provoke.
+  `409` constraint violation, `500` runtime error, with an `Error` body. Three statuses have no
+  exit code behind them, all of them provoked only by how a client behaves rather than by what it
+  asks for: `401` for missing or wrong credentials (§6), `403` for a rejected cross-site write
+  (§6.2), and `412` for a failed `If-Match` (§6.2). The CLI folds all three into exit code 1.
 * The document is treated as a compatibility contract: within a major version, changes are additive
   only. `info.version` tracks the API, not the binary.
 
@@ -681,16 +765,23 @@ exist and are supported even though the bundled UI only reads.
   derived `links` array (§2.4) stays available for clients that want the links without a parser.
 * **Cross-origin access, opt in.** A UI hosted anywhere other than the server itself is a browser
   origin the API must allow explicitly, via `--cors-origin` (§4.5). The default is to allow none,
-  because the API is unauthenticated and any page in the user's browser could otherwise reach it.
-  For an allowed origin the server answers preflight `OPTIONS` requests, permits the methods and
-  request headers the API uses (`Content-Type`, `If-Match`, `X-Awb-Identity`) and exposes `ETag`
-  and `X-Total-Count` in `Access-Control-Expose-Headers` — without which a cross-origin UI could
-  use neither the optimistic concurrency nor the paging above.
+  because any page in the user's browser could otherwise reach the API — unauthenticated it needs
+  nothing at all, and authenticated it would ride credentials the browser has already stored. For
+  an allowed origin the server answers preflight `OPTIONS` requests, permits the methods and
+  request headers the API uses (`Content-Type`, `If-Match`, `Authorization`), answers
+  `Access-Control-Allow-Credentials: true` so that a UI there can authenticate at all, and exposes
+  `ETag` and `X-Total-Count` in `Access-Control-Expose-Headers` — without which a cross-origin UI
+  could use neither the optimistic concurrency nor the paging above.
+* **Same-origin writes.** Because a browser attaches basic-authentication credentials to
+  cross-site requests of its own accord, a request that is not a `GET` must also carry an `Origin`
+  or `Referer` naming the server itself or an allowed `--cors-origin`. One naming anything else,
+  or `null`, is answered `403`. A request carrying neither header is allowed, that being what every
+  non-browser client sends, and the CLI is one of them.
 
 `offset`, `X-Total-Count`, `limit` on the array endpoint the CLI has no `--limit` for
 (`/api/projects`), `GET /api/projects/{key}` for which the CLI has no `project show`, the two facet
-endpoints, the `ETag`/`If-Match` handshake, the `expect_assignee` of §6.4 and the `X-Awb-Identity`
-header are the only places where the API is wider than the CLI. Everything else stays one-to-one, and all of
+endpoints, the `ETag`/`If-Match` handshake and the `expect_assignee` of §6.4 are the only places
+where the API is wider than the CLI. Everything else stays one-to-one, and all of
 them are declared in the OpenAPI document like the rest.
 
 Two things a write UI needs that are deliberately *not* API concerns. Directory context is resolved
@@ -731,19 +822,21 @@ changes deliberately carry one label per request so concurrent edits cannot repl
   fields it edited changed, while a `PATCH` that genuinely tries to close an issue or rewrite its
   labels is refused rather than silently dropped. Any unrecognised field name is rejected with
   `400`; so it is in every other request body below.
-* `POST /api/issues/{id}/claim` takes `{"assignee", "expect_assignee", "force"}`. `assignee` is
-  required — the client resolves its own identity (§7). `expect_assignee` is the compare-and-set:
+* `POST /api/issues/{id}/claim` takes `{"assignee", "expect_assignee", "force"}`. `assignee` names
+  who takes the issue and may be omitted, in which case the request's identity (§6) is used —
+  the authenticated username, or the server's fixed identity when it authenticates nobody.
+  `expect_assignee` is the compare-and-set:
   when present, the claim proceeds only if the current assignee is exactly that value, `""` meaning
   unassigned, and otherwise answers `409`. `force` defaults to `false` and does what `--force` does.
 * `POST /api/issues/{id}/release` takes `{"assignee", "force"}`. `assignee` is the caller's
-  resolved identity (§7), as on `claim`, and is what the "assigned to someone else" refusal
-  compares against; it may be omitted when `force` is true, that refusal being the only thing it
+  identity, defaulted as on `claim`, and is what the "assigned to someone else" refusal compares
+  against; it may also be omitted when `force` is true, that refusal being the only thing it
   serves. `POST /api/issues/{id}/reopen` takes no body.
 * `POST /api/issues/{id}/close` takes `{"reason"}`, with the semantics of `--reason` (§4.3): absent
   leaves any recorded reason alone, `""` clears it.
 * `POST /api/issues/{id}/labels` takes `{"label"}`, one label per call.
 * `POST /api/issues/{id}/relations` takes `{"type", "other", "force"}`, read with this issue as the
-  subject, where `force` replaces an existing parent as `dep add --parent --force` does.
+  subject, where `force` replaces an existing parent as `dep add --has-parent --force` does.
 * `POST /api/projects` takes `{"key", "name", "description"}` and `PATCH /api/projects/{key}` the
   same without `key`, replacing each field it carries and leaving the others alone, like
   `project update`. `active_issues`, `created_at` and `updated_at` are derived and are ignored
@@ -778,18 +871,29 @@ that is selected by any source but names no project is not found (exit code 3).
 
 ```yaml
 db: /home/mikael/.local/share/awb/awb.db   # path or http(s) URL
+user: mikael                               # basic-auth credentials, remote mode only
+password: hunter2
 identity: mikael                           # default assignee, --mine, claim --as
 project: awb                               # default project for create
 color: auto
 ```
 
-When `identity` is unset it defaults to the OS username, lower-cased and stripped of any character
-outside the assignee set of §2.2, so that a name like `Mikael` or a Windows `DOMAIN\user` still
+`user` and `password` are the HTTP basic-authentication credentials the CLI presents in remote mode
+(§6). They are ignored when `db` is a path, and either may stand alone: a server may want a
+username with an empty password, and `AWB_PASSWORD` (§7.3) exists so the secret need not be written
+into the file at all. `user` follows the assignee vocabulary of §2.2, which is what `serve` requires
+of a username anyway. A `db` URL that carries userinfo of its own — `https://user:pass@host/` — is
+refused under the rule above rather than being a second place to keep a password, and the one most
+likely to leak into a shell history or a process listing.
+
+When `identity` is unset it defaults to `user` if that is set, and otherwise to the OS username,
+lower-cased and stripped of any character outside the assignee set of §2.2, so that a name like `Mikael` or a Windows `DOMAIN\user` still
 yields a usable identity. That is a value the user never typed, which is why it is folded rather
 than refused; a value given on the command line or in a configuration file is still rejected
 (§2.2). If nothing is left after stripping, the commands that need one — `--mine`,
-`claim` without `--as`, and `release` without `--force`, which compares the stored assignee against
-it (§4.3) — fail with exit code 1 and ask for `identity` to be set.
+`claim` without `--as`, `release` without `--force`, which compares the stored assignee against
+it (§4.3), and `serve` without `--basic-auth-file`, which needs one for every request it answers
+(§6) — fail with exit code 1 and ask for `identity` to be set.
 
 ### 7.2 Local configuration
 
@@ -811,16 +915,17 @@ quietly ignored.
 
 The file is meant to be committed, so that a checkout carries its own scope for everyone who clones
 it. Because it therefore may not have been written by the person running the command, it may
-**not** set `db`, `identity` or `color`: a directory can shape what you see, but cannot redirect
-where your issues are stored or claim to be you. Those keys are ignored if present, without an
+**not** set `db`, `user`, `password`, `identity` or `color`: a directory can shape what you see,
+but cannot redirect where your issues are stored, claim to be you, or make you send a password
+somewhere. Those keys are ignored if present, without an
 error and without a warning, exactly like unknown keys — which are also ignored, so future versions
 can add settings without breaking older binaries. Ignored means unread: their values are not
 type-checked either, so only `project` and `label` can make this file fail a command.
 
 ### 7.3 Precedence
 
-Command line flags, then environment variables (`AWB_DB`, `AWB_IDENTITY`, `AWB_PROJECT`,
-`AWB_COLOR`), then the local configuration file, then the user configuration file, then the
+Command line flags, then environment variables (`AWB_DB`, `AWB_USER`, `AWB_PASSWORD`,
+`AWB_IDENTITY`, `AWB_PROJECT`, `AWB_COLOR`), then the local configuration file, then the user configuration file, then the
 built-in defaults. The default project for `awb create` follows exactly that order (§5).
 
 `project` in the *user* configuration file, and `AWB_PROJECT`, are that creation default and
@@ -866,6 +971,26 @@ matches more than one issue fails with exit code 2 rather than picking one.
 ## 9. Implementation notes
 
 * Go, one statically linked binary, no cgo, so `go install` and cross-compilation both work.
+* `github.com/mikaelstaldal/go-server-common` supplies everything about the server that is not
+  specific to issue tracking, and is used rather than reimplemented: `sqlite` opens the database
+  and runs the `user_version` migrations of §3; `auth` loads the htpasswd file and provides the
+  basic authentication middleware of §6; `httputil` provides gzip, the security headers and the
+  static handler that gives embedded assets an `ETag`; `csrf` provides the origin check that §6.2
+  requires of writes; `recovery` turns a panic into a `500` carrying the `Error` body of §4.6.
+* `github.com/mikaelstaldal/mynotes` is the template for what this document deliberately leaves
+  open: project layout, how `main` wires the middleware chain, how the frontend is embedded, and
+  the build script. Following it is the default and departing from it wants a reason. The command
+  line is the one deliberate departure — the template has a handful of flags and uses the standard
+  `flag` package, where `awb` has a tree of subcommands and uses `cobra` instead.
+* `github.com/spf13/cobra` defines the command tree of §4 — `dep add`, `project ls` and the rest —
+  along with `--help` and shell completion. Its defaults do not decide anything this document
+  fixes: §4.1 owns the exit codes, so a usage error exits 2 rather than cobra's 1, and §4.1 owns
+  error output, so errors are printed by `awb` as one stderr line or as `{"error": "..."}`, with
+  cobra's own usage-on-error and error printing switched off.
+* `charm.land/lipgloss/v2` styles the default output mode: the aligned, coloured tables of §4.1 and
+  the indented tree of §4.4, with the colour-profile detection that `--color auto` and `NO_COLOR`
+  need. Styling only — every command is non-interactive and safe to script (§4.1), so nothing here
+  runs an event loop or takes over the terminal.
 * A pure Go SQLite driver (`modernc.org/sqlite`) provides FTS5 without a C toolchain.
 * A real YAML library (`goccy/go-yaml` or `gopkg.in/yaml.v3`) parses the configuration files (§7)
   into a struct. Configuration is never read by matching lines or by regular expression.
@@ -873,10 +998,18 @@ matches more than one issue fails with exit code 2 rather than picking one.
   API return the same derived data. Descriptions remain verbatim; the web UI renders and sanitises
   them.
 * `crypto/sha256` and `crypto/rand` generate issue IDs (§8); `math/rand` is not used for the salt.
-* Layering: a storage package owning the schema and queries; a domain package owning readiness and
-  relation validation; thin CLI and HTTP adapters over it, so both surfaces exercise the same code
-  paths. Directory context is resolved in the CLI, the only surface that has a working directory.
+* Layering: a storage package owning the schema and queries; a domain package owning readiness,
+  relation validation and the text rules of §2.6; thin CLI and HTTP adapters over it, so both
+  surfaces exercise the same code paths. Directory context is resolved in the CLI, the only surface that has a working directory.
   The web UI is a client of the HTTP adapter, not a third adapter.
+* The frontend is TypeScript compiled by `tsc` into `web/static/`, which `web/embed.go` embeds
+  with `//go:embed all:static`, so the shipped artifact stays one file. No bundler and no package
+  manager runs at build time: third-party browser code is committed pre-built, as in the template.
+* `build.sh` is the whole build — compile the frontend, build the binary with `CGO_ENABLED=0 go
+  build -trimpath`, run the Go and frontend tests, lint with `golangci-lint` — silent on success
+  and printing the failing step's output on failure.
+* `serve` runs an `http.Server` with read, write and idle timeouts, a cap on the request body, and
+  graceful shutdown on `SIGINT` and `SIGTERM`.
 * All timestamps are stored in UTC.
 * Concurrency is handled by SQLite itself: short transactions, WAL mode and a busy timeout. There
   are no leases, locks or claim expiry — `claim` is a single atomic update, and a crashed agent
@@ -888,13 +1021,16 @@ matches more than one issue fails with exit code 2 rather than picking one.
 
 Everything specified above, with no synchronisation and no shared deployment: one person, one
 machine, one database file, any number of local processes and agents against it. `awb serve` is in
-scope as a local surface — it is what third-party UIs and integrations are built against — but is
-bound to loopback and unauthenticated, so it serves the machine's own user. The API it serves is
-complete in the sense of §6.2; only the bundled UI is limited to reading.
+scope as a local surface — it is what third-party UIs and integrations are built against — and
+binds loopback, unauthenticated, by default, so out of the box it serves the machine's own user.
+Basic authentication (§6) is there for a deployment that reaches further, but only as
+identification: it does not by itself make the instance multi-user. The API it serves is complete
+in the sense of §6.2; only the bundled UI is limited to reading.
 
 ### 10.2 Version 2 — multi-user and multi-machine
 
-Deferred: identity and authentication for the server, a shared instance for a team or an open source
+Deferred: authorization — per-user permissions, ownership, and anything else that would let two
+authenticated users differ in what they may do — a shared instance for a team or an open source
 project, and some form of synchronisation or replication between databases. Nothing about it is
 designed here, and version 1 must not carry half of it.
 
