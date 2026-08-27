@@ -1,0 +1,78 @@
+# Known-vulnerability scan of the module, on pushes to main that touch code.
+#
+# Its own workflow rather than a job in ci.yml, because it is the one check
+# whose verdict can change without the code changing: it reads a live database
+# (vuln.go.dev), so it can turn red on a commit that altered nothing relevant,
+# purely because an advisory was published since the last push. Keeping it out
+# of ci.yml means that never blocks a pull request.
+#
+# Not run on pull requests, on cost grounds. Note what that does not mean: a
+# pull request can turn the scan red without touching go.mod or go.sum, by
+# adding a call to an already-present-but-uncalled vulnerable symbol. Reviewing
+# dependency changes is not a sufficient substitute; this post-merge run is the
+# backstop that catches it.
+#
+# Push-triggered only, which bounds what it can catch: a quiet week gets no
+# scans, so an advisory published during one goes unnoticed until the next code
+# push. A `schedule:` trigger is the fix, and is deliberately not here — it
+# produces red runs with no commit to attribute them to, which is an operator
+# policy call rather than a build decision.
+name: govulncheck
+
+on:
+  push:
+    branches: [main]
+    # These paths cannot change what the scan sees.
+    paths-ignore:
+      - '*.md'
+      - 'spec/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Not cancel-in-progress: a cancelled run leaves that commit with no
+  # vulnerability verdict at all, neither pass nor fail. Two pushes in quick
+  # succession should both get an answer.
+  cancel-in-progress: false
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # go.mod pins the toolchain, which matters here beyond reproducibility:
+      # govulncheck reports stdlib advisories against the Go version it runs
+      # under, so scanning with `stable` would report against a toolchain awb
+      # does not ship.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Pinned like golangci-lint and tsc, and for the same reason: a tool
+      # upgrade should be a reviewed commit, not a silent change in CI results.
+      # Pinning the binary does not stale the data — the advisory database is
+      # fetched fresh on every run — but it does stale the analyzer, and
+      # nothing bumps it automatically. Bump it by hand alongside the go.mod Go
+      # version.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+      # No frontend build first: govulncheck type-checks the source and never
+      # runs the binary, and web/embed.go's directory embed is satisfied by the
+      # committed files alone. The compiled UI could not carry a Go advisory in
+      # any case.
+      #
+      # Default symbol-level analysis, and test files excluded (govulncheck's
+      # own default). A finding therefore means a vulnerable symbol is actually
+      # reachable from shipped code, not merely that some module in the graph
+      # carries an advisory — which is what makes a red run worth acting on
+      # rather than muting.
+      - name: Scan for known vulnerabilities
+        run: govulncheck ./...

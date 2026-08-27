@@ -14,9 +14,6 @@ These are loose ends in what has shipped, not new scope.
   prose so the authoritative answer is always on screen, but the divergence is
   real and worth closing if it ever bites.
 
-* **No continuous integration.** `./build.sh` is the whole build and is silent
-  on success, so wiring it to CI is a small job that has not been done.
-
 ## Version 2 — multi-user and multi-machine
 
 Nothing here is designed, and version 1 deliberately carries none of it rather

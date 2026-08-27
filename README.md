@@ -1,5 +1,7 @@
 # Agent Work Board
 
+[![CI](https://github.com/tofutools/awb/actions/workflows/ci.yml/badge.svg)](https://github.com/tofutools/awb/actions/workflows/ci.yml)
+
 `awb` is an agent-first issue tracker: a single Go binary backed by SQLite, with
 a command line interface for coding agents, humans and scripts.
 
@@ -33,6 +35,9 @@ awb-77e0b2 P2 open task "Add fuzz tests for parser"
 ```console
 $ go install github.com/tofutools/awb@latest
 ```
+
+Or take a binary for Linux or macOS, amd64 or arm64, from the
+[releases](https://github.com/tofutools/awb/releases) page.
 
 Or build from a checkout with `./build.sh`, which produces the same single
 static binary with the web UI embedded — no cgo, so it cross-compiles.

@@ -1,0 +1,83 @@
+# Every change to main, and every pull request proposing one, goes through the
+# whole build on both host platforms and is compiled for every target a release
+# ships.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull-request runs are worth nothing, but every commit on main
+  # should end up with a verdict of its own.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # The full build, run natively so the tests actually execute. ubuntu-latest
+  # is amd64 and macos-latest is arm64, so this also covers both word orders of
+  # the host toolchain without a third runner.
+  #
+  # Windows is deliberately absent from CI and from the shipped targets: awb
+  # cross-compiles to it cleanly, but nothing here runs its test suite there,
+  # and shipping a binary no test has ever executed is worse than not shipping
+  # one. Adding windows-latest to this matrix is the prerequisite for adding it
+  # to .github/targets.json.
+  build:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing is a fact worth knowing about the other.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build, test and lint
+        uses: ./.github/actions/full-build
+
+  # The set of platforms a release ships, read from the one file that defines
+  # it so this check and the release build cannot disagree about what "every
+  # shipped target" means.
+  targets:
+    name: Read shipped targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.read.outputs.targets }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Read .github/targets.json
+        id: read
+        run: echo "targets=$(jq -c . .github/targets.json)" >> "$GITHUB_OUTPUT"
+
+  # Compile-only, and that is the whole point: it proves that what the release
+  # workflow will build actually builds, on the commit that proposes to change
+  # it, rather than at tag time when the tree is already frozen. The two
+  # targets the build job covers natively are rebuilt here too, so this job
+  # alone answers "does every shipped target compile".
+  cross-build:
+    name: Cross-build (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
+    runs-on: ubuntu-latest
+    needs: [targets]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build
+        uses: ./.github/actions/build-binary
+        with:
+          goos: ${{ matrix.target.goos }}
+          goarch: ${{ matrix.target.goarch }}

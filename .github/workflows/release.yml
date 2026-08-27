@@ -1,0 +1,152 @@
+# Publishes a GitHub release for a pushed version tag, with a binary for every
+# platform in .github/targets.json.
+#
+# Tag-triggered rather than cutting a release from every push to main: awb is a
+# single tool with a stable command surface, so when a release happens is a
+# judgement, not a consequence of merging. Tag a commit on main that CI has
+# already passed:
+#
+#     git tag -a v1.0.0 -m 'awb 1.0.0' && git push origin v1.0.0
+#
+# The tag name is what `awb --version` will print, so it is the version.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ci.yml already ran on the commit this tag names, assuming the tag was cut
+  # from main. Nothing enforces that assumption, and a release is exactly where
+  # a wrong one is expensive, so the whole build runs again on the tagged tree
+  # itself and the publishing job waits for it.
+  verify:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build, test and lint
+        uses: ./.github/actions/full-build
+
+  targets:
+    name: Read shipped targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.read.outputs.targets }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Read .github/targets.json
+        id: read
+        run: echo "targets=$(jq -c . .github/targets.json)" >> "$GITHUB_OUTPUT"
+
+  # Runs alongside verify rather than after it: a build takes minutes and its
+  # output is only ever published by the release job below, which waits for
+  # both. Building early costs runner time on a failed release and saves
+  # wall-clock on every successful one.
+  build:
+    name: Build (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
+    runs-on: ubuntu-latest
+    needs: [targets]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+    env:
+      NAME: awb_${{ github.ref_name }}_${{ matrix.target.goos }}_${{ matrix.target.goarch }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build
+        uses: ./.github/actions/build-binary
+        with:
+          goos: ${{ matrix.target.goos }}
+          goarch: ${{ matrix.target.goarch }}
+          version: ${{ github.ref_name }}
+          output-dir: build/awb_${{ github.ref_name }}_${{ matrix.target.goos }}_${{ matrix.target.goarch }}
+
+      # The version stamp is the one thing about a release binary that no test
+      # covers and that is invisible until someone runs it, so assert it on the
+      # one target this runner can execute. A silently unstamped build would
+      # ship a release that reports itself as "dev".
+      - name: Check the version stamp
+        if: matrix.target.goos == 'linux' && matrix.target.goarch == 'amd64'
+        run: |
+          set -euo pipefail
+          got="$(./build/$NAME/awb --version)"
+          if [ "$got" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::awb --version reported '$got', expected '$GITHUB_REF_NAME'"
+            exit 1
+          fi
+
+      # The binary sits at the archive root, so unpacking leaves a single
+      # runnable `awb` and nothing else to tidy up.
+      - name: Create the archive
+        run: tar -czf "$NAME.tar.gz" -C "build/$NAME" awb
+
+      - name: Upload the archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: awb_${{ github.ref_name }}_${{ matrix.target.goos }}_${{ matrix.target.goarch }}
+          path: awb_${{ github.ref_name }}_${{ matrix.target.goos }}_${{ matrix.target.goarch }}.tar.gz
+          if-no-files-found: error
+
+  # The publishing gate, and the only job with write access: it runs once the
+  # whole build has passed on the tagged tree and every shipped target has been
+  # produced, so the release cannot exist before both.
+  release:
+    name: Publish the release
+    runs-on: ubuntu-latest
+    needs: [verify, build]
+    permissions:
+      contents: write
+    steps:
+      - name: Download the archives
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # download-artifact is happy to produce an empty directory, which would
+      # otherwise publish a release with no binaries attached.
+      - name: Check the archives survived the artifact round-trip
+        run: |
+          set -euo pipefail
+          count="$(find dist -type f -name '*.tar.gz' | wc -l)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no archives in the downloaded artifacts"
+            exit 1
+          fi
+          echo "$count archive(s)"
+
+      - name: Checksum the archives
+        run: cd dist && sha256sum *.tar.gz > checksums.txt
+
+      - name: Create the release
+        # Pinned to a commit, not a tag: this is third-party code and this is
+        # the only job holding a write token, so a repointed tag would be a
+        # write-access supply-chain change nothing here would notice. Bump it
+        # deliberately, keeping the trailing version comment truthful.
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

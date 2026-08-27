@@ -1,0 +1,60 @@
+# Runs ./build.sh, which is the whole build: frontend, binary, Go tests,
+# frontend tests and lint. CI deliberately does not decompose it into separate
+# lint/test/build jobs, because that would put a second definition of the build
+# in this directory, free to drift from the one contributors actually run.
+#
+# The trade-off is accepted knowingly: build.sh stops at the first failing step,
+# so a run that fails lint says nothing about the tests. Re-running locally is
+# the same command.
+#
+# Callers must check out the repo first; a local action cannot be resolved
+# before that.
+name: Full build
+description: Set up the toolchain build.sh expects and run the whole build.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+
+    # build.sh needs node twice: once for tsc, once to run the frontend tests
+    # under node --test.
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    # Pinned for the same reason as golangci-lint below and govulncheck in its
+    # own workflow: the compiler is part of the build, so changing it should be
+    # a reviewed commit rather than a silent change in what CI produces.
+    #
+    # This does not contradict "no package manager is ever invoked" — that rule
+    # is about build.sh, which still invokes none. Installing tsc here is
+    # provisioning a prerequisite, exactly as setup-go provisions the Go
+    # toolchain.
+    - name: Install TypeScript
+      shell: bash
+      run: npm install -g typescript@7.0.2
+
+    # install-only, because build.sh runs the linter itself as its last step.
+    # Running it here as well would lint twice and, worse, would mean a lint
+    # failure could be reported by a step that is not the build.
+    #
+    # The version must match what contributors have locally, or CI and
+    # ./build.sh disagree about what passes.
+    - name: Install golangci-lint
+      # Pinned to a commit for the same reason as the release action: it is
+      # third-party code, and although this job is read-only it still runs
+      # against a checkout of the tree. `version` below is the linter it
+      # installs, which is a separate thing from the action's own version.
+      uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      with:
+        version: v2.12.2
+        install-only: true
+
+    - name: Build, test and lint
+      shell: bash
+      run: ./build.sh -o "$RUNNER_TEMP"

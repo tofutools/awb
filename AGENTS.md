@@ -31,6 +31,14 @@ Prerequisites on `$PATH`: `go` (1.26.6 or later), `tsc`, `golangci-lint`,
 `node`. No package manager is ever invoked: the browser bundles under
 `web/static/vendor/` are pre-built committed artifacts.
 
+CI runs that same script rather than a second definition of the build. Every
+pull request and every push to `main` builds and tests on Linux and macOS and
+cross-compiles each platform listed in `.github/targets.json`, which is also
+what a tagged release ships; `main` is separately scanned for known
+vulnerabilities. The pieces both workflows share live in `.github/actions/`.
+Third-party actions are pinned to a commit with the version in a trailing
+comment; GitHub's own `actions/*` are pinned to a major tag.
+
 ## Layout
 
 | Path | Holds |
