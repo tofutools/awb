@@ -10,6 +10,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"charm.land/lipgloss/v2/tree"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 
 	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/domain"
@@ -34,10 +37,32 @@ func (e *env) writeJSON(value any) error {
 	return nil
 }
 
-// styles carries the palette for the default mode. When colour is off every
-// style is the identity, so the same rendering code produces plain text.
-type styles struct {
-	enabled bool
+const (
+	// What to assume a terminal is when it will not say how wide it is.
+	assumedWidth = 100
+	// A window narrower than this leaves a listing no room whatever is done to
+	// it, so below this it is simply allowed to overflow.
+	minimumWidth = 40
+	// What a title is cut to when there is no window to fit it to.
+	unboxedTitleWidth = 60
+)
+
+// theme carries every decision the default mode makes about how to draw. There
+// are two switches, each decided once per invocation:
+//
+//   - colour follows the colour chain, so --color always still colours a pipe.
+//   - boxed follows stdout alone: a box drawn around a listing, and fitting
+//     that listing to the window, only mean something when there is a window to
+//     draw in. A pipe or a file gets the same content as plain aligned columns
+//     at its natural width, which is what a human reading a captured log wants.
+//
+// When colour is off every style is the identity and when boxed is off every
+// border is blank, so one set of rendering code produces both.
+type theme struct {
+	color bool
+	boxed bool
+	// width is the window in columns, and is meaningful only when boxed.
+	width int
 
 	header   lipgloss.Style
 	dim      lipgloss.Style
@@ -46,70 +71,289 @@ type styles struct {
 	closed   lipgloss.Style
 	assignee lipgloss.Style
 	label    lipgloss.Style
+	border   lipgloss.Style
 	priority [domain.MaxPriority + 1]lipgloss.Style
 }
 
-func (s *styles) apply(style lipgloss.Style, text string) string {
-	if !s.enabled {
+func (t *theme) apply(style lipgloss.Style, text string) string {
+	if !t.color {
 		return text
 	}
 	return style.Render(text)
 }
 
-// newStyles decides whether to colour, per the colour chain. In auto mode
-// colour is used when stdout is a terminal.
-func newStyles(mode config.ColorMode, out io.Writer) *styles {
-	enabled := false
+// newTheme decides how to draw, per the colour chain and per what Execute found
+// stdout to be. In auto mode colour too follows the terminal.
+func newTheme(mode config.ColorMode, boxed bool, width int) *theme {
+	t := &theme{boxed: boxed, width: width}
 	switch mode {
 	case config.ColorAlways:
-		enabled = true
+		t.color = true
 	case config.ColorNever:
-		enabled = false
+		t.color = false
 	case config.ColorAuto:
-		enabled = isTerminal(out)
+		t.color = boxed
+	}
+	if !t.color {
+		return t
 	}
 
-	s := &styles{enabled: enabled}
-	if !enabled {
-		return s
-	}
-
-	s.header = lipgloss.NewStyle().Bold(true)
-	s.dim = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	s.id = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	s.blocked = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	s.closed = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	s.assignee = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
-	s.label = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	t.header = lipgloss.NewStyle().Bold(true)
+	t.dim = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	t.id = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	t.blocked = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	t.closed = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	t.assignee = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	t.label = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	t.border = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 
 	// P0 is the most urgent, P4 the least, so the palette runs hot to cool.
-	s.priority = [domain.MaxPriority + 1]lipgloss.Style{
+	t.priority = [domain.MaxPriority + 1]lipgloss.Style{
 		lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 		lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 	}
-	return s
+	return t
 }
 
-// isTerminal reports whether w is a character device, which is what "auto"
-// means by a terminal.
-func isTerminal(w io.Writer) bool {
+// window reports whether w is a terminal and how many columns it has. A writer
+// that is not one — a pipe, a file, a test's buffer — has no width, and the
+// default mode then lays out to whatever width its content needs.
+//
+// A terminal is one the operating system says is a terminal, not merely a
+// character device: /dev/null is a character device and is nobody's window.
+func window(w io.Writer) (isTerminal bool, width int) {
 	f, ok := w.(*os.File)
-	if !ok {
-		return false
+	if !ok || !term.IsTerminal(f.Fd()) {
+		return false, 0
 	}
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	width, _, err := term.GetSize(f.Fd())
+	if err != nil || width <= 0 {
+		return true, assumedWidth
+	}
+	return true, max(width, minimumWidth)
 }
 
-func (e *env) styles() *styles {
+func (e *env) theme() *theme {
 	mode := config.ColorAuto
 	if e.cfg != nil {
 		mode = e.cfg.Color
 	}
-	return newStyles(mode, e.stdout)
+	return newTheme(mode, e.boxed, e.width)
+}
+
+// A listing is one column at a time, because fitting it to the window is a
+// decision about columns: which ones the reader can be asked to do without, and
+// which ones can be cut without becoming meaningless.
+type col struct {
+	header string
+	cells  []string
+
+	// floor is the narrowest width at which this column still says something.
+	// Zero means the column is short and bounded already — an id, a priority, a
+	// status — and is never cut, because half of one says nothing at all.
+	floor int
+	// expendable marks a column that is given up whole when cutting the others
+	// to their floors is still not enough. The rightmost one goes first.
+	expendable bool
+	// right right-aligns the cells, which is what a column of counts wants.
+	right bool
+	// paint gives the colour of one row's cell.
+	paint func(row int) lipgloss.Style
+}
+
+// The narrowest width at which each free-text column still tells the reader
+// something. A column goes below its floor only once every column that could be
+// given up has been, and never below its own heading: a heading with its end
+// cut off says nothing about what the column holds.
+const (
+	titleFloor    = 24
+	labelsFloor   = 10
+	blockersFloor = 13
+	nameFloor     = 12
+)
+
+// always paints every row of a column the same.
+func always(style lipgloss.Style) func(int) lipgloss.Style {
+	return func(int) lipgloss.Style { return style }
+}
+
+// fit lays the columns out to the window: expendable columns are given up,
+// rightmost first, while what remains cannot be shown even at its floors, and
+// then the columns that can be cut give up whatever room is still needed.
+//
+// Without a window there is nothing to fit to, so every column is kept whole.
+func (t *theme) fit(cols []col) []col {
+	if !t.boxed {
+		return cols
+	}
+	widths := t.solve(cols)
+	for !t.fits(cols, widths) {
+		last := -1
+		for i, c := range cols {
+			if c.expendable {
+				last = i
+			}
+		}
+		if last < 0 {
+			break
+		}
+		cols = append(cols[:last:last], cols[last+1:]...)
+		widths = t.solve(cols)
+	}
+	// Nothing is left to give up and it still will not fit, so the floors give
+	// way too: a title cut short says more than a box wider than the window.
+	t.shrink(cols, widths, hardFloor)
+	for i := range cols {
+		for j, cell := range cols[i].cells {
+			cols[i].cells[j] = truncate(cell, widths[i])
+		}
+	}
+	return cols
+}
+
+// solve gives every column its natural width, less whatever the columns that
+// can be cut have to give up for the whole to fit the window without any of
+// them falling below the width it stops saying anything at.
+func (t *theme) solve(cols []col) []int {
+	widths := make([]int, len(cols))
+	for i, c := range cols {
+		widths[i] = lipgloss.Width(c.header)
+		for _, cell := range c.cells {
+			widths[i] = max(widths[i], lipgloss.Width(cell))
+		}
+	}
+	t.shrink(cols, widths, func(c col) int { return c.floor })
+	return widths
+}
+
+// shrink takes a column off whichever has the most room above the floor it is
+// given, one at a time, until the whole fits the window or nothing can give any
+// more. Sharing the shortfall out this way keeps a column that has to be wide
+// to be worth reading wide, at the expense of one that does not.
+func (t *theme) shrink(cols []col, widths []int, floor func(col) int) {
+	for !t.fits(cols, widths) {
+		giving, slack := -1, 0
+		for i, c := range cols {
+			if f := floor(c); f > 0 && widths[i]-f > slack {
+				giving, slack = i, widths[i]-f
+			}
+		}
+		if giving < 0 {
+			return
+		}
+		widths[giving]--
+	}
+}
+
+// hardFloor is the narrowest a column that can be cut at all is ever made: its
+// whole heading, and never less than room for a character and the mark that
+// says the rest was cut. A column that is never cut has no hard floor either.
+func hardFloor(c col) int {
+	if c.floor == 0 {
+		return 0
+	}
+	return max(4, lipgloss.Width(c.header))
+}
+
+// fits reports whether the columns at these widths fit the window, counting the
+// frame: every cell is padded a space each side, and a border rule stands
+// between each pair of columns and at both ends.
+func (t *theme) fits(cols []col, widths []int) bool {
+	total := 3*len(cols) + 1
+	for _, w := range widths {
+		total += w
+	}
+	return total <= t.width
+}
+
+// writeListing draws a listing: a rounded box with a rule under the headings on
+// a terminal, and the same columns two spaces apart with no border anywhere
+// else.
+func (e *env) writeListing(t *theme, cols []col) {
+	cols = t.fit(cols)
+
+	headers := make([]string, len(cols))
+	for i, c := range cols {
+		headers[i] = c.header
+	}
+
+	tbl := table.New().Headers(headers...).Wrap(false).
+		StyleFunc(func(row, c int) lipgloss.Style {
+			s := lipgloss.NewStyle()
+			if t.boxed {
+				// Inside the box the rules do half the separating, so a space
+				// each side is enough; without them the gap has to read as one.
+				s = s.Padding(0, 1)
+			} else {
+				s = s.PaddingRight(2)
+			}
+			if cols[c].right {
+				s = s.Align(lipgloss.Right)
+			}
+			if !t.color {
+				return s
+			}
+			if row == table.HeaderRow {
+				return s.Bold(true)
+			}
+			if cols[c].paint != nil && cols[c].cells[row] != "" {
+				return s.Inherit(cols[c].paint(row))
+			}
+			return s
+		})
+
+	if t.boxed {
+		tbl.Border(lipgloss.RoundedBorder()).BorderStyle(t.border).BorderRow(false)
+	} else {
+		tbl.Border(lipgloss.HiddenBorder()).
+			BorderTop(false).BorderBottom(false).
+			BorderLeft(false).BorderRight(false).
+			BorderColumn(false).BorderRow(false).BorderHeader(false)
+	}
+
+	for row := range cols[0].cells {
+		cells := make([]string, len(cols))
+		for i, c := range cols {
+			cells[i] = c.cells[row]
+		}
+		tbl.Row(cells...)
+	}
+
+	_, _ = fmt.Fprintln(e.stdout, trimRight(tbl.Render()))
+}
+
+// section returns the borderless, heading-less table that lines up the columns
+// of one section of awb show. It never boxes: a box around three words would be
+// noise, whatever it is being printed to.
+func section() *table.Table {
+	return table.New().Wrap(false).
+		Border(lipgloss.HiddenBorder()).
+		BorderTop(false).BorderBottom(false).
+		BorderLeft(false).BorderRight(false).
+		BorderColumn(false).BorderRow(false).BorderHeader(false).
+		StyleFunc(func(int, int) lipgloss.Style { return lipgloss.NewStyle().PaddingRight(2) })
+}
+
+// writeSection prints a section's table under its heading, indented to sit
+// beneath it.
+func (e *env) writeSection(tbl *table.Table) {
+	rendered := strings.TrimRight(trimRight(tbl.Render()), "\n")
+	for _, line := range strings.Split(rendered, "\n") {
+		_, _ = fmt.Fprintf(e.stdout, "  %s\n", line)
+	}
+}
+
+// trimRight drops the padding a blank border leaves at the end of every line,
+// which would otherwise be trailing whitespace in a captured file.
+func trimRight(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // printIssues renders a listing in whichever mode is in force.
@@ -139,48 +383,76 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 	if len(issues) == 0 {
 		return
 	}
-	st := e.styles()
+	t := e.theme()
 
-	headers := []string{"ID", "P", "STATUS", "TYPE", "TITLE", "ASSIGNEE", "LABELS"}
+	cells := func(text func(*domain.Issue) string) []string {
+		out := make([]string, len(issues))
+		for i := range issues {
+			out[i] = text(&issues[i])
+		}
+		return out
+	}
+
+	cols := []col{
+		{header: "ID", paint: always(t.id),
+			cells: cells(func(i *domain.Issue) string { return i.ID })},
+		{header: "P", paint: func(row int) lipgloss.Style {
+			return t.priority[clampPriority(issues[row].Priority)]
+		},
+			cells: cells(func(i *domain.Issue) string { return "P" + strconv.Itoa(i.Priority) })},
+		{header: "STATUS", paint: func(row int) lipgloss.Style { return t.statusStyle(&issues[row]) },
+			cells: cells(statusText)},
+		{header: "TYPE", expendable: true,
+			cells: cells(func(i *domain.Issue) string { return string(i.Type) })},
+		{header: "TITLE", floor: titleFloor,
+			cells: cells(func(i *domain.Issue) string { return t.listTitle(i.Title) })},
+		{header: "ASSIGNEE", expendable: true, paint: always(t.assignee),
+			cells: cells(func(i *domain.Issue) string { return i.Assignee })},
+		{header: "LABELS", floor: labelsFloor, expendable: true, paint: always(t.label),
+			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Labels, ",") })},
+	}
 	if withBlockers {
-		headers = append(headers, "BLOCKED BY")
+		// awb blocked exists to show this column, so it is never given up.
+		cols = append(cols, col{header: "BLOCKED BY", floor: blockersFloor, paint: always(t.blocked),
+			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Blockers, ",") })})
 	}
 
-	t := table.New().
-		Border(lipgloss.HiddenBorder()).
-		BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
-		BorderColumn(false).BorderRow(false).BorderHeader(false).
-		Headers(headers...)
-
-	for i := range issues {
-		issue := &issues[i]
-		row := []string{
-			st.apply(st.id, issue.ID),
-			st.apply(st.priority[clampPriority(issue.Priority)], "P"+strconv.Itoa(issue.Priority)),
-			e.renderStatus(st, issue),
-			string(issue.Type),
-			truncate(issue.Title, 60),
-			st.apply(st.assignee, issue.Assignee),
-			st.apply(st.label, strings.Join(issue.Labels, ",")),
-		}
-		if withBlockers {
-			row = append(row, st.apply(st.blocked, strings.Join(issue.Blockers, ",")))
-		}
-		t.Row(row...)
-	}
-
-	_, _ = fmt.Fprintln(e.stdout, t.Render())
+	e.writeListing(t, cols)
 }
 
-func (e *env) renderStatus(st *styles, issue *domain.Issue) string {
-	status := string(issue.Status)
+// listTitle gives a title whichever width treatment the layout can offer. With
+// a window to fit, the listing decides what has to go, and a title can take the
+// whole window when there is room for it; without one there is nothing to fit
+// to, so a long title is cut at a fixed width to keep the columns aligned.
+func (t *theme) listTitle(title string) string {
+	if t.boxed {
+		return title
+	}
+	return truncate(title, unboxedTitleWidth)
+}
+
+// statusText is the status as a listing shows it. The blocked marker is the one
+// thing the column says that the stored status does not.
+func statusText(issue *domain.Issue) string {
 	if issue.Blocked {
-		return st.apply(st.blocked, status+" !blocked")
+		return string(issue.Status) + " !blocked"
 	}
-	if issue.Status == domain.StatusClosed {
-		return st.apply(st.closed, status)
+	return string(issue.Status)
+}
+
+func (t *theme) statusStyle(issue *domain.Issue) lipgloss.Style {
+	switch {
+	case issue.Blocked:
+		return t.blocked
+	case issue.Status == domain.StatusClosed:
+		return t.closed
+	default:
+		return lipgloss.NewStyle()
 	}
-	return status
+}
+
+func (e *env) renderStatus(t *theme, issue *domain.Issue) string {
+	return t.apply(t.statusStyle(issue), statusText(issue))
 }
 
 func clampPriority(p int) int {
@@ -193,14 +465,12 @@ func clampPriority(p int) int {
 	return p
 }
 
-// truncate shortens a cell for the default mode, which is explicitly allowed
-// to truncate.
+// truncate shortens a cell for the default mode, which is explicitly allowed to
+// truncate. It counts what the terminal shows rather than bytes or runes, so a
+// cell that is already coloured, or holds a double-width character, still comes
+// out the width it was asked for.
 func truncate(s string, width int) string {
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
-	}
-	return string(runes[:width-1]) + "…"
+	return ansi.Truncate(s, width, "…")
 }
 
 // printIssue renders one issue.
@@ -223,46 +493,55 @@ func (e *env) printIssue(issue *domain.Issue) error {
 }
 
 func (e *env) printIssueDetail(issue *domain.Issue) {
-	st := e.styles()
+	t := e.theme()
 	field := func(name, value string) {
 		if value == "" {
 			return
 		}
-		_, _ = fmt.Fprintf(e.stdout, "%s %s\n", st.apply(st.header, pad(name+":", 12)), value)
+		_, _ = fmt.Fprintf(e.stdout, "%s %s\n", t.apply(t.header, pad(name+":", 12)), value)
 	}
 
-	_, _ = fmt.Fprintf(e.stdout, "%s  %s\n", st.apply(st.id, issue.ID), issue.Title)
+	// A rule as long as the heading, and no longer, separates it from the
+	// fields. Like the connectors of a tree it needs no window to be drawn to,
+	// only the heading it underlines, so it is drawn either way.
+	heading := t.apply(t.id, issue.ID) + "  " + t.apply(t.header, issue.Title)
+	length := lipgloss.Width(heading)
+	if t.boxed {
+		length = min(length, t.width)
+	}
+	_, _ = fmt.Fprintln(e.stdout, heading)
+	_, _ = fmt.Fprintln(e.stdout, t.apply(t.dim, strings.Repeat("─", length)))
+
 	field("Project", issue.Project)
 	field("Type", string(issue.Type))
-	field("Status", e.renderStatus(st, issue))
+	field("Status", e.renderStatus(t, issue))
 	field("Priority", "P"+strconv.Itoa(issue.Priority))
-	field("Assignee", st.apply(st.assignee, issue.Assignee))
-	field("Labels", st.apply(st.label, strings.Join(issue.Labels, ", ")))
+	field("Assignee", t.apply(t.assignee, issue.Assignee))
+	field("Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
 	field("Closed", issue.CloseReason)
 	field("Created", issue.CreatedAt)
 	field("Updated", issue.UpdatedAt)
 
 	if len(issue.Blockers) > 0 {
-		field("Blocked by", st.apply(st.blocked, strings.Join(issue.Blockers, ", ")))
+		field("Blocked by", t.apply(t.blocked, strings.Join(issue.Blockers, ", ")))
 	}
 
 	if issue.Description != "" {
-		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", issue.Description)
+		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.wrap(issue.Description))
 	}
 
 	if len(issue.Links) > 0 {
-		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", st.apply(st.header, "Links"))
+		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.apply(t.header, "Links"))
+		tbl := section()
 		for _, link := range issue.Links {
-			if link.Text == "" {
-				_, _ = fmt.Fprintf(e.stdout, "  %s\n", link.URL)
-				continue
-			}
-			_, _ = fmt.Fprintf(e.stdout, "  %s  %s\n", link.Text, st.apply(st.dim, link.URL))
+			tbl.Row(link.Text, t.apply(t.dim, link.URL))
 		}
+		e.writeSection(tbl)
 	}
 
 	if len(issue.Relations) > 0 {
-		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", st.apply(st.header, "Relations"))
+		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.apply(t.header, "Relations"))
+		tbl := section()
 		for _, rel := range issue.Relations {
 			// Every relation reads "subject — type — other", the single convention
 			// everywhere, whichever end is being viewed.
@@ -270,10 +549,19 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 			if rel.Direction == domain.DirectionIn {
 				subject, other = rel.Other, issue.ID
 			}
-			_, _ = fmt.Fprintf(e.stdout, "  %s %s %s\n",
-				st.apply(st.id, subject), rel.Type, st.apply(st.id, other))
+			tbl.Row(t.apply(t.id, subject), string(rel.Type), t.apply(t.id, other))
 		}
+		e.writeSection(tbl)
 	}
+}
+
+// wrap folds prose to the window. Without a window the text is left exactly as
+// it was written, which is what a pipe or a file wants.
+func (t *theme) wrap(s string) string {
+	if !t.boxed {
+		return s
+	}
+	return lipgloss.Wrap(s, t.width, "")
 }
 
 func pad(s string, width int) string {
@@ -301,17 +589,20 @@ func (e *env) printProjects(projects []domain.Project) error {
 		if len(projects) == 0 {
 			return nil
 		}
-		st := e.styles()
-		t := table.New().
-			Border(lipgloss.HiddenBorder()).
-			BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
-			BorderColumn(false).BorderRow(false).BorderHeader(false).
-			Headers("KEY", "OPEN", "NAME")
+		t := e.theme()
+		keys := make([]string, len(projects))
+		counts := make([]string, len(projects))
+		names := make([]string, len(projects))
 		for i := range projects {
-			p := &projects[i]
-			t.Row(st.apply(st.id, p.Key), strconv.Itoa(p.ActiveIssues), p.Name)
+			keys[i] = projects[i].Key
+			counts[i] = strconv.Itoa(projects[i].ActiveIssues)
+			names[i] = projects[i].Name
 		}
-		_, _ = fmt.Fprintln(e.stdout, t.Render())
+		e.writeListing(t, []col{
+			{header: "KEY", cells: keys, paint: always(t.id)},
+			{header: "OPEN", cells: counts, right: true},
+			{header: "NAME", cells: names, floor: nameFloor},
+		})
 		return nil
 	}
 }
@@ -322,28 +613,49 @@ func (e *env) printProjects(projects []domain.Project) error {
 // spaces per level of depth, the root unindented. That prefix is the one thing
 // that may precede the id, so a consumer strips the leading spaces, counts
 // them to recover the depth, and parses the rest of the line as usual.
-func (e *env) printTree(tree *domain.IssueTree) error {
+func (e *env) printTree(root *domain.IssueTree) error {
 	switch {
 	case e.json:
-		return e.writeJSON(tree)
+		return e.writeJSON(root)
 	case e.compact:
-		e.walkTree(tree, 0, func(node *domain.IssueTree, depth int) {
+		e.walkTree(root, 0, func(node *domain.IssueTree, depth int) {
 			_, _ = fmt.Fprintln(e.stdout,
 				domain.CompactTreePrefix(depth)+domain.CompactLine(&node.Issue, false))
 		})
 		return nil
 	default:
-		st := e.styles()
-		e.walkTree(tree, 0, func(node *domain.IssueTree, depth int) {
-			_, _ = fmt.Fprintf(e.stdout, "%s%s  %s  %s  %s\n",
-				strings.Repeat("  ", depth),
-				st.apply(st.id, node.ID),
-				st.apply(st.priority[clampPriority(node.Priority)], "P"+strconv.Itoa(node.Priority)),
-				e.renderStatus(st, &node.Issue),
-				truncate(node.Title, 60))
-		})
+		t := e.theme()
+		// The connectors are drawn whether or not stdout is a terminal. Unlike a
+		// box they are not decoration: they are the shape of the graph, which is
+		// the whole point of the command, and they need no window to be drawn to.
+		// Setting a style replaces lipgloss's default one, which is where the
+		// space between a connector and what it points at comes from, so the
+		// padding is restated here and both styles are set either way: with
+		// colour off they are the identity and the layout is the same.
+		drawn := e.issueTree(t, root)
+		drawn.EnumeratorStyle(t.dim.PaddingRight(1)).IndenterStyle(t.dim.PaddingRight(1))
+		_, _ = fmt.Fprintln(e.stdout, drawn.String())
 		return nil
 	}
+}
+
+// issueTree mirrors one node and its children into a lipgloss tree. A child
+// tree draws itself with the root's renderer only for as long as it has none of
+// its own, so nothing below the root may be styled.
+func (e *env) issueTree(t *theme, node *domain.IssueTree) *tree.Tree {
+	drawn := tree.Root(e.treeNode(t, node))
+	for i := range node.Children {
+		drawn.Child(e.issueTree(t, &node.Children[i]))
+	}
+	return drawn
+}
+
+func (e *env) treeNode(t *theme, node *domain.IssueTree) string {
+	return fmt.Sprintf("%s  %s  %s  %s",
+		t.apply(t.id, node.ID),
+		t.apply(t.priority[clampPriority(node.Priority)], "P"+strconv.Itoa(node.Priority)),
+		e.renderStatus(t, &node.Issue),
+		truncate(node.Title, unboxedTitleWidth))
 }
 
 func (e *env) walkTree(node *domain.IssueTree, depth int, visit func(*domain.IssueTree, int)) {
