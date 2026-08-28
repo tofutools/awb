@@ -251,6 +251,13 @@ func TestColourAndBoxesAreDecidedSeparately(t *testing.T) {
 
 	assert.Contains(t, drawn(config.ColorAlways, false), "\x1b[")
 	assert.NotContains(t, drawn(config.ColorAlways, false), "│")
+
+	// Colour must not smuggle trailing whitespace past the trimming: lipgloss
+	// pads a cell outside the escape sequence that colours it, so the padding is
+	// still the end of the line and is still cut.
+	for _, line := range lines(drawn(config.ColorAlways, false)) {
+		assert.Equal(t, strings.TrimRight(line, " "), line, "%q", line)
+	}
 	assert.NotContains(t, drawn(config.ColorNever, true), "\x1b[")
 	assert.Contains(t, drawn(config.ColorNever, true), "│")
 
