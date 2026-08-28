@@ -50,7 +50,7 @@ run `mise install` to install them.
 
 ```console
 $ awb init
-$ awb project add awb --name "Agent Work Board"
+$ awb project create awb --name "Agent Work Board"
 
 $ cat .awb.yaml                            # committed at the top of the working tree
 project: awb
@@ -96,7 +96,7 @@ whatever is under the key is meant.
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |
 | `awb dep tree <id>` | The decomposition below an issue. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
-| `awb project add\|update\|show\|ls\|rm` | Projects. |
+| `awb project create\|update\|show\|list\|delete` | Projects. |
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |

@@ -199,7 +199,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		newDemoCommand(e),
 		newServeCommand(e),
 	)
-	return root
+	return grouping(root)
 }
 
 // config resolves the configuration once per invocation.
@@ -289,6 +289,25 @@ func minArgs(n int) cobra.PositionalArgs {
 		}
 		return nil
 	}
+}
+
+// grouping prepares a command that only holds subcommands, so that a name it
+// does not have is reported rather than swallowed: bare, it prints its own
+// help, and given anything else it fails as a usage error. Both halves are
+// needed, because cobra consults Args only on a runnable command and applies
+// its own unknown-command check only to the root — so without them a removed
+// or mistyped name, awb project add, prints the group's help and exits 0, and
+// nothing can tell that spelling from a working one. With them an unknown
+// command is the exit 2 the guide documents, at every level of the tree.
+func grouping(cmd *cobra.Command) *cobra.Command {
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return awberr.Usagef("unknown command %q for %q", args[0], cmd.CommandPath())
+		}
+		return nil
+	}
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+	return cmd
 }
 
 // noArgs rejects any positional argument.

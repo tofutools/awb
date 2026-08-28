@@ -565,7 +565,7 @@ func TestProjectLifecycle(t *testing.T) {
 	assert.Equal(t, 4, exitOf(err))
 }
 
-// project rm refuses while the project holds any issue at all, closed ones
+// project delete refuses while the project holds any issue at all, closed ones
 // included, so confirmation alone can never destroy closed history.
 func TestProjectDeletionAndCascade(t *testing.T) {
 	b, ctx := newBackend(t)

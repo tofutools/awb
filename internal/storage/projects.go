@@ -139,8 +139,8 @@ func (t *Tx) UpdateProject(p *domain.Project, name, description string) error {
 }
 
 // CountIssuesInProject counts every issue the project holds, closed ones
-// included. That is deliberately wider than the active count project ls shows:
-// project rm refuses while a project holds any issue at all, so --force alone
+// included. That is deliberately wider than the active count project list shows:
+// project delete refuses while a project holds any issue at all, so --force alone
 // can never destroy closed history.
 func (t *Tx) CountIssuesInProject(key string) (int, error) {
 	var n int

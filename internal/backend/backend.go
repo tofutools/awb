@@ -137,7 +137,7 @@ type IssuePatch struct {
 	ExpectCloseReason *string
 }
 
-// ProjectCreate is the body of awb project add and of POST /api/projects.
+// ProjectCreate is the body of awb project create and of POST /api/projects.
 type ProjectCreate struct {
 	Key         string
 	Name        string
@@ -198,7 +198,7 @@ type DeletedIssue struct {
 	RelationsRemoved int
 }
 
-// DeletedProject is what project rm returns: the project as it was immediately
+// DeletedProject is what project delete returns: the project as it was immediately
 // before deletion.
 //
 // It deliberately carries no count of the issues --cascade took with it. Direct
