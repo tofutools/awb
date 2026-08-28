@@ -101,7 +101,9 @@ func TestMarkdownFitsTheWindow(t *testing.T) {
 	source := "# A heading long enough that it has to be folded somewhere\n\n" +
 		"A paragraph of prose that is a good deal wider than any of these windows, " +
 		"with a [link](https://example.com/some/rather/long/destination) in it.\n\n" +
-		"> - a list inside a quotation, itself long enough to need folding\n"
+		"> - a list inside a quotation, itself long enough to need folding\n\n" +
+		"| Command | What it does |\n| --- | --- |\n" +
+		"| awb ready | Open, unblocked, unassigned issues, highest priority first |\n"
 
 	for _, width := range []int{40, 60, 100} {
 		for _, mode := range []config.ColorMode{config.ColorNever, config.ColorAlways} {
@@ -158,6 +160,51 @@ func TestMarkdownDrawsTables(t *testing.T) {
 	assert.Equal(t, "Key   Name", got[0])
 	assert.Equal(t, "demo  DEMO", got[1])
 	assert.Equal(t, "awb   Agent Work Board", got[2])
+}
+
+// A table is fitted to the window rather than allowed to overflow it, because
+// it is read across: the widest column gives way first, and a cell cut short
+// still says which column it is in.
+func TestNarrowTableIsCutRatherThanOverflowed(t *testing.T) {
+	source := "| Key | What it holds |\n| --- | --- |\n" +
+		"| demo | A sample project for trying awb out, replaced wholesale each run |\n"
+
+	wide := strings.Split(drawn(config.ColorNever, 100, source), "\n")
+	assert.Equal(t, "demo  A sample project for trying awb out, replaced wholesale each run",
+		wide[1], "with room to spare nothing is cut")
+
+	for _, width := range []int{20, 40, 60} {
+		got := strings.Split(drawn(config.ColorNever, width, source), "\n")
+		require.Len(t, got, 2)
+		for _, line := range got {
+			assert.LessOrEqual(t, lipgloss.Width(line), width, "width %d: %q", width, line)
+		}
+		assert.Contains(t, got[1], "demo", "width %d keeps the narrow column whole", width)
+		assert.Contains(t, got[1], "\u2026", "width %d cuts the wide one", width)
+	}
+}
+
+// A link destination is never shown, so nothing would reveal that it carried a
+// byte the terminal reads as a control — and one of those would end the
+// sequence the hyperlink is written as and leave the rest of the destination
+// driving the terminal. They are percent-encoded; everything else is passed
+// through as written.
+func TestHyperlinkDestinationsCannotDriveTheTerminal(t *testing.T) {
+	assert.Equal(t, "https://example.com/a?b=c&d=%C3%A9",
+		safeURL("https://example.com/a?b=c&d=%C3%A9"))
+	assert.Equal(t, "https://example.com/\u00a3", safeURL("https://example.com/\u00a3"),
+		"a C1 lead byte before an ordinary character is not a control")
+
+	assert.Equal(t, "https://x/%07", safeURL("https://x/\a"), "BEL ends an OSC 8 sequence")
+	assert.Equal(t, "https://x/%1B]0;pwned%07", safeURL("https://x/\x1b]0;pwned\a"))
+	assert.Equal(t, "https://x/%7F%00", safeURL("https://x/\x7f\x00"))
+	assert.Equal(t, "https://x/%C2%9C", safeURL("https://x/\u009c"),
+		"the C1 string terminator, which also ends the sequence")
+
+	// And the renderer uses it, so no description puts one on the wire.
+	out := drawn(config.ColorAlways, 60, "See [it](https://x/\x1b]0;pwned\a).\n")
+	assert.NotContains(t, out, "\x1b]0;pwned")
+	assert.Contains(t, out, "\x1b]8;;https://x/%1B]0;pwned%07\x07")
 }
 
 // A project's description is drawn the same way an issue's is, which is the

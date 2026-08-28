@@ -102,7 +102,7 @@ func (r *markdownRenderer) block(n ast.Node, width int) []string {
 	case *ast.ThematicBreak:
 		return []string{r.t.apply(r.t.dim, strings.Repeat("─", max(width, minimumProseWidth)))}
 	case *east.Table:
-		return r.table(v)
+		return r.table(v, width)
 	case *ast.HTMLBlock:
 		// Raw HTML is markup rather than text, which is what it is to
 		// domain.ExtractLinks too.
@@ -196,10 +196,11 @@ func (r *markdownRenderer) code(n ast.Node) []string {
 }
 
 // table draws a GFM table as the aligned columns every other section of the
-// default mode uses, its heading row bold. The column alignment the table
-// declares is not honoured: what the reader is after is which cell is which.
-func (r *markdownRenderer) table(n *east.Table) []string {
-	tbl := section()
+// default mode uses, its heading row bold, and fitted to the window the way a
+// listing is. The column alignment the table declares is not honoured: what the
+// reader is after is which cell is which.
+func (r *markdownRenderer) table(n *east.Table, width int) []string {
+	var rows [][]string
 	for row := n.FirstChild(); row != nil; row = row.NextSibling() {
 		base := lipgloss.NewStyle()
 		if _, heading := row.(*east.TableHeader); heading {
@@ -209,14 +210,68 @@ func (r *markdownRenderer) table(n *east.Table) []string {
 		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
 			cells = append(cells, r.inline(cell, base))
 		}
+		rows = append(rows, cells)
+	}
+	fitColumns(rows, max(width, minimumProseWidth))
+
+	tbl := section()
+	for _, cells := range rows {
 		tbl.Row(cells...)
 	}
-
 	rendered := strings.TrimRight(trimRight(tbl.Render()), "\n")
 	if rendered == "" {
 		return nil
 	}
 	return strings.Split(rendered, "\n")
+}
+
+// fitColumns cuts a drawn table down to the window, taking a column from
+// whichever is widest until the whole fits. A table is read across rather than
+// down, so a cell cut short still says which column it is in, where a table
+// wider than the window says nothing at all: this is the one block that is
+// fitted rather than allowed to overflow, code being the other way about
+// because folding code changes what it says.
+//
+// The two spaces between one column and the next are what hold them apart, so
+// they are the part that cannot be given up.
+func fitColumns(rows [][]string, width int) {
+	columns := 0
+	for _, cells := range rows {
+		columns = max(columns, len(cells))
+	}
+	if columns == 0 {
+		return
+	}
+
+	widths := make([]int, columns)
+	for _, cells := range rows {
+		for i, cell := range cells {
+			widths[i] = max(widths[i], lipgloss.Width(cell))
+		}
+	}
+
+	room := width - 2*(columns-1)
+	for {
+		used, widest := 0, 0
+		for i, w := range widths {
+			used += w
+			if w > widths[widest] {
+				widest = i
+			}
+		}
+		// Nothing left to give: a column is never cut below the one character
+		// and the mark that says the rest was cut.
+		if used <= room || widths[widest] <= 1 {
+			break
+		}
+		widths[widest]--
+	}
+
+	for _, cells := range rows {
+		for i, cell := range cells {
+			cells[i] = truncate(cell, widths[i])
+		}
+	}
 }
 
 // inline draws the inline children of a node.
@@ -279,7 +334,51 @@ func (r *markdownRenderer) hyperlink(base lipgloss.Style, url string) lipgloss.S
 	if url == "" {
 		return base
 	}
-	return base.Inherit(r.t.link).Hyperlink(url)
+	return base.Inherit(r.t.link).Hyperlink(safeURL(url))
+}
+
+// safeURL percent-encodes the bytes a terminal reads as a control: the C0
+// range and DEL, and the two-byte form of a C1 control. A destination goes into
+// the sequence the hyperlink is written as, and one of those bytes would end
+// that sequence early and leave the rest of the destination driving the
+// terminal. Everything else is passed through byte for byte, so the link opens
+// what the writer wrote.
+//
+// This is the one place a description reaches the terminal without being shown,
+// which is why the guard is here rather than left to the input rules: those
+// already refuse every one of these bytes in a description, but a database
+// written by something other than awb, or reached over --db, has not been
+// through them. Text that is shown is a different matter and is printed as
+// stored, exactly as a title or a label is.
+func safeURL(url string) string {
+	var b strings.Builder
+	for i := 0; i < len(url); i++ {
+		c := url[i]
+		switch {
+		// A C0 control or DEL. Neither is ever a byte of a multi-byte UTF-8
+		// sequence, so testing bytes rather than runes is exact and works on a
+		// destination that is not well-formed UTF-8 either.
+		case c < 0x20 || c == 0x7f:
+			writePercent(&b, c)
+		// The UTF-8 form of a C1 control, which an eight-bit terminal reads as
+		// one. 0xC2 leads U+0080 to U+00BF and only the first 32 are controls,
+		// so £ and its neighbours are left alone.
+		case c == 0xc2 && i+1 < len(url) && url[i+1] >= 0x80 && url[i+1] <= 0x9f:
+			writePercent(&b, c)
+			writePercent(&b, url[i+1])
+			i++
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+func writePercent(b *strings.Builder, c byte) {
+	const hex = "0123456789ABCDEF"
+	b.WriteByte('%')
+	b.WriteByte(hex[c>>4])
+	b.WriteByte(hex[c&0x0f])
 }
 
 // taskBox draws a GFM task list checkbox. It carries its own trailing space:
