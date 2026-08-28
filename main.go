@@ -26,10 +26,16 @@ func main() {
 // versionString is what --version prints: the version stamp followed by the
 // commit the binary was built from, as "1.2.3 (<hash>, <commit time>)". The Go
 // toolchain records the commit under -buildvcs=true, which is how awb is
-// built; a build with nothing to record — `go run`, `go test`, or a build from
-// the module cache rather than a checkout — gets the bare version instead. A
-// build from a dirty tree says "modified", because then the commit does not
-// describe what was compiled.
+// built. A build from a dirty tree says "modified", because then the commit
+// does not describe what was compiled.
+//
+// A build the toolchain recorded no commit for gets the bare version instead,
+// which is not a corner case: `go run` and `go test` do not stamp, nor does a
+// build from the module cache rather than a checkout, and cmd/go does not
+// recognise a linked Git worktree as a checkout at all — it looks for a .git
+// directory and a worktree's .git is a file — so a build from one is
+// unstamped too, silently, because -buildvcs=true only fails when it finds a
+// repository it cannot read.
 //
 // The version stamp is always the first whitespace-separated field, which is
 // what the release workflow asserts.
