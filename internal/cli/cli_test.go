@@ -94,8 +94,8 @@ func TestWorkedExample(t *testing.T) {
 }
 
 // Mutating commands print nothing on success in the default and compact modes,
-// except create, which prints the new ID, and the deleting commands, which
-// print a one-line summary.
+// except create, which prints the new ID, and the deleting commands and demo,
+// which print a one-line summary.
 func TestMutatingCommandsAreSilent(t *testing.T) {
 	h := newHarness(t)
 	id := h.create("t", "--project", "awb")
@@ -533,7 +533,9 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	assert.Contains(t, h.mustRun("dep", "tree", epic, "--compact"), "\n    ")
 }
 
-// awb demo prints a summary line, and the project itself under --json.
+// awb demo prints a summary line — one of the deliberate exceptions to
+// "mutating commands print nothing on success" — and the project itself under
+// --json.
 func TestDemoOutput(t *testing.T) {
 	h := newHarness(t)
 	assert.Contains(t, h.mustRun("demo"), "demo")

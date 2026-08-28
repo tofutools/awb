@@ -199,6 +199,10 @@ func newDemoCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(project)
 			}
+			// demo is one of the exceptions to "mutating commands print nothing on
+			// success", for the reason the deleting commands are: a command that
+			// replaces a whole project should say what it left behind. The line is
+			// not a compatibility surface; a script reads --json.
 			return e.summarise("Created project %s with %d issue(s).\n",
 				project.Key, len(demoIssues))
 		},
