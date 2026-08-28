@@ -242,6 +242,14 @@ redirected there is no window, so the same content is laid out as plain aligned
 columns at its natural width. Colour is a separate question with its own chain,
 because colour is asked for whereas a window either is there or is not.
 
+A description is Markdown, and the default mode draws it as Markdown when it has
+a window to draw it in: emphasis, headings, lists, code and links the terminal
+can open. It is drawn with the same pinned dialect the extracted link list and
+the web UI read, so no surface can disagree with another about what a
+description says. What a given terminal makes of any of it is the terminal's
+own business, which is why nothing there is the only way to reach anything: the
+links a description holds are still listed as plain text beside it.
+
 Mutating commands print nothing on success, so a script's output is signal.
 Three say something anyway, and each says it for a reason: `awb create` prints
 the new ID, because minting it is the point; the deleting commands and `awb

@@ -26,6 +26,7 @@ func newProjectCommand(e *env) *cobra.Command {
 	cmd.AddCommand(
 		newProjectAddCommand(e),
 		newProjectUpdateCommand(e),
+		newProjectShowCommand(e),
 		newProjectListCommand(e),
 		newProjectRemoveCommand(e),
 	)
@@ -109,6 +110,30 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "human-readable name; \"\" restores the key")
 	desc.register(cmd, "project")
 	return cmd
+}
+
+func newProjectShowCommand(e *env) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <key>",
+		Short: "Print one project in full",
+		Long: "Print a project with its description and its count of issues that are not\n" +
+			"closed.\n\n" +
+			"On a terminal the description is drawn as the Markdown it is. Under\n" +
+			"--compact this prints the same single line project ls would and nothing\n" +
+			"else; --json is what a script uses when it needs the rest.",
+		Args: exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			project, err := be.GetProject(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			return e.printProject(project)
+		},
+	}
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
