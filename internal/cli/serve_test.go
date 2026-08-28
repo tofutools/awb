@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
 )
 
@@ -22,15 +24,34 @@ func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	h, err := buildHandler(local.New(db, "mikael"), nil, "awb", "127.0.0.1:7777", corsOrigins)
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), nil, "awb",
+		"127.0.0.1:7777", corsOrigins)
 	require.NoError(t, err)
 	return h
 }
 
-// get performs a request, decoding the response the way a browser would.
+// get performs a request without a body, decoding the response the way a
+// browser would.
 func get(t *testing.T, h http.Handler, method, path string, headers ...string) (*http.Response, string) {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	return send(t, h, method, path, "", headers...)
+}
+
+// send is get with a request body.
+func send(t *testing.T, h http.Handler, method, path, body string,
+	headers ...string) (*http.Response, string) {
+	t.Helper()
+	var requestBody io.Reader
+	if body != "" {
+		requestBody = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, requestBody)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for i := 0; i+1 < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])
 	}
@@ -48,9 +69,9 @@ func get(t *testing.T, h http.Handler, method, path string, headers ...string) (
 		reader = gz
 	}
 
-	body, err := io.ReadAll(reader)
+	payload, err := io.ReadAll(reader)
 	require.NoError(t, err)
-	return resp, string(body)
+	return resp, string(payload)
 }
 
 // A response must be gzipped once, not twice.
@@ -163,9 +184,16 @@ func TestCORS(t *testing.T) {
 	assert.Equal(t, "true", resp.Header.Get("Access-Control-Allow-Credentials"))
 
 	// Without ETag, X-Total-Count and Location exposed, a cross-origin UI could
-	// use neither the optimistic concurrency nor the paging.
+	// use neither the optimistic concurrency nor the paging. Each response
+	// exposes the ones it carries: the generated encoders narrow what the
+	// middleware set to exactly the headers that response has.
+	assert.Contains(t, resp.Header.Get("Access-Control-Expose-Headers"), "X-Total-Count")
+
+	resp, _ = send(t, allowed, http.MethodPost, "/api/projects", `{"key":"web"}`,
+		"Origin", "https://ui.example.com")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	exposed := resp.Header.Get("Access-Control-Expose-Headers")
-	for _, header := range []string{"ETag", "X-Total-Count", "Location"} {
+	for _, header := range []string{"Etag", "Location"} {
 		assert.Contains(t, exposed, header)
 	}
 

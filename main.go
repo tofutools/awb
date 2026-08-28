@@ -6,12 +6,26 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"os"
 	"runtime/debug"
 	"strings"
 
 	"github.com/tofutools/awb/internal/cli"
+	"github.com/tofutools/awb/internal/openapi"
 )
+
+// openAPIDocument is the OpenAPI document that specifies the HTTP API, which
+// serve publishes at /openapi.json and /openapi.yaml.
+//
+// It lives at the repository root because it is what the Go server in
+// internal/api and the TypeScript types in web/ts/api/types.ts are generated
+// from, and a generator's input belongs to the repository rather than to one
+// package. Embedding reaches no further up than its own directory, so this is
+// the only package that can carry it, and it is handed down from here.
+//
+//go:embed openapi.yaml
+var openAPIDocument []byte
 
 // version is the binary's version, which --version prints. It is overridden at
 // build time with -ldflags "-X main.version=...".
@@ -19,8 +33,8 @@ var version = "dev"
 
 func main() {
 	info, _ := debug.ReadBuildInfo()
-	os.Exit(cli.Execute(context.Background(), versionString(version, info), os.Args[1:],
-		os.Stdout, os.Stderr, os.Stdin))
+	os.Exit(cli.Execute(context.Background(), versionString(version, info),
+		openapi.New(openAPIDocument), os.Args[1:], os.Stdout, os.Stderr, os.Stdin))
 }
 
 // versionString is what --version prints: the version stamp followed by the

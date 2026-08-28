@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 1.0.0
+  version: 1.1.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -13,6 +13,14 @@ info:
     second, HTTP-only response representation of anything the CLI also returns:
     if the shapes ever diverge, the JSON output is what changed and both must be
     corrected together.
+
+    This document is the source of truth rather than a description written
+    afterwards: awb's HTTP server and the types the bundled UI is written
+    against are both generated from it. An endpoint therefore accepts exactly
+    what it declares here — a query parameter it does not declare, a request
+    body where it declares none, and an unrecognised body field are all refused
+    rather than ignored, because something the server never reads is a thing
+    the client believes it said.
 
     Within a major version, changes to this document are additive only.
     `info.version` tracks the API, not the binary.
@@ -62,8 +70,7 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/IssueList'
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
     post:
       tags: [issues]
       operationId: createIssue
@@ -74,17 +81,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/IssueCreate' }
       responses:
-        '201':
-          description: The new issue.
-          headers:
-            Location: { $ref: '#/components/headers/Location' }
-            ETag: { $ref: '#/components/headers/ETag' }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '201': { $ref: '#/components/responses/IssueCreated' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}:
     parameters:
@@ -95,8 +93,7 @@ paths:
       summary: Read one issue
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [issues]
       operationId: updateIssue
@@ -110,9 +107,7 @@ paths:
             schema: { $ref: '#/components/schemas/IssuePatch' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
     delete:
       tags: [issues]
       operationId: deleteIssue
@@ -128,9 +123,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/claim:
     parameters:
@@ -150,10 +143,7 @@ paths:
             schema: { $ref: '#/components/schemas/ClaimRequest' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/release:
     parameters:
@@ -169,10 +159,7 @@ paths:
             schema: { $ref: '#/components/schemas/ReleaseRequest' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/close:
     parameters:
@@ -188,9 +175,7 @@ paths:
             schema: { $ref: '#/components/schemas/CloseRequest' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/reopen:
     parameters:
@@ -209,9 +194,7 @@ paths:
         server never reads is a thing the client believes it said.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/labels:
     parameters:
@@ -231,9 +214,7 @@ paths:
             schema: { $ref: '#/components/schemas/LabelRequest' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
     delete:
       tags: [issues]
       operationId: removeLabel
@@ -248,9 +229,7 @@ paths:
           schema: { $ref: '#/components/schemas/Label' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/relations:
     parameters:
@@ -262,10 +241,7 @@ paths:
       summary: Record a relation, read with this issue as the subject
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
       requestBody:
         required: true
         content:
@@ -292,9 +268,7 @@ paths:
       description: Removing one that does not exist succeeds and changes nothing.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/tree:
     parameters:
@@ -312,8 +286,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/IssueTree' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/ready:
     get:
@@ -336,8 +309,7 @@ paths:
         - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/IssueList' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/blocked:
     get:
@@ -361,8 +333,7 @@ paths:
         - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/IssueList' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/search:
     get:
@@ -412,8 +383,7 @@ paths:
         - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/IssueList' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/projects:
     get:
@@ -424,16 +394,8 @@ paths:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
-        '200':
-          description: The projects.
-          headers:
-            X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '200': { $ref: '#/components/responses/ProjectList' }
+        default: { $ref: '#/components/responses/Error' }
     post:
       tags: [projects]
       operationId: createProject
@@ -444,16 +406,8 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ProjectCreate' }
       responses:
-        '201':
-          description: The new project.
-          headers:
-            Location: { $ref: '#/components/headers/Location' }
-            ETag: { $ref: '#/components/headers/ETag' }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '201': { $ref: '#/components/responses/ProjectCreated' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/projects/{key}:
     parameters:
@@ -467,8 +421,7 @@ paths:
       summary: Read one project
       responses:
         '200': { $ref: '#/components/responses/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [projects]
       operationId: updateProject
@@ -482,9 +435,7 @@ paths:
             schema: { $ref: '#/components/schemas/ProjectPatch' }
       responses:
         '200': { $ref: '#/components/responses/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
     delete:
       tags: [projects]
       operationId: deleteProject
@@ -508,10 +459,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/labels:
     get:
@@ -527,11 +475,22 @@ paths:
         `limit` and `offset` page the facet rows rather than the issues behind
         them, so `count` is the same whatever page it appears on. `sort` is not
         accepted: the row order is fixed at value ascending.
-      parameters: [$ref: '#/components/parameters/facetSelection']
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/FacetList' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/assignees:
     get:
@@ -541,11 +500,22 @@ paths:
       description: |
         As `GET /api/labels`. There is no row for the empty assignee:
         unassigned is a filter, not a value.
-      parameters: [$ref: '#/components/parameters/facetSelection']
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/FacetList' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/identity:
     get:
@@ -566,6 +536,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Identity' }
+        default: { $ref: '#/components/responses/Error' }
 
 components:
   securitySchemes:
@@ -718,24 +689,19 @@ components:
       in: query
       description: Skip this many rows.
       schema: { type: integer, minimum: 0, default: 0 }
-    facetSelection:
-      name: label
-      in: query
-      description: |
-        The facet endpoints accept every *selection* parameter of
-        `GET /api/issues` — `status`, `include-closed`, `type`, `priority`,
-        `priority-max`, `label`, `assignee`, `unassigned`, `project` and
-        `parent` — plus `limit` and `offset`, which page the facet rows.
-      schema:
-        type: array
-        items: { $ref: '#/components/schemas/Label' }
-      style: form
-      explode: true
 
   responses:
     Issue:
       description: The issue.
       headers:
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Issue' }
+    IssueCreated:
+      description: The new issue.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
         ETag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
@@ -756,6 +722,23 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
+    ProjectCreated:
+      description: The new project.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Project' }
+    ProjectList:
+      description: The projects.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Project' }
     FacetList:
       description: The distinct values in use, sorted by value ascending.
       headers:
@@ -765,44 +748,27 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Facet' }
-    UnsupportedMediaType:
+    Error:
       description: |
-        The request carries a body without a JSON content type. A missing
-        `Content-Type` counts: a body claiming nothing claims nothing useful.
-        A request that sends no body is never asked to describe one.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    BadRequest:
-      description: |
-        The request asked for something invalid — an unknown enum value, text
-        failing the input rules, a parameter this endpoint does not accept, an
-        unrecognised body field, a `null` where a value belongs, or an ambiguous
-        issue reference. On the command line this is exit code 2.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    NotFound:
-      description: |
-        An entity addressed by name does not exist. On the command line this is
-        exit code 3.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    Conflict:
-      description: |
-        A constraint that depends on stored state — a dependency cycle, a
-        duplicate, a claim held by somebody else, a parent already set, or a
-        project that still holds issues. On the command line this is exit
-        code 4.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    PreconditionFailed:
-      description: |
-        The `If-Match` no longer matches: the entity has moved on since it was
-        read. It has no exit code of its own, the command line never sending
-        `If-Match`.
+        A failure, carrying the server's own message. The status says which
+        kind it is, and the four kinds carry the command line's exit codes:
+
+        * `400` — the request asked for something invalid: an unknown enum
+          value, text failing the input rules, a parameter the endpoint does
+          not accept, an unrecognised body field, a `null` where a value
+          belongs, or an ambiguous issue reference. Exit code 2.
+        * `404` — an entity addressed by name does not exist. Exit code 3.
+        * `409` — a constraint that depends on stored state: a dependency
+          cycle, a duplicate, a claim held by somebody else, a parent already
+          set, or a project that still holds issues. Exit code 4.
+        * `500` — the request was fine and something else was not. Exit code 1.
+
+        The statuses with no exit code behind them are `405`, answered when a
+        path exists and the method does not; `412`, answered when an `If-Match`
+        no longer matches; `413`, answered when a body is over the transport
+        cap; and `415`, answered when a request carries a body without a JSON
+        content type — a missing `Content-Type` counts, a body claiming nothing
+        claiming nothing useful.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -814,7 +780,6 @@ components:
         An `epic` is a large piece of work decomposed through `has-parent`;
         nothing in the tool treats it specially.
       enum: [epic, feature, bug, task, chore]
-      default: task
 
     Status:
       type: string
@@ -822,14 +787,12 @@ components:
         Changed only by creating with an assignee and by the claim, release,
         close and reopen endpoints, so it never drifts from the assignee.
       enum: [open, in_progress, closed]
-      default: open
 
     Priority:
       type: integer
       description: 0 is the highest priority and 4 the lowest.
       minimum: 0
       maximum: 4
-      default: 2
 
     RelationType:
       type: string
@@ -991,8 +954,16 @@ components:
 
     Timestamp:
       type: string
-      format: date-time
-      description: UTC, RFC 3339 with millisecond precision.
+      description: |
+        UTC, RFC 3339 with exactly millisecond precision: always the same 24
+        ASCII bytes.
+
+        The pattern says so rather than `format: date-time`, which would admit
+        every other RFC 3339 spelling of the same instant. A generated client
+        that read one of these into a date and wrote it back would then not
+        reproduce the bytes awb stores — and those bytes are what an issue's
+        hash is derived from.
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
       examples: ['2026-08-26T09:12:03.412Z']
 
     Project:
@@ -1053,6 +1024,12 @@ components:
         `id`, `status`, `close_reason`, the timestamps and the derived fields
         are rejected rather than ignored — `status` follows from `assignee` and
         the rest are the server's to assign.
+
+        An omitted `type` is `task` and an omitted `priority` is `2`. Those
+        two defaults are stated here in prose rather than as a schema
+        `default`, which is inherited by every field that references the same
+        schema: written as one, it would reach `IssuePatch` too and quietly
+        rewrite the type and priority of every issue patched without them.
       additionalProperties: false
       required: [project, title]
       properties:

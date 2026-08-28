@@ -1,7 +1,15 @@
 // The bundled read-only web UI: projects, issues, search and dependency trees,
 // over the same HTTP API anything else would use.
 
-import { api, ApiError, type Facet, type Filters, type Issue, type IssueTree, type Project } from "./api.js";
+import {
+  api,
+  ApiError,
+  type Facet,
+  type Filters,
+  type Issue,
+  type IssueTree,
+  type Project,
+} from "./api/client.js";
 import { renderMarkdown } from "./markdown.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -92,8 +100,11 @@ function filtersFrom(query: URLSearchParams): Filters {
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
+  // A sort is passed through as it arrives: the server publishes the orderings
+  // it accepts and answers 400 for anything else, so the URL is not checked
+  // twice.
   const sort = query.get("sort");
-  if (sort !== null) filters.sort = sort;
+  if (sort !== null) filters.sort = sort as Filters["sort"];
   return filters;
 }
 
@@ -304,8 +315,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     return view;
   }
 
-  const filters: Filters = { q: terms, ...filtersFrom(route.query) };
-  const page = await api.search(filters);
+  const page = await api.search({ ...filtersFrom(route.query), q: terms });
   view.append(issueList(page.rows, page.total, `Nothing matches ${terms.join(" ")}.`));
   return view;
 }

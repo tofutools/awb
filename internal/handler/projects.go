@@ -1,124 +1,107 @@
 package handler
 
 import (
-	"net/http"
+	"context"
 
+	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/local"
 )
 
-// projectCreate is POST /api/projects.
-type projectCreate struct {
-	Key         string `json:"key"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+// projectResponse is issueResponse for a project, whose tag is built from its
+// own updated_at: active_issues moving because somebody created or closed an
+// issue does not invalidate it, exactly as a new relation does not invalidate
+// an issue's.
+func projectResponse(project *domain.Project) *api.ProjectHeaders {
+	return &api.ProjectHeaders{
+		ETag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Response: toProject(project),
+	}
 }
 
-// projectPatch is PATCH /api/projects/{key}: the same without key, replacing
-// each field it carries and leaving the others alone.
-//
-// key may appear but may not change, and is ignored when it equals the key in
-// the path and rejected when it differs, exactly as status is on an issue.
-// active_issues and the timestamps are derived and are ignored whatever they
-// say, so a UI can send back the object it read.
-type projectPatch struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
+func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParams) (
+	*api.ProjectListHeaders, error) {
+	var limit, offset *int
+	if value, ok := params.Limit.Get(); ok {
+		limit = &value
+	}
+	if value, ok := params.Offset.Get(); ok {
+		offset = &value
+	}
 
-	Key          *string `json:"key"`
-	ActiveIssues *int    `json:"active_issues"`
-	CreatedAt    *string `json:"created_at"`
-	UpdatedAt    *string `json:"updated_at"`
+	page, err := h.backendFor(ctx).ListProjects(ctx, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return &api.ProjectListHeaders{
+		XTotalCount: api.NewOptInt(page.Total),
+		Response:    toProjects(page.Projects),
+	}, nil
 }
 
-func (h *Handler) listProjects(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	limit, err := intParam(query, "limit")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	offset, err := intParam(query, "offset")
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-
-	page, err := h.backendFor(r).ListProjects(r.Context(), limit, offset)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeList(w, page.Projects, page.Total)
-}
-
-func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
-	var body projectCreate
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-
-	project, err := h.backendFor(r).CreateProject(r.Context(), backend.ProjectCreate{
-		Key: body.Key, Name: body.Name, Description: body.Description,
+func (h *Handler) CreateProject(ctx context.Context, req *api.ProjectCreate) (
+	*api.ProjectCreatedHeaders, error) {
+	project, err := h.backendFor(ctx).CreateProject(ctx, backend.ProjectCreate{
+		Key:         string(req.Key),
+		Name:        req.Name.Or(""),
+		Description: req.Description.Or(""),
 	})
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-
-	w.Header().Set("Location", "/api/projects/"+project.Key)
-	writeProject(w, http.StatusCreated, project)
+	return &api.ProjectCreatedHeaders{
+		ETag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Location: api.NewOptString("/api/projects/" + project.Key),
+		Response: toProject(project),
+	}, nil
 }
 
-func (h *Handler) getProject(w http.ResponseWriter, r *http.Request) {
-	project, err := h.backendFor(r).GetProject(r.Context(), r.PathValue("key"))
+func (h *Handler) GetProject(ctx context.Context, params api.GetProjectParams) (
+	*api.ProjectHeaders, error) {
+	project, err := h.backendFor(ctx).GetProject(ctx, string(params.Key))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeProject(w, http.StatusOK, project)
+	return projectResponse(project), nil
 }
 
-func (h *Handler) patchProject(w http.ResponseWriter, r *http.Request) {
-	key := r.PathValue("key")
-
-	var body projectPatch
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
+// UpdateProject replaces each field the body carries and leaves the others
+// alone. key may appear but may not change, and is ignored when it equals the
+// key in the path and refused when it differs, exactly as status is on an
+// issue; active_issues and the timestamps are derived and are ignored whatever
+// they say, so a UI can send back the object it read.
+func (h *Handler) UpdateProject(ctx context.Context, req *api.ProjectPatch,
+	params api.UpdateProjectParams) (*api.ProjectHeaders, error) {
+	key := string(params.Key)
+	if sent, ok := req.Key.Get(); ok && string(sent) != key {
+		return nil, awberr.Usagef("a project key is immutable")
 	}
-	if body.Key != nil && *body.Key != key {
-		writeError(w, awberr.Usagef("a project key is immutable"))
-		return
-	}
 
-	project, err := h.backendFor(r).UpdateProject(r.Context(), key, backend.ProjectPatch{
-		Name: body.Name, Description: body.Description,
-	}, ifMatch(r))
+	project, err := h.backendFor(ctx).UpdateProject(ctx, key, backend.ProjectPatch{
+		Name:        optString(req.Name),
+		Description: optString(req.Description),
+	}, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeProject(w, http.StatusOK, project)
+	return projectResponse(project), nil
 }
 
-// deleteProject takes --cascade as a boolean query parameter. There is no
+// DeleteProject takes --cascade as a boolean query parameter. There is no
 // force parameter: the HTTP method is the confirmation that --force supplies
 // on the command line.
-func (h *Handler) deleteProject(w http.ResponseWriter, r *http.Request) {
-	cascade, err := boolParam(r.URL.Query(), "cascade")
+//
+// As with an issue, the response is the object as it was immediately before
+// deletion and carries no ETag.
+func (h *Handler) DeleteProject(ctx context.Context, params api.DeleteProjectParams) (
+	*api.Project, error) {
+	deleted, err := h.backendFor(ctx).DeleteProject(ctx, string(params.Key),
+		params.Cascade.Or(false), params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-
-	deleted, err := h.backendFor(r).DeleteProject(r.Context(), r.PathValue("key"), cascade, ifMatch(r))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	// As with an issue, the response is the object as it was immediately before
-	// deletion and carries no ETag.
-	writeJSON(w, http.StatusOK, &deleted.Project)
+	project := toProject(&deleted.Project)
+	return &project, nil
 }

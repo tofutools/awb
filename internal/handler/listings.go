@@ -2,301 +2,299 @@ package handler
 
 import (
 	"context"
-	"net/http"
-	"net/url"
-	"strconv"
 
+	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// listOptions says which parameters an endpoint accepts, mirroring the
-// per-command rules of the CLI. A parameter an endpoint rejects is a 400,
-// exactly as the corresponding flag is a usage error.
-type listOptions struct {
-	status    bool
-	assignee  bool
-	relevance bool
-	// sortable is false for the facet endpoints, where the row order is fixed at
-	// value ascending.
-	sortable bool
-	// terms is true only for search.
-	terms bool
+// selection is every filtering parameter a listing operation can declare,
+// gathered from the parameters of whichever one is being served. Each
+// operation declares its own subset — /api/ready fixes the status set and the
+// assignee filter for itself, the facet operations fix the row order — and the
+// generated code gives each its own parameters type, so this is where the six
+// of them meet and become one filter.
+//
+// A parameter an operation does not declare cannot appear here at all: the
+// request is refused before it arrives (see Handler.Middleware).
+type selection struct {
+	statuses      []api.Status
+	includeClosed bool
+	types         []api.Type
+	priorities    []api.Priority
+	priorityMax   api.OptPriority
+	labels        []api.Label
+	assignees     []api.Assignee
+	unassigned    bool
+	projects      []api.ProjectKey
+	parent        api.OptString
+	sort          string
+	limit         api.OptInt
+	offset        api.OptInt
+	terms         []string
 }
 
-// parseFilter turns query parameters into a domain filter. They carry the same
-// names as the corresponding CLI filter flags, in the same kebab-case
-// spelling, and a repeatable filter is repeated rather than comma-separated.
-func parseFilter(r *http.Request, opts listOptions) (*domain.Filter, error) {
-	query := r.URL.Query()
-	filter := &domain.Filter{}
-
-	if err := rejectUnaccepted(query, opts); err != nil {
-		return nil, err
+// filter turns the selection into a domain filter. The values arrive already
+// checked against the vocabulary the document publishes, so what is left is
+// the one rule a schema cannot state — that assignee and unassigned exclude
+// each other — and the rules that live in the domain layer.
+func (s selection) filter(relevance bool) (*domain.Filter, error) {
+	filter := &domain.Filter{
+		IncludeClosed: s.includeClosed,
+		Unassigned:    s.unassigned,
+		Parent:        s.parent.Or(""),
 	}
 
-	for _, value := range query["status"] {
-		status, err := domain.ParseStatus(value)
+	for _, status := range s.statuses {
+		filter.Statuses = append(filter.Statuses, domain.Status(status))
+	}
+	for _, issueType := range s.types {
+		filter.Types = append(filter.Types, domain.Type(issueType))
+	}
+	for _, priority := range s.priorities {
+		filter.Priorities = append(filter.Priorities, int(priority))
+	}
+	if priority, ok := s.priorityMax.Get(); ok {
+		number := int(priority)
+		filter.PriorityMax = &number
+	}
+	for _, label := range s.labels {
+		valid, err := domain.ValidateLabel(string(label))
 		if err != nil {
 			return nil, err
 		}
-		filter.Statuses = append(filter.Statuses, status)
+		filter.Labels = append(filter.Labels, valid)
 	}
-	includeClosed, err := boolParam(query, "include-closed")
-	if err != nil {
-		return nil, err
-	}
-	filter.IncludeClosed = includeClosed
-
-	for _, value := range query["type"] {
-		issueType, err := domain.ParseType(value)
+	for _, assignee := range s.assignees {
+		valid, err := domain.ValidateAssignee(string(assignee))
 		if err != nil {
 			return nil, err
 		}
-		filter.Types = append(filter.Types, issueType)
+		filter.Assignees = append(filter.Assignees, valid)
 	}
-	for _, value := range query["priority"] {
-		number, err := strconv.Atoi(value)
-		if err != nil {
-			return nil, awberr.Usagef("invalid priority %q", value)
-		}
-		priority, err := domain.ParsePriority(number)
-		if err != nil {
-			return nil, err
-		}
-		filter.Priorities = append(filter.Priorities, priority)
-	}
-	if value := query.Get("priority-max"); value != "" {
-		number, err := strconv.Atoi(value)
-		if err != nil {
-			return nil, awberr.Usagef("invalid priority-max %q", value)
-		}
-		priority, err := domain.ParsePriority(number)
-		if err != nil {
-			return nil, err
-		}
-		filter.PriorityMax = &priority
-	}
-
-	for _, value := range query["label"] {
-		label, err := domain.ValidateLabel(value)
-		if err != nil {
-			return nil, err
-		}
-		filter.Labels = append(filter.Labels, label)
-	}
-	for _, value := range query["assignee"] {
-		assignee, err := domain.ValidateAssignee(value)
-		if err != nil {
-			return nil, err
-		}
-		filter.Assignees = append(filter.Assignees, assignee)
-	}
-	unassigned, err := boolParam(query, "unassigned")
-	if err != nil {
-		return nil, err
-	}
-	filter.Unassigned = unassigned
 	if len(filter.Assignees) > 0 && filter.Unassigned {
 		return nil, awberr.Usagef("assignee and unassigned are mutually exclusive")
 	}
-
-	for _, value := range query["project"] {
-		key, err := domain.ValidateProjectKey(value)
+	for _, project := range s.projects {
+		valid, err := domain.ValidateProjectKey(string(project))
 		if err != nil {
 			return nil, err
 		}
-		filter.Projects = append(filter.Projects, key)
+		filter.Projects = append(filter.Projects, valid)
 	}
-	filter.Parent = query.Get("parent")
 
-	if filter.Limit, err = intParam(query, "limit"); err != nil {
-		return nil, err
+	if limit, ok := s.limit.Get(); ok {
+		filter.Limit = &limit
 	}
-	if filter.Offset, err = intParam(query, "offset"); err != nil {
-		return nil, err
+	if offset, ok := s.offset.Get(); ok {
+		filter.Offset = &offset
 	}
 
 	filter.Sort = domain.DefaultSort
-	if opts.relevance {
+	if relevance {
 		filter.Sort = domain.DefaultSearchSort
 	}
-	if value := query.Get("sort"); value != "" {
-		if filter.Sort, err = domain.ParseSort(value, opts.relevance); err != nil {
+	if s.sort != "" {
+		var err error
+		if filter.Sort, err = domain.ParseSort(s.sort, relevance); err != nil {
 			return nil, err
 		}
 	}
 
-	if opts.terms {
-		// q is repeated once per positional argument of awb search, each value one
-		// literal term that may itself contain spaces. A request with no q is a 400.
-		terms := query["q"]
-		if len(terms) == 0 {
-			return nil, awberr.Usagef("at least one q parameter is required")
+	// Each q is one literal term that may itself contain spaces. A term the
+	// tokenizer reduces to nothing is a 400, as a request with no q at all is.
+	for _, term := range s.terms {
+		valid, err := domain.ValidateSearchTerm(term)
+		if err != nil {
+			return nil, err
 		}
-		for _, term := range terms {
-			valid, err := domain.ValidateSearchTerm(term)
-			if err != nil {
-				return nil, err
-			}
-			filter.Terms = append(filter.Terms, valid)
-		}
+		filter.Terms = append(filter.Terms, valid)
 	}
 
 	return filter, nil
 }
 
-// rejectUnaccepted reports a parameter the endpoint does not take.
-func rejectUnaccepted(query url.Values, opts listOptions) error {
-	reject := func(names ...string) error {
-		for _, name := range names {
-			if query.Has(name) {
-				return awberr.Usagef("this endpoint does not accept the %s parameter", name)
-			}
-		}
-		return nil
-	}
-
-	if !opts.status {
-		if err := reject("status", "include-closed"); err != nil {
-			return err
-		}
-	}
-	if !opts.assignee {
-		if err := reject("assignee", "unassigned"); err != nil {
-			return err
-		}
-	}
-	if !opts.sortable {
-		if err := reject("sort"); err != nil {
-			return err
-		}
-	}
-	if !opts.terms {
-		if err := reject("q"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// boolParam reads a boolean parameter, which is written name=true or
-// name=false.
-func boolParam(query url.Values, name string) (bool, error) {
-	value := query.Get(name)
-	switch value {
-	case "":
-		return false, nil
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
-		return false, awberr.Usagef("invalid %s %q: must be true or false", name, value)
-	}
-}
-
-// intParam reads limit or offset, which must be non-negative integers.
-func intParam(query url.Values, name string) (*int, error) {
-	value := query.Get(name)
-	if value == "" {
-		return nil, nil
-	}
-	number, err := strconv.Atoi(value)
+func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
+	*api.IssueListHeaders, error) {
+	filter, err := selection{
+		statuses:      params.Status,
+		includeClosed: params.IncludeClosed.Or(false),
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		assignees:     params.Assignee,
+		unassigned:    params.Unassigned.Or(false),
+		projects:      params.Project,
+		parent:        params.Parent,
+		sort:          string(params.Sort.Or("")),
+		limit:         params.Limit,
+		offset:        params.Offset,
+	}.filter(false)
 	if err != nil {
-		return nil, awberr.Usagef("invalid %s %q: must be a non-negative integer", name, value)
+		return nil, err
 	}
-	if number < 0 {
-		return nil, awberr.Usagef("invalid %s %d: must be a non-negative integer", name, number)
-	}
-	return &number, nil
+	return h.listIssues(ctx, filter)
 }
 
-func (h *Handler) listIssues(w http.ResponseWriter, r *http.Request) {
-	h.serveListing(w, r, listOptions{status: true, assignee: true, sortable: true}, nil)
-}
-
-// listReady fixes the status set and the assignee filter for itself, and
-// therefore rejects status, include-closed, assignee and unassigned.
-func (h *Handler) listReady(w http.ResponseWriter, r *http.Request) {
-	h.serveListing(w, r, listOptions{sortable: true}, func(f *domain.Filter) {
-		f.Statuses = []domain.Status{domain.StatusOpen}
-		f.Unassigned = true
-		f.Readiness = domain.ReadinessReady
-	})
-}
-
-// listBlocked fixes the status set to the two that are not closed.
-func (h *Handler) listBlocked(w http.ResponseWriter, r *http.Request) {
-	h.serveListing(w, r, listOptions{assignee: true, sortable: true}, func(f *domain.Filter) {
-		f.Statuses = domain.NotClosedStatuses
-		f.Readiness = domain.ReadinessBlocked
-	})
-}
-
-func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
-	h.serveListing(w, r,
-		listOptions{status: true, assignee: true, relevance: true, sortable: true, terms: true}, nil)
-}
-
-func (h *Handler) serveListing(w http.ResponseWriter, r *http.Request, opts listOptions,
-	fix func(*domain.Filter)) {
-	filter, err := parseFilter(r, opts)
+// ListReady lists the issues that are open and not blocked, and only the
+// unassigned ones: it fixes the status set and the assignee filter for itself,
+// which is why it declares neither.
+func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
+	*api.IssueListHeaders, error) {
+	filter, err := selection{
+		types:       params.Type,
+		priorities:  params.Priority,
+		priorityMax: params.PriorityMax,
+		labels:      params.Label,
+		projects:    params.Project,
+		parent:      params.Parent,
+		sort:        string(params.Sort.Or("")),
+		limit:       params.Limit,
+		offset:      params.Offset,
+	}.filter(false)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	if fix != nil {
-		fix(filter)
-	}
-
-	page, err := h.backendFor(r).ListIssues(r.Context(), filter)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeList(w, page.Issues, page.Total)
+	filter.Statuses = []domain.Status{domain.StatusOpen}
+	filter.Unassigned = true
+	filter.Readiness = domain.ReadinessReady
+	return h.listIssues(ctx, filter)
 }
 
-// The two facet endpoints honour the selection parameters of GET /api/issues,
+// ListBlocked fixes the status set to the two that are not closed.
+func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams) (
+	*api.IssueListHeaders, error) {
+	filter, err := selection{
+		types:       params.Type,
+		priorities:  params.Priority,
+		priorityMax: params.PriorityMax,
+		labels:      params.Label,
+		assignees:   params.Assignee,
+		unassigned:  params.Unassigned.Or(false),
+		projects:    params.Project,
+		parent:      params.Parent,
+		sort:        string(params.Sort.Or("")),
+		limit:       params.Limit,
+		offset:      params.Offset,
+	}.filter(false)
+	if err != nil {
+		return nil, err
+	}
+	filter.Statuses = domain.NotClosedStatuses
+	filter.Readiness = domain.ReadinessBlocked
+	return h.listIssues(ctx, filter)
+}
+
+func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParams) (
+	*api.IssueListHeaders, error) {
+	filter, err := selection{
+		statuses:      params.Status,
+		includeClosed: params.IncludeClosed.Or(false),
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		assignees:     params.Assignee,
+		unassigned:    params.Unassigned.Or(false),
+		projects:      params.Project,
+		parent:        params.Parent,
+		sort:          string(params.Sort.Or("")),
+		limit:         params.Limit,
+		offset:        params.Offset,
+		terms:         params.Q,
+	}.filter(true)
+	if err != nil {
+		return nil, err
+	}
+	return h.listIssues(ctx, filter)
+}
+
+// listIssues answers with the matching issues and the unpaged total that
+// X-Total-Count carries, so a UI can show "1–50 of 214" and page through
+// without loading everything.
+func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
+	*api.IssueListHeaders, error) {
+	page, err := h.backendFor(ctx).ListIssues(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return &api.IssueListHeaders{
+		XTotalCount: api.NewOptInt(page.Total),
+		Response:    toIssues(page.Issues),
+	}, nil
+}
+
+// The two facet operations honour the selection parameters of GET /api/issues,
 // the facet's own included, so ?label=parser lists the labels that co-occur
-// with parser and a UI can narrow progressively. sort is not accepted at all,
-// the row order being fixed at value ascending.
+// with parser and a UI can narrow progressively.
 //
 // limit and offset page the facet rows rather than the issues behind them, so
-// count is the same whatever page it appears on.
-func (h *Handler) labelFacets(w http.ResponseWriter, r *http.Request) {
-	be := h.backendFor(r)
-	h.serveFacets(w, r, be.LabelFacets)
+// count is the same whatever page it appears on, and neither declares sort:
+// the row order is fixed at value ascending.
+
+func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
+	*api.FacetListHeaders, error) {
+	filter, err := selection{
+		statuses:      params.Status,
+		includeClosed: params.IncludeClosed.Or(false),
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		assignees:     params.Assignee,
+		unassigned:    params.Unassigned.Or(false),
+		projects:      params.Project,
+		parent:        params.Parent,
+		limit:         params.Limit,
+		offset:        params.Offset,
+	}.filter(false)
+	if err != nil {
+		return nil, err
+	}
+	return facets(ctx, filter, h.backendFor(ctx).LabelFacets)
 }
 
-func (h *Handler) assigneeFacets(w http.ResponseWriter, r *http.Request) {
-	be := h.backendFor(r)
-	h.serveFacets(w, r, be.AssigneeFacets)
+func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesParams) (
+	*api.FacetListHeaders, error) {
+	filter, err := selection{
+		statuses:      params.Status,
+		includeClosed: params.IncludeClosed.Or(false),
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		assignees:     params.Assignee,
+		unassigned:    params.Unassigned.Or(false),
+		projects:      params.Project,
+		parent:        params.Parent,
+		limit:         params.Limit,
+		offset:        params.Offset,
+	}.filter(false)
+	if err != nil {
+		return nil, err
+	}
+	return facets(ctx, filter, h.backendFor(ctx).AssigneeFacets)
 }
 
-func (h *Handler) serveFacets(w http.ResponseWriter, r *http.Request,
-	query func(context.Context, *domain.Filter) (backend.FacetPage, error)) {
-	filter, err := parseFilter(r, listOptions{status: true, assignee: true})
+func facets(ctx context.Context, filter *domain.Filter,
+	query func(context.Context, *domain.Filter) (backend.FacetPage, error)) (
+	*api.FacetListHeaders, error) {
+	page, err := query(ctx, filter)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-
-	page, err := query(r.Context(), filter)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeList(w, page.Facets, page.Total)
+	return &api.FacetListHeaders{
+		XTotalCount: api.NewOptInt(page.Total),
+		Response:    toFacets(page.Facets),
+	}, nil
 }
 
-func (h *Handler) identity(w http.ResponseWriter, r *http.Request) {
-	identity, err := h.backendFor(r).Identity(r.Context())
+func (h *Handler) GetIdentity(ctx context.Context) (*api.Identity, error) {
+	identity, err := h.backendFor(ctx).Identity(ctx)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, domain.Identity{Identity: identity})
+	return &api.Identity{Identity: identity}, nil
 }

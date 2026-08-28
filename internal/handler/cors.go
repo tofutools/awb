@@ -29,6 +29,12 @@ func NoStore(next http.Handler) http.Handler {
 // UI there can authenticate at all, and exposes ETag, X-Total-Count and
 // Location — without which a cross-origin UI could use neither the optimistic
 // concurrency nor the paging.
+//
+// The generated encoders set the same header themselves, listing the ones the
+// response they are encoding actually carries, and so replace this on every
+// response an operation produced. What is set here therefore covers the
+// responses no operation produced: the ones written before routing, the
+// OpenAPI document and the bundled UI.
 func CORS(allowedOrigins []string, next http.Handler) http.Handler {
 	// "*" is deliberately not accepted, so a separately hosted web UI is opt-in
 	// rather than any page in the browser being able to read the database.

@@ -52,6 +52,32 @@ runs:
       shell: bash
       run: npm install -g typescript@7.0.2
 
+    # Both generators are prerequisites of build.sh, which runs them itself.
+    # Installing them here is provisioning a prerequisite, exactly as setup-go
+    # provisions the Go toolchain, and does not contradict "no package manager
+    # is ever invoked" — that rule is about build.sh, which still invokes none.
+    #
+    # Pinned for the same reason as the compiler and the linter: what they
+    # generate is part of the build, so changing either should be a reviewed
+    # commit rather than a silent change in what CI produces.
+    - name: Install openapi-typescript
+      shell: bash
+      run: npm install -g openapi-typescript@7.13.0
+
+    - name: Install ogen
+      shell: bash
+      run: go install github.com/ogen-go/ogen/cmd/ogen@v1.20.2
+
+    # The generated code is not committed either: the Go server in internal/api
+    # and the TypeScript types the frontend imports are both produced from
+    # openapi.yaml, and nothing below compiles without them.
+    - name: Generate from openapi.yaml
+      shell: bash
+      run: |
+        set -euo pipefail
+        go generate ./...
+        openapi-typescript openapi.yaml -o web/ts/api/types.ts
+
     - name: Compile the frontend
       shell: bash
       run: tsc --project web/ts/tsconfig.json

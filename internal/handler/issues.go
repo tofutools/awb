@@ -1,342 +1,237 @@
 package handler
 
 import (
-	"net/http"
+	"context"
 
+	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/local"
 )
 
-// The API's request bodies.
-//
-// Every one of them is decoded with unknown fields rejected, so a body
-// carrying a field this API does not recognise is a 400 rather than something
-// silently ignored.
-
-// issueCreate is POST /api/issues.
-//
-// It carries the writable fields of an Issue plus labels and an initial
-// relations array, read with the new issue as the subject. Nothing else is
-// recognised: id, status, close_reason, the timestamps and the derived fields
-// are rejected under the unknown-field rule rather than ignored, there being
-// no object-it-read to send back here — status follows from assignee and the
-// rest are the server's to assign.
-type issueCreate struct {
-	Project     string           `json:"project"`
-	Title       string           `json:"title"`
-	Description string           `json:"description"`
-	Type        domain.Type      `json:"type"`
-	Priority    *int             `json:"priority"`
-	Assignee    string           `json:"assignee"`
-	Labels      []string         `json:"labels"`
-	Relations   []createRelation `json:"relations"`
-}
-
-// createRelation carries no direction: it is unrecognised for the same reason
-// the other server-assigned fields are.
-type createRelation struct {
-	Type  domain.RelationType `json:"type"`
-	Other string              `json:"other"`
-}
-
-// issuePatch is PATCH /api/issues/{id}.
-//
-// It takes only what awb update can change. labels, status, assignee and
-// close_reason may appear but may not change: each is ignored when it equals
-// what is stored and rejected when it differs, because labels are mutated
-// individually and the transitions are their own endpoints.
-//
-// The derived and immutable fields are ignored whatever they say — relations
-// among them, because a relation added meanwhile does not move updated_at, so
-// rejecting a stale one would fail a PATCH whose If-Match is still good.
-// Together those rules let a UI send back the object it read with only the
-// fields it edited changed.
-type issuePatch struct {
-	Title       *string      `json:"title"`
-	Description *string      `json:"description"`
-	Type        *domain.Type `json:"type"`
-	Priority    *int         `json:"priority"`
-
-	Labels      *[]string      `json:"labels"`
-	Status      *domain.Status `json:"status"`
-	Assignee    *string        `json:"assignee"`
-	CloseReason *string        `json:"close_reason"`
-
-	ID         *string            `json:"id"`
-	ProjectKey *string            `json:"project"`
-	CreatedAt  *string            `json:"created_at"`
-	UpdatedAt  *string            `json:"updated_at"`
-	Blocked    *bool              `json:"blocked"`
-	Blockers   *[]string          `json:"blockers"`
-	Relations  *[]domain.Relation `json:"relations"`
-	Links      *[]domain.Link     `json:"links"`
-}
-
-type claimBody struct {
-	Assignee       string  `json:"assignee"`
-	ExpectAssignee *string `json:"expect_assignee"`
-	Force          bool    `json:"force"`
-}
-
-type releaseBody struct {
-	Assignee string `json:"assignee"`
-	Force    bool   `json:"force"`
-}
-
-type closeBody struct {
-	Reason *string `json:"reason"`
-}
-
-type labelBody struct {
-	Label string `json:"label"`
-}
-
-type relationBody struct {
-	Type  domain.RelationType `json:"type"`
-	Other string              `json:"other"`
-	Force bool                `json:"force"`
-}
-
-func (h *Handler) createIssue(w http.ResponseWriter, r *http.Request) {
-	var body issueCreate
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
+// issueResponse answers with one issue and the ETag for the version it
+// describes, so a client can make another conditional edit without first
+// repeating the GET.
+func issueResponse(issue *domain.Issue) *api.IssueHeaders {
+	return &api.IssueHeaders{
+		ETag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
+		Response: toIssue(issue),
 	}
+}
 
-	req := backend.IssueCreate{
-		Project:     body.Project,
-		Title:       body.Title,
-		Description: body.Description,
-		Type:        body.Type,
-		Priority:    body.Priority,
-		Assignee:    body.Assignee,
-		Labels:      body.Labels,
+func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
+	*api.IssueCreatedHeaders, error) {
+	create := backend.IssueCreate{
+		Project:     string(req.Project),
+		Title:       req.Title,
+		Description: req.Description.Or(""),
+		Type:        domain.Type(req.Type.Or("")),
+		Priority:    optPriority(req.Priority),
+		Assignee:    string(req.Assignee.Or("")),
+		Labels:      fromLabels(req.Labels),
 	}
 	parents := 0
-	for _, rel := range body.Relations {
-		if rel.Type == domain.RelHasParent {
+	for _, relation := range req.Relations {
+		if domain.RelationType(relation.Type) == domain.RelHasParent {
 			parents++
 		}
-		req.Relations = append(req.Relations,
-			backend.NewRelation{Type: rel.Type, Other: rel.Other})
+		create.Relations = append(create.Relations, backend.NewRelation{
+			Type:  domain.RelationType(relation.Type),
+			Other: relation.Other,
+		})
 	}
 	if parents > 1 {
-		writeError(w, awberr.Usagef("an issue has at most one parent"))
-		return
+		return nil, awberr.Usagef("an issue has at most one parent")
 	}
 
-	issue, err := h.backendFor(r).CreateIssue(r.Context(), req)
+	issue, err := h.backendFor(ctx).CreateIssue(ctx, create)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
 
-	// The two creating endpoints answer 201 with the new object and a Location
+	// The two creating operations answer 201 with the new object and a Location
 	// header naming it.
-	w.Header().Set("Location", "/api/issues/"+issue.ID)
-	writeIssue(w, http.StatusCreated, issue)
+	return &api.IssueCreatedHeaders{
+		ETag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
+		Location: api.NewOptString("/api/issues/" + issue.ID),
+		Response: toIssue(issue),
+	}, nil
 }
 
-func (h *Handler) getIssue(w http.ResponseWriter, r *http.Request) {
-	issue, err := h.backendFor(r).GetIssue(r.Context(), r.PathValue("id"))
+func (h *Handler) GetIssue(ctx context.Context, params api.GetIssueParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).GetIssue(ctx, params.ID)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) patchIssue(w http.ResponseWriter, r *http.Request) {
-	var body issuePatch
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
+// UpdateIssue carries the fields that may appear but may not change with the
+// patch, so that they are compared against what is stored inside the same
+// transaction that performs the write. Comparing them here would leave a
+// window in which a concurrent transition could make a stale value pass.
+func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
+	params api.UpdateIssueParams) (*api.IssueHeaders, error) {
+	patch := backend.IssuePatch{
+		Title:       optString(req.Title),
+		Description: optString(req.Description),
+		Type:        optType(req.Type),
+		Priority:    optPriority(req.Priority),
+
+		ExpectStatus:      optStatus(req.Status),
+		ExpectAssignee:    optString(req.Assignee),
+		ExpectCloseReason: optString(req.CloseReason),
+	}
+	// A labels array that is absent is nil; one the caller sent is not, even
+	// when it is empty, and is then compared against what is stored.
+	if req.Labels != nil {
+		labels := fromLabels(req.Labels)
+		patch.ExpectLabels = &labels
 	}
 
-	// The fields that may appear but may not change travel with the patch, so
-	// they are compared against what is stored inside the same transaction
-	// that performs the write. Comparing them here would leave a window in
-	// which a concurrent transition could make a stale value pass.
-	issue, err := h.backendFor(r).UpdateIssue(r.Context(), r.PathValue("id"), backend.IssuePatch{
-		Title:       body.Title,
-		Description: body.Description,
-		Type:        body.Type,
-		Priority:    body.Priority,
-
-		ExpectLabels:      body.Labels,
-		ExpectStatus:      body.Status,
-		ExpectAssignee:    body.Assignee,
-		ExpectCloseReason: body.CloseReason,
-	}, ifMatch(r))
+	issue, err := h.backendFor(ctx).UpdateIssue(ctx, params.ID, patch, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) deleteIssue(w http.ResponseWriter, r *http.Request) {
-	deleted, err := h.backendFor(r).DeleteIssue(r.Context(), r.PathValue("id"), ifMatch(r))
+// DeleteIssue answers with the object as it was immediately before deletion,
+// and carries no ETag: the version it describes is gone.
+func (h *Handler) DeleteIssue(ctx context.Context, params api.DeleteIssueParams) (
+	*api.Issue, error) {
+	deleted, err := h.backendFor(ctx).DeleteIssue(ctx, params.ID, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	// A delete answers with the object as it was immediately before deletion, and
-	// carries no ETag: the version it describes is gone.
-	writeJSON(w, http.StatusOK, &deleted.Issue)
+	issue := toIssue(&deleted.Issue)
+	return &issue, nil
 }
 
-func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
-	var body claimBody
-	if err := decodeOptionalBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
+func (h *Handler) ClaimIssue(ctx context.Context, req api.OptClaimRequest,
+	params api.ClaimIssueParams) (*api.IssueHeaders, error) {
+	body := req.Or(api.ClaimRequest{})
 
 	// assignee may be omitted, in which case the request's identity is used: the
 	// authenticated username, or the server's fixed identity when it
 	// authenticates nobody.
-	be := h.backendFor(r)
-	if body.Assignee == "" {
-		identity, err := be.Identity(r.Context())
+	be := h.backendFor(ctx)
+	assignee := string(body.Assignee.Or(""))
+	if assignee == "" {
+		identity, err := be.Identity(ctx)
 		if err != nil {
-			writeError(w, err)
-			return
+			return nil, err
 		}
-		body.Assignee = identity
+		assignee = identity
 	}
 
-	issue, err := be.Claim(r.Context(), r.PathValue("id"), backend.ClaimRequest{
-		Assignee:       body.Assignee,
-		ExpectAssignee: body.ExpectAssignee,
-		Force:          body.Force,
-	}, ifMatch(r))
+	issue, err := be.Claim(ctx, params.ID, backend.ClaimRequest{
+		Assignee:       assignee,
+		ExpectAssignee: optString(body.ExpectAssignee),
+		Force:          body.Force.Or(false),
+	}, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) release(w http.ResponseWriter, r *http.Request) {
-	var body releaseBody
-	if err := decodeOptionalBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
+func (h *Handler) ReleaseIssue(ctx context.Context, req api.OptReleaseRequest,
+	params api.ReleaseIssueParams) (*api.IssueHeaders, error) {
+	body := req.Or(api.ReleaseRequest{})
 
-	be := h.backendFor(r)
-	if body.Assignee == "" && !body.Force {
-		identity, err := be.Identity(r.Context())
+	be := h.backendFor(ctx)
+	assignee := string(body.Assignee.Or(""))
+	force := body.Force.Or(false)
+	if assignee == "" && !force {
+		identity, err := be.Identity(ctx)
 		if err != nil {
-			writeError(w, err)
-			return
+			return nil, err
 		}
-		body.Assignee = identity
+		assignee = identity
 	}
 
-	issue, err := be.Release(r.Context(), r.PathValue("id"),
-		backend.ReleaseRequest{Assignee: body.Assignee, Force: body.Force}, ifMatch(r))
+	issue, err := be.Release(ctx, params.ID,
+		backend.ReleaseRequest{Assignee: assignee, Force: force}, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) closeIssue(w http.ResponseWriter, r *http.Request) {
-	var body closeBody
-	if err := decodeOptionalBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-	issue, err := h.backendFor(r).CloseIssue(r.Context(), r.PathValue("id"),
-		backend.CloseRequest{Reason: body.Reason}, ifMatch(r))
+func (h *Handler) CloseIssue(ctx context.Context, req api.OptCloseRequest,
+	params api.CloseIssueParams) (*api.IssueHeaders, error) {
+	body := req.Or(api.CloseRequest{})
+	issue, err := h.backendFor(ctx).CloseIssue(ctx, params.ID,
+		backend.CloseRequest{Reason: optString(body.Reason)}, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-// reopen takes no body, and says so rather than ignoring one.
-func (h *Handler) reopen(w http.ResponseWriter, r *http.Request) {
-	if err := rejectBody(r); err != nil {
-		writeError(w, err)
-		return
-	}
-	issue, err := h.backendFor(r).Reopen(r.Context(), r.PathValue("id"), ifMatch(r))
+func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).Reopen(ctx, params.ID, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) addLabel(w http.ResponseWriter, r *http.Request) {
-	var body labelBody
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-	issue, err := h.backendFor(r).AddLabel(r.Context(), r.PathValue("id"), body.Label, ifMatch(r))
+func (h *Handler) AddLabel(ctx context.Context, req *api.LabelRequest,
+	params api.AddLabelParams) (*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).AddLabel(ctx, params.ID, string(req.Label),
+		params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-// removeLabel takes the label as a query parameter rather than a path segment,
-// because a label may contain a slash.
-func (h *Handler) removeLabel(w http.ResponseWriter, r *http.Request) {
-	label := r.URL.Query().Get("label")
-	if label == "" {
-		writeError(w, awberr.Usagef("the label parameter is required"))
-		return
-	}
-	issue, err := h.backendFor(r).RemoveLabel(r.Context(), r.PathValue("id"), label, ifMatch(r))
+func (h *Handler) RemoveLabel(ctx context.Context, params api.RemoveLabelParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).RemoveLabel(ctx, params.ID, string(params.Label),
+		params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) addRelation(w http.ResponseWriter, r *http.Request) {
-	var body relationBody
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, err)
-		return
-	}
-	issue, err := h.backendFor(r).AddRelation(r.Context(), r.PathValue("id"),
-		backend.RelationRequest{Type: body.Type, Other: body.Other, Force: body.Force}, ifMatch(r))
+func (h *Handler) AddRelation(ctx context.Context, req *api.RelationRequest,
+	params api.AddRelationParams) (*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).AddRelation(ctx, params.ID, backend.RelationRequest{
+		Type:  domain.RelationType(req.Type),
+		Other: req.Other,
+		Force: req.Force.Or(false),
+	}, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-func (h *Handler) removeRelation(w http.ResponseWriter, r *http.Request) {
-	issue, err := h.backendFor(r).RemoveRelation(r.Context(), r.PathValue("id"),
-		domain.RelationType(r.PathValue("type")), r.PathValue("other"), ifMatch(r))
+func (h *Handler) RemoveRelation(ctx context.Context, params api.RemoveRelationParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).RemoveRelation(ctx, params.ID,
+		domain.RelationType(params.Type), params.Other, params.IfMatch.Or(""))
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeIssue(w, http.StatusOK, issue)
+	return issueResponse(issue), nil
 }
 
-// tree returns an IssueTree whole; it is not paged, and carries no ETag,
-// because an IssueTree aggregates many issues and no one version tags it.
-func (h *Handler) tree(w http.ResponseWriter, r *http.Request) {
-	tree, err := h.backendFor(r).Tree(r.Context(), r.PathValue("id"))
+// GetIssueTree returns the subtree whole; it is not paged, and carries no
+// ETag, because an IssueTree aggregates many issues and no one version tags it.
+func (h *Handler) GetIssueTree(ctx context.Context, params api.GetIssueTreeParams) (
+	*api.IssueTree, error) {
+	tree, err := h.backendFor(ctx).Tree(ctx, params.ID)
 	if err != nil {
-		writeError(w, err)
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusOK, tree)
+	converted := toTree(tree)
+	return &converted, nil
 }

@@ -1,10 +1,12 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/handler"
 	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
 )
 
@@ -35,10 +38,18 @@ func newAPI(t *testing.T) *api {
 	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb", Name: "Agent Work Board"})
 	require.NoError(t, err)
 
-	mux := http.NewServeMux()
-	handler.New(func(*http.Request) backend.Backend { return be }).Routes(mux)
+	// The same server serve builds, over the same document, so what these tests
+	// exercise is the whole surface: the generated router, decoders and
+	// validators as well as the handler behind them.
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	operations, err := openapi.New(raw).Operations()
+	require.NoError(t, err)
 
-	server := httptest.NewServer(handler.NoStore(mux))
+	apiServer, err := handler.NewServer(func(context.Context) backend.Backend { return be }, operations)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(handler.NoStore(apiServer))
 	t.Cleanup(server.Close)
 	return &api{t: t, server: server, be: be}
 }
@@ -365,7 +376,7 @@ func TestPaging(t *testing.T) {
 	// limit=0 returns no rows while preserving the total.
 	resp, payload = a.do(http.MethodGet, "/api/issues?limit=0", "")
 	assert.Equal(t, "5", resp.Header.Get("X-Total-Count"))
-	assert.Equal(t, "[]\n", payload)
+	assert.Equal(t, "[]", payload)
 
 	// There is no default limit: omitting it returns every row.
 	resp, payload = a.do(http.MethodGet, "/api/issues", "")
@@ -458,7 +469,7 @@ func TestFacets(t *testing.T) {
 
 	// There is no row for the empty assignee.
 	_, payload = a.do(http.MethodGet, "/api/assignees", "")
-	assert.Equal(t, "[]\n", payload)
+	assert.Equal(t, "[]", payload)
 }
 
 func TestIdentity(t *testing.T) {
@@ -575,7 +586,7 @@ func TestEmptyArrays(t *testing.T) {
 	} {
 		resp, payload := a.do(http.MethodGet, path, "")
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
-		assert.Equal(t, "[]\n", payload, path)
+		assert.Equal(t, "[]", payload, path)
 		assert.Equal(t, "0", resp.Header.Get("X-Total-Count"), path)
 	}
 }
@@ -599,7 +610,7 @@ func TestBodyWithoutContentTypeIsRejected(t *testing.T) {
 
 	// And nothing was created.
 	_, payload := a.do(http.MethodGet, "/api/issues", "")
-	assert.Equal(t, "[]\n", payload)
+	assert.Equal(t, "[]", payload)
 }
 
 // A request that sends no body at all is never asked to describe one.
@@ -687,10 +698,10 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)
 	_, _ = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close", `{}`)
 
-	// It carries no JSON value, so a required body is still missing...
+	// It carries no JSON value, so there is nothing to read out of it...
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, "   ")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
-	assert.Contains(t, payload, "request body is required")
+	assert.Contains(t, payload, "holds no JSON value")
 
 	// ...but it was carried, so it must declare what it is.
 	for _, tc := range []struct{ method, path string }{
@@ -722,13 +733,19 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	assert.Contains(t, payload, `"assignee":""`)
 }
 
-// A body that holds no value, but declares itself properly, is the same as no
-// body at all where the body is optional.
-func TestWhitespaceBodyOnAnOptionalEndpointUsesDefaults(t *testing.T) {
+// A body that holds no JSON value is refused even where the body is optional:
+// optional means a body may be omitted, not that one may say nothing. Sending
+// none is what says nothing, and that still claims the issue for the request's
+// identity.
+func TestWhitespaceBodyIsRefusedWhereABodyIsOptional(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "  \n ")
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, "holds no JSON value")
+
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	var claimed domain.Issue

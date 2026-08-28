@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full build: compile the frontend, build the binary, then test and lint.
-# Prerequisites on $PATH: go, tsc, golangci-lint.
+# Full build: generate the code openapi.yaml specifies, compile the frontend,
+# build the binary, then test and lint.
+# Prerequisites on $PATH: go, ogen, openapi-typescript, tsc, golangci-lint.
 #
 # NOTE: no npm/npx/yarn/pnpm/bun — the browser vendor bundles under
 # web/static/vendor/ are pre-built committed artifacts.
@@ -30,18 +31,25 @@ run() {
   fi
 }
 
-# 1. Compile the TypeScript frontend into web/static/.
+# 1. Generate the Go server from openapi.yaml into internal/api/ (the directive
+#    is in internal/generate.go).
+run go generate ./...
+
+# 2. Generate the TypeScript types from the same document.
+run openapi-typescript openapi.yaml -o web/ts/api/types.ts
+
+# 3. Compile the TypeScript frontend into web/static/.
 run tsc --project web/ts/tsconfig.json
 
-# 2. Run the frontend tests.
+# 4. Run the frontend tests.
 run node --test 'web/ts/tests/*.test.mjs'
 
-# 3. Build the single binary; the frontend is embedded via web/embed.go.
+# 5. Build the single binary; the frontend is embedded via web/embed.go.
 run env CGO_ENABLED=0 go build -trimpath -buildvcs=true \
   -o "$OUTPUT_DIR/awb" .
 
-# 4. Run the Go tests.
+# 6. Run the Go tests.
 run go test ./...
 
-# 5. Lint.
+# 7. Lint.
 run golangci-lint run ./...

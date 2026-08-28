@@ -1,55 +1,39 @@
 // The client for awb's HTTP API. The UI is a client of that API and gets no
 // privileged access to the database, which is what keeps the API honest:
 // making this UI writable later is a change to the UI alone.
+//
+// Every shape here comes from types.ts, which openapi-typescript generates
+// from openapi.yaml and which is never edited by hand. Nothing in this file
+// restates what an endpoint returns or which parameters it takes: a filter an
+// endpoint does not accept is a compile error here rather than a 400 in the
+// browser.
+
+import type { components, operations } from "./types.js";
 
 /** The one issue shape both surfaces return. */
-export interface Issue {
-  id: string;
-  project: string;
-  title: string;
-  description: string;
-  type: "epic" | "feature" | "bug" | "task" | "chore";
-  status: "open" | "in_progress" | "closed";
-  priority: number;
-  labels: string[];
-  assignee: string;
-  close_reason: string;
-  created_at: string;
-  updated_at: string;
-  blocked: boolean;
-  blockers: string[];
-  relations: Relation[];
-  links: Link[];
-}
+export type Issue = components["schemas"]["Issue"];
+export type Relation = components["schemas"]["Relation"];
+export type Link = components["schemas"]["Link"];
+export type IssueTree = components["schemas"]["IssueTree"];
+export type Project = components["schemas"]["Project"];
+export type Facet = components["schemas"]["Facet"];
 
-export interface Relation {
-  type: "blocked-by" | "has-parent" | "discovered-from" | "related";
-  other: string;
-  direction: "out" | "in";
-}
+/**
+ * The query parameters of one operation, named exactly as the CLI flags are.
+ * Each listing takes its own set: the endpoints that fix a status set or an
+ * assignee filter for themselves declare neither, and the facet endpoints
+ * declare no sort.
+ */
+type Query<K extends keyof operations> = NonNullable<operations[K]["parameters"]["query"]>;
 
-export interface Link {
-  text: string;
-  url: string;
-}
+export type IssueFilters = Query<"listIssues">;
+export type ReadyFilters = Query<"listReady">;
+export type BlockedFilters = Query<"listBlocked">;
+export type SearchFilters = Query<"searchIssues">;
+export type FacetFilters = Query<"listLabels">;
 
-export interface IssueTree extends Issue {
-  children: IssueTree[];
-}
-
-export interface Project {
-  key: string;
-  name: string;
-  description: string;
-  active_issues: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Facet {
-  value: string;
-  count: number;
-}
+/** Every filter any listing takes, which is what a route can carry. */
+export type Filters = IssueFilters & Partial<SearchFilters>;
 
 /** A listing together with the unpaged total X-Total-Count carries. */
 export interface Page<T> {
@@ -68,28 +52,7 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Filters, named exactly as the query parameters are, which are in turn named
- * exactly as the CLI flags are.
- */
-export interface Filters {
-  status?: string[];
-  "include-closed"?: boolean;
-  type?: string[];
-  priority?: number[];
-  "priority-max"?: number;
-  label?: string[];
-  assignee?: string[];
-  unassigned?: boolean;
-  project?: string[];
-  parent?: string;
-  sort?: string;
-  limit?: number;
-  offset?: number;
-  q?: string[];
-}
-
-function toQuery(filters: Filters): string {
+function toQuery(filters: Record<string, unknown>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined || value === "") continue;
@@ -133,16 +96,16 @@ async function getOne<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  issues: (filters: Filters = {}) => getPage<Issue>(`api/issues${toQuery(filters)}`),
-  ready: (filters: Filters = {}) => getPage<Issue>(`api/ready${toQuery(filters)}`),
-  blocked: (filters: Filters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
-  search: (filters: Filters) => getPage<Issue>(`api/search${toQuery(filters)}`),
+  issues: (filters: IssueFilters = {}) => getPage<Issue>(`api/issues${toQuery(filters)}`),
+  ready: (filters: ReadyFilters = {}) => getPage<Issue>(`api/ready${toQuery(filters)}`),
+  blocked: (filters: BlockedFilters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
+  search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: () => getPage<Project>("api/projects"),
-  labels: (filters: Filters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
-  assignees: (filters: Filters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
-  identity: () => getOne<{ identity: string }>("api/identity"),
+  labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
+  assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
+  identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
 };
 
 export { toQuery };

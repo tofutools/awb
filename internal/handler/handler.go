@@ -1,122 +1,398 @@
-// Package handler is the HTTP adapter. It sits on the same backend interface
-// the CLI uses, over the local implementation, so the API and the command line
-// exercise one set of operations and cannot drift apart.
+// Package handler is the HTTP adapter. It implements the server interface
+// generated from openapi.yaml, over the same backend interface the CLI uses,
+// so the API and the command line exercise one set of operations and cannot
+// drift apart.
+//
+// Routing, parameter and body decoding, and the vocabulary and length rules
+// the document states are the generated code's work; what is left here is the
+// translation between the API's shapes and the domain's, the strictness rules
+// the document states but a generator does not enforce (see middleware),
+// and the mapping of awb's error taxonomy onto statuses (see NewError).
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
-	"strconv"
+	"slices"
+	"strings"
 
+	"github.com/ogen-go/ogen/middleware"
+	"github.com/ogen-go/ogen/ogenerrors"
+	"github.com/ogen-go/ogen/validate"
+
+	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
-	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
 )
 
 // Handler serves the JSON API.
 type Handler struct {
 	// backendFor gives each request a backend acting as that request's identity,
-	// which is the authenticated username or the server's fixed one.
-	backendFor func(*http.Request) backend.Backend
+	// which is the authenticated username or the server's fixed one. It reads
+	// the context because that is what the generated server passes on: the
+	// authentication middleware puts the username there before it arrives.
+	backendFor func(context.Context) backend.Backend
+	// operations is what the document says each operation accepts; see
+	// middleware.
+	operations map[string]openapi.Operation
 }
+
+var _ api.Handler = (*Handler)(nil)
 
 // New builds the API handler. backendFor is called once per request.
-func New(backendFor func(*http.Request) backend.Backend) *Handler {
-	return &Handler{backendFor: backendFor}
+func New(backendFor func(context.Context) backend.Backend,
+	operations map[string]openapi.Operation) *Handler {
+	return &Handler{backendFor: backendFor, operations: operations}
 }
 
-// Routes registers every API endpoint on mux, under the /api/ prefix.
+// NewServer builds the whole API surface: the generated router, decoders and
+// validators in front of this handler, with the strictness rules and the error
+// shapes that belong to awb rather than to a generator.
+func NewServer(backendFor func(context.Context) backend.Backend,
+	operations map[string]openapi.Operation) (http.Handler, error) {
+	h := New(backendFor, operations)
+	return api.NewServer(h, h,
+		api.WithMiddleware(h.middleware()),
+		api.WithErrorHandler(errorHandler),
+		api.WithNotFound(notFound),
+		api.WithMethodNotAllowed(methodNotAllowed),
+	)
+}
+
+// HandleBasicAuth accepts whatever credentials reach it.
 //
-// Go's ServeMux answers 405 by itself when a path matches a pattern but the
-// method does not, which is one of the statuses that has no exit code behind
-// it.
-func (h *Handler) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/issues", h.listIssues)
-	mux.HandleFunc("POST /api/issues", h.createIssue)
-	mux.HandleFunc("GET /api/issues/{id}", h.getIssue)
-	mux.HandleFunc("PATCH /api/issues/{id}", h.patchIssue)
-	mux.HandleFunc("DELETE /api/issues/{id}", h.deleteIssue)
-
-	mux.HandleFunc("POST /api/issues/{id}/claim", h.claim)
-	mux.HandleFunc("POST /api/issues/{id}/release", h.release)
-	mux.HandleFunc("POST /api/issues/{id}/close", h.closeIssue)
-	mux.HandleFunc("POST /api/issues/{id}/reopen", h.reopen)
-
-	mux.HandleFunc("POST /api/issues/{id}/labels", h.addLabel)
-	mux.HandleFunc("DELETE /api/issues/{id}/labels", h.removeLabel)
-
-	mux.HandleFunc("POST /api/issues/{id}/relations", h.addRelation)
-	mux.HandleFunc("DELETE /api/issues/{id}/relations/{type}/{other}", h.removeRelation)
-
-	mux.HandleFunc("GET /api/issues/{id}/tree", h.tree)
-
-	mux.HandleFunc("GET /api/ready", h.listReady)
-	mux.HandleFunc("GET /api/blocked", h.listBlocked)
-	mux.HandleFunc("GET /api/search", h.search)
-
-	mux.HandleFunc("GET /api/projects", h.listProjects)
-	mux.HandleFunc("POST /api/projects", h.createProject)
-	mux.HandleFunc("GET /api/projects/{key}", h.getProject)
-	mux.HandleFunc("PATCH /api/projects/{key}", h.patchProject)
-	mux.HandleFunc("DELETE /api/projects/{key}", h.deleteProject)
-
-	mux.HandleFunc("GET /api/labels", h.labelFacets)
-	mux.HandleFunc("GET /api/assignees", h.assigneeFacets)
-	mux.HandleFunc("GET /api/identity", h.identity)
+// Authentication happens in front of this server, in the middleware that reads
+// the htpasswd file, and a request that failed it never arrives. The document
+// declares the scheme because it describes the API, and the generated server
+// asks about it because the document declares it; there is nothing left here
+// to check.
+func (h *Handler) HandleBasicAuth(ctx context.Context, _ api.OperationName,
+	_ api.BasicAuth) (context.Context, error) {
+	return ctx, nil
 }
 
-// writeJSON sends a successful response.
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(value)
+// middleware enforces the rules the document states about what an operation
+// accepts and a generated server does not enforce by itself.
+//
+// A query parameter the operation does not declare is refused, and so is a
+// request body carried to an operation that declares none. Both are refusals
+// rather than silent omissions, for the same reason an unrecognised body field
+// is one — something the server never reads is a thing the client believes it
+// said. What each operation declares is read out of the document, so neither
+// rule can drift from it.
+//
+// The third rule is the UTF-8 half of the input rules, which has to be applied
+// to the raw bytes: a decoder replaces an unpaired surrogate escape with
+// U+FFFD, which is indistinguishable from a U+FFFD the caller meant to send.
+func (h *Handler) middleware() api.Middleware {
+	return func(req middleware.Request, next middleware.Next) (middleware.Response, error) {
+		operation := h.operations[req.OperationID]
+
+		// Sorted, so a request with two unaccepted parameters always names the
+		// same one.
+		for _, name := range slices.Sorted(maps.Keys(req.Raw.URL.Query())) {
+			if !operation.QueryParameters[name] {
+				return middleware.Response{}, awberr.Usagef(
+					"this endpoint does not accept the %s parameter", name)
+			}
+		}
+
+		if !operation.TakesBody {
+			if err := rejectBody(req.Raw); err != nil {
+				return middleware.Response{}, err
+			}
+		} else if err := checkText(req.RawBody); err != nil {
+			return middleware.Response{}, err
+		}
+
+		return next(req)
+	}
 }
 
-// writeError maps a failure onto its status and the Error body.
+// NewError maps a failure onto its status and the Error body.
 //
 // The four kinds carry the exit-code taxonomy; a failed precondition is the
-// one extra case, answered 412, which has no exit code of its own.
-func writeError(w http.ResponseWriter, err error) {
+// one extra case, answered 412, which has no exit code of its own, and a body
+// over the transport cap the other, answered 413.
+func (h *Handler) NewError(_ context.Context, err error) *api.ErrorStatusCode {
 	status := awberr.KindOf(err).HTTPStatus()
-	if errors.Is(err, awberr.ErrPreconditionFailed) {
+	message := err.Error()
+
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		// A body over the transport cap, read by the rule that refuses a body
+		// to an operation that declares none.
+		status, message = http.StatusRequestEntityTooLarge, "request body is too large"
+	case errors.Is(err, awberr.ErrPreconditionFailed):
 		status = http.StatusPreconditionFailed
 	}
-	if errors.Is(err, errUnsupportedMediaType) {
-		status = http.StatusUnsupportedMediaType
+	return &api.ErrorStatusCode{StatusCode: status, Response: api.Error{Error: message}}
+}
+
+// errorHandler answers the failures that happen before an operation is
+// reached: a request the generated decoders refused, and a body over the
+// transport cap.
+//
+// The status comes from the error itself where it carries one, so that what a
+// decoder considers a bad request stays a bad request, and is 500 otherwise,
+// which is where an error nobody classified belongs.
+//
+// A body that does not declare itself JSON is a 415, a missing Content-Type
+// included — the rule is about what the body claims to be, and a body claiming
+// nothing claims nothing useful. It is asked only of a request that carries a
+// body: one that sends none is never asked to describe it, and reaches here
+// only because the operation required a body it did not send, which is a 400.
+func errorHandler(_ context.Context, w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusInternalServerError
+	var coded interface{ Code() int }
+	if errors.As(err, &coded) {
+		status = coded.Code()
 	}
-	if errors.Is(err, errBodyTooLarge) {
-		status = http.StatusRequestEntityTooLarge
+
+	// Both of these are about the request as a whole rather than about anything
+	// in it, so neither takes the decoder's account of where it stopped.
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+		return
+	case bodyWasCarried(r) && !claimsJSON(r):
+		writeError(w, http.StatusUnsupportedMediaType, "request body must be application/json")
+		return
 	}
-	writeJSON(w, status, domain.APIError{Error: err.Error()})
+	writeError(w, status, message(err))
 }
 
-// writeIssue sends one issue with the ETag for the version it describes, so a
-// client can make another conditional edit without first repeating the GET.
-func writeIssue(w http.ResponseWriter, status int, issue *domain.Issue) {
-	w.Header().Set("ETag", local.ETag(issue.UpdatedAt))
-	writeJSON(w, status, issue)
+// message is the line of prose a refused request is answered with.
+//
+// The generated decoders report where they stopped, which is worth keeping —
+// it names the field. What they cannot say is what is wrong with a body that
+// is wrong as a whole, so those cases are answered here: a body that was not
+// sent where one is required, a body that was sent and holds no JSON value at
+// all, and a body holding a null, which is a state these shapes do not have,
+// since everything they say turns on a field being present or absent and null
+// is neither.
+func message(err error) string {
+	if errors.Is(err, validate.ErrBodyRequired) {
+		return "a request body is required"
+	}
+
+	var body *ogenerrors.DecodeBodyError
+	if errors.As(err, &body) {
+		switch {
+		case holdsNoValue(body.Body):
+			return "the request body holds no JSON value"
+		case holdsNull(body.Body):
+			return "request body holds a null: clear a value with \"\" and leave it alone by omitting it"
+		}
+		// jx names the callback it was inside when it stopped, which says
+		// nothing to a caller.
+		return "invalid request body: " + strings.ReplaceAll(body.Err.Error(), "callback: ", "")
+	}
+
+	var param *ogenerrors.DecodeParamError
+	if errors.As(err, &param) {
+		return fmt.Sprintf("invalid %s parameter %q: %s", param.In, param.Name, param.Err)
+	}
+
+	return err.Error()
 }
 
-// writeProject is writeIssue for a project, whose tag is built from its own
-// updated_at: active_issues moving because somebody created or closed an issue
-// does not invalidate it, exactly as a new relation does not invalidate an
-// issue's.
-func writeProject(w http.ResponseWriter, status int, project *domain.Project) {
-	w.Header().Set("ETag", local.ETag(project.UpdatedAt))
-	writeJSON(w, status, project)
+// notFound and methodNotAllowed answer the two failures the router itself
+// reports, in the API's error shape rather than net/http's plain text: a path
+// under /api/ that no operation serves, and a path that exists whose method
+// does not.
+func notFound(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotFound, "no such endpoint: "+r.URL.Path)
 }
 
-// writeList sends an array with the unpaged total, so a UI can show "1–50 of
-// 214" and page through without loading everything.
-func writeList(w http.ResponseWriter, value any, total int) {
-	w.Header().Set("X-Total-Count", strconv.Itoa(total))
-	writeJSON(w, http.StatusOK, value)
+func methodNotAllowed(w http.ResponseWriter, r *http.Request, allowed string) {
+	w.Header().Set("Allow", allowed)
+	writeError(w, http.StatusMethodNotAllowed,
+		r.Method+" is not allowed here; "+allowed+" is")
 }
 
-// ifMatch is the optional conditional-edit precondition. A caller that omits
-// it, as the CLI always does, gets last-write-wins.
-func ifMatch(r *http.Request) string { return r.Header.Get("If-Match") }
+// writeError sends one error body, encoded as the generated code encodes the
+// ones it sends: no HTML escaping and no trailing newline, so every error this
+// API answers with looks the same whether it was reached before or after
+// routing.
+func writeError(w http.ResponseWriter, status int, message string) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(api.Error{Error: message}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(bytes.TrimRight(buffer.Bytes(), "\n"))
+}
+
+// The conversions between the API's shapes and the domain's. The two are the
+// same shapes — the document's schemas are the CLI's --json structures — so
+// each of these is a rename and nothing more; anything else here would be the
+// beginning of a second representation.
+
+func toIssue(issue *domain.Issue) api.Issue {
+	return api.Issue{
+		ID:          issue.ID,
+		Project:     api.ProjectKey(issue.Project),
+		Title:       issue.Title,
+		Description: issue.Description,
+		Type:        api.Type(issue.Type),
+		Status:      api.Status(issue.Status),
+		Priority:    api.Priority(issue.Priority),
+		Labels:      toLabels(issue.Labels),
+		Assignee:    issue.Assignee,
+		CloseReason: issue.CloseReason,
+		CreatedAt:   api.Timestamp(issue.CreatedAt),
+		UpdatedAt:   api.Timestamp(issue.UpdatedAt),
+		Blocked:     issue.Blocked,
+		Blockers:    issue.Blockers,
+		Relations:   toRelations(issue.Relations),
+		Links:       toLinks(issue.Links),
+	}
+}
+
+func toIssues(issues []domain.Issue) []api.Issue {
+	out := make([]api.Issue, len(issues))
+	for i := range issues {
+		out[i] = toIssue(&issues[i])
+	}
+	return out
+}
+
+func toTree(tree *domain.IssueTree) api.IssueTree {
+	issue := toIssue(&tree.Issue)
+	children := make([]api.IssueTree, len(tree.Children))
+	for i := range tree.Children {
+		children[i] = toTree(&tree.Children[i])
+	}
+	return api.IssueTree{
+		ID:          issue.ID,
+		Project:     issue.Project,
+		Title:       issue.Title,
+		Description: issue.Description,
+		Type:        issue.Type,
+		Status:      issue.Status,
+		Priority:    issue.Priority,
+		Labels:      issue.Labels,
+		Assignee:    issue.Assignee,
+		CloseReason: issue.CloseReason,
+		CreatedAt:   issue.CreatedAt,
+		UpdatedAt:   issue.UpdatedAt,
+		Blocked:     issue.Blocked,
+		Blockers:    issue.Blockers,
+		Relations:   issue.Relations,
+		Links:       issue.Links,
+		Children:    children,
+	}
+}
+
+func toProject(project *domain.Project) api.Project {
+	return api.Project{
+		Key:          api.ProjectKey(project.Key),
+		Name:         project.Name,
+		Description:  project.Description,
+		ActiveIssues: project.ActiveIssues,
+		CreatedAt:    api.Timestamp(project.CreatedAt),
+		UpdatedAt:    api.Timestamp(project.UpdatedAt),
+	}
+}
+
+func toProjects(projects []domain.Project) []api.Project {
+	out := make([]api.Project, len(projects))
+	for i := range projects {
+		out[i] = toProject(&projects[i])
+	}
+	return out
+}
+
+func toFacets(facets []domain.Facet) []api.Facet {
+	out := make([]api.Facet, len(facets))
+	for i, facet := range facets {
+		out[i] = api.Facet{Value: facet.Value, Count: facet.Count}
+	}
+	return out
+}
+
+func toLabels(labels []string) []api.Label {
+	out := make([]api.Label, len(labels))
+	for i, label := range labels {
+		out[i] = api.Label(label)
+	}
+	return out
+}
+
+func fromLabels(labels []api.Label) []string {
+	out := make([]string, len(labels))
+	for i, label := range labels {
+		out[i] = string(label)
+	}
+	return out
+}
+
+func toRelations(relations []domain.Relation) []api.Relation {
+	out := make([]api.Relation, len(relations))
+	for i, relation := range relations {
+		out[i] = api.Relation{
+			Type:      api.RelationType(relation.Type),
+			Other:     relation.Other,
+			Direction: api.Direction(relation.Direction),
+		}
+	}
+	return out
+}
+
+func toLinks(links []domain.Link) []api.Link {
+	out := make([]api.Link, len(links))
+	for i, link := range links {
+		out[i] = api.Link{Text: link.Text, URL: link.URL}
+	}
+	return out
+}
+
+// The optional-value conversions. A field the caller omitted is nil, which is
+// "leave it alone"; one it sent is a pointer, so an empty string clears a
+// value rather than meaning nothing.
+
+func optString(o api.OptString) *string {
+	if value, ok := o.Get(); ok {
+		return &value
+	}
+	return nil
+}
+
+func optPriority(o api.OptPriority) *int {
+	if value, ok := o.Get(); ok {
+		number := int(value)
+		return &number
+	}
+	return nil
+}
+
+func optType(o api.OptType) *domain.Type {
+	if value, ok := o.Get(); ok {
+		issueType := domain.Type(value)
+		return &issueType
+	}
+	return nil
+}
+
+func optStatus(o api.OptStatus) *domain.Status {
+	if value, ok := o.Get(); ok {
+		status := domain.Status(value)
+		return &status
+	}
+	return nil
+}
