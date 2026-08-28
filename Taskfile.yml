@@ -35,7 +35,7 @@ tasks:
     # depends on this one.
     cmds:
       - go generate ./...
-      - openapi-typescript openapi.yaml -o web/ts/api/types.ts
+      - openapi-typescript openapi.yaml -o web/ts/api-types.ts
 
   install:
     desc: Install awb to GOBIN or GOPATH/bin

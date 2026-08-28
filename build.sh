@@ -36,7 +36,7 @@ run() {
 run go generate ./...
 
 # 2. Generate the TypeScript types from the same document.
-run openapi-typescript openapi.yaml -o web/ts/api/types.ts
+run openapi-typescript openapi.yaml -o web/ts/api-types.ts
 
 # 3. Compile the TypeScript frontend into web/static/.
 run tsc --project web/ts/tsconfig.json

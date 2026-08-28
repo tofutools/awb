@@ -21,6 +21,6 @@
       "dompurify": ["./vendor/dompurify.d.ts"]
     }
   },
-  "include": ["**/*.ts"],
+  "include": ["*.ts"],
   "exclude": ["vendor", "tests"]
 }

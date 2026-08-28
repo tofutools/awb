@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { toQuery } from "../../static/api/client.js";
+import { toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");

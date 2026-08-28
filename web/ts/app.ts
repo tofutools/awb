@@ -9,7 +9,7 @@ import {
   type Issue,
   type IssueTree,
   type Project,
-} from "./api/client.js";
+} from "./api.js";
 import { renderMarkdown } from "./markdown.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */

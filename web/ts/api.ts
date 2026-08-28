@@ -2,13 +2,18 @@
 // privileged access to the database, which is what keeps the API honest:
 // making this UI writable later is a change to the UI alone.
 //
-// Every shape here comes from types.ts, which openapi-typescript generates
+// Every shape here comes from api-types.ts, which openapi-typescript generates
 // from openapi.yaml and which is never edited by hand. Nothing in this file
 // restates what an endpoint returns or which parameters it takes: a filter an
 // endpoint does not accept is a compile error here rather than a 400 in the
 // browser.
+//
+// The generated file is a sibling rather than the two of them sitting under
+// web/ts/api/, because these sources compile to web/static/ and are served
+// from the paths they land on: /api/ belongs to the JSON API on the wire, and
+// anything the UI loaded from under it would reach the API server instead.
 
-import type { components, operations } from "./types.js";
+import type { components, operations } from "./api-types.js";
 
 /** The one issue shape both surfaces return. */
 export type Issue = components["schemas"]["Issue"];

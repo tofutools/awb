@@ -3,6 +3,7 @@ package cli
 import (
 	"compress/gzip"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/tofutools/awb/internal/local"
 	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
+	"github.com/tofutools/awb/web"
 )
 
 func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
@@ -110,6 +112,40 @@ func TestStaticAssetsAreServed(t *testing.T) {
 	resp, body = get(t, h, http.MethodGet, "/issues/awb-a1b2c3")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "<!doctype html>")
+}
+
+// Every embedded asset is reachable at the path it is embedded under.
+//
+// /api/ belongs to the JSON API: the router sends every path under it to the
+// API server, which knows nothing about files. An asset compiled to
+// web/static/api/ would therefore be answered 404 by the API rather than
+// served, and the UI would load a page whose script is missing. That is a
+// mistake made by moving a source file, not by editing this server, which is
+// why the check walks what is actually embedded rather than naming paths.
+func TestEveryEmbeddedAssetIsReachable(t *testing.T) {
+	h := newServeHandler(t)
+
+	staticFS, err := web.StaticFS()
+	require.NoError(t, err)
+
+	assets := 0
+	require.NoError(t, fs.WalkDir(staticFS, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		assets++
+		resp, body := get(t, h, http.MethodGet, "/"+path)
+		if path == "index.html" {
+			// The static handler redirects it to the directory it indexes,
+			// which TestStaticAssetsAreServed asks for by that name.
+			assert.Equal(t, http.StatusMovedPermanently, resp.StatusCode, path)
+			return nil
+		}
+		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.NotEmpty(t, body, path)
+		return nil
+	}))
+	assert.NotZero(t, assets, "the frontend is not embedded")
 }
 
 // The import map's hash is in the CSP, so the committed bundles load and

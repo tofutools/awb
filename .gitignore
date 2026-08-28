@@ -9,4 +9,4 @@
 
 # Generated from openapi.yaml by build.sh — never committed, never edited
 /internal/api/*_gen.go
-/web/ts/api/types.ts
+/web/ts/api-types.ts

@@ -59,7 +59,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/awberr` | The error taxonomy both surfaces report. |
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
 | `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
-| `web/` | The frontend: `ts/` sources (`api/types.ts` **generated**), `static/` build output, `embed.go`. |
+| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `static/` build output, `embed.go`. |
 
 Three structural rules hold the design together:
 
@@ -74,7 +74,7 @@ Three structural rules hold the design together:
   `domain` as a function over sets and the traversal goes in `storage`.
 * **`openapi.yaml` is the source of truth for the HTTP API.** The Go server in
   `internal/api` is generated from it by ogen and the TypeScript types in
-  `web/ts/api/types.ts` by openapi-typescript; neither is committed and neither
+  `web/ts/api-types.ts` by openapi-typescript; neither is committed and neither
   is ever edited. Routing, decoding, the vocabulary and the length rules are
   therefore what the document says, not a second Go copy of it, and so is what
   each operation accepts: `internal/openapi` reads the declared query
