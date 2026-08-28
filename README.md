@@ -77,8 +77,9 @@ recorded state cannot disagree with it.
 
 To see the rest of it without typing any of it, `awb demo` fills a `demo`
 project with a sample data set covering every type, priority, status and
-relation. It replaces that project wholesale every time it runs, deleting
-whatever was stored under that key, so nothing is ever kept there.
+relation. It refuses while that project exists, since it replaces the project
+wholesale rather than reconciling it; `awb demo --force` says that deleting
+whatever is under the key is meant.
 
 ## Commands
 
@@ -96,7 +97,7 @@ whatever was stored under that key, so nothing is ever kept there.
 | `awb dep tree <id>` | The decomposition below an issue. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
 | `awb project add\|update\|ls\|rm` | Projects. |
-| `awb demo` | Fill a `demo` project with a sample data set, replacing whatever is in it. |
+| `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
 

@@ -242,12 +242,10 @@ something is gone should say what went. That line is not a compatibility
 surface — a script reads `--json`, which returns the object.
 
 Destructive commands take a confirmation flag rather than prompting, because
-prompting would make them unscriptable. The one exception is `awb demo`, which
-replaces its sample project without asking. Nothing marks that project's
-contents as the command's own, so this really does destroy whatever is stored
-under that key; it is documented as scratch space wherever it is named, and the
-alternative — a confirmation flag on the command whose whole purpose is to be
-re-run — would cost more than it bought.
+prompting would make them unscriptable. That includes `awb demo`, which refuses
+while its sample project exists: nothing marks that project's contents as the
+command's own, so replacing it destroys whatever is stored under the key, and
+the flag is what says so.
 
 ### HTTP API
 

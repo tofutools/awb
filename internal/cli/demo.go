@@ -16,8 +16,8 @@ import (
 const (
 	demoProjectKey  = "demo"
 	demoProjectName = "DEMO"
-	demoProjectDesc = "A sample project for trying awb out. `awb demo` replaces it wholesale," +
-		" so anything written here is scratch data.\n"
+	demoProjectDesc = "A sample project for trying awb out. `awb demo --force` replaces it" +
+		" wholesale, so anything written here is scratch data.\n"
 )
 
 // demoIssue is one issue of the demo data set.
@@ -172,17 +172,20 @@ var demoIssues = []demoIssue{{
 }}
 
 func newDemoCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "demo",
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "demo [--force]",
 		Short: "Fill the " + demoProjectKey + " project with a data set that exercises every feature",
 		Long: "Create the " + demoProjectKey + " project and fill it with a small sample data set: every\n" +
 			"issue type, every priority, every status, every relation type, blocked\n" +
 			"and ready work, labels, assignees and Markdown links.\n\n" +
 			"It is for trying commands out, and for looking at the web UI with\n" +
 			"something in it.\n\n" +
-			"Running it again replaces the project wholesale and takes no confirmation\n" +
-			"flag: everything stored under the key " + demoProjectKey + " is deleted, whoever put it\n" +
-			"there, so that project is never a place to keep anything.\n\n" +
+			"It refuses while the " + demoProjectKey + " project exists, because it replaces the project\n" +
+			"wholesale rather than reconciling it: nothing marks an issue there as one\n" +
+			"a previous run wrote, so --force is what says that deleting whatever is\n" +
+			"under the key is meant.\n\n" +
 			"No other project is created or deleted, but deleting this one drops the\n" +
 			"relations its issues were on either end of, which may unblock work\n" +
 			"elsewhere.",
@@ -192,7 +195,7 @@ func newDemoCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := buildDemo(cmd.Context(), be)
+			project, err := buildDemo(cmd.Context(), be, force)
 			if err != nil {
 				return err
 			}
@@ -207,6 +210,10 @@ func newDemoCommand(e *env) *cobra.Command {
 				project.Key, len(demoIssues))
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false,
+		"replace the "+demoProjectKey+" project, deleting everything in it")
+	return cmd
 }
 
 // buildDemo replaces the demo project with the demo data set and returns the
@@ -217,16 +224,30 @@ func newDemoCommand(e *env) *cobra.Command {
 // a file and adds no second code path. Each issue is therefore its own
 // transaction: a build interrupted half way leaves a partial project, which the
 // next run replaces.
-func buildDemo(ctx context.Context, be backend.Backend) (*domain.Project, error) {
+func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Project, error) {
 	// An existing demo project is deleted outright, issues and relations with it,
 	// rather than reconciled: what awb demo promises is that afterwards the
 	// project holds exactly this data set and nothing else. Nothing marks an
-	// issue here as one a previous run wrote, so this destroys whatever is under
-	// the key — which is why the project is documented as scratch space
-	// everywhere it is named.
-	if _, err := be.DeleteProject(ctx, demoProjectKey, true, ""); err != nil &&
-		awberr.KindOf(err) != awberr.NotFound {
+	// issue here as one a previous run wrote, so that deletes whatever is under
+	// the key, and --force is what says it is meant.
+	//
+	// The refusal depends on what is stored rather than on the arguments alone,
+	// which is what makes it a conflict where awb delete's missing --force is a
+	// usage error. The check and the delete are two operations, so a project
+	// created between them is deleted unasked; that window is one round trip
+	// wide and is not worth an interface change to close.
+	_, err := be.GetProject(ctx, demoProjectKey)
+	switch {
+	case err != nil && awberr.KindOf(err) != awberr.NotFound:
 		return nil, err
+	case err == nil && !force:
+		return nil, awberr.Conflictf(
+			"project %s already exists; awb demo --force replaces it and deletes everything in it",
+			demoProjectKey)
+	case err == nil:
+		if _, err := be.DeleteProject(ctx, demoProjectKey, true, ""); err != nil {
+			return nil, err
+		}
 	}
 
 	if _, err := be.CreateProject(ctx, backend.ProjectCreate{

@@ -541,7 +541,7 @@ func TestDemoOutput(t *testing.T) {
 	assert.Contains(t, h.mustRun("demo"), "demo")
 
 	var project domain.Project
-	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--json")), &project))
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--force", "--json")), &project))
 	assert.Equal(t, "demo", project.Key)
 	assert.NotZero(t, project.ActiveIssues, "the count is the one after the issues were created")
 }
@@ -556,13 +556,32 @@ func TestDemoReplacesTheProject(t *testing.T) {
 	stray := h.create("not part of the data set", "--project", "demo")
 	elsewhere := h.create("in another project", "--project", "awb")
 
-	h.mustRun("demo")
+	// Without --force it refuses, and changes nothing. The refusal depends on
+	// what is stored, so it is a conflict rather than a usage error.
+	_, _, code := h.run("demo")
+	require.Equal(t, 4, code)
+	assert.Len(t, h.demoIssues(), len(first)+1, "the refusal left the stray issue alone")
+
+	h.mustRun("demo", "--force")
 
 	assert.Len(t, h.demoIssues(), len(first), "the same data set, not a second copy")
 
-	_, _, code := h.run("show", stray)
+	_, _, code = h.run("show", stray)
 	assert.Equal(t, 3, code, "an issue the data set did not create is cleared with the rest")
 	h.mustRun("show", elsewhere)
+}
+
+// The refusal is about the project existing, not about what it holds: an empty
+// demo project still needs --force, because the command replaces the project
+// rather than its contents.
+func TestDemoRefusesAnExistingEmptyProject(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "add", "demo")
+
+	_, _, code := h.run("demo")
+	assert.Equal(t, 4, code)
+
+	h.mustRun("demo", "--force")
 }
 
 // Replacing the demo project drops the relations its issues were on either end
@@ -589,7 +608,7 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
 	require.True(t, issue.Blocked)
 
-	h.mustRun("demo")
+	h.mustRun("demo", "--force")
 
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
 	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
