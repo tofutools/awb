@@ -8,7 +8,8 @@
 #
 #     git tag -a v1.0.0 -m 'awb 1.0.0' && git push origin v1.0.0
 #
-# The tag name is what `awb --version` will print, so it is the version.
+# The tag name is the version stamp `awb --version` reports first, so it is
+# the version.
 name: Release
 
 on:
@@ -91,7 +92,7 @@ jobs:
           set -euo pipefail
           got="$(./build/$NAME/awb --version)"
           if [ "${got%% *}" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::awb --version reported '$got', expected it to begin with '$GITHUB_REF_NAME'"
+            echo "::error::awb --version reported '$got', expected its first field to be '$GITHUB_REF_NAME'"
             exit 1
           fi
 
