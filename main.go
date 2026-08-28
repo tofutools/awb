@@ -7,6 +7,8 @@ package main
 import (
 	"context"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/tofutools/awb/internal/cli"
 )
@@ -16,5 +18,48 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(cli.Execute(context.Background(), version, os.Args[1:], os.Stdout, os.Stderr, os.Stdin))
+	info, _ := debug.ReadBuildInfo()
+	os.Exit(cli.Execute(context.Background(), versionString(version, info), os.Args[1:],
+		os.Stdout, os.Stderr, os.Stdin))
+}
+
+// versionString is what --version prints: the version stamp followed by the
+// commit the binary was built from, as "1.2.3 (<hash>, <commit time>)". The Go
+// toolchain records the commit under -buildvcs=true, which is how awb is
+// built; a build with nothing to record — `go run`, `go test`, or a build from
+// the module cache rather than a checkout — gets the bare version instead. A
+// build from a dirty tree says "modified", because then the commit does not
+// describe what was compiled.
+//
+// The version stamp is always the first whitespace-separated field, which is
+// what the release workflow asserts.
+func versionString(version string, info *debug.BuildInfo) string {
+	if info == nil {
+		return version
+	}
+
+	var revision, commitTime string
+	var modified bool
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.time":
+			commitTime = setting.Value
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	if revision == "" {
+		return version
+	}
+
+	parts := []string{revision}
+	if commitTime != "" {
+		parts = append(parts, commitTime)
+	}
+	if modified {
+		parts = append(parts, "modified")
+	}
+	return version + " (" + strings.Join(parts, ", ") + ")"
 }

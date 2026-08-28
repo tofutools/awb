@@ -83,14 +83,15 @@ jobs:
       # The version stamp is the one thing about a release binary that no test
       # covers and that is invisible until someone runs it, so assert it on the
       # one target this runner can execute. A silently unstamped build would
-      # ship a release that reports itself as "dev".
+      # ship a release that reports itself as "dev". --version also reports the
+      # commit it was built from, so only the first field is the stamp.
       - name: Check the version stamp
         if: matrix.target.goos == 'linux' && matrix.target.goarch == 'amd64'
         run: |
           set -euo pipefail
           got="$(./build/$NAME/awb --version)"
-          if [ "$got" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::awb --version reported '$got', expected '$GITHUB_REF_NAME'"
+          if [ "${got%% *}" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::awb --version reported '$got', expected it to begin with '$GITHUB_REF_NAME'"
             exit 1
           fi
 
