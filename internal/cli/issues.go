@@ -149,8 +149,8 @@ func newCreateCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(issue)
 			}
-			// create is one of the two exceptions to "mutating commands print nothing
-			// on success": it prints the new ID.
+			// create is one of the exceptions to "mutating commands print nothing on
+			// success": it prints the new ID.
 			_, err = io.WriteString(e.stdout, issue.ID+"\n")
 			return err
 		},

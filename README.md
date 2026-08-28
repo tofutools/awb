@@ -75,6 +75,12 @@ Closing the blocker made the second issue ready, with nothing written to it:
 `blocked` is derived from the dependency graph rather than stored, so the
 recorded state cannot disagree with it.
 
+To see the rest of it without typing any of it, `awb demo` fills a `demo`
+project with a sample data set covering every type, priority, status and
+relation. It refuses while that project exists, since it replaces the project
+wholesale rather than reconciling it; `awb demo --force` says that deleting
+whatever is under the key is meant.
+
 ## Commands
 
 | Command | What it does |
@@ -91,6 +97,7 @@ recorded state cannot disagree with it.
 | `awb dep tree <id>` | The decomposition below an issue. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
 | `awb project add\|update\|ls\|rm` | Projects. |
+| `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
 

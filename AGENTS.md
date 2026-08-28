@@ -48,7 +48,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
 | `internal/backend` | The one interface every command is written against. |
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
-| `internal/cli` | The cobra tree, the three output modes, `serve`. |
+| `internal/cli` | The cobra tree, the three output modes, `serve`, the `demo` data set. |
 | `internal/handler` | The JSON API. |
 | `internal/config` | The two config files, precedence, identity, colour. |
 | `internal/awberr` | The error taxonomy both surfaces report. |
@@ -79,6 +79,11 @@ Two structural rules hold the design together:
 * A released migration batch is never edited, only followed by another.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
+* `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.
+  When a feature is added that the data set could show — a new type, status,
+  priority, relation, or anything else worth seeing in a listing or the web UI —
+  add or amend a row so it does. `TestDemoCoversTheVocabulary` fails when a
+  vocabulary value has no row.
 
 ## Rules
 

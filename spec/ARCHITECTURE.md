@@ -235,8 +235,17 @@ representation. The latter two are the compatibility surface; changing either is
 a breaking change.
 
 Mutating commands print nothing on success, so a script's output is signal.
+Three say something anyway, and each says it for a reason: `awb create` prints
+the new ID, because minting it is the point; the deleting commands and `awb
+demo` print one human-readable line, because a command whose effect is that
+something is gone should say what went. That line is not a compatibility
+surface — a script reads `--json`, which returns the object.
+
 Destructive commands take a confirmation flag rather than prompting, because
-prompting would make them unscriptable.
+prompting would make them unscriptable. That includes `awb demo`, which refuses
+while its sample project exists: nothing marks that project's contents as the
+command's own, so replacing it destroys whatever is stored under the key, and
+the flag is what says so.
 
 ### HTTP API
 

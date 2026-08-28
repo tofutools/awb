@@ -94,8 +94,8 @@ func TestWorkedExample(t *testing.T) {
 }
 
 // Mutating commands print nothing on success in the default and compact modes,
-// except create, which prints the new ID, and the deleting commands, which
-// print a one-line summary.
+// except create, which prints the new ID, and the deleting commands and demo,
+// which print a one-line summary.
 func TestMutatingCommandsAreSilent(t *testing.T) {
 	h := newHarness(t)
 	id := h.create("t", "--project", "awb")
@@ -449,4 +449,168 @@ func TestProjectRemovalWithoutCascade(t *testing.T) {
 
 	summary := h.mustRun("project", "rm", "empty", "--force")
 	assert.Equal(t, "Deleted project empty.\n", summary)
+}
+
+// demoIssues reads every issue of the demo project, closed ones included.
+func (h *harness) demoIssues() []domain.Issue {
+	h.t.Helper()
+	var issues []domain.Issue
+	require.NoError(h.t, json.Unmarshal(
+		[]byte(h.mustRun("list", "--project", "demo", "--include-closed", "--json")), &issues))
+	return issues
+}
+
+// The demo data set exercises the whole of the fixed vocabulary. That is what
+// "awb demo shows off the features" means in practice, and this is the test
+// that fails when a vocabulary value is added without a row for it.
+func TestDemoCoversTheVocabulary(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("demo")
+	issues := h.demoIssues()
+	require.NotEmpty(t, issues)
+
+	types := map[domain.Type]bool{}
+	statuses := map[domain.Status]bool{}
+	priorities := map[int]bool{}
+	relations := map[domain.RelationType]bool{}
+	labels := map[string]bool{}
+	assignees := map[string]bool{}
+	var links, closeReasons, severalBlockers int
+
+	var epic string
+	for i := range issues {
+		issue := &issues[i]
+		types[issue.Type] = true
+		statuses[issue.Status] = true
+		priorities[issue.Priority] = true
+		for _, rel := range issue.Relations {
+			relations[rel.Type] = true
+		}
+		for _, label := range issue.Labels {
+			labels[label] = true
+		}
+		if issue.Assignee != "" {
+			assignees[issue.Assignee] = true
+		}
+		links += len(issue.Links)
+		if issue.CloseReason != "" {
+			closeReasons++
+		}
+		if len(issue.Blockers) > 1 {
+			severalBlockers++
+		}
+		if issue.Type == domain.TypeEpic {
+			epic = issue.ID
+		}
+	}
+
+	for _, want := range domain.Types {
+		assert.True(t, types[want], "no issue of type %s", want)
+	}
+	for _, want := range domain.Statuses {
+		assert.True(t, statuses[want], "no issue with status %s", want)
+	}
+	for want := domain.MinPriority; want <= domain.MaxPriority; want++ {
+		assert.True(t, priorities[want], "no issue at priority %d", want)
+	}
+	for _, want := range domain.RelationTypes {
+		assert.True(t, relations[want], "no %s relation", want)
+	}
+
+	assert.Greater(t, len(labels), 1, "more than one label, so the label facets say something")
+	assert.Greater(t, len(assignees), 1, "more than one assignee")
+	assert.NotZero(t, links, "a description with Markdown links, so the derived link list is not empty")
+	assert.NotZero(t, closeReasons, "a closed issue that records why")
+	assert.NotZero(t, severalBlockers, "an issue with more than one blocker")
+
+	// Both halves of readiness have something to show.
+	assert.NotEmpty(t, h.mustRun("ready", "--project", "demo", "--compact"))
+	assert.NotEmpty(t, h.mustRun("blocked", "--project", "demo", "--compact"))
+
+	// The decomposition is more than one level deep, so dep tree shows a tree
+	// rather than a list. A grandchild is indented two levels, four spaces.
+	require.NotEmpty(t, epic, "an epic to root the decomposition at")
+	assert.Contains(t, h.mustRun("dep", "tree", epic, "--compact"), "\n    ")
+}
+
+// awb demo prints a summary line — one of the deliberate exceptions to
+// "mutating commands print nothing on success" — and the project itself under
+// --json.
+func TestDemoOutput(t *testing.T) {
+	h := newHarness(t)
+	assert.Contains(t, h.mustRun("demo"), "demo")
+
+	var project domain.Project
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--force", "--json")), &project))
+	assert.Equal(t, "demo", project.Key)
+	assert.NotZero(t, project.ActiveIssues, "the count is the one after the issues were created")
+}
+
+// A second run replaces the demo project wholesale, clearing whatever else is
+// in it, and touches nothing outside it.
+func TestDemoReplacesTheProject(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("demo")
+	first := h.demoIssues()
+
+	stray := h.create("not part of the data set", "--project", "demo")
+	elsewhere := h.create("in another project", "--project", "awb")
+
+	// Without --force it refuses, and changes nothing. The refusal depends on
+	// what is stored, so it is a conflict rather than a usage error.
+	_, _, code := h.run("demo")
+	require.Equal(t, 4, code)
+	assert.Len(t, h.demoIssues(), len(first)+1, "the refusal left the stray issue alone")
+
+	h.mustRun("demo", "--force")
+
+	assert.Len(t, h.demoIssues(), len(first), "the same data set, not a second copy")
+
+	_, _, code = h.run("show", stray)
+	assert.Equal(t, 3, code, "an issue the data set did not create is cleared with the rest")
+	h.mustRun("show", elsewhere)
+}
+
+// The refusal is about the project existing, not about what it holds: an empty
+// demo project still needs --force, because the command replaces the project
+// rather than its contents.
+func TestDemoRefusesAnExistingEmptyProject(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "add", "demo")
+
+	_, _, code := h.run("demo")
+	assert.Equal(t, 4, code)
+
+	h.mustRun("demo", "--force")
+}
+
+// Replacing the demo project drops the relations its issues were on either end
+// of, so an issue in another project blocked by a demo issue becomes unblocked.
+// No other project is created or deleted, but that is not the same as leaving
+// everything outside alone.
+func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("demo")
+
+	// Any demo issue that is not closed will do; a closed one would not block.
+	var blocker string
+	for _, issue := range h.demoIssues() {
+		if issue.Status != domain.StatusClosed {
+			blocker = issue.ID
+			break
+		}
+	}
+	require.NotEmpty(t, blocker)
+
+	dependent := h.create("waiting on the demo", "--project", "awb", "--blocked-by", blocker)
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
+	require.True(t, issue.Blocked)
+
+	h.mustRun("demo", "--force")
+
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
+	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
+	assert.Empty(t, issue.Relations)
 }

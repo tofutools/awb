@@ -9,9 +9,9 @@ import (
 	"github.com/tofutools/awb/internal/backend"
 )
 
-// summarise prints the one-line human-readable summary a deleting command
-// gives. It is the one output with no guaranteed format; a script uses --json,
-// which returns the deleted object.
+// summarise prints the one-line human-readable summary the deleting commands
+// and awb demo give. It is the one output with no guaranteed format; a script
+// uses --json, which returns the object.
 func (e *env) summarise(format string, args ...any) error {
 	_, _ = fmt.Fprintf(e.stdout, format, args...)
 	return e.stdout.Err()

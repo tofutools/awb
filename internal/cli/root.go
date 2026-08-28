@@ -178,6 +178,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		newReopenCommand(e),
 		newDeleteCommand(e),
 		newDepCommand(e),
+		newDemoCommand(e),
 		newServeCommand(e),
 	)
 	return root
