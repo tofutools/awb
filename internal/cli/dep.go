@@ -71,7 +71,7 @@ func newDepCommand(e *env) *cobra.Command {
 			"add command with rm substituted.",
 	}
 	cmd.AddCommand(newDepAddCommand(e), newDepRemoveCommand(e), newDepTreeCommand(e))
-	return cmd
+	return grouping(cmd)
 }
 
 func newDepAddCommand(e *env) *cobra.Command {

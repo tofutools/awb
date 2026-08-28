@@ -393,7 +393,7 @@ func newLabelCommand(e *env) *cobra.Command {
 		Args:  exactArgs(2),
 		RunE:  run(false),
 	})
-	return cmd
+	return grouping(cmd)
 }
 
 func newClaimCommand(e *env) *cobra.Command {

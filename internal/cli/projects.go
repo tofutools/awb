@@ -30,7 +30,7 @@ func newProjectCommand(e *env) *cobra.Command {
 		newProjectListCommand(e),
 		newProjectDeleteCommand(e),
 	)
-	return cmd
+	return grouping(cmd)
 }
 
 func newProjectCreateCommand(e *env) *cobra.Command {

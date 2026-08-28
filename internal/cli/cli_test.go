@@ -325,6 +325,22 @@ func TestDescriptionFromStdin(t *testing.T) {
 		"a trailing line feed from a heredoc is part of the description")
 }
 
+// A grouping command rejects a name that is not one of its subcommands, so a
+// removed spelling — project ls, add and rm, renamed to list, create and
+// delete — is a usage error and not a silent help page.
+func TestUnknownSubcommandIsAUsageError(t *testing.T) {
+	h := newHarness(t)
+	for _, args := range [][]string{
+		{"project", "ls"}, {"project", "add", "k"}, {"project", "rm", "k"},
+		{"project", "wat"}, {"dep", "wat"}, {"label", "wat"}, {"wat"},
+	} {
+		stdout, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, args)
+		assert.Empty(t, stdout, args)
+		assert.Contains(t, stderr, "unknown command", args)
+	}
+}
+
 func TestDescriptionFlagsAreMutuallyExclusive(t *testing.T) {
 	h := newHarness(t)
 	_, _, code := h.run("create", "t", "--project", "awb",
