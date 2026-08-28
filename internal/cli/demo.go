@@ -10,7 +10,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The demo project. Nothing outside it is ever touched.
+// The demo project. It is the only project awb demo creates or deletes, but
+// deleting it removes the relations its issues are on either end of, which can
+// unblock work in another project.
 const (
 	demoProjectKey  = "demo"
 	demoProjectName = "DEMO"
@@ -173,14 +175,17 @@ func newDemoCommand(e *env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "demo",
 		Short: "Fill the " + demoProjectKey + " project with a data set that exercises every feature",
-		Long: "Create the " + demoProjectKey + " project and fill it with a small sample\n" +
-			"data set: every issue type, every priority, every status, every relation\n" +
-			"type, blocked and ready work, labels, assignees and Markdown links.\n\n" +
-			"It is for trying commands out and for looking at the web UI with something\n" +
-			"in it. Nothing outside the " + demoProjectKey + " project is touched.\n\n" +
-			"Running it again replaces the project wholesale — it takes no confirmation\n" +
-			"flag, because the data it destroys is the data it wrote — so the " +
-			demoProjectKey + "\nproject is never a place to keep anything.",
+		Long: "Create the " + demoProjectKey + " project and fill it with a small sample data set: every\n" +
+			"issue type, every priority, every status, every relation type, blocked\n" +
+			"and ready work, labels, assignees and Markdown links.\n\n" +
+			"It is for trying commands out, and for looking at the web UI with\n" +
+			"something in it.\n\n" +
+			"Running it again replaces the project wholesale and takes no confirmation\n" +
+			"flag: everything stored under the key " + demoProjectKey + " is deleted, whoever put it\n" +
+			"there, so that project is never a place to keep anything.\n\n" +
+			"No other project is created or deleted, but deleting this one drops the\n" +
+			"relations its issues were on either end of, which may unblock work\n" +
+			"elsewhere.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
@@ -211,7 +216,10 @@ func newDemoCommand(e *env) *cobra.Command {
 func buildDemo(ctx context.Context, be backend.Backend) (*domain.Project, error) {
 	// An existing demo project is deleted outright, issues and relations with it,
 	// rather than reconciled: what awb demo promises is that afterwards the
-	// project holds exactly this data set and nothing else.
+	// project holds exactly this data set and nothing else. Nothing marks an
+	// issue here as one a previous run wrote, so this destroys whatever is under
+	// the key — which is why the project is documented as scratch space
+	// everywhere it is named.
 	if _, err := be.DeleteProject(ctx, demoProjectKey, true, ""); err != nil &&
 		awberr.KindOf(err) != awberr.NotFound {
 		return nil, err

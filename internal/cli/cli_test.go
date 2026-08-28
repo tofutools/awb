@@ -562,3 +562,34 @@ func TestDemoReplacesTheProject(t *testing.T) {
 	assert.Equal(t, 3, code, "an issue the data set did not create is cleared with the rest")
 	h.mustRun("show", elsewhere)
 }
+
+// Replacing the demo project drops the relations its issues were on either end
+// of, so an issue in another project blocked by a demo issue becomes unblocked.
+// No other project is created or deleted, but that is not the same as leaving
+// everything outside alone.
+func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("demo")
+
+	// Any demo issue that is not closed will do; a closed one would not block.
+	var blocker string
+	for _, issue := range h.demoIssues() {
+		if issue.Status != domain.StatusClosed {
+			blocker = issue.ID
+			break
+		}
+	}
+	require.NotEmpty(t, blocker)
+
+	dependent := h.create("waiting on the demo", "--project", "awb", "--blocked-by", blocker)
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
+	require.True(t, issue.Blocked)
+
+	h.mustRun("demo")
+
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
+	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
+	assert.Empty(t, issue.Relations)
+}

@@ -77,8 +77,8 @@ recorded state cannot disagree with it.
 
 To see the rest of it without typing any of it, `awb demo` fills a `demo`
 project with a sample data set covering every type, priority, status and
-relation. It replaces that project wholesale every time it runs, so nothing
-else is ever kept there.
+relation. It replaces that project wholesale every time it runs, deleting
+whatever was stored under that key, so nothing is ever kept there.
 
 ## Commands
 

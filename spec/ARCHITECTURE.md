@@ -237,8 +237,11 @@ a breaking change.
 Mutating commands print nothing on success, so a script's output is signal.
 Destructive commands take a confirmation flag rather than prompting, because
 prompting would make them unscriptable. The one exception is `awb demo`, which
-replaces the sample project it owns without asking: everything it destroys is
-what a previous run of the same command wrote there.
+replaces its sample project without asking. Nothing marks that project's
+contents as the command's own, so this really does destroy whatever is stored
+under that key; it is documented as scratch space wherever it is named, and the
+alternative — a confirmation flag on the command whose whole purpose is to be
+re-run — would cost more than it bought.
 
 ### HTTP API
 
