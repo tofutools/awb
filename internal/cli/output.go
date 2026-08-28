@@ -650,7 +650,7 @@ func (e *env) printProjectDetail(project *domain.Project) {
 	t := e.theme()
 
 	e.writeHeading(t, project.Key, project.Name)
-	// The same count project ls shows, under the heading it uses there.
+	// The same count project list shows, under the heading it uses there.
 	e.field(t, "Open", strconv.Itoa(project.ActiveIssues))
 	e.field(t, "Created", project.CreatedAt)
 	e.field(t, "Updated", project.UpdatedAt)

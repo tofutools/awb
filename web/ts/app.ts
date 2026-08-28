@@ -194,7 +194,7 @@ async function viewProjects(): Promise<HTMLElement> {
   const view = element("div");
   view.append(element("h1", "", "Projects"));
   if (page.rows.length === 0) {
-    view.append(element("p", "empty", "No projects yet. Create one with: awb project add <key>"));
+    view.append(element("p", "empty", "No projects yet. Create one with: awb project create <key>"));
     return view;
   }
 

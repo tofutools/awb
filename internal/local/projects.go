@@ -126,7 +126,7 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 // DeleteProject deletes a project.
 //
 // It refuses while the project holds any issue at all — closed ones included,
-// so the refusal is wider than the count project ls shows and confirmation
+// so the refusal is wider than the count project list shows and confirmation
 // alone can never destroy closed history — unless cascade is given, which
 // deletes those issues and their relations, including relations to issues in
 // other projects, which may unblock work elsewhere.

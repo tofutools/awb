@@ -58,7 +58,7 @@ func newHarness(t *testing.T) *harness {
 
 	h := &harness{t: t, dir: work}
 	h.mustRun("init")
-	h.mustRun("project", "add", "awb", "--name", "Agent Work Board")
+	h.mustRun("project", "create", "awb", "--name", "Agent Work Board")
 	return h
 }
 
@@ -177,7 +177,7 @@ func TestOutputIsDeterministic(t *testing.T) {
 	for _, args := range [][]string{
 		{"list", "--json"}, {"list", "--compact"},
 		{"ready", "--json"}, {"ready", "--compact"},
-		{"project", "ls", "--json"},
+		{"project", "list", "--json"},
 	} {
 		first := h.mustRun(args...)
 		for range 3 {
@@ -216,7 +216,7 @@ func TestShowDefaultShowsLinks(t *testing.T) {
 // to any --label given.
 func TestDirectoryContext(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "add", "web")
+	h.mustRun("project", "create", "web")
 	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"),
 		[]byte("project: awb\nlabel: frontend\n"), 0o600))
 
@@ -437,12 +437,12 @@ func TestMine(t *testing.T) {
 // at all while deleting them.
 func TestProjectRemovalSummaryIsModeIndependent(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "add", "doomed")
+	h.mustRun("project", "create", "doomed")
 	open := h.create("open one", "--project", "doomed")
 	closed := h.create("closed one", "--project", "doomed")
 	h.mustRun("close", closed)
 
-	summary := h.mustRun("project", "rm", "doomed", "--force", "--cascade")
+	summary := h.mustRun("project", "delete", "doomed", "--force", "--cascade")
 
 	// Whatever it says, it says nothing a remote client could not also say.
 	assert.Contains(t, summary, "doomed")
@@ -459,9 +459,9 @@ func TestProjectRemovalSummaryIsModeIndependent(t *testing.T) {
 // Without --cascade the summary is the plain one.
 func TestProjectRemovalWithoutCascade(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "add", "empty")
+	h.mustRun("project", "create", "empty")
 
-	summary := h.mustRun("project", "rm", "empty", "--force")
+	summary := h.mustRun("project", "delete", "empty", "--force")
 	assert.Equal(t, "Deleted project empty.\n", summary)
 }
 
@@ -481,7 +481,7 @@ func TestProjectShow(t *testing.T) {
 	assert.Contains(t, out, "The **board** itself.")
 
 	assert.Equal(t, "awb 1 \"Agent Work Board\"\n", h.mustRun("project", "show", "awb", "--compact"),
-		"the same line project ls prints")
+		"the same line project list prints")
 
 	var project domain.Project
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "show", "awb", "--json")), &project))
@@ -625,7 +625,7 @@ func TestDemoReplacesTheProject(t *testing.T) {
 // rather than its contents.
 func TestDemoRefusesAnExistingEmptyProject(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "add", "demo")
+	h.mustRun("project", "create", "demo")
 
 	_, _, code := h.run("demo")
 	assert.Equal(t, 4, code)

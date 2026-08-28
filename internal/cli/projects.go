@@ -24,23 +24,23 @@ func newProjectCommand(e *env) *cobra.Command {
 		Long:  "A project is the top-level organising unit; every issue belongs to exactly one.",
 	}
 	cmd.AddCommand(
-		newProjectAddCommand(e),
+		newProjectCreateCommand(e),
 		newProjectUpdateCommand(e),
 		newProjectShowCommand(e),
 		newProjectListCommand(e),
-		newProjectRemoveCommand(e),
+		newProjectDeleteCommand(e),
 	)
 	return cmd
 }
 
-func newProjectAddCommand(e *env) *cobra.Command {
+func newProjectCreateCommand(e *env) *cobra.Command {
 	var (
 		desc descriptionFlags
 		name string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "add <key>",
+		Use:   "create <key>",
 		Short: "Create a project",
 		Long: "Create a project.\n\n" +
 			"The key is lowercase ASCII letters, digits and hyphens, starting with a\n" +
@@ -119,7 +119,7 @@ func newProjectShowCommand(e *env) *cobra.Command {
 		Long: "Print a project with its description and its count of issues that are not\n" +
 			"closed.\n\n" +
 			"On a terminal the description is drawn as the Markdown it is. Under\n" +
-			"--compact this prints the same single line project ls would and nothing\n" +
+			"--compact this prints the same single line project list would and nothing\n" +
 			"else; --json is what a script uses when it needs the rest.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -138,7 +138,7 @@ func newProjectShowCommand(e *env) *cobra.Command {
 
 func newProjectListCommand(e *env) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ls",
+		Use:   "list",
 		Short: "List projects with counts of issues that are not closed",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -155,25 +155,25 @@ func newProjectListCommand(e *env) *cobra.Command {
 	}
 }
 
-func newProjectRemoveCommand(e *env) *cobra.Command {
+func newProjectDeleteCommand(e *env) *cobra.Command {
 	var (
 		force   bool
 		cascade bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "rm <key> --force",
+		Use:   "delete <key> --force",
 		Short: "Delete a project",
 		Long: "Delete a project.\n\n" +
 			"It refuses while the project holds any issue at all — closed ones included,\n" +
-			"so the refusal is wider than the count project ls shows and --force alone\n" +
+			"so the refusal is wider than the count project list shows and --force alone\n" +
 			"can never destroy closed history — unless --cascade is also given, which\n" +
 			"deletes those issues and their relations, including relations to issues in\n" +
 			"other projects, which may unblock work elsewhere.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !force {
-				return awberr.Usagef("awb project rm needs --force: it is not recoverable")
+				return awberr.Usagef("awb project delete needs --force: it is not recoverable")
 			}
 
 			be, err := e.backend(cmd.Context())

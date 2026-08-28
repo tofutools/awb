@@ -807,7 +807,7 @@ func TestProjectDeletionRefusesWhileItHoldsAnyIssue(t *testing.T) {
 	closeIssue(t, db, id)
 
 	count := read(t, db, func(tx *storage.Tx) (int, error) { return tx.CountIssuesInProject("awb") })
-	assert.Equal(t, 1, count, "the count is wider than the active one project ls shows")
+	assert.Equal(t, 1, count, "the count is wider than the active one project list shows")
 
 	var removed int
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
