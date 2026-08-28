@@ -236,7 +236,9 @@ a breaking change.
 
 Mutating commands print nothing on success, so a script's output is signal.
 Destructive commands take a confirmation flag rather than prompting, because
-prompting would make them unscriptable.
+prompting would make them unscriptable. The one exception is `awb demo`, which
+replaces the sample project it owns without asking: everything it destroys is
+what a previous run of the same command wrote there.
 
 ### HTTP API
 
