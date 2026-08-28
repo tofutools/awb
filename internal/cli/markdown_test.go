@@ -184,6 +184,26 @@ func TestNarrowTableIsCutRatherThanOverflowed(t *testing.T) {
 	}
 }
 
+// More columns than the window has room for cannot all be cut down to
+// something, because the gaps that hold them apart are what is left. What will
+// not fit is cut off the right, so the promise that nothing drawn is wider than
+// the window holds however many columns a table has.
+func TestTableWithMoreColumnsThanTheWindowStillFits(t *testing.T) {
+	var header, rule, row strings.Builder
+	for range 12 {
+		header.WriteString("| column ")
+		rule.WriteString("| --- ")
+		row.WriteString("| value ")
+	}
+	source := header.String() + "|\n" + rule.String() + "|\n" + row.String() + "|\n"
+
+	for _, width := range []int{20, 40, 80} {
+		for _, line := range strings.Split(drawn(config.ColorNever, width, source), "\n") {
+			assert.LessOrEqual(t, lipgloss.Width(line), width, "width %d: %q", width, line)
+		}
+	}
+}
+
 // A link destination is never shown, so nothing would reveal that it carried a
 // byte the terminal reads as a control — and one of those would end the
 // sequence the hyperlink is written as and leave the rest of the destination
@@ -200,6 +220,10 @@ func TestHyperlinkDestinationsCannotDriveTheTerminal(t *testing.T) {
 	assert.Equal(t, "https://x/%7F%00", safeURL("https://x/\x7f\x00"))
 	assert.Equal(t, "https://x/%C2%9C", safeURL("https://x/\u009c"),
 		"the C1 string terminator, which also ends the sequence")
+	assert.Equal(t, "https://x/%9C", safeURL("https://x/\x9c"),
+		"and the lone byte an eight-bit terminal reads as the same thing")
+	assert.Equal(t, "https://x/\u0101", safeURL("https://x/\u0101"),
+		"a continuation byte in that same range is part of a character, not a control")
 
 	// And the renderer uses it, so no description puts one on the wire.
 	out := drawn(config.ColorAlways, 60, "See [it](https://x/\x1b]0;pwned\a).\n")

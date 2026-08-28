@@ -3,6 +3,8 @@ package cli
 import (
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/yuin/goldmark/ast"
@@ -212,7 +214,8 @@ func (r *markdownRenderer) table(n *east.Table, width int) []string {
 		}
 		rows = append(rows, cells)
 	}
-	fitColumns(rows, max(width, minimumProseWidth))
+	width = max(width, minimumProseWidth)
+	fitColumns(rows, width)
 
 	tbl := section()
 	for _, cells := range rows {
@@ -222,7 +225,17 @@ func (r *markdownRenderer) table(n *east.Table, width int) []string {
 	if rendered == "" {
 		return nil
 	}
-	return strings.Split(rendered, "\n")
+
+	lines := strings.Split(rendered, "\n")
+	for i, line := range lines {
+		// More columns than the window has room for cannot all be cut down to
+		// something: the gaps that hold them apart are what is left, and those
+		// cannot be given up without the columns running together. What will
+		// not fit is cut off the right, which keeps the promise that nothing
+		// drawn is ever wider than the window.
+		lines[i] = truncate(line, width)
+	}
+	return lines
 }
 
 // fitColumns cuts a drawn table down to the window, taking a column from
@@ -337,39 +350,42 @@ func (r *markdownRenderer) hyperlink(base lipgloss.Style, url string) lipgloss.S
 	return base.Inherit(r.t.link).Hyperlink(safeURL(url))
 }
 
-// safeURL percent-encodes the bytes a terminal reads as a control: the C0
-// range and DEL, and the two-byte form of a C1 control. A destination goes into
-// the sequence the hyperlink is written as, and one of those bytes would end
-// that sequence early and leave the rest of the destination driving the
-// terminal. Everything else is passed through byte for byte, so the link opens
-// what the writer wrote.
+// safeURL percent-encodes what a terminal would read as a control rather than
+// as part of the destination: a control character, and a byte that is not
+// well-formed UTF-8 at all. A destination goes inside the sequence a hyperlink
+// is written as, and either of those would end that sequence early and leave
+// the rest of the destination driving the terminal. Everything else is passed
+// through byte for byte, so the link opens what the writer wrote.
+//
+// Both cases have to be read as text rather than as bytes, and in opposite
+// directions. A C1 control written as UTF-8 is two bytes, the second of them in
+// 0x80 to 0x9F — but that same range is where the continuation bytes of ā and
+// its neighbours live, and encoding those would break a perfectly good URL. A
+// lone 0x9C is the other way about: not a character at all, and exactly what an
+// eight-bit terminal reads as a string terminator.
 //
 // This is the one place a description reaches the terminal without being shown,
 // which is why the guard is here rather than left to the input rules: those
-// already refuse every one of these bytes in a description, but a database
-// written by something other than awb, or reached over --db, has not been
-// through them. Text that is shown is a different matter and is printed as
-// stored, exactly as a title or a label is.
+// already refuse every control character in a description, and refuse a
+// description that is not valid UTF-8, but a database written by something
+// other than awb, or reached over --db, has not been through them. Text that is
+// shown is a different matter and is printed as stored, exactly as a title or a
+// label is.
 func safeURL(url string) string {
 	var b strings.Builder
-	for i := 0; i < len(url); i++ {
-		c := url[i]
+	for i := 0; i < len(url); {
+		r, size := utf8.DecodeRuneInString(url[i:])
 		switch {
-		// A C0 control or DEL. Neither is ever a byte of a multi-byte UTF-8
-		// sequence, so testing bytes rather than runes is exact and works on a
-		// destination that is not well-formed UTF-8 either.
-		case c < 0x20 || c == 0x7f:
-			writePercent(&b, c)
-		// The UTF-8 form of a C1 control, which an eight-bit terminal reads as
-		// one. 0xC2 leads U+0080 to U+00BF and only the first 32 are controls,
-		// so £ and its neighbours are left alone.
-		case c == 0xc2 && i+1 < len(url) && url[i+1] >= 0x80 && url[i+1] <= 0x9f:
-			writePercent(&b, c)
-			writePercent(&b, url[i+1])
-			i++
+		case r == utf8.RuneError && size == 1:
+			writePercent(&b, url[i])
+		case unicode.Is(unicode.Cc, r):
+			for j := range size {
+				writePercent(&b, url[i+j])
+			}
 		default:
-			b.WriteByte(c)
+			b.WriteString(url[i : i+size])
 		}
+		i += size
 	}
 	return b.String()
 }
