@@ -4,9 +4,13 @@
 //
 // Every shape here comes from api-types.ts, which openapi-typescript generates
 // from openapi.yaml and which is never edited by hand. Nothing in this file
-// restates what an endpoint returns or which parameters it takes: a filter an
-// endpoint does not accept is a compile error here rather than a 400 in the
-// browser.
+// restates what an endpoint returns or which parameters it takes.
+//
+// Each listing takes its own filter type, so passing an object literal with a
+// filter that endpoint does not accept is a compile error. TypeScript compares
+// structurally, though, and only checks a literal for excess properties: a
+// wider value assigned to a narrower parameter type passes. Narrowing a value
+// is therefore a runtime job, which is what readyFilters is for.
 //
 // The generated file is a sibling rather than the two of them sitting under
 // web/ts/api/, because these sources compile to web/static/ and are served
@@ -39,6 +43,21 @@ export type FacetFilters = Query<"listLabels">;
 
 /** Every filter any listing takes, which is what a route can carry. */
 export type Filters = IssueFilters & Partial<SearchFilters>;
+
+/**
+ * readyFilters drops the filters /api/ready does not accept, which it refuses
+ * rather than ignores.
+ *
+ * The endpoint lists the issues that are open, unblocked and unassigned, so it
+ * fixes the status set and the assignee filter for itself and declares
+ * neither. A route carrying either — the same query string a plain listing
+ * would use — must therefore have them removed before it is asked, not on the
+ * way back from a 400.
+ */
+export function readyFilters(filters: Filters): ReadyFilters {
+  const { status, "include-closed": includeClosed, assignee, unassigned, q, ...accepted } = filters;
+  return accepted;
+}
 
 /** A listing together with the unpaged total X-Total-Count carries. */
 export interface Page<T> {

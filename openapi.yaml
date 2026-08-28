@@ -189,9 +189,6 @@ paths:
         Acts only on a closed issue: on one that is not closed it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
         working.
-
-        Takes no body, and refuses one rather than ignoring it: a body the
-        server never reads is a thing the client believes it said.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
@@ -1067,9 +1064,17 @@ components:
         `labels`, `status`, `assignee` and `close_reason` may appear but may not
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
-        are their own endpoints. The derived and immutable fields are ignored
-        whatever they say. Together those rules let a UI send back the object it
-        read with only the fields it edited changed.
+        are their own endpoints. The derived and immutable fields — `id`,
+        `project`, the timestamps, `blocked`, `blockers`, `relations` and
+        `links` — are accepted and their values ignored. Together those rules
+        let a UI send back the object it read with only the fields it edited
+        changed.
+
+        Ignored is not unchecked: every field is validated against the schema
+        declared for it, so a `created_at` that is not a timestamp is a 400
+        rather than a field quietly dropped. An object a caller read back is
+        made of values that pass; one that does not is a caller sending
+        something it never received.
 
         Any unrecognised field name is rejected.
       additionalProperties: false
@@ -1172,8 +1177,9 @@ components:
       description: |
         Replaces each field it carries and leaves the others alone. `key` may
         appear but may not change; `active_issues` and the timestamps are
-        derived and are ignored whatever they say, so a UI can send back the
-        object it read.
+        derived and their values ignored, so a UI can send back the object it
+        read. As on an issue, ignored is not unchecked: each is still validated
+        against the schema declared for it.
       additionalProperties: false
       properties:
         name:

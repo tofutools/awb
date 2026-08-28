@@ -72,6 +72,11 @@ func (h *Handler) GetIssue(ctx context.Context, params api.GetIssueParams) (
 // patch, so that they are compared against what is stored inside the same
 // transaction that performs the write. Comparing them here would leave a
 // window in which a concurrent transition could make a stale value pass.
+//
+// The derived and immutable fields the body may also carry are not read at
+// all. They are still validated, by the generated decoder, against the schema
+// the document declares for each: ignoring a value is not the same as
+// accepting anything in its place.
 func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 	params api.UpdateIssueParams) (*api.IssueHeaders, error) {
 	patch := backend.IssuePatch{

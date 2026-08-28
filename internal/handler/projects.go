@@ -70,8 +70,9 @@ func (h *Handler) GetProject(ctx context.Context, params api.GetProjectParams) (
 // UpdateProject replaces each field the body carries and leaves the others
 // alone. key may appear but may not change, and is ignored when it equals the
 // key in the path and refused when it differs, exactly as status is on an
-// issue; active_issues and the timestamps are derived and are ignored whatever
-// they say, so a UI can send back the object it read.
+// issue; active_issues and the timestamps are derived and their values
+// ignored, so a UI can send back the object it read. As on an issue, they are
+// still validated against the schema declared for each.
 func (h *Handler) UpdateProject(ctx context.Context, req *api.ProjectPatch,
 	params api.UpdateProjectParams) (*api.ProjectHeaders, error) {
 	key := string(params.Key)

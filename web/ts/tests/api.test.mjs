@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { toQuery } from "../../static/api.js";
+import { readyFilters, toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");
@@ -46,4 +46,32 @@ test("several filters combine", () => {
   assert.deepEqual(params.getAll("project"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
   assert.equal(params.get("include-closed"), "true");
+});
+
+// /api/ready fixes the status set and the assignee filter for itself and
+// accepts neither, so a route carrying either must have them removed before it
+// is asked. Regression: the listing view passed one filter object to every
+// endpoint, so an assignee in the URL made the ready listing a 400.
+test("ready filters drop what that endpoint does not accept", () => {
+  assert.deepEqual(
+    readyFilters({
+      project: ["awb"],
+      label: ["parser"],
+      sort: "priority",
+      status: ["open"],
+      "include-closed": true,
+      assignee: ["mikael"],
+      unassigned: true,
+      q: ["parser"],
+    }),
+    { project: ["awb"], label: ["parser"], sort: "priority" },
+  );
+});
+
+test("ready filters keep an already narrow selection whole", () => {
+  assert.deepEqual(readyFilters({}), {});
+  assert.deepEqual(readyFilters({ parent: "awb-a1b2c3", limit: 10 }), {
+    parent: "awb-a1b2c3",
+    limit: 10,
+  });
 });

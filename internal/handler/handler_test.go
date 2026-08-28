@@ -689,6 +689,55 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 	assert.Contains(t, payload, `"title":"renamed"`)
 }
 
+// The derived and immutable fields may be carried and their values ignored, so
+// that a UI can send back the object it read — but ignored is not unchecked:
+// each is validated against the schema declared for it, so a caller sending
+// something it never received is told rather than quietly obeyed in part.
+func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+
+	// Values a caller really could have read, stale or not, are ignored.
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"renamed","id":"awb-000000","project":"awb",`+
+			`"created_at":"2020-01-01T00:00:00.000Z","updated_at":"2020-01-01T00:00:00.000Z",`+
+			`"blocked":true,"blockers":["awb-000000"],`+
+			`"relations":[{"type":"related","other":"awb-000000","direction":"out"}],`+
+			`"links":[{"text":"a","url":"b"}]}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"title":"renamed"`)
+	assert.Contains(t, payload, `"id":"`+issue.ID+`"`)
+	assert.Contains(t, payload, `"blocked":false`)
+	assert.NotContains(t, payload, "2020-01-01")
+
+	// Values no caller could have read are refused.
+	for _, body := range []string{
+		`{"created_at":"whenever"}`,
+		`{"project":"NOT A KEY"}`,
+		`{"relations":[{"type":"related","other":"x","direction":"sideways"}]}`,
+	} {
+		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+		assert.Contains(t, payload, `"error"`, body)
+	}
+}
+
+// A parameter present with an empty value is refused rather than read as
+// absent. It is what a form submits for a control nobody touched, and reading
+// it as absent would make "?limit=" mean something the document does not say.
+func TestEmptyParameterValuesAreRefused(t *testing.T) {
+	a := newAPI(t)
+
+	for _, query := range []string{
+		"?limit=", "?offset=", "?include-closed=", "?unassigned=",
+		"?priority-max=", "?sort=", "?status=", "?type=",
+	} {
+		resp, payload := a.do(http.MethodGet, "/api/issues"+query, "")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, query)
+		assert.Contains(t, payload, `"error"`, query)
+	}
+}
+
 // A body of whitespace is still a body: it has to declare what it is, and an
 // endpoint that takes no body has still been sent one. Regression: presence was
 // decided by the trimmed length, so a whitespace body slipped past both rules —
