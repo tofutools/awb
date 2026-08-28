@@ -22,9 +22,9 @@ inputs:
     required: true
   version:
     description: >-
-      Stamped into main.version, which `awb --version` prints. Defaults to what
-      an unstamped local build reports, so a compile-only check does not claim
-      to be a release.
+      Stamped into main.version, the first field `awb --version` prints; the
+      commit after it comes from -buildvcs. Defaults to what an unstamped local
+      build reports, so a compile-only check does not claim to be a release.
     default: dev
   output-dir:
     description: Directory to write the binary into. Created if absent.
