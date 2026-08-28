@@ -62,13 +62,15 @@ jobs:
       # nothing bumps it automatically. Bump it by hand alongside the go.mod Go
       # version.
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+        run: |
+          go install github.com/ogen-go/ogen/cmd/ogen@v1.20.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
-      # No frontend build first: govulncheck type-checks the source and never
-      # runs the binary, and web/embed.go's directory embed is satisfied by the
-      # committed files alone. The compiled UI could not carry a Go advisory in
-      # any case.
-      #
+
+      - name: Generate
+        run: |
+          go generate ./...          
+
       # Default symbol-level analysis, and test files excluded (govulncheck's
       # own default). A finding therefore means a vulnerable symbol is actually
       # reachable from shipped code, not merely that some module in the graph
