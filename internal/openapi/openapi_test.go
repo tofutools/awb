@@ -1,22 +1,33 @@
-package api_test
+package openapi_test
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/openapi"
 )
 
-// document parses the embedded OpenAPI document.
+// The document as it is on disk. main embeds this same file; a test reads it,
+// so that what is checked here is the source the code is generated from rather
+// than a copy of it.
+func read(t *testing.T) *openapi.Document {
+	t.Helper()
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	return openapi.New(raw)
+}
+
+// document parses the OpenAPI document.
 func document(t *testing.T) map[string]any {
 	t.Helper()
 	var doc map[string]any
-	require.NoError(t, yaml.Unmarshal(api.YAML(), &doc))
+	require.NoError(t, yaml.Unmarshal(read(t).YAML(), &doc))
 	return doc
 }
 
@@ -45,14 +56,6 @@ func enumOf(t *testing.T, doc map[string]any, name string) []string {
 	return values
 }
 
-// The document is embedded by a compiler directive, and a directive that stops
-// being one — a stray space after the slashes — disables it silently, leaving an
-// empty byte slice rather than an error. This is the assertion that makes that
-// loud.
-func TestDocumentIsEmbedded(t *testing.T) {
-	require.NotEmpty(t, api.YAML(), "the OpenAPI document is not embedded")
-}
-
 func TestDocumentParses(t *testing.T) {
 	doc := document(t)
 	assert.Equal(t, "3.1.0", doc["openapi"])
@@ -67,11 +70,12 @@ func TestDocumentParses(t *testing.T) {
 }
 
 func TestJSONIsTheSameDocument(t *testing.T) {
-	encoded, err := api.JSON()
+	doc := read(t)
+	encoded, err := doc.JSON()
 	require.NoError(t, err)
 
 	var fromYAML any
-	require.NoError(t, yaml.Unmarshal(api.YAML(), &fromYAML))
+	require.NoError(t, yaml.Unmarshal(doc.YAML(), &fromYAML))
 
 	// Both sides are compared after a JSON round trip, so that YAML's integer
 	// types and JSON's float64 do not stand in for a real difference.
@@ -137,7 +141,6 @@ func TestPriorityRangeMatches(t *testing.T) {
 	priority := schema(t, document(t), "Priority")
 	assert.Equal(t, domain.MinPriority, number(t, priority["minimum"]))
 	assert.Equal(t, domain.MaxPriority, number(t, priority["maximum"]))
-	assert.Equal(t, domain.DefaultPriority, number(t, priority["default"]))
 }
 
 func TestLengthMaximaMatch(t *testing.T) {
@@ -152,10 +155,17 @@ func TestLengthMaximaMatch(t *testing.T) {
 	}
 }
 
-func TestDefaultsMatch(t *testing.T) {
+// A default on one of the shared vocabulary schemas is inherited by every
+// field that references it, IssuePatch's included, where the generated decoder
+// would then fill in a type or a priority the caller did not send and quietly
+// rewrite the issue. The creation defaults are stated in IssueCreate's prose
+// instead; this is the assertion that keeps one from being written as a schema
+// default again.
+func TestTheVocabularySchemasCarryNoDefault(t *testing.T) {
 	doc := document(t)
-	assert.Equal(t, string(domain.DefaultType), schema(t, doc, "Type")["default"])
-	assert.Equal(t, string(domain.DefaultStatus), schema(t, doc, "Status")["default"])
+	for _, name := range []string{"Type", "Status", "Priority", "Timestamp"} {
+		assert.NotContains(t, schema(t, doc, name), "default", name)
+	}
 }
 
 // Every field of the Issue shape must be declared and required: every field is
@@ -235,4 +245,74 @@ func TestSecurityIsDeclaredAndOptional(t *testing.T) {
 	empty, ok := security[0].(map[string]any)
 	require.True(t, ok, "the first entry declares the scheme optional")
 	assert.Empty(t, empty)
+}
+
+// Every operation declares the default error response. It is what the
+// generated server turns into one NewError method mapping awb's error taxonomy
+// onto statuses; an operation without one would need its own error handling.
+func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
+	paths, ok := document(t)["paths"].(map[string]any)
+	require.True(t, ok)
+
+	for path, raw := range paths {
+		item, ok := raw.(map[string]any)
+		require.True(t, ok, path)
+		for method, rawOperation := range item {
+			if method == "parameters" {
+				continue
+			}
+			operation, ok := rawOperation.(map[string]any)
+			require.True(t, ok, "%s %s", method, path)
+			responses, ok := operation["responses"].(map[string]any)
+			require.True(t, ok, "%s %s", method, path)
+			assert.Contains(t, responses, "default", "%s %s", method, path)
+		}
+	}
+}
+
+// Operations reads what each operation accepts, which is what the request
+// strictness rules are enforced from. The listings are the interesting ones:
+// the endpoints that fix a status set or an assignee filter for themselves
+// declare neither, and the facet endpoints declare no sort.
+func TestOperations(t *testing.T) {
+	operations, err := read(t).Operations()
+	require.NoError(t, err)
+	require.Len(t, operations, 25)
+
+	names := func(id string) []string {
+		operation, ok := operations[id]
+		require.True(t, ok, id)
+		out := make([]string, 0, len(operation.QueryParameters))
+		for name := range operation.QueryParameters {
+			out = append(out, name)
+		}
+		return out
+	}
+
+	assert.ElementsMatch(t, []string{
+		"status", "include-closed", "type", "priority", "priority-max", "label",
+		"assignee", "unassigned", "project", "parent", "sort", "limit", "offset",
+	}, names("listIssues"))
+	assert.ElementsMatch(t, []string{
+		"type", "priority", "priority-max", "label", "project", "parent", "sort",
+		"limit", "offset",
+	}, names("listReady"))
+	assert.ElementsMatch(t, []string{
+		"type", "priority", "priority-max", "label", "assignee", "unassigned",
+		"project", "parent", "sort", "limit", "offset",
+	}, names("listBlocked"))
+	assert.ElementsMatch(t, []string{
+		"status", "include-closed", "type", "priority", "priority-max", "label",
+		"assignee", "unassigned", "project", "parent", "limit", "offset",
+	}, names("listLabels"))
+	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
+	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
+	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))
+	assert.Empty(t, names("getIssue"))
+
+	assert.True(t, operations["createIssue"].TakesBody)
+	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
+	assert.False(t, operations["reopenIssue"].TakesBody)
+	assert.False(t, operations["deleteIssue"].TakesBody)
+	assert.False(t, operations["listIssues"].TakesBody)
 }

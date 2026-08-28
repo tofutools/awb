@@ -23,13 +23,18 @@ describes the system truthfully.
 
 ## Build
 
-`./build.sh` is the whole build: it compiles the frontend, builds the binary,
-runs the Go and frontend tests, and lints. It is silent on success and prints
-the failing step's output on failure. `-o DIR` sets where the binary goes.
+`./build.sh` is the whole build: it generates the code `openapi.yaml`
+specifies, compiles the frontend, builds the binary, runs the Go and frontend
+tests, and lints. It is silent on success and prints the failing step's output
+on failure. `-o DIR` sets where the binary goes.
 
-Prerequisites on `$PATH`: `go` (1.26.6 or later), `tsc`, `golangci-lint`,
-`node`. No package manager is ever invoked: the browser bundles under
-`web/static/vendor/` are pre-built committed artifacts.
+Prerequisites on `$PATH`: `go` (1.26.6 or later), `ogen`,
+`openapi-typescript`, `tsc`, `golangci-lint`, `node`. No package manager is
+ever invoked: the browser bundles under `web/static/vendor/` are pre-built
+committed artifacts.
+
+Neither generated output is committed, so a fresh checkout does not compile
+until the generators have run — `./build.sh`, or `task generate`.
 
 CI runs that same script rather than a second definition of the build. Every
 pull request and every push to `main` builds and tests on Linux and macOS and
@@ -49,13 +54,14 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/backend` | The one interface every command is written against. |
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
 | `internal/cli` | The cobra tree, the three output modes, `serve`, the `demo` data set. |
-| `internal/handler` | The JSON API. |
+| `internal/handler` | The JSON API: the implementation of the generated server interface. |
 | `internal/config` | The two config files, precedence, identity, colour. |
 | `internal/awberr` | The error taxonomy both surfaces report. |
-| `internal/api` | The OpenAPI document, embedded. |
-| `web/` | The frontend: `ts/` sources, `static/` build output, `embed.go`. |
+| `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
+| `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
+| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `static/` build output, `embed.go`. |
 
-Two structural rules hold the design together:
+Three structural rules hold the design together:
 
 * **One backend interface, two implementations.** Every command is written
   against `internal/backend`, so it cannot tell direct mode from remote mode
@@ -66,6 +72,15 @@ Two structural rules hold the design together:
 * **The domain layer does no I/O.** Rules live there and are shared wholesale
   by both surfaces. When a rule needs to read the graph, the rule stays in
   `domain` as a function over sets and the traversal goes in `storage`.
+* **`openapi.yaml` is the source of truth for the HTTP API.** The Go server in
+  `internal/api` is generated from it by ogen and the TypeScript types in
+  `web/ts/api-types.ts` by openapi-typescript; neither is committed and neither
+  is ever edited. Routing, decoding, the vocabulary and the length rules are
+  therefore what the document says, not a second Go copy of it, and so is what
+  each operation accepts: `internal/openapi` reads the declared query
+  parameters and request bodies back out of the document, and the handler
+  refuses anything else. **To change the API, change the document first**, then
+  regenerate, then the handler.
 
 ## Conventions
 
@@ -74,6 +89,9 @@ Two structural rules hold the design together:
   `github.com/mikaelstaldal/go-server-common`. Prefer it over reimplementing.
 * Tests use `testify`: `require` for fatal assertions, `assert` for non-fatal.
 * Frontend tests are `node --test` over `web/ts/tests/*.test.mjs`.
+* A `default` schema value is inherited by every field that references the
+  schema. Keep them off the shared vocabulary schemas, or a generated decoder
+  fills in a `type` or a `priority` on a `PATCH` that did not send one.
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.

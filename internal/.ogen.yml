@@ -1,0 +1,13 @@
+# ogen generator settings for internal/api, generated from ../openapi.yaml.
+#
+# convenient_errors turns the document's `default` response into a NewError
+# method on the handler, so one function maps awb's error taxonomy onto the
+# statuses and every operation returns a plain (result, error) pair.
+#
+# The OpenTelemetry feature is off: awb has no tracing to feed it, and it would
+# put an otel dependency in every generated file.
+generator:
+  convenient_errors: "on"
+  features:
+    disable:
+      - "ogen/otel"

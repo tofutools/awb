@@ -6,3 +6,7 @@
 # Compiled frontend (tsc output; vendor bundles are committed)
 /web/static/**/*.js
 !/web/static/vendor/**
+
+# Generated from openapi.yaml by build.sh — never committed, never edited
+/internal/api/*_gen.go
+/web/ts/api-types.ts

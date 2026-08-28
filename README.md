@@ -186,6 +186,11 @@ That serves a JSON API, the OpenAPI 3.1 document describing it at
 `/openapi.json` and `/openapi.yaml`, and a read-only web UI for browsing
 projects, issues, search results and dependency trees.
 
+That document — `openapi.yaml` in this repository — is the source of truth
+rather than a description written afterwards: the server's routing, decoding
+and validation are generated from it, as are the TypeScript types the bundled
+UI is written against.
+
 The API mirrors the CLI one to one, and is complete enough to drive a fully
 functional read/write UI — it has optimistic concurrency through `ETag` and
 `If-Match`, paging with `X-Total-Count`, and facet endpoints for populating
@@ -226,12 +231,15 @@ shape; `spec/TODO.md` lists what is left for future versions; `AGENTS.md`
 describes the layout and the conventions. The code and its tests are
 authoritative for behaviour.
 
-`task check` compiles the frontend, builds the binary, runs every test and
-lints. `./build.sh` performs the same checks and is silent when they all pass.
+`task check` generates the code `openapi.yaml` specifies, compiles the
+frontend, builds the binary, runs every test and lints. `./build.sh` performs
+the same checks and is silent when they all pass. Neither generated output is
+committed, so a fresh checkout does not compile until one of those has run.
 The component tasks are available separately:
 
 | Task | What it does |
 | --- | --- |
+| `task generate` | Generate the Go server and the TypeScript types from `openapi.yaml`. |
 | `task build` | Compile the frontend and build `awb`. |
 | `task install` | Compile the frontend and install `awb` to `GOBIN` or `GOPATH/bin`. |
 | `task init-db` | Initialize the development database. |

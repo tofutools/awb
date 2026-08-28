@@ -29,14 +29,23 @@ tasks:
         vars:
           OUTPUT_DIR: "{{.OUTPUT_DIR}}"
 
+  generate:
+    desc: Generate the Go server and the TypeScript types from openapi.yaml
+    # Neither output is committed, so every task that compiles either side
+    # depends on this one.
+    cmds:
+      - go generate ./...
+      - openapi-typescript openapi.yaml -o web/ts/api-types.ts
+
   install:
     desc: Install awb to GOBIN or GOPATH/bin
-    deps: [fe:build]
+    deps: [generate, fe:build]
     cmds:
       - env CGO_ENABLED=0 go install -trimpath -buildvcs=true .
 
   init-db:
     desc: Initialize the awb database
+    deps: [generate]
     cmds:
       - go run . init {{.CLI_ARGS}}
 
@@ -65,21 +74,25 @@ tasks:
 
   be:build:
     desc: Build the awb binary
+    deps: [generate]
     cmds:
       - env CGO_ENABLED=0 go build -trimpath -buildvcs=true -o "{{.OUTPUT_DIR}}/awb" .
 
   be:test:
     desc: Run the Go tests
+    deps: [generate]
     cmds:
       - go test ./...
 
   be:run:
     desc: Run the development server
+    deps: [generate]
     cmds:
       - go run . serve --addr "{{.ADDR}}" {{.CLI_ARGS}}
 
   fe:build:
     desc: Compile the TypeScript frontend
+    deps: [generate]
     cmds:
       - tsc --project web/ts/tsconfig.json
 

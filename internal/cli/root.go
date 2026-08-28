@@ -14,6 +14,7 @@ import (
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/remote"
 	"github.com/tofutools/awb/internal/storage"
 )
@@ -65,6 +66,12 @@ type env struct {
 	json    bool
 	compact bool
 
+	// openAPI is the document serve publishes at /openapi.json and
+	// /openapi.yaml. It arrives from main because openapi.yaml sits at the
+	// repository root — it is the source the Go server and the TypeScript
+	// client are generated from — and only the package there can embed it.
+	openAPI *openapi.Document
+
 	// cfg and be are resolved lazily, because init and agent-guide need different
 	// amounts of it and --help needs none.
 	cfg *config.Config
@@ -76,7 +83,7 @@ type env struct {
 // Errors always go to stderr, as a single line in the default and compact
 // modes and as {"error": "..."} under --json. The exit code is the
 // machine-readable classification; the message is human-readable text.
-func Execute(ctx context.Context, version string, args []string,
+func Execute(ctx context.Context, version string, document *openapi.Document, args []string,
 	stdout, stderr io.Writer, stdin io.Reader) int {
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -86,7 +93,7 @@ func Execute(ctx context.Context, version string, args []string,
 	boxed, width := window(stdout)
 	e := &env{
 		stdout: &errWriter{w: stdout}, stderr: stderr, stdin: stdin,
-		workingDir: workingDir, boxed: boxed, width: width,
+		workingDir: workingDir, boxed: boxed, width: width, openAPI: document,
 	}
 	root := newRootCommand(e, version)
 	root.SetArgs(args)

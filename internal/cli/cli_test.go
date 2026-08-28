@@ -13,7 +13,20 @@ import (
 
 	"github.com/tofutools/awb/internal/cli"
 	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/openapi"
 )
+
+// openAPI is the document main embeds and hands to Execute, read from the file
+// it is embedded from. It is read at load time because these tests run in a
+// scratch working directory, so a relative path does not resolve once one has
+// started. Only serve reads it.
+var openAPI = func() *openapi.Document {
+	raw, err := os.ReadFile("../../openapi.yaml")
+	if err != nil {
+		panic(err)
+	}
+	return openapi.New(raw)
+}()
 
 // harness runs awb with a scratch database and isolated configuration, the way
 // a script or an agent would.
@@ -53,7 +66,8 @@ func newHarness(t *testing.T) *harness {
 func (h *harness) run(args ...string) (stdout, stderr string, code int) {
 	h.t.Helper()
 	var out, errOut bytes.Buffer
-	code = cli.Execute(h.t.Context(), "test", args, &out, &errOut, strings.NewReader(""))
+	code = cli.Execute(h.t.Context(), "test", openAPI, args, &out, &errOut,
+		strings.NewReader(""))
 	return out.String(), errOut.String(), code
 }
 
@@ -299,7 +313,7 @@ func TestDescriptionFromStdin(t *testing.T) {
 	h := newHarness(t)
 
 	var out, errOut bytes.Buffer
-	code := cli.Execute(t.Context(), "test",
+	code := cli.Execute(t.Context(), "test", openAPI,
 		[]string{"create", "t", "--project", "awb", "--description-file", "-"},
 		&out, &errOut, strings.NewReader("  body\n\n"))
 	require.Equal(t, 0, code, errOut.String())

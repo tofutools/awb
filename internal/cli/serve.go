@@ -18,13 +18,13 @@ import (
 	commonweb "github.com/mikaelstaldal/go-server-common/web"
 	"github.com/spf13/cobra"
 
-	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/handler"
 	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
 	"github.com/tofutools/awb/web"
 )
@@ -92,7 +92,8 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 
 			base := local.New(db, fixedIdentity)
-			httpHandler, err := buildHandler(base, htpasswd, basicAuthRealm, addr, corsOrigins)
+			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, basicAuthRealm, addr,
+				corsOrigins)
 			if err != nil {
 				return err
 			}
@@ -161,12 +162,14 @@ func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) 
 }
 
 // buildHandler assembles the middleware chain, outermost first.
-func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr string,
-	corsOrigins []string) (http.Handler, error) {
+func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *auth.HtpasswdFile,
+	realm, addr string, corsOrigins []string) (http.Handler, error) {
 	// Whichever of the two identity mechanisms is in force, the request has
 	// exactly one identity, so the surface below never has to handle its absence.
-	backendFor := func(r *http.Request) backend.Backend {
-		if username, ok := auth.UsernameFromContext(r.Context()); ok {
+	// The username arrives in the request context, which is what the generated
+	// server passes on to the handler.
+	backendFor := func(ctx context.Context) backend.Backend {
+		if username, ok := auth.UsernameFromContext(ctx); ok {
 			// What a caller states explicitly is still honoured; there being no
 			// authorization, one user may claim an issue for another.
 			return base.WithIdentity(username)
@@ -174,8 +177,16 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 		return base
 	}
 
-	mux := http.NewServeMux()
-	handler.New(backendFor).Routes(mux)
+	// What each operation accepts is read from the document rather than
+	// restated beside the handler; see the handler package.
+	operations, err := document.Operations()
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read the OpenAPI document")
+	}
+	apiServer, err := handler.NewServer(backendFor, operations)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "build the API server")
+	}
 
 	staticFS, err := web.StaticFS()
 	if err != nil {
@@ -198,9 +209,9 @@ func buildHandler(base *local.Backend, htpasswd *auth.HtpasswdFile, realm, addr 
 	// Everything under /api/ is the JSON API and /openapi.json and /openapi.yaml
 	// are the document; every other path belongs to the web UI.
 	root := http.NewServeMux()
-	root.Handle("/api/", withAPI(mux))
-	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(api.JSONHandler())))
-	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(api.YAMLHandler())))
+	root.Handle("/api/", withAPI(apiServer))
+	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
+	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
 	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS)))
 
 	csp, err := contentSecurityPolicy()

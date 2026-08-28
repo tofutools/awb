@@ -2,6 +2,8 @@
 go = "1.26.6"
 node = "24"
 "npm:typescript" = "7.0.2"
+"npm:openapi-typescript" = "7.13.0"
+"go:github.com/ogen-go/ogen/cmd/ogen" = "1.20.2"
 golangci-lint = "2.13.2"
 task = "3.52.0"
 watchexec = "2.5.1"
