@@ -168,6 +168,28 @@ func fieldsOfBody(out string) []string {
 	return strings.Fields(body)
 }
 
+// A field with no value prints no line, and colour does not change that: a
+// style around nothing is nothing. Regression: an unassigned issue printed an
+// empty Assignee line whenever colour was on, because the escape sequences that
+// would have coloured the value were themselves the value.
+func TestFieldsWithNoValuePrintNothing(t *testing.T) {
+	issue := &domain.Issue{ID: "demo-bff7dc", Title: "Search", Status: domain.StatusOpen}
+
+	for _, mode := range []config.ColorMode{config.ColorNever, config.ColorAlways} {
+		assert.Empty(t, newTheme(mode, true, 100).apply(lipgloss.NewStyle().Bold(true), ""))
+
+		var buf bytes.Buffer
+		e := &env{stdout: &errWriter{w: &buf}, boxed: true, width: 100,
+			cfg: &config.Config{Color: mode}}
+		e.printIssueDetail(issue)
+
+		for _, absent := range []string{"Assignee", "Labels", "Closed", "Blocked by"} {
+			assert.NotContains(t, buf.String(), absent, "colour mode %v", mode)
+		}
+		assert.Contains(t, buf.String(), "Status", "the fields that do have a value are still printed")
+	}
+}
+
 // The sections of awb show line their columns up, so two links or two relations
 // can be read down the page.
 func TestDetailSectionsAreAligned(t *testing.T) {

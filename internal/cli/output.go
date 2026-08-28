@@ -77,8 +77,15 @@ type theme struct {
 	priority [domain.MaxPriority + 1]lipgloss.Style
 }
 
+// apply draws text in a style, or returns it unchanged when colour is off.
+//
+// A style around nothing is nothing. Rendering "" would otherwise produce the
+// escape sequence that starts the style and the one that ends it, with no
+// character between them — a value that is empty to look at but not empty to
+// test, which is how an issue with no assignee came to print an Assignee line
+// with nothing after it whenever colour was on.
 func (t *theme) apply(style lipgloss.Style, text string) string {
-	if !t.color {
+	if !t.color || text == "" {
 		return text
 	}
 	return style.Render(text)
