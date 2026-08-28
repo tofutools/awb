@@ -234,6 +234,14 @@ to cost as little context as possible. A JSON form is the stable, complete
 representation. The latter two are the compatibility surface; changing either is
 a breaking change.
 
+Being for humans, the default mode draws itself to the window it is in. On a
+terminal a listing is a box fitted to the width: the columns a reader can do
+without are given up, rightmost first, and the free-text ones are cut, so that
+what identifies a row and what a reader scans for always fit. Piped or
+redirected there is no window, so the same content is laid out as plain aligned
+columns at its natural width. Colour is a separate question with its own chain,
+because colour is asked for whereas a window either is there or is not.
+
 Mutating commands print nothing on success, so a script's output is signal.
 Three say something anyway, and each says it for a reason: `awb create` prints
 the new ID, because minting it is the point; the deleting commands and `awb

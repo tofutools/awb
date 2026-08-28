@@ -54,6 +54,13 @@ type env struct {
 	// workingDir is where the upward search for directory context starts.
 	workingDir string
 
+	// boxed says stdout is a terminal and width says how wide it is; the
+	// default output mode draws boxes and fits itself to the window only when
+	// there is one. Both are decided once, from the writer Execute was handed,
+	// before anything wraps it.
+	boxed bool
+	width int
+
 	flags   config.Flags
 	json    bool
 	compact bool
@@ -76,7 +83,11 @@ func Execute(ctx context.Context, version string, args []string,
 		workingDir = "."
 	}
 
-	e := &env{stdout: &errWriter{w: stdout}, stderr: stderr, stdin: stdin, workingDir: workingDir}
+	boxed, width := window(stdout)
+	e := &env{
+		stdout: &errWriter{w: stdout}, stderr: stderr, stdin: stdin,
+		workingDir: workingDir, boxed: boxed, width: width,
+	}
 	root := newRootCommand(e, version)
 	root.SetArgs(args)
 	root.SetOut(stdout)
