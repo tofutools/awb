@@ -1188,6 +1188,6 @@ components:
           description: '`""` restores the key as the name.'
         description: { type: string }
         key: { $ref: '#/components/schemas/ProjectKey' }
-        active_issues: { type: integer }
+        active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }

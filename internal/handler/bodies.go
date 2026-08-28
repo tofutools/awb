@@ -19,10 +19,11 @@ import (
 // length is not known until it is read and which is therefore carrying one.
 func bodyWasCarried(r *http.Request) bool { return r.ContentLength != 0 }
 
-// claimsJSON reports whether the request declares a JSON body.
+// claimsJSON reports whether the request declares a JSON body. A media type is
+// case-insensitive, and Application/JSON declares one.
 func claimsJSON(r *http.Request) bool {
 	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
-	return strings.TrimSpace(mediaType) == "application/json"
+	return strings.EqualFold(strings.TrimSpace(mediaType), "application/json")
 }
 
 // rejectBody refuses a body on an operation that declares none. Ignoring one

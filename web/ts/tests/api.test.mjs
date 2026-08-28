@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readyFilters, toQuery } from "../../static/api.js";
+import { blockedFilters, facetFilters, readyFilters, toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");
@@ -48,10 +48,10 @@ test("several filters combine", () => {
   assert.equal(params.get("include-closed"), "true");
 });
 
-// /api/ready fixes the status set and the assignee filter for itself and
-// accepts neither, so a route carrying either must have them removed before it
-// is asked. Regression: the listing view passed one filter object to every
-// endpoint, so an assignee in the URL made the ready listing a 400.
+// Every listing is asked with the filters it accepts. Regression: the listing
+// view passed one filter object to all of them, so an assignee in the URL made
+// the ready listing a 400, include-closed did the same to blocked, and a sort
+// did it to both facet menus.
 test("ready filters drop what that endpoint does not accept", () => {
   assert.deepEqual(
     readyFilters({
@@ -74,4 +74,23 @@ test("ready filters keep an already narrow selection whole", () => {
     parent: "awb-a1b2c3",
     limit: 10,
   });
+});
+
+test("blocked filters drop the status set it fixes for itself", () => {
+  assert.deepEqual(
+    blockedFilters({
+      assignee: ["mikael"],
+      sort: "priority",
+      status: ["open"],
+      "include-closed": true,
+    }),
+    { assignee: ["mikael"], sort: "priority" },
+  );
+});
+
+test("facet filters drop the sort the row order fixes", () => {
+  assert.deepEqual(
+    facetFilters({ label: ["parser"], status: ["open"], sort: "created" }),
+    { label: ["parser"], status: ["open"] },
+  );
 });

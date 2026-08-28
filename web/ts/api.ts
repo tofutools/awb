@@ -44,18 +44,30 @@ export type FacetFilters = Query<"listLabels">;
 /** Every filter any listing takes, which is what a route can carry. */
 export type Filters = IssueFilters & Partial<SearchFilters>;
 
+// The three narrowings below drop the filters an endpoint does not accept,
+// which it refuses rather than ignores. One route's query string serves every
+// listing on the page, so what a listing does not take has to be removed
+// before it is asked, not on the way back from a 400.
+
 /**
- * readyFilters drops the filters /api/ready does not accept, which it refuses
- * rather than ignores.
- *
- * The endpoint lists the issues that are open, unblocked and unassigned, so it
+ * /api/ready lists the issues that are open, unblocked and unassigned, so it
  * fixes the status set and the assignee filter for itself and declares
- * neither. A route carrying either — the same query string a plain listing
- * would use — must therefore have them removed before it is asked, not on the
- * way back from a 400.
+ * neither.
  */
 export function readyFilters(filters: Filters): ReadyFilters {
   const { status, "include-closed": includeClosed, assignee, unassigned, q, ...accepted } = filters;
+  return accepted;
+}
+
+/** /api/blocked fixes the status set to the two that are not closed. */
+export function blockedFilters(filters: Filters): BlockedFilters {
+  const { status, "include-closed": includeClosed, q, ...accepted } = filters;
+  return accepted;
+}
+
+/** The facet endpoints fix the row order at value ascending. */
+export function facetFilters(filters: Filters): FacetFilters {
+  const { sort, q, ...accepted } = filters;
   return accepted;
 }
 

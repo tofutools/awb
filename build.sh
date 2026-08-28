@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Full build: generate the code openapi.yaml specifies, compile the frontend,
 # build the binary, then test and lint.
-# Prerequisites on $PATH: go, ogen, openapi-typescript, tsc, golangci-lint.
+# Prerequisites on $PATH: go, ogen, openapi-typescript, tsc, node,
+# golangci-lint.
 #
 # NOTE: no npm/npx/yarn/pnpm/bun — the browser vendor bundles under
 # web/static/vendor/ are pre-built committed artifacts.

@@ -4,6 +4,8 @@
 import {
   api,
   ApiError,
+  blockedFilters,
+  facetFilters,
   readyFilters,
   type Facet,
   type Filters,
@@ -148,17 +150,16 @@ function facetBar(route: Route, labels: Facet[], assignees: Facet[]): HTMLElemen
 async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): Promise<HTMLElement> {
   const filters = filtersFrom(route.query);
 
-  // Ready is the listing that fixes a status set and an assignee filter for
-  // itself: it accepts neither, and lists only unassigned issues, so there is
-  // no assignee menu to offer either.
+  // Each listing is asked with the filters it accepts. Ready lists only
+  // unassigned issues, so there is no assignee menu to offer there either.
   const [page, labels, assignees] = await Promise.all([
     kind === "ready"
       ? api.ready(readyFilters(filters))
       : kind === "blocked"
-        ? api.blocked(filters)
+        ? api.blocked(blockedFilters(filters))
         : api.issues(filters),
-    api.labels(kind === "ready" ? {} : filters),
-    kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(filters),
+    api.labels(kind === "ready" ? {} : facetFilters(filters)),
+    kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
   ]);
 
   const view = element("div");
