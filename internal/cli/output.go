@@ -72,11 +72,20 @@ type theme struct {
 	assignee lipgloss.Style
 	label    lipgloss.Style
 	border   lipgloss.Style
+	link     lipgloss.Style
+	code     lipgloss.Style
 	priority [domain.MaxPriority + 1]lipgloss.Style
 }
 
+// apply draws text in a style, or returns it unchanged when colour is off.
+//
+// A style around nothing is nothing. Rendering "" would otherwise produce the
+// escape sequence that starts the style and the one that ends it, with no
+// character between them — a value that is empty to look at but not empty to
+// test, which is how an issue with no assignee came to print an Assignee line
+// with nothing after it whenever colour was on.
 func (t *theme) apply(style lipgloss.Style, text string) string {
-	if !t.color {
+	if !t.color || text == "" {
 		return text
 	}
 	return style.Render(text)
@@ -106,6 +115,10 @@ func newTheme(mode config.ColorMode, boxed bool, width int) *theme {
 	t.assignee = lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 	t.label = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	t.border = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	// The two colours a rendered description adds: a link, and code that is not
+	// to be read as prose.
+	t.link = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	t.code = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 
 	// P0 is the most urgent, P4 the least, so the palette runs hot to cool.
 	t.priority = [domain.MaxPriority + 1]lipgloss.Style{
@@ -494,41 +507,23 @@ func (e *env) printIssue(issue *domain.Issue) error {
 
 func (e *env) printIssueDetail(issue *domain.Issue) {
 	t := e.theme()
-	field := func(name, value string) {
-		if value == "" {
-			return
-		}
-		_, _ = fmt.Fprintf(e.stdout, "%s %s\n", t.apply(t.header, pad(name+":", 12)), value)
-	}
 
-	// A rule as long as the heading, and no longer, separates it from the
-	// fields. Like the connectors of a tree it needs no window to be drawn to,
-	// only the heading it underlines, so it is drawn either way.
-	heading := t.apply(t.id, issue.ID) + "  " + t.apply(t.header, issue.Title)
-	length := lipgloss.Width(heading)
-	if t.boxed {
-		length = min(length, t.width)
-	}
-	_, _ = fmt.Fprintln(e.stdout, heading)
-	_, _ = fmt.Fprintln(e.stdout, t.apply(t.dim, strings.Repeat("─", length)))
-
-	field("Project", issue.Project)
-	field("Type", string(issue.Type))
-	field("Status", e.renderStatus(t, issue))
-	field("Priority", "P"+strconv.Itoa(issue.Priority))
-	field("Assignee", t.apply(t.assignee, issue.Assignee))
-	field("Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
-	field("Closed", issue.CloseReason)
-	field("Created", issue.CreatedAt)
-	field("Updated", issue.UpdatedAt)
+	e.writeHeading(t, issue.ID, issue.Title)
+	e.field(t, "Project", issue.Project)
+	e.field(t, "Type", string(issue.Type))
+	e.field(t, "Status", e.renderStatus(t, issue))
+	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
+	e.field(t, "Assignee", t.apply(t.assignee, issue.Assignee))
+	e.field(t, "Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
+	e.field(t, "Closed", issue.CloseReason)
+	e.field(t, "Created", issue.CreatedAt)
+	e.field(t, "Updated", issue.UpdatedAt)
 
 	if len(issue.Blockers) > 0 {
-		field("Blocked by", t.apply(t.blocked, strings.Join(issue.Blockers, ", ")))
+		e.field(t, "Blocked by", t.apply(t.blocked, strings.Join(issue.Blockers, ", ")))
 	}
 
-	if issue.Description != "" {
-		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.wrap(issue.Description))
-	}
+	e.writeDescription(t, issue.Description)
 
 	if len(issue.Links) > 0 {
 		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.apply(t.header, "Links"))
@@ -555,13 +550,39 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	}
 }
 
-// wrap folds prose to the window. Without a window the text is left exactly as
-// it was written, which is what a pipe or a file wants.
-func (t *theme) wrap(s string) string {
-	if !t.boxed {
-		return s
+// writeHeading prints the two-part heading a detail view opens with, and the
+// rule that separates it from the fields.
+//
+// The rule is as long as the heading and no longer. Like the connectors of a
+// tree it needs no window to be drawn to, only the heading it underlines, so it
+// is drawn either way.
+func (e *env) writeHeading(t *theme, id, title string) {
+	heading := t.apply(t.id, id) + "  " + t.apply(t.header, title)
+	length := lipgloss.Width(heading)
+	if t.boxed {
+		length = min(length, t.width)
 	}
-	return lipgloss.Wrap(s, t.width, "")
+	_, _ = fmt.Fprintln(e.stdout, heading)
+	_, _ = fmt.Fprintln(e.stdout, t.apply(t.dim, strings.Repeat("─", length)))
+}
+
+// field prints one line of a detail view, and prints nothing at all where there
+// is no value.
+func (e *env) field(t *theme, name, value string) {
+	if value == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(e.stdout, "%s %s\n", t.apply(t.header, pad(name+":", 12)), value)
+}
+
+// writeDescription prints a description below the fields, drawn as Markdown
+// when there is a terminal to draw it for. A document that draws as nothing —
+// an empty description, or one holding only what the renderer drops — prints
+// nothing, blank line included.
+func (e *env) writeDescription(t *theme, description string) {
+	if body := t.markdown(description); body != "" {
+		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", body)
+	}
 }
 
 func pad(s string, width int) string {
@@ -605,6 +626,36 @@ func (e *env) printProjects(projects []domain.Project) error {
 		})
 		return nil
 	}
+}
+
+// printProject renders one project.
+//
+// Under --compact it prints the same single line a project listing would, and
+// so loses the description; --json is what a script reads when it wants the
+// rest.
+func (e *env) printProject(project *domain.Project) error {
+	switch {
+	case e.json:
+		return e.writeJSON(project)
+	case e.compact:
+		_, _ = fmt.Fprintln(e.stdout, domain.CompactProjectLine(project))
+		return nil
+	default:
+		e.printProjectDetail(project)
+		return nil
+	}
+}
+
+func (e *env) printProjectDetail(project *domain.Project) {
+	t := e.theme()
+
+	e.writeHeading(t, project.Key, project.Name)
+	// The same count project ls shows, under the heading it uses there.
+	e.field(t, "Open", strconv.Itoa(project.ActiveIssues))
+	e.field(t, "Created", project.CreatedAt)
+	e.field(t, "Updated", project.UpdatedAt)
+
+	e.writeDescription(t, project.Description)
 }
 
 // printTree renders a dependency tree.

@@ -16,8 +16,10 @@ import (
 const (
 	demoProjectKey  = "demo"
 	demoProjectName = "DEMO"
-	demoProjectDesc = "A sample project for trying awb out. `awb demo --force` replaces it" +
-		" wholesale, so anything written here is scratch data.\n"
+	demoProjectDesc = "A sample project for trying `awb` out.\n\n" +
+		"`awb demo --force` replaces it **wholesale**, so anything written here is\n" +
+		"scratch data. See the [worked example](https://example.com/widgets/example) for\n" +
+		"what to try first.\n"
 )
 
 // demoIssue is one issue of the demo data set.
@@ -137,10 +139,15 @@ var demoIssues = []demoIssue{{
 	issueType: domain.TypeTask,
 	priority:  2,
 	labels:    []string{"docs"},
-	description: "How to install, configure and back the service up.\n\n" +
-		"Follow the [documentation style guide](https://example.com/widgets/style), and\n" +
-		"keep the [configuration reference](https://example.com/widgets/config) generated\n" +
-		"rather than hand-written.\n",
+	// The one description written as more than a paragraph, so that the Markdown
+	// a terminal and the web UI draw — headings, emphasis, a list, code, links —
+	// has somewhere to be seen.
+	description: "## What the operator needs\n\n" +
+		"How to **install**, configure and *back the service up*, in that order.\n\n" +
+		"- Follow the [documentation style guide](https://example.com/widgets/style).\n" +
+		"- Keep the [configuration reference](https://example.com/widgets/config)\n" +
+		"  generated rather than hand-written.\n" +
+		"- Every example runs as written; `awb demo` is the fixture behind them.\n",
 	hasParent: "release",
 }, {
 	key:         "test-runner",

@@ -11,7 +11,7 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// markdown is the pinned parser: CommonMark plus GFM's tables, task lists,
+// Markdown is the pinned parser: CommonMark plus GFM's tables, task lists,
 // strikethrough, autolink extension and disallowed-raw-HTML rule, and nothing
 // beyond that. extension.GFM is exactly that set.
 //
@@ -19,7 +19,11 @@ import (
 // description must always yield the same array, whoever parses it. The web UI
 // configures its own renderer to the same set, and a divergence there is a bug
 // in one of the two rather than a choice either is free to make.
-var markdown = sync.OnceValue(func() goldmark.Markdown {
+//
+// It is exported so that the one place the dialect is decided is also the one
+// every surface reads: the command line renders a description for a terminal
+// with this parser rather than a second one of its own.
+var Markdown = sync.OnceValue(func() goldmark.Markdown {
 	return goldmark.New(goldmark.WithExtensions(extension.GFM))
 })
 
@@ -45,7 +49,7 @@ func ExtractLinks(description string) []Link {
 	}
 
 	source := []byte(description)
-	doc := markdown().Parser().Parse(text.NewReader(source))
+	doc := Markdown().Parser().Parse(text.NewReader(source))
 
 	links := []Link{}
 	seen := make(map[string]struct{})
@@ -71,7 +75,7 @@ func ExtractLinks(description string) []Link {
 		case *ast.Link:
 			add(string(v.Destination), plainText(v, source))
 		case *ast.AutoLink:
-			add(autoLinkURL(v, source), string(v.Label(source)))
+			add(AutoLinkURL(v, source), string(v.Label(source)))
 		}
 		return ast.WalkContinue, nil
 	})
@@ -79,16 +83,16 @@ func ExtractLinks(description string) []Link {
 	return links
 }
 
-// autoLinkURL is the destination the GFM autolink extension yields, including
+// AutoLinkURL is the destination the GFM autolink extension yields, including
 // the two prefixes worth calling out: the http:// goldmark puts in front of a
 // www. host, and the mailto: in front of an email address. Those prefixes come
 // from the parser and are the one case where a destination is not a substring
 // of the description.
 //
 // goldmark supplies the first through AutoLink.URL but adds the second only at
-// render time, so it is added here to keep both surfaces agreeing on what the
+// render time, so it is added here to keep every surface agreeing on what the
 // extension yields.
-func autoLinkURL(n *ast.AutoLink, source []byte) string {
+func AutoLinkURL(n *ast.AutoLink, source []byte) string {
 	url := n.URL(source)
 	if n.AutoLinkType == ast.AutoLinkEmail && !bytes.HasPrefix(bytes.ToLower(url), []byte("mailto:")) {
 		return "mailto:" + string(url)

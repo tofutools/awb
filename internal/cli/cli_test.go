@@ -451,6 +451,34 @@ func TestProjectRemovalWithoutCascade(t *testing.T) {
 	assert.Equal(t, "Deleted project empty.\n", summary)
 }
 
+// awb project show prints one project in each of the three modes, and reports a
+// key that is not there as not found like every other lookup.
+func TestProjectShow(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "update", "awb",
+		"--description", "The **board** itself.\n")
+	h.create("open one", "--project", "awb")
+
+	out := h.mustRun("project", "show", "awb")
+	assert.Contains(t, out, "awb")
+	assert.Contains(t, out, "Agent Work Board")
+	assert.Contains(t, out, "Open:")
+	// There is no window here, so the description is the source text as written.
+	assert.Contains(t, out, "The **board** itself.")
+
+	assert.Equal(t, "awb 1 \"Agent Work Board\"\n", h.mustRun("project", "show", "awb", "--compact"),
+		"the same line project ls prints")
+
+	var project domain.Project
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "show", "awb", "--json")), &project))
+	assert.Equal(t, "awb", project.Key)
+	assert.Equal(t, "The **board** itself.\n", project.Description)
+	assert.Equal(t, 1, project.ActiveIssues)
+
+	_, _, code := h.run("project", "show", "nosuch")
+	assert.Equal(t, 3, code)
+}
+
 // demoIssues reads every issue of the demo project, closed ones included.
 func (h *harness) demoIssues() []domain.Issue {
 	h.t.Helper()
@@ -475,7 +503,7 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	relations := map[domain.RelationType]bool{}
 	labels := map[string]bool{}
 	assignees := map[string]bool{}
-	var links, closeReasons, severalBlockers int
+	var links, structured, closeReasons, severalBlockers int
 
 	var epic string
 	for i := range issues {
@@ -493,6 +521,11 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 			assignees[issue.Assignee] = true
 		}
 		links += len(issue.Links)
+		// More than links: a description that exercises the Markdown a terminal
+		// and the web UI draw.
+		if strings.Contains(issue.Description, "## ") && strings.Contains(issue.Description, "**") {
+			structured++
+		}
 		if issue.CloseReason != "" {
 			closeReasons++
 		}
@@ -520,6 +553,8 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	assert.Greater(t, len(labels), 1, "more than one label, so the label facets say something")
 	assert.Greater(t, len(assignees), 1, "more than one assignee")
 	assert.NotZero(t, links, "a description with Markdown links, so the derived link list is not empty")
+	assert.NotZero(t, structured,
+		"a description written as Markdown, so the rendered description has something to show")
 	assert.NotZero(t, closeReasons, "a closed issue that records why")
 	assert.NotZero(t, severalBlockers, "an issue with more than one blocker")
 

@@ -96,13 +96,18 @@ whatever is under the key is meant.
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |
 | `awb dep tree <id>` | The decomposition below an issue. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
-| `awb project add\|update\|ls\|rm` | Projects. |
+| `awb project add\|update\|show\|ls\|rm` | Projects. |
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
 
 `awb <command> --help` has the detail. Exit codes are `0` success, `1` runtime
 error, `2` usage error, `3` not found, `4` constraint violation.
+
+A description is Markdown, and `awb show` and `awb project show` draw it as
+such on a terminal: emphasis, headings, lists, code and links the terminal can
+open. Piped or redirected the description is the source text exactly as it was
+written, and so it is under `--json` and `--compact`.
 
 ### Vocabulary
 
