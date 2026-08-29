@@ -308,6 +308,16 @@ existence is `--project-admin`'s, because it is not something its members decide
 Anybody may change their own password and read their own account — `awb user
 show` with no argument — without being able to grant themselves anything.
 
+Upgrading from a server that used `--basic-auth-file`: that flag is gone, and
+the entries move across without anybody re-typing a password, since a bcrypt
+hash is a bcrypt hash.
+
+```console
+$ while IFS=: read -r name _; do
+>   awb user add "$name" --password-hash "$(grep "^$name:" htpasswd)"
+> done < htpasswd
+```
+
 **None of this applies to the CLI on a database file.** Direct mode applies no
 authorization at all, because whoever can open the file can already read and
 write every byte of it, and a check there would be a suggestion rather than a
