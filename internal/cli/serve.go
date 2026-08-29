@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/mikaelstaldal/go-server-common/csrf"
 	"github.com/mikaelstaldal/go-server-common/httputil"
@@ -151,13 +152,25 @@ func (o serveOptions) originHost() string {
 	return o.addr
 }
 
-func newServeCommand(e *env) *cobra.Command {
-	var (
-		opts     serveOptions
-		identity string
-	)
+type serveParams struct {
+	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; empty for every interface"`
+	Port           int      `long:"port" default:"7777" optional:"true" help:"port to listen on"`
+	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
+	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
+	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
+	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
+	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
+}
 
-	cmd := &cobra.Command{
+func (p *serveParams) options() serveOptions {
+	return serveOptions{
+		addr: p.Addr, port: p.Port, publicURL: p.PublicURL, https: p.HTTPS,
+		corsOrigins: p.CORSOrigins, basicAuthRealm: p.BasicAuthRealm,
+	}
+}
+
+func newServeCommand(e *env) *cobra.Command {
+	return boa.CmdT[serveParams]{
 		Use:   "serve",
 		Short: "Serve the HTTP API and the bundled read-only web UI",
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
@@ -173,15 +186,16 @@ func newServeCommand(e *env) *cobra.Command {
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
 			"tells browsers to keep using TLS.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *serveParams, cmd *cobra.Command, _ []string) error {
+			opts := p.options()
 			// What the flags say is checked before anything is opened, so a
 			// flag that could never work is reported as the usage error it is
 			// rather than behind an unrelated failure to find a database.
 			if err := opts.validate(); err != nil {
 				return err
 			}
-			if err := checkIdentityFlag(cmd, identity); err != nil {
+			if err := checkIdentityFlag(p.Identity); err != nil {
 				return err
 			}
 
@@ -200,7 +214,7 @@ func newServeCommand(e *env) *cobra.Command {
 			// attributed to, and is therefore only required while the database
 			// holds no user. Whether it does is asked here so the demand is
 			// made at startup rather than on the first request that needs one.
-			fixedIdentity, missing := resolveServerIdentity(cfg, identity)
+			fixedIdentity, missing := resolveServerIdentity(cfg, p.Identity)
 			if missing != nil {
 				// Only a server that would answer an unauthenticated request
 				// needs one, so whether this is fatal is the database's answer.
@@ -232,22 +246,7 @@ func newServeCommand(e *env) *cobra.Command {
 
 			return runServer(cmd.Context(), logger, opts, httpHandler)
 		},
-	}
-
-	cmd.Flags().StringVar(&opts.addr, "addr", "127.0.0.1",
-		"address to listen on; empty for every interface")
-	cmd.Flags().IntVar(&opts.port, "port", 7777, "port to listen on")
-	cmd.Flags().StringVar(&opts.publicURL, "public-url", "",
-		"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/")
-	cmd.Flags().BoolVar(&opts.https, "https", false,
-		"a reverse proxy in front terminates TLS: send Strict-Transport-Security")
-	cmd.Flags().StringArrayVar(&opts.corsOrigins, "cors-origin", nil,
-		"allow this exact browser origin to call the API; repeatable")
-	cmd.Flags().StringVar(&identity, "identity", "",
-		"the identity a server with no users attributes every request to")
-	cmd.Flags().StringVar(&opts.basicAuthRealm, "basic-auth-realm", "awb",
-		"realm presented to clients that supply no credentials")
-	return cmd
+	}.ToCobra()
 }
 
 // serverIsOpen reports whether the database holds no user, which is the case
@@ -263,7 +262,8 @@ func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
 	return open, err
 }
 
-// checkIdentityFlag applies the assignee vocabulary to an explicit --identity.
+// checkIdentityFlag applies the assignee vocabulary to an explicit --identity,
+// which is what a nil pointer distinguishes from one that was never given.
 //
 // It is separate from resolving one, and unconditional, because the two
 // failures are different failures: a value the operator typed and got wrong is
@@ -271,11 +271,11 @@ func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
 // only matters on a server that would answer an unauthenticated request.
 // Folding the first into the second would let "--identity Mikael" start a
 // server that quietly ignored it.
-func checkIdentityFlag(cmd *cobra.Command, flag string) error {
-	if !cmd.Flags().Changed("identity") {
+func checkIdentityFlag(flag *string) error {
+	if flag == nil {
 		return nil
 	}
-	if _, err := domain.ValidateAssignee(flag); err != nil {
+	if _, err := domain.ValidateAssignee(*flag); err != nil {
 		return awberr.Usagef("--identity: %s", err.Error())
 	}
 	return nil
@@ -288,9 +288,9 @@ func checkIdentityFlag(cmd *cobra.Command, flag string) error {
 //
 // The error it returns says only that there is none. Whether that is fatal is
 // the caller's question, and the database's answer.
-func resolveServerIdentity(cfg *config.Config, flag string) (string, error) {
-	if flag != "" {
-		return flag, nil
+func resolveServerIdentity(cfg *config.Config, flag *string) (string, error) {
+	if flag != nil {
+		return *flag, nil
 	}
 	if cfg.Identity == "" {
 		return "", awberr.Runtimef(

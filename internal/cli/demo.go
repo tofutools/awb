@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -213,11 +214,13 @@ var demoIssues = []demoIssue{{
 	discoveredFrom: []string{"schema"},
 }}
 
-func newDemoCommand(e *env) *cobra.Command {
-	var force bool
+type demoParams struct {
+	Force bool `long:"force" optional:"true" help:"replace the demo project, deleting everything in it"`
+}
 
-	cmd := &cobra.Command{
-		Use:   "demo [--force]",
+func newDemoCommand(e *env) *cobra.Command {
+	return boa.CmdT[demoParams]{
+		Use:   "demo",
 		Short: "Fill the " + demoProjectKey + " project with a data set that exercises every feature",
 		Long: "Create the " + demoProjectKey + " project and fill it with a small sample data set: every\n" +
 			"issue type, every priority, every status, every relation type, blocked\n" +
@@ -231,13 +234,13 @@ func newDemoCommand(e *env) *cobra.Command {
 			"No other project is created or deleted, but deleting this one drops the\n" +
 			"relations its issues were on either end of, which may unblock work\n" +
 			"elsewhere.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *demoParams, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			project, err := buildDemo(cmd.Context(), be, force)
+			project, err := buildDemo(cmd.Context(), be, p.Force)
 			if err != nil {
 				return err
 			}
@@ -251,11 +254,7 @@ func newDemoCommand(e *env) *cobra.Command {
 			return e.summarise("Created project %s with %d issue(s).\n",
 				project.Key, len(demoIssues))
 		},
-	}
-
-	cmd.Flags().BoolVar(&force, "force", false,
-		"replace the "+demoProjectKey+" project, deleting everything in it")
-	return cmd
+	}.ToCobra()
 }
 
 // buildDemo replaces the demo project with the demo data set and returns the

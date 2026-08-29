@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -18,6 +19,59 @@ import (
 	"github.com/tofutools/awb/internal/remote"
 	"github.com/tofutools/awb/internal/storage"
 )
+
+// boaParams applies Boa's conventional generated names, short flags and bool
+// defaults to every declarative parameter struct.
+var boaParams = boa.ParamEnricherDefault
+
+// command is the common Boa declaration for a command without flags. Commands
+// with flags use CmdT directly so their parameter struct stays visible beside
+// the command it describes.
+func command(use, short, long string, run func(*cobra.Command, []string) error) *cobra.Command {
+	return boa.CmdT[boa.NoParams]{
+		Use: use, Short: short, Long: long,
+		ParamEnrich: boaParams,
+		RunFuncE: func(_ *boa.NoParams, cmd *cobra.Command, positional []string) error {
+			return run(cmd, positional)
+		},
+	}.ToCobra()
+}
+
+type idParams struct {
+	ID string `positional:"true" required:"true"`
+}
+
+func idCommand(use, short, long string,
+	run func(*cobra.Command, string) error) *cobra.Command {
+	return boa.CmdT[idParams]{
+		Use: use, Short: short, Long: long, ParamEnrich: boaParams,
+		RunFuncE: func(p *idParams, cmd *cobra.Command, _ []string) error {
+			return run(cmd, p.ID)
+		},
+	}.ToCobra()
+}
+
+type idNameParams struct {
+	ID   string `positional:"true" required:"true"`
+	Name string `positional:"true" required:"true"`
+}
+
+func idNameCommand(use, short, long string,
+	run func(*cobra.Command, string, string) error) *cobra.Command {
+	return boa.CmdT[idNameParams]{
+		Use: use, Short: short, Long: long, ParamEnrich: boaParams,
+		RunFuncE: func(p *idNameParams, cmd *cobra.Command, _ []string) error {
+			return run(cmd, p.ID, p.Name)
+		},
+	}.ToCobra()
+}
+
+func group(use, short, long string, subcommands ...*cobra.Command) *cobra.Command {
+	return grouping(boa.CmdT[boa.NoParams]{
+		Use: use, Short: short, Long: long, SubCmds: subcommands,
+		ParamEnrich: boaParams,
+	}.ToCobra())
+}
 
 // errWriter records the first write error, so the output helpers can report it
 // once at the end rather than checking every Fprint call. A closed pipe or a
@@ -110,6 +164,9 @@ func Execute(ctx context.Context, version string, document *openapi.Document, ar
 	if runErr == nil {
 		return 0
 	}
+	if boa.IsUserInputError(runErr) {
+		runErr = awberr.Usagef("%s", runErr.Error())
+	}
 
 	e.reportError(runErr)
 	return awberr.ExitCode(runErr)
@@ -123,14 +180,18 @@ func (e *env) reportError(err error) {
 	_, _ = fmt.Fprintln(e.stderr, err.Error())
 }
 
-func newRootCommand(e *env, version string) *cobra.Command {
-	var (
-		dbFlag          string
-		attachmentsFlag string
-		colorFlag       string
-	)
+type rootParams struct {
+	DB          *string `long:"db" persistent:"true" help:"database file or http(s) URL of an awb server"`
+	Attachments *string `long:"attachments" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
+	JSON        bool    `long:"json" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
+	Compact     bool    `long:"compact" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
+	NoContext   bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the project and label of the local configuration file"`
+	Color       string  `long:"color" persistent:"true" default:"auto" optional:"true" help:"when to colour the default output: auto, always or never"`
+	NoColor     bool    `long:"no-color" persistent:"true" optional:"true" help:"alias for --color never"`
+}
 
-	root := &cobra.Command{
+func newRootCommand(e *env, version string) *cobra.Command {
+	root := boa.CmdT[rootParams]{
 		Use:   "awb",
 		Short: "Agent Work Board — an agent-first issue tracker",
 		Long: "awb is an agent-first issue tracker: a single binary over SQLite, with a\n" +
@@ -138,43 +199,52 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			"Every command is non-interactive and safe to script. --compact is the\n" +
 			"cheapest output there is and --json is the stable one; the default table is\n" +
 			"for humans and nothing should parse it.",
-		Version: version,
-		// awb owns error output and the exit codes, so cobra's own usage-on-error
-		// and error printing are switched off and a usage error exits 2 rather than
-		// cobra's 1.
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if cmd.Flags().Changed("db") {
-				e.flags.DB = &dbFlag
-			}
-			if cmd.Flags().Changed("attachments") {
-				e.flags.Attachments = &attachmentsFlag
-			}
+		Version:     version,
+		ParamEnrich: boaParams,
+		SubCmds: []*cobra.Command{
+			newInitCommand(e),
+			newAgentGuideCommand(e),
+			newProjectCommand(e),
+			newUserCommand(e),
+			newCreateCommand(e),
+			newShowCommand(e),
+			newListCommand(e),
+			newReadyCommand(e),
+			newBlockedCommand(e),
+			newSearchCommand(e),
+			newUpdateCommand(e),
+			newLabelCommand(e),
+			newClaimCommand(e),
+			newReleaseCommand(e),
+			newCloseCommand(e),
+			newReopenCommand(e),
+			newDeleteCommand(e),
+			newDepCommand(e),
+			newAttachCommand(e),
+			newDemoCommand(e),
+			newServeCommand(e),
+		},
+		PreValidateFunc: func(p *rootParams, cmd *cobra.Command, _ []string) error {
+			e.flags.DB = p.DB
+			e.flags.Attachments = p.Attachments
+			e.flags.NoContext = p.NoContext
+			e.flags.NoColor = p.NoColor
 			if cmd.Flags().Changed("color") {
-				e.flags.Color = &colorFlag
+				e.flags.Color = &p.Color
 			}
+			e.json = p.JSON
+			e.compact = p.Compact
 			if e.json && e.compact {
 				return awberr.Usagef("--json and --compact are mutually exclusive")
 			}
 			return nil
 		},
-	}
-
-	root.PersistentFlags().StringVar(&dbFlag, "db", "",
-		"database file or http(s) URL of an awb server")
-	root.PersistentFlags().StringVar(&attachmentsFlag, "attachments", "",
-		"directory holding attachment content; defaults to \"attachments\" beside the database")
-	root.PersistentFlags().BoolVar(&e.json, "json", false,
-		"print stable JSON, one object or array per invocation")
-	root.PersistentFlags().BoolVar(&e.compact, "compact", false,
-		"print one terse line per issue, for agents")
-	root.PersistentFlags().BoolVar(&e.flags.NoContext, "no-context", false,
-		"ignore the project and label of the local configuration file")
-	root.PersistentFlags().StringVar(&colorFlag, "color", "auto",
-		"when to colour the default output: auto, always or never")
-	root.PersistentFlags().BoolVar(&e.flags.NoColor, "no-color", false,
-		"alias for --color never")
+	}.ToCobra()
+	// awb owns error output and the exit codes, so Cobra's own usage-on-error
+	// and error printing are switched off and a usage error exits 2 rather than
+	// Cobra's 1.
+	root.SilenceUsage = true
+	root.SilenceErrors = true
 
 	root.SetVersionTemplate("{{.Version}}\n")
 
@@ -184,29 +254,6 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		return awberr.Usagef("%s", err.Error())
 	})
 
-	root.AddCommand(
-		newInitCommand(e),
-		newAgentGuideCommand(e),
-		newProjectCommand(e),
-		newUserCommand(e),
-		newCreateCommand(e),
-		newShowCommand(e),
-		newListCommand(e),
-		newReadyCommand(e),
-		newBlockedCommand(e),
-		newSearchCommand(e),
-		newUpdateCommand(e),
-		newLabelCommand(e),
-		newClaimCommand(e),
-		newReleaseCommand(e),
-		newCloseCommand(e),
-		newReopenCommand(e),
-		newDeleteCommand(e),
-		newDepCommand(e),
-		newAttachCommand(e),
-		newDemoCommand(e),
-		newServeCommand(e),
-	)
 	return grouping(root)
 }
 
@@ -276,40 +323,6 @@ func (e *env) identity() (string, error) {
 	return cfg.Identity, nil
 }
 
-// exactArgs is cobra.ExactArgs with awb's own classification, so a wrong
-// argument count exits 2 like every other usage mistake.
-func exactArgs(n int) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) != n {
-			return awberr.Usagef("%s takes exactly %d argument(s), got %d",
-				cmd.CommandPath(), n, len(args))
-		}
-		return nil
-	}
-}
-
-// maxArgs is cobra.MaximumNArgs with awb's classification.
-func maxArgs(n int) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) > n {
-			return awberr.Usagef("%s takes at most %d argument(s), got %d",
-				cmd.CommandPath(), n, len(args))
-		}
-		return nil
-	}
-}
-
-// minArgs is cobra.MinimumNArgs with awb's classification.
-func minArgs(n int) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) < n {
-			return awberr.Usagef("%s takes at least %d argument(s), got %d",
-				cmd.CommandPath(), n, len(args))
-		}
-		return nil
-	}
-}
-
 // grouping prepares a command that only holds subcommands, so that a name it
 // does not have is reported rather than swallowed: bare, it prints its own
 // help, and given anything else it fails as a usage error. Both halves are
@@ -327,12 +340,4 @@ func grouping(cmd *cobra.Command) *cobra.Command {
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 	return cmd
-}
-
-// noArgs rejects any positional argument.
-func noArgs(cmd *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		return awberr.Usagef("%s takes no arguments", cmd.CommandPath())
-	}
-	return nil
 }

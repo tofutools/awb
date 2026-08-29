@@ -287,15 +287,16 @@ func TestServeChecksTheIdentityFlagBeforeAnythingElse(t *testing.T) {
 func TestResolveServerIdentity(t *testing.T) {
 	cfg := &config.Config{Identity: "mikael"}
 
-	resolved, err := resolveServerIdentity(cfg, "alice")
+	given := "alice"
+	resolved, err := resolveServerIdentity(cfg, &given)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", resolved, "the flag outranks everything below it")
 
-	resolved, err = resolveServerIdentity(cfg, "")
+	resolved, err = resolveServerIdentity(cfg, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "mikael", resolved)
 
-	_, err = resolveServerIdentity(&config.Config{}, "")
+	_, err = resolveServerIdentity(&config.Config{}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--identity")
 }
