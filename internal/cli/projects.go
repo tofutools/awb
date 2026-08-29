@@ -106,22 +106,30 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 }
 
 func newProjectShowCommand(e *env) *cobra.Command {
-	return idCommand("show", "Print one project in full",
-		"Print a project with its description and its count of issues that are not\n"+
-			"closed.\n\n"+
-			"On a terminal the description is drawn as the Markdown it is. Under\n"+
-			"--compact this prints the same single line project list would and nothing\n"+
-			"else; --json is what a script uses when it needs the rest.", func(cmd *cobra.Command, key string) error {
+	type params struct {
+		Key string `positional:"true" required:"true"`
+	}
+	return boa.CmdT[params]{
+		Use:   "show",
+		Short: "Print one project in full",
+		Long: "Print a project with its description and its count of issues that are not\n" +
+			"closed.\n\n" +
+			"On a terminal the description is drawn as the Markdown it is. Under\n" +
+			"--compact this prints the same single line project list would and nothing\n" +
+			"else; --json is what a script uses when it needs the rest.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			project, err := be.GetProject(cmd.Context(), key)
+			project, err := be.GetProject(cmd.Context(), p.Key)
 			if err != nil {
 				return err
 			}
 			return e.printProject(project)
-		})
+		},
+	}.ToCobra()
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
