@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -13,17 +14,13 @@ import (
 )
 
 func newInitCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "Create the database if absent and bring its schema up to date",
-		Long: "Create the database, together with any missing parent directory, and the\n" +
-			"directory attachment content is stored in.\n\n" +
-			"This is the only command that creates one: any other command that finds it\n" +
-			"missing fails and names the path, so that a typo in --db or AWB_DB cannot\n" +
-			"silently produce a second, empty tracker.\n\n" +
-			"init takes no arguments and is idempotent.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+	return command("init", "Create the database if absent and bring its schema up to date",
+		"Create the database, together with any missing parent directory, and the\n"+
+			"directory attachment content is stored in.\n\n"+
+			"This is the only command that creates one: any other command that finds it\n"+
+			"missing fails and names the path, so that a typo in --db or AWB_DB cannot\n"+
+			"silently produce a second, empty tracker.\n\n"+
+			"init takes no arguments and is idempotent.", func(cmd *cobra.Command, _ []string) error {
 			cfg, err := e.requireLocal("init")
 			if err != nil {
 				return err
@@ -41,8 +38,7 @@ func newInitCommand(e *env) *cobra.Command {
 			}
 			// init produces no object and ignores both output-mode flags on success.
 			return db.Close()
-		},
-	}
+		})
 }
 
 // The exact marker lines agent-guide --write delimits its block with, so that
@@ -53,28 +49,27 @@ const (
 	guideEndMarker   = "<!-- awb:end -->"
 )
 
-func newAgentGuideCommand(e *env) *cobra.Command {
-	var write string
+type agentGuideParams struct {
+	Write *string `long:"write" help:"write the block into this file instead of stdout"`
+}
 
-	cmd := &cobra.Command{
+func newAgentGuideCommand(e *env) *cobra.Command {
+	return boa.CmdT[agentGuideParams]{
 		Use:   "agent-guide",
 		Short: "Print a compact usage block for agents",
 		Long: "Print a short block teaching an agent the whole of awb's vocabulary.\n\n" +
 			"--write instead writes it into a file, typically AGENTS.md or CLAUDE.md,\n" +
 			"delimited by marker lines so that a second run replaces the block rather\n" +
 			"than appending a duplicate.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !cmd.Flags().Changed("write") {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *agentGuideParams, _ *cobra.Command, _ []string) error {
+			if p.Write == nil {
 				_, err := fmt.Fprint(e.stdout, AgentGuide)
 				return err
 			}
-			return writeGuideBlock(write, AgentGuide)
+			return writeGuideBlock(*p.Write, AgentGuide)
 		},
-	}
-
-	cmd.Flags().StringVar(&write, "write", "", "write the block into this file instead of stdout")
-	return cmd
+	}.ToCobra()
 }
 
 // writeGuideBlock inserts or replaces awb's block in path.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -12,39 +13,36 @@ import (
 )
 
 func newAttachCommand(e *env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "attach",
-		Short: "Attach files to issues",
-		Long: "Attach arbitrary files to an issue.\n\n" +
-			"The content is stored outside the database, as one file per distinct\n" +
-			"content in the attachments directory — \"attachments\" beside the database\n" +
-			"unless --attachments, AWB_ATTACHMENTS or the configuration file says\n" +
-			"otherwise. Only the metadata is in the database: name, content type, size\n" +
-			"and the SHA-256 of the content.\n\n" +
-			"An attachment is addressed by its issue and its name, the way a label is,\n" +
-			"and holds no id of its own. An issue holds at most one attachment under\n" +
-			"any one name.\n\n" +
-			"An attachment is immutable. There is no command that changes one: delete\n" +
+	return group("attach", "Attach files to issues",
+		"Attach arbitrary files to an issue.\n\n"+
+			"The content is stored outside the database, as one file per distinct\n"+
+			"content in the attachments directory — \"attachments\" beside the database\n"+
+			"unless --attachments, AWB_ATTACHMENTS or the configuration file says\n"+
+			"otherwise. Only the metadata is in the database: name, content type, size\n"+
+			"and the SHA-256 of the content.\n\n"+
+			"An attachment is addressed by its issue and its name, the way a label is,\n"+
+			"and holds no id of its own. An issue holds at most one attachment under\n"+
+			"any one name.\n\n"+
+			"An attachment is immutable. There is no command that changes one: delete\n"+
 			"it and attach the file again.",
-	}
-	cmd.AddCommand(
 		newAttachAddCommand(e),
 		newAttachListCommand(e),
 		newAttachShowCommand(e),
 		newAttachGetCommand(e),
 		newAttachDeleteCommand(e),
 	)
-	return grouping(cmd)
+}
+
+type attachAddParams struct {
+	ID          string  `positional:"true" required:"true"`
+	File        string  `positional:"true" required:"true"`
+	Name        *string `long:"name" help:"show it under this name instead of the file's own"`
+	ContentType string  `long:"content-type" optional:"true" help:"what the file is; sniffed from its first bytes when omitted"`
 }
 
 func newAttachAddCommand(e *env) *cobra.Command {
-	var (
-		name        string
-		contentType string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "add <id> <file>",
+	return boa.CmdT[attachAddParams]{
+		Use:   "add",
 		Short: "Attach a file to an issue",
 		Long: "Attach a file, which is read and stored as it is.\n\n" +
 			"The name it is held under is the file's own base name unless --name says\n" +
@@ -58,16 +56,17 @@ func newAttachAddCommand(e *env) *cobra.Command {
 			"What the file is is sniffed from its first bytes unless --content-type says\n" +
 			"otherwise. It is sniffed from the content rather than from the extension,\n" +
 			"so the same file is typed the same way on every machine.",
-		Args: exactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			content, defaultName, err := openContent(e, args[1])
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *attachAddParams, cmd *cobra.Command, _ []string) error {
+			content, defaultName, err := openContent(e, p.File)
 			if err != nil {
 				return err
 			}
 			defer content.Close() //nolint:errcheck // the input is only read
 
-			if !cmd.Flags().Changed("name") {
-				name = defaultName
+			name := defaultName
+			if p.Name != nil {
+				name = *p.Name
 			}
 			if name == "" {
 				return awberr.Usagef("reading the content from stdin needs --name")
@@ -77,9 +76,9 @@ func newAttachAddCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			attachment, err := be.AddAttachment(cmd.Context(), args[0], backend.AttachmentCreate{
+			attachment, err := be.AddAttachment(cmd.Context(), p.ID, backend.AttachmentCreate{
 				Name:        name,
-				ContentType: contentType,
+				ContentType: p.ContentType,
 				Content:     content,
 			})
 			if err != nil {
@@ -91,12 +90,7 @@ func newAttachAddCommand(e *env) *cobra.Command {
 			// attached and under what name, which is the whole of the reference.
 			return e.attached(attachment)
 		},
-	}
-
-	cmd.Flags().StringVar(&name, "name", "", "show it under this name instead of the file's own")
-	cmd.Flags().StringVar(&contentType, "content-type", "",
-		"what the file is; sniffed from its first bytes when omitted")
-	return cmd
+	}.ToCobra()
 }
 
 // openContent opens what attach add was pointed at, and reports the name the
@@ -114,54 +108,48 @@ func openContent(e *env, path string) (io.ReadCloser, string, error) {
 }
 
 func newAttachListCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "list <id>",
-		Short: "List the files attached to an issue",
-		Long: "List an issue's attachments, oldest first.\n\n" +
-			"Under --compact each line is five fields: the id, the size in bytes and\n" +
-			"the content's SHA-256, none of which can hold a space, followed by the\n" +
-			"content type and the name as JSON strings.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+	return idCommand("list", "List the files attached to an issue",
+		"List an issue's attachments, oldest first.\n\n"+
+			"Under --compact each line is five fields: the id, the size in bytes and\n"+
+			"the content's SHA-256, none of which can hold a space, followed by the\n"+
+			"content type and the name as JSON strings.", func(cmd *cobra.Command, id string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			page, err := be.ListAttachments(cmd.Context(), args[0], nil, nil)
+			page, err := be.ListAttachments(cmd.Context(), id, nil, nil)
 			if err != nil {
 				return err
 			}
 			return e.printAttachments(page.Attachments)
-		},
-	}
+		})
 }
 
 func newAttachShowCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "show <id> <name>",
-		Short: "Print one attachment's metadata",
-		Long: "Print what is recorded about an attachment. Its content is what\n" +
-			"awb attach get writes.",
-		Args: exactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+	return idNameCommand("show", "Print one attachment's metadata",
+		"Print what is recorded about an attachment. Its content is what\n"+
+			"awb attach get writes.", func(cmd *cobra.Command, id, name string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			attachment, err := be.GetAttachment(cmd.Context(), args[0], args[1])
+			attachment, err := be.GetAttachment(cmd.Context(), id, name)
 			if err != nil {
 				return err
 			}
 			return e.printAttachment(attachment)
-		},
-	}
+		})
+}
+
+type attachGetParams struct {
+	ID     string `positional:"true" required:"true"`
+	Name   string `positional:"true" required:"true"`
+	Output string `long:"output" optional:"true" help:"write to this file instead of stdout"`
 }
 
 func newAttachGetCommand(e *env) *cobra.Command {
-	var output string
-
-	cmd := &cobra.Command{
-		Use:   "get <id> <name>",
+	return boa.CmdT[attachGetParams]{
+		Use:   "get",
 		Short: "Write an attachment's content to a file or to stdout",
 		Long: "Write the bytes exactly as they were uploaded.\n\n" +
 			"They go to stdout unless --output names a file, so the content can be\n" +
@@ -170,29 +158,25 @@ func newAttachGetCommand(e *env) *cobra.Command {
 			"prints the metadata.\n\n" +
 			"--output never writes to a name the attachment chose: what a file is\n" +
 			"called on this machine is the caller's decision, not the uploader's.",
-		Args: exactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *attachGetParams, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			_, content, err := be.OpenAttachment(cmd.Context(), args[0], args[1])
+			_, content, err := be.OpenAttachment(cmd.Context(), p.ID, p.Name)
 			if err != nil {
 				return err
 			}
 			defer content.Close() //nolint:errcheck // the content is only read
 
-			if output == "" || output == "-" {
+			if p.Output == "" || p.Output == "-" {
 				_, err = io.Copy(e.stdout, content)
 				return err
 			}
-			return writeContentFile(output, content)
+			return writeContentFile(p.Output, content)
 		},
-	}
-
-	cmd.Flags().StringVar(&output, "output", "",
-		"write to this file instead of stdout")
-	return cmd
+	}.ToCobra()
 }
 
 func writeContentFile(path string, content io.Reader) error {
@@ -210,20 +194,24 @@ func writeContentFile(path string, content io.Reader) error {
 	return nil
 }
 
-func newAttachDeleteCommand(e *env) *cobra.Command {
-	var force bool
+type attachDeleteParams struct {
+	ID    string `positional:"true" required:"true"`
+	Name  string `positional:"true" required:"true"`
+	Force bool   `long:"force" optional:"true" help:"confirm the deletion"`
+}
 
-	cmd := &cobra.Command{
-		Use:   "delete <id> <name> --force",
+func newAttachDeleteCommand(e *env) *cobra.Command {
+	return boa.CmdT[attachDeleteParams]{
+		Use:   "delete",
 		Short: "Delete an attachment",
 		Long: "Delete an attachment. This is not recoverable.\n\n" +
 			"The stored content goes with it unless another attachment holds the same\n" +
 			"bytes, in which case that copy stays.",
-		Args: exactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *attachDeleteParams, cmd *cobra.Command, _ []string) error {
 			// A missing --force depends on the arguments alone and not on anything
 			// the database holds, so it is a usage error.
-			if !force {
+			if !p.Force {
 				return awberr.Usagef("awb attach delete needs --force: it is not recoverable")
 			}
 
@@ -231,7 +219,7 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			deleted, err := be.DeleteAttachment(cmd.Context(), args[0], args[1])
+			deleted, err := be.DeleteAttachment(cmd.Context(), p.ID, p.Name)
 			if err != nil {
 				return err
 			}
@@ -242,8 +230,5 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 			// deleting commands say it.
 			return e.summarise("Deleted attachment %q from %s.\n", deleted.Name, deleted.Issue)
 		},
-	}
-
-	cmd.Flags().BoolVar(&force, "force", false, "confirm the deletion")
-	return cmd
+	}.ToCobra()
 }

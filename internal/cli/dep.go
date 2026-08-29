@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -8,50 +9,38 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// relationFlags are the four mutually exclusive relation flags dep add and dep
+// RelationFlags are the four mutually exclusive relation flags dep add and dep
 // rm share. Exactly one per invocation; giving two, or none, is a usage error.
-type relationFlags struct {
-	blockedBy      string
-	hasParent      string
-	discoveredFrom string
-	related        string
-}
-
-func (r *relationFlags) register(cmd *cobra.Command, verb string) {
-	cmd.Flags().StringVar(&r.blockedBy, "blocked-by", "",
-		"the first issue cannot start until this one is closed")
-	cmd.Flags().StringVar(&r.hasParent, "has-parent", "",
-		"the second issue is the parent of the first")
-	cmd.Flags().StringVar(&r.discoveredFrom, "discovered-from", "",
-		"the first issue was found while working on this one")
-	cmd.Flags().StringVar(&r.related, "related", "", "loose, symmetric association")
-	_ = verb
+type RelationFlags struct {
+	BlockedBy      *string `long:"blocked-by" help:"the first issue cannot start until this one is closed"`
+	HasParent      *string `long:"has-parent" help:"the second issue is the parent of the first"`
+	DiscoveredFrom *string `long:"discovered-from" help:"the first issue was found while working on this one"`
+	Related        *string `long:"related" help:"loose, symmetric association"`
 }
 
 // resolve returns the single relation the invocation names.
-func (r *relationFlags) resolve(cmd *cobra.Command) (domain.RelationType, string, error) {
+func (r *RelationFlags) resolve() (domain.RelationType, string, error) {
 	type choice struct {
-		flag  string
 		typ   domain.RelationType
-		value string
+		value *string
 	}
 	choices := []choice{
-		{"blocked-by", domain.RelBlockedBy, r.blockedBy},
-		{"has-parent", domain.RelHasParent, r.hasParent},
-		{"discovered-from", domain.RelDiscoveredFrom, r.discoveredFrom},
-		{"related", domain.RelRelated, r.related},
+		{domain.RelBlockedBy, r.BlockedBy},
+		{domain.RelHasParent, r.HasParent},
+		{domain.RelDiscoveredFrom, r.DiscoveredFrom},
+		{domain.RelRelated, r.Related},
 	}
 
 	var found []choice
 	for _, c := range choices {
-		if cmd.Flags().Changed(c.flag) {
+		if c.value != nil {
 			found = append(found, c)
 		}
 	}
 
 	switch len(found) {
 	case 1:
-		return found[0].typ, found[0].value, nil
+		return found[0].typ, *found[0].value, nil
 	case 0:
 		return "", "", awberr.Usagef(
 			"give exactly one of --blocked-by, --has-parent, --discovered-from or --related")
@@ -62,35 +51,32 @@ func (r *relationFlags) resolve(cmd *cobra.Command) (domain.RelationType, string
 }
 
 func newDepCommand(e *env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "dep",
-		Short: "Manage relations between issues",
-		Long: "Every relation reads \"first id — relation — second id\", the single\n" +
-			"convention of the whole tool. dep rm takes the same flag and the same two\n" +
-			"ids in the same order as dep add, so removing a relation is literally the\n" +
+	return group("dep", "Manage relations between issues",
+		"Every relation reads \"first id — relation — second id\", the single\n"+
+			"convention of the whole tool. dep rm takes the same flag and the same two\n"+
+			"ids in the same order as dep add, so removing a relation is literally the\n"+
 			"add command with rm substituted.",
-	}
-	cmd.AddCommand(newDepAddCommand(e), newDepRemoveCommand(e), newDepTreeCommand(e))
-	return grouping(cmd)
+		newDepAddCommand(e), newDepRemoveCommand(e), newDepTreeCommand(e))
+}
+
+type depAddParams struct {
+	RelationFlags
+	ID    string `positional:"true" required:"true"`
+	Force bool   `long:"force" optional:"true" help:"replace an existing parent"`
 }
 
 func newDepAddCommand(e *env) *cobra.Command {
-	var (
-		rels  relationFlags
-		force bool
-	)
-
-	cmd := &cobra.Command{
-		Use:   "add <id> --blocked-by|--has-parent|--discovered-from|--related <id>",
+	return boa.CmdT[depAddParams]{
+		Use:   "add",
 		Short: "Record a relation between two issues",
 		Long: "Record a relation, read with the first issue as the subject.\n\n" +
 			"An issue has at most one parent, so --has-parent on an issue that already\n" +
 			"has a different one fails unless --force is given, which replaces it.\n" +
 			"Naming the parent it already has succeeds and changes nothing.\n\n" +
 			"Adding a relation that already exists succeeds and changes nothing.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			relType, other, err := rels.resolve(cmd)
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *depAddParams, cmd *cobra.Command, _ []string) error {
+			relType, other, err := p.resolve()
 			if err != nil {
 				return err
 			}
@@ -99,31 +85,30 @@ func newDepAddCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			issue, err := be.AddRelation(cmd.Context(), args[0],
-				backend.RelationRequest{Type: relType, Other: other, Force: force}, "")
+			issue, err := be.AddRelation(cmd.Context(), p.ID,
+				backend.RelationRequest{Type: relType, Other: other, Force: p.Force}, "")
 			if err != nil {
 				return err
 			}
 			return e.mutated(issue)
 		},
-	}
+	}.ToCobra()
+}
 
-	rels.register(cmd, "add")
-	cmd.Flags().BoolVar(&force, "force", false, "replace an existing parent")
-	return cmd
+type depRemoveParams struct {
+	RelationFlags
+	ID string `positional:"true" required:"true"`
 }
 
 func newDepRemoveCommand(e *env) *cobra.Command {
-	var rels relationFlags
-
-	cmd := &cobra.Command{
-		Use:   "rm <id> --blocked-by|--has-parent|--discovered-from|--related <id>",
+	return boa.CmdT[depRemoveParams]{
+		Use:   "rm",
 		Short: "Remove a relation between two issues",
 		Long: "Remove a relation, taking the same one relation flag as dep add.\n\n" +
 			"Removing one that does not exist succeeds and changes nothing.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			relType, other, err := rels.resolve(cmd)
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *depRemoveParams, cmd *cobra.Command, _ []string) error {
+			relType, other, err := p.resolve()
 			if err != nil {
 				return err
 			}
@@ -133,40 +118,32 @@ func newDepRemoveCommand(e *env) *cobra.Command {
 				return err
 			}
 			// Under --json this prints the resulting issue — the one named first.
-			issue, err := be.RemoveRelation(cmd.Context(), args[0], relType, other, "")
+			issue, err := be.RemoveRelation(cmd.Context(), p.ID, relType, other, "")
 			if err != nil {
 				return err
 			}
 			return e.mutated(issue)
 		},
-	}
-
-	rels.register(cmd, "rm")
-	return cmd
+	}.ToCobra()
 }
 
 func newDepTreeCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "tree <id>",
-		Short: "Print the subtree of children rooted at an issue",
-		Long: "Print the decomposition below an issue, to its full depth, following\n" +
-			"children across project boundaries. It does not show ancestors.\n\n" +
-			"It shows the whole subtree, closed children included and marked as such,\n" +
-			"and accepts none of the listing filters — a tree with holes in it would\n" +
-			"misrepresent the decomposition. Directory context does not apply either,\n" +
-			"and --sort is not accepted, so the tree is reproducible like every other\n" +
-			"output.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+	return idCommand("tree", "Print the subtree of children rooted at an issue",
+		"Print the decomposition below an issue, to its full depth, following\n"+
+			"children across project boundaries. It does not show ancestors.\n\n"+
+			"It shows the whole subtree, closed children included and marked as such,\n"+
+			"and accepts none of the listing filters — a tree with holes in it would\n"+
+			"misrepresent the decomposition. Directory context does not apply either,\n"+
+			"and --sort is not accepted, so the tree is reproducible like every other\n"+
+			"output.", func(cmd *cobra.Command, id string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			tree, err := be.Tree(cmd.Context(), args[0])
+			tree, err := be.Tree(cmd.Context(), id)
 			if err != nil {
 				return err
 			}
 			return e.printTree(tree)
-		},
-	}
+		})
 }

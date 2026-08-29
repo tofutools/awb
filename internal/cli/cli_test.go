@@ -186,6 +186,15 @@ func TestEmptyListings(t *testing.T) {
 	assert.Equal(t, "[]\n", h.mustRun("ready", "--json"))
 }
 
+func TestPersistentFlagsWorkBeforeAndAfterSubcommands(t *testing.T) {
+	h := newHarness(t)
+
+	assert.Equal(t,
+		h.mustRun("project", "list", "--compact"),
+		h.mustRun("--compact", "project", "list"),
+	)
+}
+
 // Two invocations against unchanged data produce byte-identical output.
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
@@ -359,6 +368,27 @@ func TestUnknownSubcommandIsAUsageError(t *testing.T) {
 		assert.Empty(t, stdout, args)
 		assert.Contains(t, stderr, "unknown command", args)
 	}
+}
+
+func TestArgumentCountErrorsAreUsageErrors(t *testing.T) {
+	h := newHarness(t)
+	for _, args := range [][]string{
+		{"show"},
+		{"show", "one", "two"},
+		{"list", "extra"},
+		{"search"},
+	} {
+		stdout, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, args)
+		assert.Empty(t, stdout, args)
+		assert.NotEmpty(t, stderr, args)
+	}
+}
+
+func TestRepeatableStringFlagsDoNotSplitCommas(t *testing.T) {
+	h := newHarness(t)
+	_, _, code := h.run("create", "t", "--project", "awb", "--label", "one,two")
+	assert.Equal(t, 2, code, "one flag occurrence is one label, not a comma-separated list")
 }
 
 func TestDescriptionFlagsAreMutuallyExclusive(t *testing.T) {
