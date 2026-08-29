@@ -44,6 +44,24 @@ function link(href: string, text: string, className = ""): HTMLAnchorElement {
   return anchor;
 }
 
+/**
+ * nameLink renders the id and the title of a row as one link, so that the
+ * title leads where the id leads instead of being the dead half of the pair.
+ *
+ * It is deliberately a single anchor around both rather than one around each:
+ * two anchors to one destination would be two tab stops and two separate
+ * announcements per row, which a long listing multiplies. A project need not
+ * have a name, and the id alone then names the link.
+ */
+function nameLink(href: string, id: string, title: string): HTMLElement {
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.className = "name";
+  anchor.append(element("span", "id", id));
+  if (title !== "") anchor.append(element("span", "title", title));
+  return anchor;
+}
+
 function element(tag: string, className = "", text = ""): HTMLElement {
   const node = document.createElement(tag);
   if (className !== "") node.className = className;
@@ -72,8 +90,7 @@ function issueBadges(issue: Issue): HTMLElement {
 
 function issueRow(issue: Issue): HTMLElement {
   const row = element("li", "issue-row");
-  row.append(link(`#/issues/${issue.id}`, issue.id, "id"));
-  row.append(element("span", "title", issue.title));
+  row.append(nameLink(`#/issues/${issue.id}`, issue.id, issue.title));
   row.append(issueBadges(issue));
   return row;
 }
@@ -209,8 +226,8 @@ async function viewProjects(): Promise<HTMLElement> {
 
 function projectRow(project: Project): HTMLElement {
   const row = element("li", "project-row");
-  row.append(link(`#/issues?project=${encodeURIComponent(project.key)}`, project.key, "id"));
-  row.append(element("span", "title", project.name));
+  const href = `#/issues?project=${encodeURIComponent(project.key)}`;
+  row.append(nameLink(href, project.key, project.name));
   row.append(element("span", "count", `${project.active_issues} open`));
   if (project.description !== "") {
     const description = element("div", "markdown");
@@ -338,8 +355,7 @@ async function viewTree(id: string): Promise<HTMLElement> {
 function treeNode(node: IssueTree, depth: number): HTMLElement {
   const list = element("ul", depth === 0 ? "tree" : "tree-children");
   const row = element("li", "tree-row");
-  row.append(link(`#/issues/${node.id}`, node.id, "id"));
-  row.append(element("span", "title", node.title));
+  row.append(nameLink(`#/issues/${node.id}`, node.id, node.title));
   row.append(issueBadges(node));
   list.append(row);
 
