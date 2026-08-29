@@ -17,9 +17,10 @@ import (
 // the transaction is the cheap half: the row, and the rename that gives the
 // content its final name.
 //
-// Both halves being inside one writer's exclusive turn is what orders an
-// upload against a concurrent delete of the same content. Naming a blob by its
-// own digest is what makes that rename idempotent.
+// Placing the content while holding the write lock is what orders an upload
+// against a concurrent delete of the same content, whose own unlink holds that
+// lock too — see sweep. Naming a blob by its own digest is what makes the
+// rename idempotent.
 func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	req backend.AttachmentCreate) (*domain.Attachment, error) {
 	name, err := domain.ValidateAttachmentName(req.Name)
