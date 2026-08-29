@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os/signal"
+	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,13 +46,42 @@ const (
 	maxRequestBody    = 1 << 20
 )
 
+// hsts is sent when --https says a TLS-terminating proxy sits in front. A year,
+// and this host only: awb may be one application among several on a domain, and
+// includeSubDomains would speak for all of them.
+const hsts = "max-age=31536000"
+
+// serveOptions is everything the server needs beyond the database: where it
+// listens, where it is published, and who may call it.
+type serveOptions struct {
+	addr           string
+	port           int
+	publicURL      string
+	https          bool
+	corsOrigins    []string
+	basicAuthRealm string
+}
+
+// listenAddr is the host:port to bind. An empty --addr means every interface.
+func (o serveOptions) listenAddr() string {
+	return net.JoinHostPort(o.addr, strconv.Itoa(o.port))
+}
+
+// originHost is the host the CSRF check names when there is no --public-url. A
+// server bound to every interface has no host of its own, and loopback is the
+// one a browser on this machine reaches it by.
+func (o serveOptions) originHost() string {
+	if o.addr == "" {
+		return "127.0.0.1"
+	}
+	return o.addr
+}
+
 func newServeCommand(e *env) *cobra.Command {
 	var (
-		addr           string
-		corsOrigins    []string
-		identity       string
-		basicAuthFile  string
-		basicAuthRealm string
+		opts          serveOptions
+		identity      string
+		basicAuthFile string
 	)
 
 	cmd := &cobra.Command{
@@ -62,7 +94,11 @@ func newServeCommand(e *env) *cobra.Command {
 			"who is calling.\n\n" +
 			"Without --basic-auth-file there is no authentication and any client that can\n" +
 			"reach the port has full read and write access, which is why the default\n" +
-			"binds loopback.",
+			"binds loopback.\n\n" +
+			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
+			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
+			"which the proxy maps to this server with that base path stripped, and --https\n" +
+			"tells browsers to keep using TLS.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := e.requireLocal("serve")
@@ -71,6 +107,9 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			if cmd.Flags().Changed("identity") && cmd.Flags().Changed("basic-auth-file") {
 				return awberr.Usagef("--identity and --basic-auth-file are mutually exclusive")
+			}
+			if opts.port < 1 || opts.port > 65535 {
+				return awberr.Usagef("--port: %d is not a port number", opts.port)
 			}
 
 			db, err := storage.Open(cmd.Context(), cfg.DB)
@@ -92,24 +131,29 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 
 			base := local.New(db, fixedIdentity)
-			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, basicAuthRealm, addr,
-				corsOrigins)
+			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, opts)
 			if err != nil {
 				return err
 			}
 
-			return runServer(cmd.Context(), e, addr, httpHandler)
+			return runServer(cmd.Context(), e, opts, httpHandler)
 		},
 	}
 
-	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:7777", "address to listen on")
-	cmd.Flags().StringArrayVar(&corsOrigins, "cors-origin", nil,
+	cmd.Flags().StringVar(&opts.addr, "addr", "127.0.0.1",
+		"address to listen on; empty for every interface")
+	cmd.Flags().IntVar(&opts.port, "port", 7777, "port to listen on")
+	cmd.Flags().StringVar(&opts.publicURL, "public-url", "",
+		"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/")
+	cmd.Flags().BoolVar(&opts.https, "https", false,
+		"a reverse proxy in front terminates TLS: send Strict-Transport-Security")
+	cmd.Flags().StringArrayVar(&opts.corsOrigins, "cors-origin", nil,
 		"allow this exact browser origin to call the API; repeatable")
 	cmd.Flags().StringVar(&identity, "identity", "",
 		"the single identity an unauthenticated server attributes every request to")
 	cmd.Flags().StringVar(&basicAuthFile, "basic-auth-file", "",
 		"htpasswd file of username:bcrypt-hash entries")
-	cmd.Flags().StringVar(&basicAuthRealm, "basic-auth-realm", "awb",
+	cmd.Flags().StringVar(&opts.basicAuthRealm, "basic-auth-realm", "awb",
 		"realm presented to clients that supply no credentials")
 	return cmd
 }
@@ -161,9 +205,49 @@ func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) 
 	return cfg.Identity, nil
 }
 
+// basePathChars is what a base path may be built from. A path outside this set
+// is refused rather than escaped, because it goes into an HTML attribute and
+// into every URL the UI resolves.
+var basePathChars = regexp.MustCompile(`^[A-Za-z0-9._~/-]*$`)
+
+// basePathFromPublicURL is the path component of --public-url, normalised to
+// the form <base href> wants: it starts and ends with a single "/", and is "/"
+// when no public URL is given or it names an origin with no path.
+//
+// The reverse proxy strips that base before the request arrives — which is what
+// openapi.yaml's single "/" server URL says as well — so it never reaches the
+// router. It reaches only the shell, where it is what the UI's relative URLs
+// resolve against.
+func basePathFromPublicURL(publicURL string) (string, error) {
+	if publicURL == "" {
+		return "/", nil
+	}
+	parsed, err := url.Parse(publicURL)
+	if err != nil {
+		return "", awberr.Usagef("--public-url: %s is not a URL", publicURL)
+	}
+	path := parsed.Path
+	if path == "" || path == "/" {
+		return "/", nil
+	}
+	if !basePathChars.MatchString(path) {
+		return "", awberr.Usagef(
+			"--public-url: the path %s may hold only the characters A-Z a-z 0-9 . _ ~ - /", path)
+	}
+	// A leading "//" would make <base href> protocol-relative, pointing the
+	// whole UI at another host.
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "", awberr.Usagef("--public-url: the path %s must start with a single /", path)
+	}
+	if !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	return path, nil
+}
+
 // buildHandler assembles the middleware chain, outermost first.
 func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *auth.HtpasswdFile,
-	realm, addr string, corsOrigins []string) (http.Handler, error) {
+	opts serveOptions) (http.Handler, error) {
 	// Whichever of the two identity mechanisms is in force, the request has
 	// exactly one identity, so the surface below never has to handle its absence.
 	// The username arrives in the request context, which is what the generated
@@ -197,6 +281,15 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 		return nil, awberr.Wrap(awberr.Runtime, err, "serve the bundled web UI")
 	}
 
+	basePath, err := basePathFromPublicURL(opts.publicURL)
+	if err != nil {
+		return nil, err
+	}
+	shell, err := web.Shell(basePath)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
+	}
+
 	// Compression is applied per route rather than once around everything,
 	// because StaticHandler already gzips what it serves and wrapping it again
 	// would encode the body twice. A browser decodes one layer and is left with
@@ -212,35 +305,48 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 	root.Handle("/api/", withAPI(apiServer))
 	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
 	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
-	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS)))
+	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS, shell)))
 
 	csp, err := contentSecurityPolicy()
 	if err != nil {
 		return nil, err
 	}
 
-	chain := handler.CORS(corsOrigins, root)
+	chain := handler.CORS(opts.corsOrigins, root)
 
 	// A request that is not a safe method must carry an Origin or Referer naming
 	// the server itself or an allowed --cors-origin, because a browser attaches
 	// basic-authentication credentials to cross-site requests of its own accord.
 	// One carrying neither header is allowed, that being what every non-browser
 	// client sends, and the CLI is one of them.
-	serverOrigin, err := csrf.ResolveServerOrigin("", hostOf(addr), portOf(addr))
+	//
+	// Behind a reverse proxy the browser names the proxy, not this listener, so
+	// --public-url is what the origin comes from when it is given.
+	serverOrigin, err := csrf.ResolveServerOrigin(opts.publicURL, opts.originHost(), opts.port)
 	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "resolve the server origin")
+		return nil, awberr.Usagef(
+			"--public-url: %s is not a full URL, like https://example.com/awb/", opts.publicURL)
 	}
-	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, corsOrigins...)...)(chain)
+	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, opts.corsOrigins...)...)(chain)
+
+	// Strict-Transport-Security only when a proxy terminates TLS: sent over
+	// plain HTTP it is ignored, and sent by a server reachable over plain HTTP
+	// on purpose it would break it.
+	strictTransport := ""
+	if opts.https {
+		strictTransport = hsts
+	}
 
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
+		HSTS:           strictTransport,
 	})(chain)
 
 	if htpasswd != nil {
 		// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
 		// behind it.
-		chain = htpasswd.Middleware(realm)(chain)
+		chain = htpasswd.Middleware(opts.basicAuthRealm)(chain)
 	}
 
 	return http.MaxBytesHandler(chain, maxRequestBody), nil
@@ -259,7 +365,8 @@ func contentSecurityPolicy() (string, error) {
 		"script-src 'self' " + importMapHash, nil
 }
 
-func runServer(ctx context.Context, e *env, addr string, h http.Handler) error {
+func runServer(ctx context.Context, e *env, opts serveOptions, h http.Handler) error {
+	addr := opts.listenAddr()
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h,
@@ -275,6 +382,9 @@ func runServer(ctx context.Context, e *env, addr string, h http.Handler) error {
 	errs := make(chan error, 1)
 	go func() {
 		_, _ = fmt.Fprintf(e.stderr, "awb serving on http://%s/\n", addr)
+		if opts.publicURL != "" {
+			_, _ = fmt.Fprintf(e.stderr, "published at %s\n", opts.publicURL)
+		}
 		errs <- srv.ListenAndServe()
 	}()
 
@@ -292,26 +402,4 @@ func runServer(ctx context.Context, e *env, addr string, h http.Handler) error {
 		}
 		return nil
 	}
-}
-
-// hostOf and portOf split a listen address for the origin the CSRF check
-// compares against.
-func hostOf(addr string) string {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil || host == "" {
-		return "127.0.0.1"
-	}
-	return host
-}
-
-func portOf(addr string) int {
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return 0
-	}
-	number, err := strconv.Atoi(port)
-	if err != nil {
-		return 0
-	}
-	return number
 }

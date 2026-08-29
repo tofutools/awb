@@ -679,3 +679,25 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
 	assert.Empty(t, issue.Relations)
 }
+
+// serve refuses a listen address it could never bind, before it opens the
+// database or the port.
+func TestServeRejectsAPortThatIsNotOne(t *testing.T) {
+	h := newHarness(t)
+
+	for _, port := range []string{"0", "-1", "65536"} {
+		_, stderr, code := h.run("serve", "--port", port)
+		assert.Equal(t, 2, code, port)
+		assert.Contains(t, stderr, "--port", port)
+	}
+}
+
+// A --public-url that cannot be a base is refused at startup rather than
+// serving a UI whose every relative URL is wrong.
+func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--public-url", "example.com/awb")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--public-url")
+}

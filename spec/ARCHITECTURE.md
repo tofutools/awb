@@ -333,6 +333,25 @@ handle the absence of an identity.
 Cross-origin access and cross-site writes are both opt-in, because a browser
 attaches stored credentials to cross-site requests of its own accord.
 
+### Deployment
+
+The server speaks plain HTTP and never terminates TLS, because a reverse proxy
+in front of it does that better than a second TLS configuration would, and
+because doing neither keeps the binary free of certificates and their renewal.
+
+What it does carry is the two things a proxy cannot supply on its behalf. It has
+to know the URL it is *published* under, because a browser names that origin and
+not the listener, and because the UI is one page of relative URLs that must
+resolve under whatever path the proxy mounts it on — one `<base href>`, rewritten
+at startup, is the whole mechanism. And it has to be told when the proxy
+terminates TLS, because a header that makes a browser refuse plain HTTP to a
+host for a year is not something to infer.
+
+The base path itself never reaches the router: the proxy strips it, which is
+what the OpenAPI document's single `/` server URL says as well, and what lets
+the CLI's remote mode point at a URL carrying a base path with nothing else
+changed.
+
 ## 6. Directory context
 
 `awb` knows nothing about Git, or about any version control system. What a

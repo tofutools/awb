@@ -22,6 +22,16 @@ import (
 
 func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	t.Helper()
+	return newServeHandlerWith(t, serveOptions{
+		addr:           "127.0.0.1",
+		port:           7777,
+		corsOrigins:    corsOrigins,
+		basicAuthRealm: "awb",
+	})
+}
+
+func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
+	t.Helper()
 	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -29,8 +39,7 @@ func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), nil, "awb",
-		"127.0.0.1:7777", corsOrigins)
+	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), nil, opts)
 	require.NoError(t, err)
 	return h
 }
@@ -250,4 +259,114 @@ func TestCORS(t *testing.T) {
 	none := newServeHandler(t)
 	resp, _ = get(t, none, http.MethodGet, "/api/issues", "Origin", "https://ui.example.com")
 	assert.Empty(t, resp.Header.Get("Access-Control-Allow-Origin"))
+}
+
+// The UI resolves every URL it uses relatively, so the one thing a deployment
+// under a path needs is the shell's <base href>.
+func TestPublicURLSetsTheBaseHref(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+
+	for _, path := range []string{"/", "/issues/awb-a1b2c3"} {
+		resp, body := get(t, h, http.MethodGet, path)
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.Contains(t, body, `<base href="/awb/">`, path)
+	}
+
+	// The import map is what the CSP pins by hash, so rewriting the shell must
+	// leave it exactly as it was.
+	resp, body := get(t, h, http.MethodGet, "/")
+	assert.Contains(t, body, `type="importmap"`)
+	assert.Regexp(t, `script-src 'self' 'sha256-[A-Za-z0-9+/=]+'`,
+		resp.Header.Get("Content-Security-Policy"))
+
+	// Served at the root, the shell is the compiled file unchanged.
+	_, body = get(t, newServeHandler(t), http.MethodGet, "/")
+	assert.Contains(t, body, `<base href="/">`)
+}
+
+func TestBasePathFromPublicURL(t *testing.T) {
+	for _, tc := range []struct{ publicURL, want string }{
+		{"", "/"},
+		{"https://example.com", "/"},
+		{"https://example.com/", "/"},
+		{"https://example.com/awb", "/awb/"},
+		{"https://example.com/awb/", "/awb/"},
+		{"http://example.com:8080/a/b", "/a/b/"},
+	} {
+		got, err := basePathFromPublicURL(tc.publicURL)
+		require.NoError(t, err, tc.publicURL)
+		assert.Equal(t, tc.want, got, tc.publicURL)
+	}
+
+	// A protocol-relative base would re-point the whole UI at another host, and
+	// anything outside the unreserved characters would have to be escaped into
+	// an HTML attribute rather than trusted.
+	for _, publicURL := range []string{
+		"https://example.com//evil.example.com/",
+		"https://example.com/awb\"><script>",
+		"https://example.com/a b",
+	} {
+		_, err := basePathFromPublicURL(publicURL)
+		assert.Error(t, err, publicURL)
+	}
+}
+
+// Behind a reverse proxy the browser names the proxy, so that — not the
+// listener — is the origin a write must come from.
+func TestPublicURLIsTheSameOrigin(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+
+	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "https://example.com")
+	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
+
+	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "http://127.0.0.1:7777")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// Strict-Transport-Security is sent only when a proxy in front terminates TLS.
+// Sent by a server that is meant to be reachable over plain HTTP it would break
+// it, so it is opt in.
+func TestStrictTransportSecurity(t *testing.T) {
+	plain := newServeHandler(t)
+	resp, _ := get(t, plain, http.MethodGet, "/")
+	assert.Empty(t, resp.Header.Get("Strict-Transport-Security"))
+
+	behindTLS := newServeHandlerWith(t, serveOptions{addr: "127.0.0.1", port: 7777, https: true})
+	resp, _ = get(t, behindTLS, http.MethodGet, "/")
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+	resp, _ = get(t, behindTLS, http.MethodGet, "/api/issues")
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+}
+
+// The shell is served from memory rather than by the file server, so it carries
+// its own validator; without one "no-cache" could never be satisfied.
+func TestShellIsRevalidated(t *testing.T) {
+	h := newServeHandler(t)
+
+	resp, _ := get(t, h, http.MethodGet, "/")
+	etag := resp.Header.Get("ETag")
+	require.NotEmpty(t, etag)
+	assert.Equal(t, "no-cache", resp.Header.Get("Cache-Control"))
+
+	resp, body := get(t, h, http.MethodGet, "/", "If-None-Match", etag)
+	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	assert.Empty(t, body)
+
+	// A different base path is a different shell, so a client that cached one
+	// does not keep it across a redeployment under a path.
+	under := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+	resp, _ = get(t, under, http.MethodGet, "/")
+	assert.NotEqual(t, etag, resp.Header.Get("ETag"))
 }

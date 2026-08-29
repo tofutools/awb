@@ -213,8 +213,33 @@ calling. Without it there is no authentication at all, which is why the default
 binds loopback. `--cors-origin` lets a separately hosted UI call the API, and is
 opt-in for the same reason.
 
+`--addr` and `--port` are independent: `--addr 0.0.0.0` reaches other machines
+on the default port, `--port 8080` moves the port and leaves the binding alone.
+
+### Behind a reverse proxy
+
 The server does not terminate TLS, so anything beyond one machine wants a
-reverse proxy in front of it.
+reverse proxy — Apache, nginx or another — in front of it:
+
+```console
+$ awb serve --public-url https://example.com/awb/ --https
+```
+
+`--public-url` is the URL the proxy publishes the server under, and the proxy
+must map that URL to this server with the base path stripped, which is what both
+`ProxyPass /awb/ http://127.0.0.1:7777/` and nginx's
+`location /awb/ { proxy_pass http://127.0.0.1:7777/; }` do. Everything the
+bundled UI asks for is a relative URL, so the base path reaches nothing but the
+`<base href>` of the page it is served on; the API is unaffected, and the CLI's
+remote mode already carries the base path in its own `--db` URL.
+
+Give it whenever a browser reaches the server by an origin other than the one it
+listens on, path or no path: cross-site write protection compares the browser's
+origin against this one.
+
+`--https` sends `Strict-Transport-Security`. It is opt-in rather than implied by
+an `https://` public URL, because it tells every browser that saw it to refuse
+plain HTTP to that host for a year — including any other application on it.
 
 ## Concurrency
 
@@ -254,11 +279,12 @@ to choose where a binary is written, for example
 `task build OUTPUT_DIR=dist`.
 
 The development server binds loopback by default. To make it reachable from
-other machines, set `ADDR` for either server task:
+other machines, or to move it off port 7777, set `ADDR` or `PORT` for either
+server task:
 
 ```console
-$ task run ADDR=0.0.0.0:7777
-$ task watch ADDR=0.0.0.0:7777
+$ task run ADDR=0.0.0.0
+$ task watch ADDR=0.0.0.0 PORT=8080
 ```
 
 This exposes the server without authentication unless `--basic-auth-file` is
