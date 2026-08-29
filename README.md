@@ -223,8 +223,8 @@ Precedence is command line flags, then `AWB_DB`, `AWB_ATTACHMENTS`, `AWB_USER`,
 then this file, then the defaults. `AWB_CONFIG_FILE` reads this file from
 somewhere else; a path it names must exist, so that a typo cannot quietly leave
 you with the defaults. The database lives at `$XDG_DATA_HOME/awb/awb.db` unless
-told otherwise, and one database spans everything you work on. Attachment content lives in `attachments` beside it,
-and `awb init` creates both.
+told otherwise, and one database spans everything you work on. Attachment
+content lives in `attachments` beside it, and `awb init` creates both.
 
 ## Server and API
 
