@@ -1,16 +1,23 @@
 package cli
 
 import (
+	"bytes"
 	"compress/gzip"
+	"context"
+	"encoding/base64"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,6 +29,21 @@ import (
 
 func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	t.Helper()
+	return newServeHandlerWith(t, serveOptions{
+		addr:           "127.0.0.1",
+		port:           7777,
+		corsOrigins:    corsOrigins,
+		basicAuthRealm: "awb",
+	})
+}
+
+func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
+	t.Helper()
+	return newServeHandlerAuth(t, opts, nil)
+}
+
+func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.HtpasswdFile) http.Handler {
+	t.Helper()
 	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -29,10 +51,23 @@ func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), nil, "awb",
-		"127.0.0.1:7777", corsOrigins)
+	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), htpasswd, opts)
 	require.NoError(t, err)
 	return h
+}
+
+// credentials is one htpasswd entry, mikael:hunter2 at the lowest bcrypt cost
+// there is, because these tests care that the file is read and not how long
+// hashing takes.
+const credentials = "mikael:$2a$04$AL546dro6bMBAm/zEI.Yzet3uZisN1MTC1Rt4ut9s5F3qfJrx27iS\n"
+
+func newHtpasswd(t *testing.T) *auth.HtpasswdFile {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "htpasswd")
+	require.NoError(t, os.WriteFile(path, []byte(credentials), 0o600))
+	file, err := loadHtpasswd(path)
+	require.NoError(t, err)
+	return file
 }
 
 // get performs a request without a body, decoding the response the way a
@@ -250,4 +285,258 @@ func TestCORS(t *testing.T) {
 	none := newServeHandler(t)
 	resp, _ = get(t, none, http.MethodGet, "/api/issues", "Origin", "https://ui.example.com")
 	assert.Empty(t, resp.Header.Get("Access-Control-Allow-Origin"))
+}
+
+// The UI resolves every URL it uses relatively, so the one thing a deployment
+// under a path needs is the shell's <base href>.
+func TestPublicURLSetsTheBaseHref(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+
+	for _, path := range []string{"/", "/issues/awb-a1b2c3"} {
+		resp, body := get(t, h, http.MethodGet, path)
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.Contains(t, body, `<base href="/awb/">`, path)
+	}
+
+	// The import map is what the CSP pins by hash, so rewriting the shell must
+	// leave it exactly as it was.
+	resp, body := get(t, h, http.MethodGet, "/")
+	assert.Contains(t, body, `type="importmap"`)
+	assert.Regexp(t, `script-src 'self' 'sha256-[A-Za-z0-9+/=]+'`,
+		resp.Header.Get("Content-Security-Policy"))
+
+	// Served at the root, the shell is the compiled file unchanged.
+	_, body = get(t, newServeHandler(t), http.MethodGet, "/")
+	assert.Contains(t, body, `<base href="/">`)
+}
+
+func TestBasePathOfThePublicURL(t *testing.T) {
+	for _, tc := range []struct{ publicURL, want string }{
+		{"", "/"},
+		{"https://example.com", "/"},
+		{"https://example.com/", "/"},
+		{"https://example.com/awb", "/awb/"},
+		{"https://example.com/awb/", "/awb/"},
+		{"http://example.com:8080/a/b", "/a/b/"},
+	} {
+		parsed, err := parsePublicURL(tc.publicURL)
+		require.NoError(t, err, tc.publicURL)
+		got, err := basePathOf(parsed)
+		require.NoError(t, err, tc.publicURL)
+		assert.Equal(t, tc.want, got, tc.publicURL)
+	}
+
+	// A protocol-relative base would re-point the whole UI at another host, and
+	// anything outside the unreserved characters would have to be escaped into
+	// an HTML attribute rather than trusted.
+	for _, publicURL := range []string{
+		"https://example.com//evil.example.com/",
+		"https://example.com/awb\"><script>",
+		"https://example.com/a b",
+	} {
+		parsed, err := parsePublicURL(publicURL)
+		require.NoError(t, err, publicURL)
+		_, err = basePathOf(parsed)
+		assert.Error(t, err, publicURL)
+	}
+}
+
+// --public-url has to be an origin a browser can actually send. Anything else
+// starts a server every browser write is refused by, which is a failure at
+// startup rather than one to discover in a UI that cannot save.
+func TestPublicURLMustBeAnOriginABrowserCanSend(t *testing.T) {
+	for _, publicURL := range []string{
+		"//example.com/awb",             // no scheme, so no origin
+		"javascript://example.com/awb",  // a scheme no browser sends as an origin
+		"https:///awb",                  // no host
+		"https://user:pw@example.com/",  // credentials are not part of a base URL
+		"https://example.com/awb?x=1",   // nor a query
+		"https://example.com/awb#frag",  // nor a fragment
+		"https://example.com:65536/awb", // a port no connection can be made to
+		"https://example.com:0/awb",     // nor to this one
+	} {
+		_, err := parsePublicURL(publicURL)
+		assert.Error(t, err, publicURL)
+	}
+
+	for _, publicURL := range []string{
+		"http://example.com",
+		"https://example.com/awb/",
+		"https://example.com:8443/awb/",
+	} {
+		parsed, err := parsePublicURL(publicURL)
+		assert.NoError(t, err, publicURL)
+		assert.NotNil(t, parsed, publicURL)
+	}
+}
+
+// --https and --public-url describe one deployment, so they cannot disagree
+// about whether it is behind TLS: a browser ignores Strict-Transport-Security
+// received over plain HTTP, so the pair would leave the operator believing in a
+// protection that is not there.
+func TestHTTPSAndAnHTTPPublicURLContradictEachOther(t *testing.T) {
+	behindTLS := serveOptions{addr: "127.0.0.1", port: 7777, https: true}
+
+	contradictory := behindTLS
+	contradictory.publicURL = "http://example.com/awb/"
+	assert.Error(t, contradictory.validate())
+
+	agreeing := behindTLS
+	agreeing.publicURL = "https://example.com/awb/"
+	assert.NoError(t, agreeing.validate())
+
+	// --https on its own still says a proxy in front terminates TLS.
+	assert.NoError(t, behindTLS.validate())
+
+	// And an http public URL is fine when nothing claims otherwise.
+	plain := serveOptions{addr: "127.0.0.1", port: 7777, publicURL: "http://example.com/awb/"}
+	assert.NoError(t, plain.validate())
+}
+
+// An IPv6 listen address is bracketed in an origin, because that is the form a
+// browser sends. Unbracketed, http://::1:7777 matches nothing and every write
+// from the UI is refused.
+func TestIPv6ListenerHasAnOriginABrowserSends(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{addr: "::1", port: 7777})
+
+	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "http://[::1]:7777")
+	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// Behind a reverse proxy the browser names the proxy, so that — not the
+// listener — is the origin a write must come from.
+func TestPublicURLIsTheSameOrigin(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+
+	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "https://example.com")
+	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
+
+	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "http://127.0.0.1:7777")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// Strict-Transport-Security is sent only when a proxy in front terminates TLS.
+// Sent by a server that is meant to be reachable over plain HTTP it would break
+// it, so it is opt in.
+func TestStrictTransportSecurity(t *testing.T) {
+	plain := newServeHandler(t)
+	resp, _ := get(t, plain, http.MethodGet, "/")
+	assert.Empty(t, resp.Header.Get("Strict-Transport-Security"))
+
+	behindTLS := newServeHandlerWith(t, serveOptions{addr: "127.0.0.1", port: 7777, https: true})
+	resp, _ = get(t, behindTLS, http.MethodGet, "/")
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+	resp, _ = get(t, behindTLS, http.MethodGet, "/api/issues")
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+}
+
+// The challenge is the first response a browser sees, so it is the one that has
+// to carry the headers: a host pinned only on the way past authentication is
+// pinned after the password has been typed rather than before.
+func TestTheAuthenticationChallengeCarriesTheSecurityHeaders(t *testing.T) {
+	h := newServeHandlerAuth(t,
+		serveOptions{addr: "127.0.0.1", port: 7777, https: true, basicAuthRealm: "awb"},
+		newHtpasswd(t))
+
+	resp, _ := get(t, h, http.MethodGet, "/")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("WWW-Authenticate"), `realm="awb"`)
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
+	assert.NotEmpty(t, resp.Header.Get("Content-Security-Policy"))
+
+	// And the credentials the file holds still get through.
+	resp, _ = get(t, h, http.MethodGet, "/api/identity",
+		"Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("mikael:hunter2")))
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// The shell is served from memory rather than by the file server, so it carries
+// its own validator; without one "no-cache" could never be satisfied.
+func TestShellIsRevalidated(t *testing.T) {
+	h := newServeHandler(t)
+
+	resp, _ := get(t, h, http.MethodGet, "/")
+	etag := resp.Header.Get("ETag")
+	require.NotEmpty(t, etag)
+	assert.Equal(t, "no-cache", resp.Header.Get("Cache-Control"))
+
+	resp, body := get(t, h, http.MethodGet, "/", "If-None-Match", etag)
+	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
+	assert.Empty(t, body)
+
+	// A different base path is a different shell, so a client that cached one
+	// does not keep it across a redeployment under a path.
+	under := newServeHandlerWith(t, serveOptions{
+		addr:      "127.0.0.1",
+		port:      7777,
+		publicURL: "https://example.com/awb/",
+	})
+	resp, _ = get(t, under, http.MethodGet, "/")
+	assert.NotEqual(t, etag, resp.Header.Get("ETag"))
+}
+
+// lockedBuffer is a writer a test can read while the server writes to it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// serve runs until it is stopped rather than answering and exiting, so what it
+// writes is a log: every line is stamped with the time, and goes to the writer
+// Execute was handed rather than straight to os.Stderr.
+func TestServeLogsWithATimestamp(t *testing.T) {
+	var out lockedBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Port 0 lets the operating system choose, so the test needs no free port
+	// of its own. The command itself never reaches here with one: validate
+	// refuses a port outside 1-65535.
+	opts := serveOptions{addr: "127.0.0.1", port: 0, publicURL: "https://example.com/awb/"}
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- runServer(ctx, &env{stderr: &out}, opts, http.NotFoundHandler()) }()
+
+	stamped := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+	require.Eventually(t, func() bool {
+		return strings.Count(out.String(), "\n") >= 2
+	}, 5*time.Second, 10*time.Millisecond, "the server logged nothing: %q", out.String())
+
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	require.Len(t, lines, 2)
+	for _, line := range lines {
+		assert.Regexp(t, stamped, line)
+	}
+	assert.Contains(t, lines[0], "awb serving on http://127.0.0.1:")
+	assert.Contains(t, lines[1], "published at https://example.com/awb/")
+
+	// And it stops when its context is cancelled, rather than on its own.
+	cancel()
+	select {
+	case err := <-stopped:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the server did not shut down")
+	}
 }

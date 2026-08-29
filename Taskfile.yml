@@ -1,7 +1,8 @@
 version: "3"
 
 vars:
-  ADDR: '{{default "127.0.0.1:7777" .ADDR}}'
+  ADDR: '{{default "127.0.0.1" .ADDR}}'
+  PORT: '{{default "7777" .PORT}}'
   OUTPUT_DIR: '{{default "." .OUTPUT_DIR}}'
 
 tasks:
@@ -70,7 +71,7 @@ tasks:
     desc: Restart the development server when source files change
     aliases: [dev]
     cmds:
-      - watchexec --restart --exts go,ts,html,css,yaml,yml -- task run ADDR="{{.ADDR}}" -- {{.CLI_ARGS}}
+      - watchexec --restart --exts go,ts,html,css,yaml,yml -- task run ADDR="{{.ADDR}}" PORT="{{.PORT}}" -- {{.CLI_ARGS}}
 
   be:build:
     desc: Build the awb binary
@@ -88,7 +89,7 @@ tasks:
     desc: Run the development server
     deps: [generate]
     cmds:
-      - go run . serve --addr "{{.ADDR}}" {{.CLI_ARGS}}
+      - go run . serve --addr "{{.ADDR}}" --port "{{.PORT}}" {{.CLI_ARGS}}
 
   fe:build:
     desc: Compile the TypeScript frontend

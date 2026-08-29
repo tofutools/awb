@@ -679,3 +679,50 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
 	assert.Empty(t, issue.Relations)
 }
+
+// serve refuses a listen address it could never bind, before it opens the
+// database or the port.
+func TestServeRejectsAPortThatIsNotOne(t *testing.T) {
+	h := newHarness(t)
+
+	for _, port := range []string{"0", "-1", "65536"} {
+		_, stderr, code := h.run("serve", "--port", port)
+		assert.Equal(t, 2, code, port)
+		assert.Contains(t, stderr, "--port", port)
+	}
+}
+
+// --addr carried the port before --port existed, so the old form is refused
+// rather than bound as a host of that name.
+func TestServeRejectsAnAddressCarryingAPort(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--addr", "0.0.0.0:7777")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--port")
+}
+
+// A flag that could never work is reported as the usage error it is, rather
+// than from behind an unrelated failure to find a database.
+func TestServeChecksItsFlagsBeforeItOpensAnything(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("AWB_DB", filepath.Join(t.TempDir(), "nothing-here.db"))
+
+	_, stderr, code := h.run("serve", "--public-url", "//example.com/awb")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--public-url")
+}
+
+// A --public-url that cannot be a base is refused at startup rather than
+// serving a UI whose every relative URL is wrong.
+func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
+	h := newHarness(t)
+
+	// No scheme, so the path is the whole of it; and a path with no origin,
+	// which is the half that says where a browser reaches the server.
+	for _, publicURL := range []string{"example.com/awb", "/awb/"} {
+		_, stderr, code := h.run("serve", "--public-url", publicURL)
+		assert.Equal(t, 2, code, publicURL)
+		assert.Contains(t, stderr, "--public-url", publicURL)
+	}
+}
