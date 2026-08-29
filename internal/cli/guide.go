@@ -42,9 +42,9 @@ awb dep tree <id>             # the decomposition below an issue
 
 ` + "```" + `
 awb attach add <id> ./trace.txt   # prints the attachment id
-awb attach ls <id> --compact      # what is attached
+awb attach list <id> --compact    # what is attached
 awb attach get <aid> --output f   # write the content out (stdout without it)
-awb attach rm <aid> --force
+awb attach delete <aid> --force
 ` + "```" + `
 
 **Vocabulary** (fixed; put anything else in labels):

@@ -96,8 +96,8 @@ whatever is under the key is meant.
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |
 | `awb dep tree <id>` | The decomposition below an issue. |
 | `awb attach add <id> <file>` | Attach a file to an issue. Prints the new attachment ID. |
-| `awb attach ls <id>` | The files attached to an issue. |
-| `awb attach show\|get\|rm <attachment-id>` | One attachment: its metadata, its content, or its removal. |
+| `awb attach list <id>` | The files attached to an issue. |
+| `awb attach show\|get\|delete <attachment-id>` | One attachment: its metadata, its content, or its deletion. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
 | `awb project create\|update\|show\|list\|delete` | Projects. |
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
@@ -120,10 +120,10 @@ screenshot, anything a link cannot stand in for.
 ```console
 $ awb attach add awb-5c1d84 ./stack-trace.txt
 3f2a91c40d17
-$ awb attach ls awb-5c1d84 --compact
+$ awb attach list awb-5c1d84 --compact
 3f2a91c40d17 214 9f86d0…b0f00a "text/plain; charset=utf-8" "stack-trace.txt"
 $ awb attach get 3f2a --output ./trace.txt   # stdout without --output
-$ awb attach rm 3f2a --force
+$ awb attach delete 3f2a --force
 ```
 
 The content does **not** go in the database. It is stored as one file per

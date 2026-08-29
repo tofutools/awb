@@ -725,7 +725,7 @@ func TestAttach(t *testing.T) {
 	// The compact line is id, size and digest — none of which can hold a space —
 	// then the content type and the name as JSON strings. The sniffed content
 	// type holds a space, which is why it is quoted.
-	line := h.mustRun("attach", "ls", id, "--compact")
+	line := h.mustRun("attach", "list", id, "--compact")
 	assert.Equal(t,
 		aid+" 5 "+digest+" \"text/plain; charset=utf-8\" \"trace.txt\"\n", line)
 
@@ -759,8 +759,8 @@ func TestAttach(t *testing.T) {
 	assert.Equal(t, aid, issue.Attachments[0].ID)
 	assert.Equal(t, "trace.txt", issue.Attachments[0].Name)
 
-	// Removing it takes the file with it, nothing else holding those bytes.
-	assert.Contains(t, h.mustRun("attach", "rm", aid, "--force"), aid)
+	// Deleting it takes the file with it, nothing else holding those bytes.
+	assert.Contains(t, h.mustRun("attach", "delete", aid, "--force"), aid)
 	_, err = os.Stat(filepath.Join(h.root(), "attachments", digest))
 	assert.True(t, os.IsNotExist(err), "the content went with the last attachment")
 }
@@ -793,16 +793,16 @@ func TestAttachNameAndContentType(t *testing.T) {
 	assert.Equal(t, "piped\n", h.mustRun("attach", "get", aid))
 }
 
-// attach rm is destructive and takes the confirmation flag every destructive
-// command takes.
-func TestAttachRemoveNeedsForce(t *testing.T) {
+// attach delete is destructive and takes the confirmation flag every
+// destructive command takes.
+func TestAttachDeleteNeedsForce(t *testing.T) {
 	h := newHarness(t)
 	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
 	aid := strings.TrimSpace(h.mustRun("attach", "add", id, path))
 
-	_, stderr, code := h.run("attach", "rm", aid)
+	_, stderr, code := h.run("attach", "delete", aid)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "--force")
 

@@ -22,14 +22,14 @@ func newAttachCommand(e *env) *cobra.Command {
 			"otherwise. Only the metadata is in the database: name, content type, size\n" +
 			"and the SHA-256 of the content.\n\n" +
 			"An attachment is immutable. There is no command that changes one: attach\n" +
-			"the file again and remove the old one.",
+			"the file again and delete the old one.",
 	}
 	cmd.AddCommand(
 		newAttachAddCommand(e),
 		newAttachListCommand(e),
 		newAttachShowCommand(e),
 		newAttachGetCommand(e),
-		newAttachRemoveCommand(e),
+		newAttachDeleteCommand(e),
 	)
 	return grouping(cmd)
 }
@@ -112,7 +112,7 @@ func openContent(e *env, path string) (io.ReadCloser, string, error) {
 
 func newAttachListCommand(e *env) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ls <id>",
+		Use:   "list <id>",
 		Short: "List the files attached to an issue",
 		Long: "List an issue's attachments, oldest first.\n\n" +
 			"Under --compact each line is five fields: the id, the size in bytes and\n" +
@@ -207,13 +207,13 @@ func writeContentFile(path string, content io.Reader) error {
 	return nil
 }
 
-func newAttachRemoveCommand(e *env) *cobra.Command {
+func newAttachDeleteCommand(e *env) *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "rm <attachment-id> --force",
-		Short: "Remove an attachment",
-		Long: "Remove an attachment. This is not recoverable.\n\n" +
+		Use:   "delete <attachment-id> --force",
+		Short: "Delete an attachment",
+		Long: "Delete an attachment. This is not recoverable.\n\n" +
 			"The stored content goes with it unless another attachment holds the same\n" +
 			"bytes, in which case that copy stays.",
 		Args: exactArgs(1),
@@ -221,7 +221,7 @@ func newAttachRemoveCommand(e *env) *cobra.Command {
 			// A missing --force depends on the arguments alone and not on anything
 			// the database holds, so it is a usage error.
 			if !force {
-				return awberr.Usagef("awb attach rm needs --force: it is not recoverable")
+				return awberr.Usagef("awb attach delete needs --force: it is not recoverable")
 			}
 
 			be, err := e.backend(cmd.Context())
@@ -235,10 +235,12 @@ func newAttachRemoveCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(deleted)
 			}
-			return e.summarise("Removed attachment %s (%s).\n", deleted.ID, deleted.Name)
+			// The one line a deleting command says, in the form the other two
+			// deleting commands say it.
+			return e.summarise("Deleted attachment %s (%s).\n", deleted.ID, deleted.Name)
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "confirm the removal")
+	cmd.Flags().BoolVar(&force, "force", false, "confirm the deletion")
 	return cmd
 }
