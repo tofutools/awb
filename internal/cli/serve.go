@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -463,6 +463,13 @@ func contentSecurityPolicy() (string, error) {
 }
 
 func runServer(ctx context.Context, e *env, opts serveOptions, h http.Handler) error {
+	// serve is the one command that runs until it is stopped rather than
+	// answering and exiting, so what it writes is a log and is stamped with the
+	// time. It goes to the writer Execute was handed rather than to the
+	// package-level logger's os.Stderr, so that redirecting the command's
+	// output still captures all of it.
+	logger := log.New(e.stderr, "", log.LstdFlags)
+
 	addr := opts.listenAddr()
 	srv := &http.Server{
 		Addr:              addr,
@@ -471,6 +478,10 @@ func runServer(ctx context.Context, e *env, opts serveOptions, h http.Handler) e
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
+		// Otherwise the server's own complaints — a request too malformed to
+		// reach a handler, a panic a handler did not recover — go to the
+		// package-level logger and are the only unstamped lines in the log.
+		ErrorLog: logger,
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -478,9 +489,9 @@ func runServer(ctx context.Context, e *env, opts serveOptions, h http.Handler) e
 
 	errs := make(chan error, 1)
 	go func() {
-		_, _ = fmt.Fprintf(e.stderr, "awb serving on http://%s/\n", addr)
+		logger.Printf("awb serving on http://%s/", addr)
 		if opts.publicURL != "" {
-			_, _ = fmt.Fprintf(e.stderr, "published at %s\n", opts.publicURL)
+			logger.Printf("published at %s", opts.publicURL)
 		}
 		errs <- srv.ListenAndServe()
 	}()

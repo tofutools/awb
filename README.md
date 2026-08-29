@@ -179,7 +179,7 @@ told otherwise, and one database spans everything you work on.
 
 ```console
 $ awb serve
-awb serving on http://127.0.0.1:7777/
+2026/05/17 09:41:02 awb serving on http://127.0.0.1:7777/
 ```
 
 That serves a JSON API, the OpenAPI 3.1 document describing it at

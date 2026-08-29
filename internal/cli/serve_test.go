@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"io"
 	"io/fs"
@@ -9,8 +11,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/stretchr/testify/assert"
@@ -477,4 +482,61 @@ func TestShellIsRevalidated(t *testing.T) {
 	})
 	resp, _ = get(t, under, http.MethodGet, "/")
 	assert.NotEqual(t, etag, resp.Header.Get("ETag"))
+}
+
+// lockedBuffer is a writer a test can read while the server writes to it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// serve runs until it is stopped rather than answering and exiting, so what it
+// writes is a log: every line is stamped with the time, and goes to the writer
+// Execute was handed rather than straight to os.Stderr.
+func TestServeLogsWithATimestamp(t *testing.T) {
+	var out lockedBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Port 0 lets the operating system choose, so the test needs no free port
+	// of its own. The command itself never reaches here with one: validate
+	// refuses a port outside 1-65535.
+	opts := serveOptions{addr: "127.0.0.1", port: 0, publicURL: "https://example.com/awb/"}
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- runServer(ctx, &env{stderr: &out}, opts, http.NotFoundHandler()) }()
+
+	stamped := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
+	require.Eventually(t, func() bool {
+		return strings.Count(out.String(), "\n") >= 2
+	}, 5*time.Second, 10*time.Millisecond, "the server logged nothing: %q", out.String())
+
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	require.Len(t, lines, 2)
+	for _, line := range lines {
+		assert.Regexp(t, stamped, line)
+	}
+	assert.Contains(t, lines[0], "awb serving on http://127.0.0.1:")
+	assert.Contains(t, lines[1], "published at https://example.com/awb/")
+
+	// And it stops when its context is cancelled, rather than on its own.
+	cancel()
+	select {
+	case err := <-stopped:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the server did not shut down")
+	}
 }
