@@ -160,13 +160,19 @@ func ParseAttachmentRef(s string) (string, error) {
 
 // CompactAttachmentLine renders an attachment as the compact one-line form:
 //
-//	3f2a91c40d17 12345 text/markdown 9f86d0…b0f00a "notes.md"
+//	3f2a91c40d17 12345 9f86d0…b0f00a "text/markdown; charset=utf-8" "notes.md"
 //
-// The five fields are id, size in bytes, content type, the content's SHA-256,
-// and the name as a JSON string. The name is last and quoted because it is the
-// only field that may contain a space, so a line is parseable by splitting on
-// whitespace outside it.
+// The five fields are id, size in bytes, the content's SHA-256, the content
+// type and the name. The first three cannot contain a space; the last two are
+// JSON strings, including their surrounding double quotes and JSON escaping,
+// and are last for that reason. So a line is read by splitting the first three
+// fields on whitespace and decoding the two JSON strings that follow.
+//
+// The content type is quoted rather than written bare because it may carry
+// parameters — the sniffed default is "text/plain; charset=utf-8" — and a bare
+// one would put a space in the middle of a positional field and turn a
+// five-field line into six.
 func CompactAttachmentLine(a *Attachment) string {
-	return a.ID + " " + strconv.FormatInt(a.Size, 10) + " " + a.ContentType + " " +
-		a.Sha256 + " " + jsonString(a.Name)
+	return a.ID + " " + strconv.FormatInt(a.Size, 10) + " " + a.Sha256 + " " +
+		jsonString(a.ContentType) + " " + jsonString(a.Name)
 }

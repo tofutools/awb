@@ -60,10 +60,12 @@ Each file is named by its own SHA-256, and that one decision settles three
 things. Writing one is idempotent, because whatever is already under that name
 holds the same bytes. Two attachments of the same content share one file, which
 is why deleting one removes the file only once no row names that digest any
-more. And the content can be written *before* the row that names it, so a
-committed row never points at a file that is not there; the failure that is
-left instead — a file no row names — is unreachable, harmless, and adopted by
-the next upload of the same bytes.
+more. And the content can be put in place *before the row that names it is
+committed* — the bytes are copied to a staging file before the transaction
+begins, and given their final name inside it, after the row is inserted and
+before the commit — so a committed row never points at a file that is not
+there. The failure that is left instead — a file no row names — is unreachable,
+harmless, and adopted by the next upload of the same bytes.
 
 An attachment is immutable. Nothing changes one, which is why it carries no
 update timestamp, no entity tag and no conditional edit: attach the file again

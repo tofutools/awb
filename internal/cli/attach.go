@@ -115,9 +115,9 @@ func newAttachListCommand(e *env) *cobra.Command {
 		Use:   "ls <id>",
 		Short: "List the files attached to an issue",
 		Long: "List an issue's attachments, oldest first.\n\n" +
-			"Under --compact each line is\n" +
-			"\"<id> <size> <content-type> <sha256> \\\"<name>\\\"\", the name being a JSON\n" +
-			"string and the only field that may contain a space.",
+			"Under --compact each line is five fields: the id, the size in bytes and\n" +
+			"the content's SHA-256, none of which can hold a space, followed by the\n" +
+			"content type and the name as JSON strings.",
 		Args: exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			be, err := e.backend(cmd.Context())

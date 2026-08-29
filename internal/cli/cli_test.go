@@ -722,11 +722,27 @@ func TestAttach(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "boom\n", string(stored))
 
-	// The compact line is id, size, content type, digest and the name as a JSON
-	// string.
+	// The compact line is id, size and digest — none of which can hold a space —
+	// then the content type and the name as JSON strings. The sniffed content
+	// type holds a space, which is why it is quoted.
+	line := h.mustRun("attach", "ls", id, "--compact")
 	assert.Equal(t,
-		aid+" 5 text/plain; charset=utf-8 "+digest+" \"trace.txt\"\n",
-		h.mustRun("attach", "ls", id, "--compact"))
+		aid+" 5 "+digest+" \"text/plain; charset=utf-8\" \"trace.txt\"\n", line)
+
+	// Read back the way the format says to: the first three fields split on
+	// whitespace, then two JSON strings. The content type holds a space — the
+	// sniffed default always does — so a consumer that split the whole line on
+	// whitespace would see six fields, which is exactly why it is quoted.
+	head, quoted, found := strings.Cut(strings.TrimSuffix(line, "\n"), " \"")
+	require.True(t, found)
+	assert.Equal(t, []string{aid, "5", digest}, strings.Fields(head))
+
+	decoder := json.NewDecoder(strings.NewReader("\"" + quoted))
+	var contentType, name string
+	require.NoError(t, decoder.Decode(&contentType))
+	require.NoError(t, decoder.Decode(&name))
+	assert.Equal(t, "text/plain; charset=utf-8", contentType)
+	assert.Equal(t, "trace.txt", name)
 
 	// The content comes back byte for byte, to stdout and to a file.
 	assert.Equal(t, "boom\n", h.mustRun("attach", "get", aid))

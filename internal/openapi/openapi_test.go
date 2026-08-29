@@ -327,6 +327,16 @@ func TestOperations(t *testing.T) {
 	assert.True(t, operations["addAttachment"].AcceptsBodyType("application/octet-stream"))
 	assert.True(t, operations["addAttachment"].AcceptsBodyType("Application/Octet-Stream"),
 		"a media type is case-insensitive")
+
+	// What follows the first ";" is parameters rather than the type, and the
+	// comparison reduces the header itself so that no caller has to.
+	assert.True(t, operations["createIssue"].AcceptsBodyType("application/json; charset=utf-8"))
+	assert.True(t, operations["createIssue"].AcceptsBodyType("Application/JSON;charset=UTF-8"))
+	assert.True(t, operations["addAttachment"].AcceptsBodyType("application/octet-stream; x=1"))
+	assert.False(t, operations["createIssue"].AcceptsBodyType("application/jsonx"),
+		"only the whole media type matches, not a prefix of one")
+	assert.False(t, operations["createIssue"].AcceptsBodyType(""),
+		"a body claiming nothing claims nothing useful")
 	assert.False(t, operations["getIssue"].AcceptsBodyType("application/json"),
 		"an operation that declares no body accepts none")
 }

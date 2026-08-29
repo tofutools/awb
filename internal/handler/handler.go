@@ -195,8 +195,7 @@ func (h *Handler) bodyTypeIsDeclared(err error, r *http.Request) bool {
 	if !ok {
 		return false
 	}
-	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
-	return operation.AcceptsBodyType(strings.TrimSpace(mediaType))
+	return operation.AcceptsBodyType(r.Header.Get("Content-Type"))
 }
 
 // declaredBodyType names what the operation would have accepted, for the

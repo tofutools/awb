@@ -30,10 +30,18 @@ type Operation struct {
 	BodyMediaTypes []string
 }
 
-// AcceptsBodyType reports whether a body claiming this media type is one the
-// operation declares. The comparison is case-insensitive, a media type being
-// case-insensitive, and the parameters after the first ";" are not part of it.
-func (o Operation) AcceptsBodyType(mediaType string) bool {
+// AcceptsBodyType reports whether a body claiming this Content-Type is one the
+// operation declares.
+//
+// It takes the header value as it arrived and reduces it itself: a media type
+// is case-insensitive, and what follows the first ";" is parameters rather
+// than the type — "application/json; charset=utf-8" is a JSON body. Doing that
+// here rather than at the call site is what stops a second caller from
+// comparing a raw header against a bare type and refusing every request that
+// spells out its charset.
+func (o Operation) AcceptsBodyType(contentType string) bool {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	mediaType = strings.TrimSpace(mediaType)
 	for _, declared := range o.BodyMediaTypes {
 		if strings.EqualFold(declared, mediaType) {
 			return true

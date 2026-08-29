@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -104,9 +105,26 @@ func TestCompactAttachmentLine(t *testing.T) {
 		CreatedAt:   "2026-08-26T09:12:03.412Z",
 	}
 	assert.Equal(t,
-		`3f2a91c40d17 12345 text/markdown; charset=utf-8 `+strings.Repeat("ab", 32)+
-			` "release notes.md"`,
+		`3f2a91c40d17 12345 `+strings.Repeat("ab", 32)+
+			` "text/markdown; charset=utf-8" "release notes.md"`,
 		domain.CompactAttachmentLine(a))
+
+	// The point of the two quoted fields being last: the line is still five
+	// fields when either of them holds a space, which the sniffed default
+	// content type always does.
+	fields := strings.Fields(domain.CompactAttachmentLine(a))
+	assert.Equal(t, a.ID, fields[0])
+	assert.Equal(t, "12345", fields[1])
+	assert.Equal(t, a.Sha256, fields[2])
+
+	var contentType, name string
+	rest := strings.TrimPrefix(domain.CompactAttachmentLine(a),
+		a.ID+" 12345 "+a.Sha256+" ")
+	decoder := json.NewDecoder(strings.NewReader(rest))
+	require.NoError(t, decoder.Decode(&contentType))
+	require.NoError(t, decoder.Decode(&name))
+	assert.Equal(t, a.ContentType, contentType)
+	assert.Equal(t, a.Name, name)
 }
 
 // Attachments are ordered oldest first, then by id: a total order, and one an
