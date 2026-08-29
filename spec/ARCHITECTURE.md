@@ -41,8 +41,40 @@ labels and an assignee.
 
 The description is the only free text on an issue. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
-there is no attachment or link entity, no file contents in the database and no
-link records to keep in step with anything.
+there is no link entity and no link records to keep in step with anything.
+
+### Attachments
+
+A link cannot stand in for everything. A stack trace, a failing log or a
+screenshot is evidence that has to travel with the issue, so an **attachment**
+is a file attached to one, carrying a name, a content type, a size and the
+SHA-256 of its content.
+
+**The content is not in the database.** It is a file in a directory of them,
+which defaults to sitting beside the database and can be pointed at a
+filesystem of its own — because the reason to store files is that they are
+large, and a tracker that swallowed them would stop being a small file anyone
+can copy, back up and read with a SQLite shell. Only the metadata is a row.
+
+Each file is named by its own SHA-256, and that one decision settles three
+things. Writing one is idempotent, because whatever is already under that name
+holds the same bytes. Two attachments of the same content share one file, which
+is why deleting one removes the file only once no row names that digest any
+more. And the content can be written *before* the row that names it, so a
+committed row never points at a file that is not there; the failure that is
+left instead — a file no row names — is unreachable, harmless, and adopted by
+the next upload of the same bytes.
+
+An attachment is immutable. Nothing changes one, which is why it carries no
+update timestamp, no entity tag and no conditional edit: attach the file again
+and remove the old one. Attaching or removing one does not move the issue's own
+timestamp, exactly as a relation does not, because it is its own entity with
+its own lifecycle.
+
+The content type is what the caller says it is, and what the first bytes say it
+is when the caller says nothing. It is sniffed from the content rather than
+from the name's extension, because an extension table is a file on the machine
+and would make the same upload get different answers on two of them.
 
 ### Identifiers
 
@@ -168,8 +200,9 @@ because the command line has no separate meaning for them.
 
 ## 4. Storage
 
-A single SQLite file holds everything. There is no per-directory database, so a
-user has one tracker unless they explicitly point at another.
+A single SQLite file holds everything but attachment content, which is a
+directory of files beside it. There is no per-directory database, so a user has
+one tracker unless they explicitly point at another.
 
 **Only the initialising command creates it.** Every other command that finds the
 file missing fails and names the path, so a typo in a flag or an environment
@@ -205,6 +238,12 @@ of a claim, the timestamp bump and the identifier collision retry all happen
 inside one writer's exclusive turn, so no concurrent commit can slip between a
 check and the change it guards. A transaction that cannot take the lock fails
 rather than being retried in a loop.
+
+An attachment's content is copied into a staging file outside the transaction,
+that being the slow half; the rename that gives it its final name, and the
+unlink that removes an unreferenced one, both happen inside it. That is what
+puts an upload and a concurrent delete of the same bytes in one order rather
+than letting the delete remove a file the upload had already written.
 
 There are no leases, locks or claim expiry. A claim is a single atomic update,
 and a crashed agent leaves an assigned issue that a human or another agent
@@ -285,14 +324,27 @@ the API means changing the document.
 
 Generation cannot state everything the API promises, and what is left over is
 deliberately small. The handler holds the translation between the API's shapes
-and the domain's, the mapping of the error taxonomy onto statuses, and three
+and the domain's, the mapping of the error taxonomy onto statuses, and four
 rules a generator does not enforce: a query parameter an operation does not
 declare is refused rather than ignored, so is a body sent to an operation that
-declares none, and a body must be well-formed UTF-8 with no unpaired surrogate
-escape — which has to be checked on the bytes, because a decoder replaces one
-with U+FFFD and that is indistinguishable from a U+FFFD the caller meant. The
-first two rules read what an operation declares back out of the document rather
-than restating it in Go, so they cannot drift from it either.
+declares none, a body must claim a content type that operation declares, and a
+text body must be well-formed UTF-8 with no unpaired surrogate escape — which
+has to be checked on the bytes, because a decoder replaces one with U+FFFD and
+that is indistinguishable from a U+FFFD the caller meant. The first three rules
+read what an operation declares back out of the document rather than restating
+it in Go, so they cannot drift from it either.
+
+One endpoint is not JSON. Uploading an attachment carries the file's bytes as
+the body and everything else about it as query parameters, which is what leaves
+`Content-Type` describing the body on the wire and lets an upload stream rather
+than be held whole. It is also the one endpoint whose body cap is the
+attachment maximum instead of the general one: raising the general cap to make
+room for files would let any caller make the server buffer that much JSON.
+
+Downloading one is always served as an octet-stream to be saved, whatever
+content type the metadata records. Uploaded content comes back from the same
+origin as the UI, and a browser invited to render it there would run whatever
+an uploaded HTML file said.
 
 **The API is specified as if a read/write UI existed**, even though the bundled
 one only reads. That means complete write coverage, optimistic concurrency
@@ -381,7 +433,7 @@ design is holding *out*.
 **Deliberately absent:** versioning, history, merge and offline replication;
 comments; audit logs; sprints, boards, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; authorization;
-custom fields and workflows; attachments and blobs; bulk import.
+custom fields and workflows; bulk import.
 
 **Nothing is ever archived or purged.** Closed issues stay queryable forever.
 

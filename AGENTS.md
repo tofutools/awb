@@ -49,7 +49,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | Path | Holds |
 | --- | --- |
 | `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the `--compact` encoders. |
-| `internal/storage` | The schema, the migrations and all SQL. |
+| `internal/storage` | The schema, the migrations, all SQL, and the attachment blob store. |
 | `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
 | `internal/backend` | The one interface every command is written against. |
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
@@ -95,6 +95,12 @@ Three structural rules hold the design together:
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.
+* Attachment content is not in the database. It is a file per distinct content
+  in the attachments directory, named by its own SHA-256, and the row is only
+  the metadata. The rename that places one and the unlink that removes one both
+  happen **inside** the write transaction, which is what orders an upload
+  against a concurrent delete of the same bytes; the slow copy into a staging
+  file happens outside it.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
 * `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.

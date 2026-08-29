@@ -16,6 +16,12 @@ import (
 // fresh salt and the insert retries.
 const HashLen = 6
 
+// AttachmentIDLen is the number of hexadecimal characters in an attachment
+// ID. It is twice an issue's, because an attachment ID is drawn from one
+// namespace for the whole database rather than one per project, and because
+// nobody types one: it is read out of a listing and pasted.
+const AttachmentIDLen = 12
+
 // SaltLen is the number of random bytes mixed into a hash.
 const SaltLen = 16
 
@@ -36,14 +42,27 @@ const SaltLen = 16
 //
 // IDs are not content-addressed and must not be reconstructed.
 func MintHash(title, createdAt string, salt []byte) string {
-	buf := make([]byte, 0, 8+len(title)+len(createdAt)+len(salt))
-	buf = binary.BigEndian.AppendUint64(buf, uint64(len(title)))
-	buf = append(buf, title...)
+	return mintHex(title, createdAt, salt)[:HashLen]
+}
+
+// MintAttachmentID derives an attachment ID the same way, from the
+// attachment's name in place of a title. It is not content-addressed either:
+// two uploads of the same bytes under the same name are two attachments, and
+// the salt is what keeps them apart.
+func MintAttachmentID(name, createdAt string, salt []byte) string {
+	return mintHex(name, createdAt, salt)[:AttachmentIDLen]
+}
+
+// mintHex is the derivation itself, before it is cut to length.
+func mintHex(text, createdAt string, salt []byte) string {
+	buf := make([]byte, 0, 8+len(text)+len(createdAt)+len(salt))
+	buf = binary.BigEndian.AppendUint64(buf, uint64(len(text)))
+	buf = append(buf, text...)
 	buf = append(buf, createdAt...)
 	buf = append(buf, salt...)
 
 	sum := sha256.Sum256(buf)
-	return hex.EncodeToString(sum[:])[:HashLen]
+	return hex.EncodeToString(sum[:])
 }
 
 // NewSalt draws SaltLen bytes from crypto/rand. math/rand is deliberately not

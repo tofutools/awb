@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -21,7 +22,29 @@ type Operation struct {
 	// TakesBody says whether the operation declares a request body. One that
 	// does not refuses a body rather than ignoring it, for the same reason.
 	TakesBody bool
+	// BodyMediaTypes are the content types the operation's request body
+	// declares, which is what a body carried to it must claim to be. Every
+	// operation but the attachment upload declares application/json; that one
+	// declares application/octet-stream, and its body is bytes rather than
+	// text.
+	BodyMediaTypes []string
 }
+
+// AcceptsBodyType reports whether a body claiming this media type is one the
+// operation declares. The comparison is case-insensitive, a media type being
+// case-insensitive, and the parameters after the first ";" are not part of it.
+func (o Operation) AcceptsBodyType(mediaType string) bool {
+	for _, declared := range o.BodyMediaTypes {
+		if strings.EqualFold(declared, mediaType) {
+			return true
+		}
+	}
+	return false
+}
+
+// DeclaresJSONBody reports whether the operation's body is JSON, which is what
+// decides whether the text rules apply to its bytes.
+func (o Operation) DeclaresJSONBody() bool { return o.AcceptsBodyType("application/json") }
 
 // Operations reads the operations out of the document, keyed by operation ID —
 // the identifier the generated server reports for the request it is serving.
@@ -64,9 +87,14 @@ func (d *Document) Operations() (map[string]Operation, error) {
 			for name := range shared {
 				names[name] = true
 			}
+			bodyTypes, err := bodyMediaTypes(operation["requestBody"])
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", id, err)
+			}
 			operations[id] = Operation{
 				QueryParameters: names,
 				TakesBody:       operation["requestBody"] != nil,
+				BodyMediaTypes:  bodyTypes,
 			}
 		}
 	}
@@ -111,4 +139,26 @@ func queryNames(raw any, components map[string]any) (map[string]bool, error) {
 		names[name] = true
 	}
 	return names, nil
+}
+
+// bodyMediaTypes reads the content types one requestBody declares, sorted so
+// that what a refusal names is the same on every run.
+func bodyMediaTypes(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	body, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("requestBody is not an object")
+	}
+	content, ok := body["content"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("requestBody declares no content")
+	}
+	types := make([]string, 0, len(content))
+	for mediaType := range content {
+		types = append(types, mediaType)
+	}
+	slices.Sort(types)
+	return types, nil
 }

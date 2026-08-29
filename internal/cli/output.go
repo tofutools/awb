@@ -186,6 +186,7 @@ const (
 	labelsFloor   = 10
 	blockersFloor = 13
 	nameFloor     = 12
+	typeFloor     = 12
 )
 
 // always paints every row of a column the same.
@@ -534,6 +535,17 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 		e.writeSection(tbl)
 	}
 
+	if len(issue.Attachments) > 0 {
+		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.apply(t.header, "Attachments"))
+		tbl := section()
+		for i := range issue.Attachments {
+			a := &issue.Attachments[i]
+			tbl.Row(t.apply(t.id, a.ID), a.Name,
+				t.apply(t.dim, humanSize(a.Size)), t.apply(t.dim, a.ContentType))
+		}
+		e.writeSection(tbl)
+	}
+
 	if len(issue.Relations) > 0 {
 		_, _ = fmt.Fprintf(e.stdout, "\n%s\n", t.apply(t.header, "Relations"))
 		tbl := section()
@@ -732,4 +744,91 @@ func (e *env) mutatedProject(project *domain.Project) error {
 		return e.writeJSON(project)
 	}
 	return nil
+}
+
+// printAttachments renders an attachment listing in whichever mode is in
+// force.
+func (e *env) printAttachments(attachments []domain.Attachment) error {
+	switch {
+	case e.json:
+		// An empty list renders as [], never as null.
+		if attachments == nil {
+			attachments = []domain.Attachment{}
+		}
+		return e.writeJSON(attachments)
+	case e.compact:
+		for i := range attachments {
+			_, _ = fmt.Fprintln(e.stdout, domain.CompactAttachmentLine(&attachments[i]))
+		}
+		return nil
+	default:
+		e.printAttachmentTable(attachments)
+		return nil
+	}
+}
+
+func (e *env) printAttachmentTable(attachments []domain.Attachment) {
+	if len(attachments) == 0 {
+		return
+	}
+	t := e.theme()
+
+	cells := func(text func(*domain.Attachment) string) []string {
+		out := make([]string, len(attachments))
+		for i := range attachments {
+			out[i] = text(&attachments[i])
+		}
+		return out
+	}
+
+	e.writeListing(t, []col{
+		{header: "ID", paint: always(t.id),
+			cells: cells(func(a *domain.Attachment) string { return a.ID })},
+		{header: "SIZE", right: true,
+			cells: cells(func(a *domain.Attachment) string { return humanSize(a.Size) })},
+		{header: "TYPE", floor: typeFloor, expendable: true,
+			cells: cells(func(a *domain.Attachment) string { return a.ContentType })},
+		{header: "NAME", floor: nameFloor,
+			cells: cells(func(a *domain.Attachment) string { return a.Name })},
+	})
+}
+
+// printAttachment renders one attachment's metadata.
+//
+// Under --compact it prints the same single line a listing would; there is
+// nothing else to lose, an attachment's metadata being that line and its
+// digest and timestamp.
+func (e *env) printAttachment(attachment *domain.Attachment) error {
+	switch {
+	case e.json:
+		return e.writeJSON(attachment)
+	case e.compact:
+		_, _ = fmt.Fprintln(e.stdout, domain.CompactAttachmentLine(attachment))
+		return nil
+	default:
+		t := e.theme()
+		e.writeHeading(t, attachment.ID, attachment.Name)
+		e.field(t, "Issue", t.apply(t.id, attachment.Issue))
+		e.field(t, "Type", attachment.ContentType)
+		e.field(t, "Size", fmt.Sprintf("%s (%d bytes)", humanSize(attachment.Size), attachment.Size))
+		e.field(t, "SHA-256", t.apply(t.dim, attachment.Sha256))
+		e.field(t, "Created", attachment.CreatedAt)
+		return nil
+	}
+}
+
+// humanSize is a size for the default mode, which is for humans and is
+// explicitly not a compatibility surface. --json and --compact carry the exact
+// number of bytes.
+func humanSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return strconv.FormatInt(size, 10) + " B"
+	}
+	value, exponent := float64(size)/unit, 0
+	for value >= unit && exponent < 3 {
+		value /= unit
+		exponent++
+	}
+	return fmt.Sprintf("%.1f %ciB", value, "KMGT"[exponent])
 }

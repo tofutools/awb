@@ -158,7 +158,16 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 
 		deleted.Project = *project
 		if cascade {
+			// Read before the rows go: the cascade takes the attachment rows with
+			// the issues, and there would be nothing left to ask afterwards.
+			digests, err := tx.DigestsOfProject(key)
+			if err != nil {
+				return err
+			}
 			if _, err := tx.DeleteProjectIssues(key); err != nil {
+				return err
+			}
+			if err := removeUnreferenced(tx, b.blobs, digests); err != nil {
 				return err
 			}
 		}

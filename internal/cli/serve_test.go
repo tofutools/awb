@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/local"
 	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
@@ -44,14 +46,16 @@ func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 
 func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.HtpasswdFile) http.Handler {
 	t.Helper()
-	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), htpasswd, opts)
+	h, err := buildHandler(local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael"),
+		openapi.New(raw), htpasswd, opts)
 	require.NoError(t, err)
 	return h
 }
@@ -539,4 +543,71 @@ func TestServeLogsWithATimestamp(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the server did not shut down")
 	}
+}
+
+// The transport cap is per endpoint: the attachment upload gets the domain's
+// attachment maximum and everything else gets the general one, which is far
+// above anything the field maxima permit.
+func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
+	h := newServeHandler(t)
+
+	// The handler is the whole server, so the fixtures are made through it.
+	call := func(method, path, contentType, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", contentType)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"Parser crashes"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
+	upload := "/api/issues/" + issue.ID + "/attachments?name=big.bin"
+
+	// A file over the general cap is not too large: this endpoint's cap is the
+	// attachment maximum.
+	rec = call(http.MethodPost, upload, "application/octet-stream",
+		strings.Repeat("x", maxRequestBody+1))
+	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	// One over the attachment maximum is.
+	rec = call(http.MethodPost, upload, "application/octet-stream",
+		strings.Repeat("x", domain.MaxAttachmentBytes+1))
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+
+	// A JSON body over the general cap still is, so raising one cap did not
+	// raise the other.
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"`+strings.Repeat("x", maxRequestBody)+`"}`)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+}
+
+// The two requests that carry a file are recognised by their exact shape, so
+// nothing else is given the long deadline.
+func TestAttachmentTransferPaths(t *testing.T) {
+	upload := func(method, path string) bool {
+		return isAttachmentUpload(httptest.NewRequest(method, path, nil))
+	}
+	download := func(method, path string) bool {
+		return isAttachmentDownload(httptest.NewRequest(method, path, nil))
+	}
+
+	assert.True(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments"))
+	assert.True(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments?name=x"))
+	assert.False(t, upload(http.MethodGet, "/api/issues/awb-5c1d84/attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues//attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues/a/b/attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues"))
+
+	assert.True(t, download(http.MethodGet, "/api/attachments/3f2a91c40d17/content"))
+	assert.False(t, download(http.MethodGet, "/api/attachments/3f2a91c40d17"))
+	assert.False(t, download(http.MethodDelete, "/api/attachments/3f2a91c40d17/content"))
+	assert.False(t, download(http.MethodGet, "/api/attachments//content"))
 }

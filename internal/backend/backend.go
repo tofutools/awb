@@ -13,6 +13,7 @@ package backend
 
 import (
 	"context"
+	"io"
 
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -54,6 +55,19 @@ type Backend interface {
 
 	Tree(ctx context.Context, ref string) (*domain.IssueTree, error)
 
+	// The attachment operations. An attachment is immutable once stored, so
+	// there is no update and none of these takes an ifMatch: there is no second
+	// version of one to guard against.
+	AddAttachment(ctx context.Context, issueRef string, req AttachmentCreate) (*domain.Attachment, error)
+	GetAttachment(ctx context.Context, ref string) (*domain.Attachment, error)
+	ListAttachments(ctx context.Context, issueRef string, limit, offset *int) (AttachmentPage, error)
+	// OpenAttachment returns the metadata and a reader over the content, which
+	// the caller closes. It is the one operation that carries bytes rather than
+	// a shape, because an attachment's content is the one thing awb stores that
+	// is not text it validated.
+	OpenAttachment(ctx context.Context, ref string) (*domain.Attachment, io.ReadCloser, error)
+	DeleteAttachment(ctx context.Context, ref string) (*domain.Attachment, error)
+
 	LabelFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 	AssigneeFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 
@@ -80,6 +94,26 @@ type ProjectPage struct {
 type FacetPage struct {
 	Facets []domain.Facet
 	Total  int
+}
+
+// AttachmentPage is an attachment listing with its unpaged total.
+type AttachmentPage struct {
+	Attachments []domain.Attachment
+	Total       int
+}
+
+// AttachmentCreate is the body of awb attach add and of POST
+// /api/issues/{id}/attachments.
+type AttachmentCreate struct {
+	// Name is the file name the attachment is shown under. It is not a path and
+	// is never used to build one.
+	Name string
+	// ContentType may be empty, in which case it is sniffed from the first
+	// bytes of the content. The sniffing rule lives in the domain layer, so a
+	// file uploaded through either surface is typed identically.
+	ContentType string
+	// Content is read to its end and closed by the caller, not by the backend.
+	Content io.Reader
 }
 
 // IssueCreate is the body of awb create and of POST /api/issues. Everything

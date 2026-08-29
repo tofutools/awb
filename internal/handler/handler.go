@@ -60,7 +60,7 @@ func NewServer(backendFor func(context.Context) backend.Backend,
 	h := New(backendFor, operations)
 	return api.NewServer(h, h,
 		api.WithMiddleware(h.middleware()),
-		api.WithErrorHandler(errorHandler),
+		api.WithErrorHandler(h.errorHandler),
 		api.WithNotFound(notFound),
 		api.WithMethodNotAllowed(methodNotAllowed),
 	)
@@ -91,6 +91,10 @@ func (h *Handler) HandleBasicAuth(ctx context.Context, _ api.OperationName,
 // The third rule is the UTF-8 half of the input rules, which has to be applied
 // to the raw bytes: a decoder replaces an unpaired surrogate escape with
 // U+FFFD, which is indistinguishable from a U+FFFD the caller meant to send.
+// It is asked only of the bodies that are text. An attachment's content is
+// bytes the caller chose and awb stores unread, so there is nothing there to
+// be valid or invalid UTF-8; it is also streamed rather than buffered, so
+// there are no raw bytes here to look at either.
 func (h *Handler) middleware() api.Middleware {
 	return func(req middleware.Request, next middleware.Next) (middleware.Response, error) {
 		operation := h.operations[req.OperationID]
@@ -108,8 +112,10 @@ func (h *Handler) middleware() api.Middleware {
 			if err := rejectBody(req.Raw); err != nil {
 				return middleware.Response{}, err
 			}
-		} else if err := checkText(req.RawBody); err != nil {
-			return middleware.Response{}, err
+		} else if operation.DeclaresJSONBody() {
+			if err := checkText(req.RawBody); err != nil {
+				return middleware.Response{}, err
+			}
 		}
 
 		return next(req)
@@ -145,12 +151,16 @@ func (h *Handler) NewError(_ context.Context, err error) *api.ErrorStatusCode {
 // decoder considers a bad request stays a bad request, and is 500 otherwise,
 // which is where an error nobody classified belongs.
 //
-// A body that does not declare itself JSON is a 415, a missing Content-Type
-// included — the rule is about what the body claims to be, and a body claiming
-// nothing claims nothing useful. It is asked only of a request that carries a
-// body: one that sends none is never asked to describe it, and reaches here
-// only because the operation required a body it did not send, which is a 400.
-func errorHandler(_ context.Context, w http.ResponseWriter, r *http.Request, err error) {
+// A body claiming a content type the operation does not declare is a 415, a
+// missing Content-Type included — the rule is about what the body claims to
+// be, and a body claiming nothing claims nothing useful. Which types those are
+// is read out of the document, exactly as the other two strictness rules are,
+// so the rule cannot drift from what each endpoint actually accepts. It is
+// asked only of a request that carries a body: one that sends none is never
+// asked to describe it, and reaches here only because the operation required a
+// body it did not send, which is a 400.
+func (h *Handler) errorHandler(_ context.Context, w http.ResponseWriter, r *http.Request,
+	err error) {
 	status := http.StatusInternalServerError
 	var coded interface{ Code() int }
 	if errors.As(err, &coded) {
@@ -164,11 +174,48 @@ func errorHandler(_ context.Context, w http.ResponseWriter, r *http.Request, err
 	case errors.As(err, &tooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
 		return
-	case bodyWasCarried(r) && !claimsJSON(r):
-		writeError(w, http.StatusUnsupportedMediaType, "request body must be application/json")
+	case bodyWasCarried(r) && !h.bodyTypeIsDeclared(err, r):
+		writeError(w, http.StatusUnsupportedMediaType,
+			"request body must be "+h.declaredBodyType(err))
 		return
 	}
 	writeError(w, status, message(err))
+}
+
+// bodyTypeIsDeclared reports whether the body's content type is one the
+// operation the request reached declares.
+//
+// The operation is the one the failing error names: an ogen error carries the
+// id of the operation it was raised in, which is how a rule stated per
+// operation can be applied to a failure that happened before the handler was
+// called. A failure carrying no operation at all never reached routing, and
+// then the request's body cannot be right for anything.
+func (h *Handler) bodyTypeIsDeclared(err error, r *http.Request) bool {
+	operation, ok := h.operationOf(err)
+	if !ok {
+		return false
+	}
+	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	return operation.AcceptsBodyType(strings.TrimSpace(mediaType))
+}
+
+// declaredBodyType names what the operation would have accepted, for the
+// refusal to say.
+func (h *Handler) declaredBodyType(err error) string {
+	operation, ok := h.operationOf(err)
+	if !ok || len(operation.BodyMediaTypes) == 0 {
+		return "application/json"
+	}
+	return strings.Join(operation.BodyMediaTypes, " or ")
+}
+
+func (h *Handler) operationOf(err error) (openapi.Operation, bool) {
+	var ogenErr ogenerrors.Error
+	if !errors.As(err, &ogenErr) {
+		return openapi.Operation{}, false
+	}
+	operation, ok := h.operations[ogenErr.OperationID()]
+	return operation, ok
 }
 
 // message is the line of prose a refused request is answered with.
@@ -261,6 +308,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Blockers:    issue.Blockers,
 		Relations:   toRelations(issue.Relations),
 		Links:       toLinks(issue.Links),
+		Attachments: toAttachments(issue.Attachments),
 	}
 }
 
@@ -295,6 +343,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Blockers:    issue.Blockers,
 		Relations:   issue.Relations,
 		Links:       issue.Links,
+		Attachments: issue.Attachments,
 		Children:    children,
 	}
 }
@@ -367,6 +416,13 @@ func toLinks(links []domain.Link) []api.Link {
 // value rather than meaning nothing.
 
 func optString(o api.OptString) *string {
+	if value, ok := o.Get(); ok {
+		return &value
+	}
+	return nil
+}
+
+func optInt(o api.OptInt) *int {
 	if value, ok := o.Get(); ok {
 		return &value
 	}

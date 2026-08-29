@@ -17,11 +17,12 @@ import (
 
 func newBackend(t *testing.T) (*local.Backend, context.Context) {
 	t.Helper()
-	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	b := local.New(db, "mikael")
+	b := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
 	_, err = b.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context()

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -18,13 +17,6 @@ import (
 // still has to declare what it is. A length of -1 is a chunked body, whose
 // length is not known until it is read and which is therefore carrying one.
 func bodyWasCarried(r *http.Request) bool { return r.ContentLength != 0 }
-
-// claimsJSON reports whether the request declares a JSON body. A media type is
-// case-insensitive, and Application/JSON declares one.
-func claimsJSON(r *http.Request) bool {
-	mediaType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
-	return strings.EqualFold(strings.TrimSpace(mediaType), "application/json")
-}
 
 // rejectBody refuses a body on an operation that declares none. Ignoring one
 // would let a client believe it had said something the server never read, so

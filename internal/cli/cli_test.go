@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -62,13 +64,31 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
+// root is the scratch directory holding the database and, beside it, the
+// attachments directory.
+func (h *harness) root() string { return filepath.Dir(h.dir) }
+
 // run executes one command and returns its stdout, stderr and exit code.
 func (h *harness) run(args ...string) (stdout, stderr string, code int) {
 	h.t.Helper()
+	return h.runStdin("", args...)
+}
+
+// runStdin is run with something on stdin.
+func (h *harness) runStdin(stdin string, args ...string) (stdout, stderr string, code int) {
+	h.t.Helper()
 	var out, errOut bytes.Buffer
 	code = cli.Execute(h.t.Context(), "test", openAPI, args, &out, &errOut,
-		strings.NewReader(""))
+		strings.NewReader(stdin))
 	return out.String(), errOut.String(), code
+}
+
+// mustRunStdin is mustRun with something on stdin.
+func (h *harness) mustRunStdin(stdin string, args ...string) string {
+	h.t.Helper()
+	stdout, stderr, code := h.runStdin(stdin, args...)
+	require.Equal(h.t, 0, code, "awb %s failed: %s", strings.Join(args, " "), stderr)
+	return stdout
 }
 
 // mustRun executes a command that is expected to succeed.
@@ -682,6 +702,130 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 
 // serve refuses a listen address it could never bind, before it opens the
 // database or the port.
+// awb attach: the file goes in the attachments directory beside the database
+// and only its metadata goes in the database.
+func TestAttach(t *testing.T) {
+	h := newHarness(t)
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+
+	path := filepath.Join(h.dir, "trace.txt")
+	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
+
+	// Like awb create, attach add prints the new id and nothing else.
+	aid := strings.TrimSpace(h.mustRun("attach", "add", id, path))
+	assert.Len(t, aid, domain.AttachmentIDLen)
+
+	// The content is one file in the attachments directory, named by its digest.
+	sum := sha256.Sum256([]byte("boom\n"))
+	digest := hex.EncodeToString(sum[:])
+	stored, err := os.ReadFile(filepath.Join(h.root(), "attachments", digest))
+	require.NoError(t, err)
+	assert.Equal(t, "boom\n", string(stored))
+
+	// The compact line is id, size, content type, digest and the name as a JSON
+	// string.
+	assert.Equal(t,
+		aid+" 5 text/plain; charset=utf-8 "+digest+" \"trace.txt\"\n",
+		h.mustRun("attach", "ls", id, "--compact"))
+
+	// The content comes back byte for byte, to stdout and to a file.
+	assert.Equal(t, "boom\n", h.mustRun("attach", "get", aid))
+	out := filepath.Join(h.dir, "copy.txt")
+	assert.Empty(t, h.mustRun("attach", "get", aid, "--output", out))
+	written, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Equal(t, "boom\n", string(written))
+
+	// The issue carries it as a derived array.
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	require.Len(t, issue.Attachments, 1)
+	assert.Equal(t, aid, issue.Attachments[0].ID)
+	assert.Equal(t, "trace.txt", issue.Attachments[0].Name)
+
+	// Removing it takes the file with it, nothing else holding those bytes.
+	assert.Contains(t, h.mustRun("attach", "rm", aid, "--force"), aid)
+	_, err = os.Stat(filepath.Join(h.root(), "attachments", digest))
+	assert.True(t, os.IsNotExist(err), "the content went with the last attachment")
+}
+
+// --name and --content-type override what the file says about itself, and
+// "-" reads the content from stdin, which has no name of its own.
+func TestAttachNameAndContentType(t *testing.T) {
+	h := newHarness(t)
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+
+	path := filepath.Join(h.dir, "trace.txt")
+	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
+
+	aid := strings.TrimSpace(h.mustRun("attach", "add", id, path,
+		"--name", "renamed.log", "--content-type", "text/plain"))
+
+	var attachment domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("attach", "show", aid, "--json")),
+		&attachment))
+	assert.Equal(t, "renamed.log", attachment.Name)
+	assert.Equal(t, "text/plain", attachment.ContentType)
+
+	// Reading from stdin needs a name, stdin having none.
+	_, stderr, code := h.runStdin("boom\n", "attach", "add", id, "-")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--name")
+
+	aid = strings.TrimSpace(h.mustRunStdin("piped\n", "attach", "add", id, "-",
+		"--name", "stdin.txt"))
+	assert.Equal(t, "piped\n", h.mustRun("attach", "get", aid))
+}
+
+// attach rm is destructive and takes the confirmation flag every destructive
+// command takes.
+func TestAttachRemoveNeedsForce(t *testing.T) {
+	h := newHarness(t)
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	path := filepath.Join(h.dir, "trace.txt")
+	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
+	aid := strings.TrimSpace(h.mustRun("attach", "add", id, path))
+
+	_, stderr, code := h.run("attach", "rm", aid)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--force")
+
+	h.mustRun("attach", "show", aid)
+}
+
+// --attachments points the content at a directory of its own, which is what a
+// separately mounted filesystem is for.
+func TestAttachmentsDirectory(t *testing.T) {
+	h := newHarness(t)
+	elsewhere := filepath.Join(h.dir, "elsewhere")
+
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	path := filepath.Join(h.dir, "trace.txt")
+	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
+
+	aid := strings.TrimSpace(h.mustRun("attach", "add", id, path, "--attachments", elsewhere))
+
+	sum := sha256.Sum256([]byte("boom\n"))
+	_, err := os.Stat(filepath.Join(elsewhere, hex.EncodeToString(sum[:])))
+	require.NoError(t, err, "the content went where --attachments said")
+
+	assert.Equal(t, "boom\n", h.mustRun("attach", "get", aid, "--attachments", elsewhere))
+
+	// Without the flag the content is not where the default directory is, so the
+	// row promises what that directory does not hold.
+	_, _, code := h.run("attach", "get", aid)
+	assert.Equal(t, 1, code)
+}
+
+// awb init creates the attachments directory, so the whole layout exists as
+// soon as it has run.
+func TestInitCreatesTheAttachmentsDirectory(t *testing.T) {
+	h := newHarness(t)
+	info, err := os.Stat(filepath.Join(h.root(), "attachments"))
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
+
 func TestServeRejectsAPortThatIsNotOne(t *testing.T) {
 	h := newHarness(t)
 

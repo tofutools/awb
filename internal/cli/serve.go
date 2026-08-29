@@ -37,10 +37,23 @@ import (
 // The cap is a transport limit and not a second validation rule: it sits far
 // above anything the field maxima permit for one issue or one project, so no
 // body those rules would accept is ever refused for its size.
+//
+// Uploading an attachment is the one request whose body is not a description
+// of an issue, and it gets the domain's own attachment maximum instead. The
+// two are separate on purpose: raising the general cap to make room for files
+// would let any caller make the server buffer that much JSON.
+//
+// The two attachment requests get a longer deadline than everything else for
+// the same reason: moving a file of the maximum size over a slow link takes
+// longer than any request describing an issue ever could, and a bound short
+// enough for those would make the size limit depend on the connection. It is
+// granted per request rather than by raising readTimeout and writeTimeout, so
+// no other request gets to hold a connection that long.
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 30 * time.Second
+	contentTimeout    = 10 * time.Minute
 	idleTimeout       = time.Minute
 	shutdownTimeout   = 10 * time.Second
 	maxRequestBody    = 1 << 20
@@ -184,7 +197,7 @@ func newServeCommand(e *env) *cobra.Command {
 				}
 			}
 
-			base := local.New(db, fixedIdentity)
+			base := local.New(db, storage.NewBlobs(cfg.Attachments), fixedIdentity)
 			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, opts)
 			if err != nil {
 				return err
@@ -446,7 +459,66 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 		HSTS:           strictTransport,
 	})(chain)
 
-	return http.MaxBytesHandler(chain, maxRequestBody), nil
+	return transferLimits(chain), nil
+}
+
+// transferLimits caps how much of a request body the server will read, and
+// gives the two requests that carry a file the time to carry it.
+//
+// Everything gets maxRequestBody, which is far above anything the field maxima
+// permit; an attachment upload gets the domain's attachment maximum, that
+// body being a file rather than a description of one. Both have to be applied
+// before the router, which is inside the API server, so this recognises the
+// two paths rather than reading them out of the document — a wider limit on a
+// path that turns out to serve nothing is refused by the router a moment later
+// either way.
+//
+// Extending the deadline is best effort: a server that will not have it moved
+// leaves the request under the general timeouts, which is the behaviour
+// everything else already has.
+func transferLimits(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := int64(maxRequestBody)
+		deadline := time.Now().Add(contentTimeout)
+		switch {
+		case isAttachmentUpload(r):
+			limit = domain.MaxAttachmentBytes
+			_ = http.NewResponseController(w).SetReadDeadline(deadline)
+		case isAttachmentDownload(r):
+			_ = http.NewResponseController(w).SetWriteDeadline(deadline)
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isAttachmentUpload recognises POST /api/issues/{id}/attachments, the one
+// request whose body is a file.
+func isAttachmentUpload(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	return oneSegmentBetween(r.URL.Path, "/api/issues/", "/attachments")
+}
+
+// isAttachmentDownload recognises GET /api/attachments/{aid}/content, the one
+// response that is a file.
+func isAttachmentDownload(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	return oneSegmentBetween(r.URL.Path, "/api/attachments/", "/content")
+}
+
+// oneSegmentBetween reports whether path is prefix, exactly one path segment,
+// and suffix.
+func oneSegmentBetween(path, prefix, suffix string) bool {
+	rest, found := strings.CutPrefix(path, prefix)
+	if !found {
+		return false
+	}
+	segment, found := strings.CutSuffix(rest, suffix)
+	return found && segment != "" && !strings.Contains(segment, "/")
 }
 
 // contentSecurityPolicy pins the UI's script sources to the import map the

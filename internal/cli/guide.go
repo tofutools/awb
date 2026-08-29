@@ -38,6 +38,15 @@ awb search parser --compact   # literal terms, whole-token matching
 awb dep tree <id>             # the decomposition below an issue
 ` + "```" + `
 
+**Attach files** (evidence: a log, a trace, a screenshot):
+
+` + "```" + `
+awb attach add <id> ./trace.txt   # prints the attachment id
+awb attach ls <id> --compact      # what is attached
+awb attach get <aid> --output f   # write the content out (stdout without it)
+awb attach rm <aid> --force
+` + "```" + `
+
 **Vocabulary** (fixed; put anything else in labels):
 
 - type: ` + "`epic` `feature` `bug` `task` `chore`" + ` (default ` + "`task`" + `)

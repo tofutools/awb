@@ -20,22 +20,26 @@ import (
 // Backend is the direct-mode implementation of backend.Backend.
 type Backend struct {
 	db *storage.DB
+	// blobs is where attachment content lives: a directory of files beside the
+	// database by default, which may be pointed at a filesystem of its own.
+	blobs *storage.Blobs
 	// identity is who this backend attributes an unattributed action to: the
 	// CLI's resolved identity, or the identity of the request the server is
 	// answering.
 	identity string
 }
 
-// New wraps an open database.
-func New(db *storage.DB, identity string) *Backend {
-	return &Backend{db: db, identity: identity}
+// New wraps an open database and the directory its attachment content lives
+// in.
+func New(db *storage.DB, blobs *storage.Blobs, identity string) *Backend {
+	return &Backend{db: db, blobs: blobs, identity: identity}
 }
 
 // WithIdentity returns a copy attributing actions to a different identity. The
 // server uses it to give each request the identity it authenticated, without
 // reopening the database.
 func (b *Backend) WithIdentity(identity string) *Backend {
-	return &Backend{db: b.db, identity: identity}
+	return &Backend{db: b.db, blobs: b.blobs, identity: identity}
 }
 
 // DB exposes the underlying database, which awb serve needs in order to hand

@@ -23,15 +23,7 @@ func projectResponse(project *domain.Project) *api.ProjectHeaders {
 
 func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParams) (
 	*api.ProjectListHeaders, error) {
-	var limit, offset *int
-	if value, ok := params.Limit.Get(); ok {
-		limit = &value
-	}
-	if value, ok := params.Offset.Get(); ok {
-		offset = &value
-	}
-
-	page, err := h.backendFor(ctx).ListProjects(ctx, limit, offset)
+	page, err := h.backendFor(ctx).ListProjects(ctx, optInt(params.Limit), optInt(params.Offset))
 	if err != nil {
 		return nil, err
 	}

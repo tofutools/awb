@@ -183,3 +183,43 @@ func TestSchemaFromTheFutureIsRefused(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "newer version of awb")
 }
+
+// A database left at an older schema version is brought forward when it is
+// opened, which is what an existing tracker gaining attachments looks like.
+// The batch is replayed here by winding the version back and taking the table
+// with it, so what is exercised is the migration rather than a fresh schema.
+func TestOpeningMigratesForward(t *testing.T) {
+	path := tempPath(t)
+	db, err := storage.Init(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	var latest int
+	require.NoError(t, raw.QueryRow("PRAGMA user_version").Scan(&latest))
+	require.Greater(t, latest, 1, "there is more than one batch to migrate through")
+
+	_, err = raw.Exec("DROP TABLE attachments")
+	require.NoError(t, err)
+	_, err = raw.Exec("PRAGMA user_version = 1")
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err = storage.Open(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	raw, err = sql.Open("sqlite", path)
+	require.NoError(t, err)
+	defer raw.Close()
+
+	var version int
+	require.NoError(t, raw.QueryRow("PRAGMA user_version").Scan(&version))
+	assert.Equal(t, latest, version)
+
+	var name string
+	require.NoError(t, raw.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'`).Scan(&name))
+	assert.Equal(t, "attachments", name)
+}

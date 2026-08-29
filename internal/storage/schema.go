@@ -18,6 +18,7 @@ const ApplicationID int32 = 0x41574200
 // A released batch is never edited, only followed by another.
 var migrations = [][]string{
 	schemaV1,
+	schemaV2,
 }
 
 var schemaV1 = []string{
@@ -121,4 +122,34 @@ var schemaV1 = []string{
 		INSERT INTO issues_fts (rowid, title, description)
 		VALUES (new.rowid, new.title, new.description);
 	END`,
+}
+
+// schemaV2 adds attachments.
+//
+// Only the metadata is here. The content is a file in the attachments
+// directory named by its own SHA-256, so the database stays small enough to
+// copy and the blobs can sit on a filesystem of their own. Two attachments
+// holding the same bytes therefore share one file, which is why deleting a row
+// removes the file only once no row names that digest any more.
+var schemaV2 = []string{
+	`CREATE TABLE attachments (
+		id           TEXT PRIMARY KEY,
+		issue        TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		name         TEXT NOT NULL,
+		content_type TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		sha256       TEXT NOT NULL,
+		created_at   TEXT NOT NULL,
+		CHECK (name <> ''),
+		CHECK (content_type <> ''),
+		CHECK (size >= 0),
+		CHECK (length(sha256) = 64)
+	) STRICT`,
+
+	// The listing order — oldest first, then id — is the index's order too.
+	`CREATE INDEX idx_attachments_issue ON attachments (issue, created_at, id)`,
+
+	// What answers "does any other row still name this digest?" when one is
+	// deleted.
+	`CREATE INDEX idx_attachments_sha256 ON attachments (sha256)`,
 }

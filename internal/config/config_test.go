@@ -24,7 +24,8 @@ func isolate(t *testing.T) (configDir, dataDir string) {
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	for _, name := range []string{
-		"AWB_DB", "AWB_USER", "AWB_PASSWORD", "AWB_IDENTITY", "AWB_PROJECT", "AWB_COLOR", "NO_COLOR",
+		"AWB_DB", "AWB_ATTACHMENTS", "AWB_USER", "AWB_PASSWORD", "AWB_IDENTITY", "AWB_PROJECT",
+		"AWB_COLOR", "NO_COLOR",
 	} {
 		t.Setenv(name, "")
 	}
@@ -59,6 +60,8 @@ func TestDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, filepath.Join(dataDir, "awb", "awb.db"), cfg.DB)
+	assert.Equal(t, filepath.Join(dataDir, "awb", "attachments"), cfg.Attachments,
+		"beside the database unless something says otherwise")
 	assert.False(t, cfg.Remote())
 	assert.Equal(t, config.ColorAuto, cfg.Color)
 	assert.Empty(t, cfg.ContextProject)
@@ -394,4 +397,76 @@ func TestEmptyLocalFileIsLegal(t *testing.T) {
 	assert.Empty(t, cfg.ContextProject)
 	assert.Empty(t, cfg.ContextLabel)
 	assert.NotEmpty(t, cfg.LocalFilePath, "the file was still found")
+}
+
+// The attachments directory follows the same chain as the database: the flag,
+// then the variable, then the user file, then a directory beside the database.
+func TestAttachmentsPrecedence(t *testing.T) {
+	configDir, _ := isolate(t)
+	writeUserConfig(t, configDir, "db: /files/awb.db\nattachments: /from/file\n")
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "/from/file", cfg.Attachments)
+
+	t.Setenv("AWB_ATTACHMENTS", "/from/env")
+	cfg, err = config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "/from/env", cfg.Attachments)
+
+	flag := "/from/flag"
+	cfg, err = config.Load(config.Flags{Attachments: &flag}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "/from/flag", cfg.Attachments)
+}
+
+// With no setting at all it sits beside whatever database is in force, which
+// is what makes a copied pair of them travel together.
+func TestAttachmentsDefaultsBesideTheDatabase(t *testing.T) {
+	isolate(t)
+
+	db := "/files/tracker/awb.db"
+	cfg, err := config.Load(config.Flags{DB: &db}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("/files/tracker", "attachments"), cfg.Attachments)
+}
+
+// Remote mode has no attachments directory: the server holds the files.
+func TestAttachmentsAreEmptyInRemoteMode(t *testing.T) {
+	configDir, _ := isolate(t)
+	writeUserConfig(t, configDir, "attachments: /from/file\n")
+
+	db := "https://awb.example.com/"
+	cfg, err := config.Load(config.Flags{DB: &db}, t.TempDir())
+	require.NoError(t, err)
+	assert.True(t, cfg.Remote())
+	assert.Empty(t, cfg.Attachments)
+}
+
+// An empty setting is a mistake to report rather than a fall back to the
+// default, exactly as an empty database location is.
+func TestEmptyAttachmentsIsRefused(t *testing.T) {
+	configDir, _ := isolate(t)
+
+	empty := ""
+	_, err := config.Load(config.Flags{Attachments: &empty}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 2, awberr.ExitCode(err))
+
+	writeUserConfig(t, configDir, "attachments: \"\"\n")
+	_, err = config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 1, awberr.ExitCode(err))
+}
+
+// The local file may not redirect where files are stored, exactly as it may
+// not redirect where issues are.
+func TestLocalFileCannotSetAttachments(t *testing.T) {
+	_, dataDir := isolate(t)
+	dir := workdir(t, ".awb.yaml", "project: awb\nattachments: /somewhere/else\n")
+
+	cfg, err := config.Load(config.Flags{}, dir)
+	require.NoError(t, err)
+	assert.Equal(t, "awb", cfg.ContextProject)
+	assert.Equal(t, filepath.Join(dataDir, "awb", "attachments"), cfg.Attachments)
 }

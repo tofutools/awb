@@ -26,7 +26,16 @@ import (
 )
 
 // requestTimeout bounds a single API call.
-const requestTimeout = 30 * time.Second
+//
+// contentTimeout bounds one that carries an attachment's content instead. It
+// is far longer because the bound has to cover moving the bytes: a file near
+// the maximum over a slow link takes longer than any request describing an
+// issue ever could, and a timeout that cut it short would make the size limit
+// depend on the connection.
+const (
+	requestTimeout = 30 * time.Second
+	contentTimeout = 10 * time.Minute
+)
 
 // Backend talks to an awb server.
 type Backend struct {
@@ -35,6 +44,9 @@ type Backend struct {
 	password string
 	identity string
 	client   *http.Client
+	// contentClient carries attachment content, which needs a longer bound than
+	// anything else the API answers.
+	contentClient *http.Client
 }
 
 // New builds a client for the server at base, which may carry a path that the
@@ -46,13 +58,24 @@ func New(base *url.URL, user, password, identity string) *Backend {
 		password: password,
 		identity: identity,
 		client:   &http.Client{Timeout: requestTimeout},
+
+		contentClient: &http.Client{Timeout: contentTimeout},
 	}
 }
 
 // Close releases the client's idle connections.
 func (b *Backend) Close() error {
 	b.client.CloseIdleConnections()
+	b.contentClient.CloseIdleConnections()
 	return nil
+}
+
+// authenticate presents the credentials, if there are any. A client that has
+// them sends them on every request, whether or not the server asks.
+func (b *Backend) authenticate(req *http.Request) {
+	if b.user != "" || b.password != "" {
+		req.SetBasicAuth(b.user, b.password)
+	}
 }
 
 // Identity is resolved on the client, never asked of the server: what a remote
@@ -102,11 +125,7 @@ func (b *Backend) call(ctx context.Context, method, url string, body any, ifMatc
 	if ifMatch != "" {
 		req.Header.Set("If-Match", ifMatch)
 	}
-	// A client that has credentials sends them on every request, whether or not
-	// the server asks for them.
-	if b.user != "" || b.password != "" {
-		req.SetBasicAuth(b.user, b.password)
-	}
+	b.authenticate(req)
 
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -118,13 +137,21 @@ func (b *Backend) call(ctx context.Context, method, url string, body any, ifMatc
 		return nil, b.apiError(resp)
 	}
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return nil, awberr.Wrap(awberr.Runtime, err, "decode response")
+		if err := decodeJSON(resp.Body, out); err != nil {
+			return nil, err
 		}
 	} else {
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}
 	return resp.Header, nil
+}
+
+// decodeJSON reads one JSON response body.
+func decodeJSON(body io.Reader, out any) error {
+	if err := json.NewDecoder(body).Decode(out); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "decode response")
+	}
+	return nil
 }
 
 // apiError turns a failure response into a classified error, printing the

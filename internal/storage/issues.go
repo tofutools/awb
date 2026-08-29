@@ -124,6 +124,9 @@ func (t *Tx) hydrate(issues []*domain.Issue) error {
 	if err := t.loadBlockers(ids, byID); err != nil {
 		return err
 	}
+	if err := t.loadAttachments(ids, byID); err != nil {
+		return err
+	}
 
 	for _, issue := range issues {
 		issue.Links = domain.ExtractLinks(issue.Description)

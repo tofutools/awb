@@ -277,7 +277,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 25)
+	require.Len(t, operations, 30)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -308,6 +308,8 @@ func TestOperations(t *testing.T) {
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
 	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))
+	assert.ElementsMatch(t, []string{"name", "content-type"}, names("addAttachment"))
+	assert.ElementsMatch(t, []string{"limit", "offset"}, names("listAttachments"))
 	assert.Empty(t, names("getIssue"))
 
 	assert.True(t, operations["createIssue"].TakesBody)
@@ -315,4 +317,16 @@ func TestOperations(t *testing.T) {
 	assert.False(t, operations["reopenIssue"].TakesBody)
 	assert.False(t, operations["deleteIssue"].TakesBody)
 	assert.False(t, operations["listIssues"].TakesBody)
+
+	// The media types are what the content-type rule is applied from. Every
+	// operation with a body declares JSON but the attachment upload, whose body
+	// is a file.
+	assert.True(t, operations["createIssue"].DeclaresJSONBody())
+	assert.True(t, operations["addAttachment"].TakesBody)
+	assert.False(t, operations["addAttachment"].DeclaresJSONBody())
+	assert.True(t, operations["addAttachment"].AcceptsBodyType("application/octet-stream"))
+	assert.True(t, operations["addAttachment"].AcceptsBodyType("Application/Octet-Stream"),
+		"a media type is case-insensitive")
+	assert.False(t, operations["getIssue"].AcceptsBodyType("application/json"),
+		"an operation that declares no body accepts none")
 }

@@ -274,11 +274,22 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 			return err
 		}
 
+		// The digests are read before the rows go, since the cascade takes the
+		// attachment rows with the issue and there would be nothing left to ask
+		// afterwards.
+		digests, err := tx.DigestsOfIssue(issue.ID)
+		if err != nil {
+			return err
+		}
+
 		// The object returned is the issue as it was immediately before deletion,
-		// which for an issue includes the relations that went with it.
+		// which for an issue includes the relations and the attachments that went
+		// with it.
 		deleted.Issue = *issue
-		deleted.RelationsRemoved, err = tx.DeleteIssue(issue.ID)
-		return err
+		if deleted.RelationsRemoved, err = tx.DeleteIssue(issue.ID); err != nil {
+			return err
+		}
+		return removeUnreferenced(tx, b.blobs, digests)
 	})
 	if err != nil {
 		return nil, err
