@@ -692,6 +692,16 @@ func TestServeRejectsAPortThatIsNotOne(t *testing.T) {
 	}
 }
 
+// --addr carried the port before --port existed, so the old form is refused
+// rather than bound as a host of that name.
+func TestServeRejectsAnAddressCarryingAPort(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--addr", "0.0.0.0:7777")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--port")
+}
+
 // A --public-url that cannot be a base is refused at startup rather than
 // serving a UI whose every relative URL is wrong.
 func TestServeRejectsAnUnusablePublicURL(t *testing.T) {

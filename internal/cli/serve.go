@@ -111,6 +111,14 @@ func newServeCommand(e *env) *cobra.Command {
 			if opts.port < 1 || opts.port > 65535 {
 				return awberr.Usagef("--port: %d is not a port number", opts.port)
 			}
+			// --addr used to carry the port too, so an address that looks like
+			// host:port is somebody carrying the old form forward. Refuse it
+			// rather than binding a host named "127.0.0.1:7777". An IPv6
+			// address is full of colons and is not that mistake.
+			if strings.Contains(opts.addr, ":") && net.ParseIP(opts.addr) == nil {
+				return awberr.Usagef(
+					"--addr: %s is not an address; the port goes in --port", opts.addr)
+			}
 
 			db, err := storage.Open(cmd.Context(), cfg.DB)
 			if err != nil {
