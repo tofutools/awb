@@ -104,6 +104,11 @@ Three structural rules hold the design together:
   leave restored rows naming a file that is gone. Both hold the write lock,
   which is what orders an upload against a concurrent delete of the same bytes.
   The slow copy into a staging file happens outside any transaction.
+* Attachment content is **streamed** in both directions and never held whole,
+  by every layer on the path. `TestAttachmentContentIsStreamed` moves a payload
+  through the real server and fails if either direction allocates anything
+  approaching it, so a buffer introduced anywhere shows up there. That is also
+  why an attachment's content is the one response `serve` does not gzip.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
 * `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.

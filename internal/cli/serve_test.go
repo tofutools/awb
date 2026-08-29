@@ -6,13 +6,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/remote"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -614,4 +618,154 @@ func TestAttachmentTransferPaths(t *testing.T) {
 	assert.False(t, download(http.MethodGet, "/api/attachments/3f2a91c40d17"))
 	assert.False(t, download(http.MethodDelete, "/api/attachments/3f2a91c40d17/content"))
 	assert.False(t, download(http.MethodGet, "/api/attachments//content"))
+}
+
+// filler is a reader of arbitrary length that holds nothing: it is what an
+// attachment of any size looks like to a caller that streams it.
+type filler struct{ left int }
+
+func (f *filler) Read(p []byte) (int, error) {
+	if f.left <= 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), f.left)
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	f.left -= n
+	return n, nil
+}
+
+// totalAlloc is every byte the process has allocated so far. It only ever
+// rises, so a difference across an operation is what that operation allocated
+// whether or not the collector ran — which is the question here, since a body
+// held whole shows up in it and a body streamed does not.
+func totalAlloc() uint64 {
+	runtime.GC()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.TotalAlloc
+}
+
+// Attachment content is streamed through the server in both directions and is
+// never held whole.
+//
+// This runs the real thing: the whole serve middleware chain, over a real
+// listener, driven by the remote backend the CLI uses in remote mode. What it
+// measures is everything both ends allocated to move the payload — so a buffer
+// anywhere on the path, in the client, the transport, the middleware, the
+// generated decoder, the handler or the blob store, would show up here.
+//
+// The threshold is a fraction of the payload rather than a figure, because
+// what is being pinned is the shape of the cost: bounded by the size of a copy
+// buffer, not by the size of the file. It measured about 4% for the upload and
+// 7% for the download when it was written, so the headroom is wide and only a
+// real regression closes it.
+func TestAttachmentContentIsStreamed(t *testing.T) {
+	const (
+		size    = 24 << 20
+		allowed = size / 4
+	)
+
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	h, err := buildHandler(be, openapi.New(raw), nil,
+		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	require.NoError(t, err)
+
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue, err := be.CreateIssue(t.Context(),
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael")
+	t.Cleanup(func() { _ = client.Close() })
+
+	before := totalAlloc()
+	attachment, err := client.AddAttachment(t.Context(), issue.ID, backend.AttachmentCreate{
+		Name:    "big.bin",
+		Content: &filler{left: size},
+	})
+	require.NoError(t, err)
+	uploaded := totalAlloc() - before
+
+	require.EqualValues(t, size, attachment.Size)
+	assert.Less(t, uploaded, uint64(allowed),
+		"uploading %d bytes allocated %d: something on the path is holding the body", size, uploaded)
+
+	before = totalAlloc()
+	_, content, err := client.OpenAttachment(t.Context(), attachment.ID)
+	require.NoError(t, err)
+	written, err := io.Copy(io.Discard, content)
+	require.NoError(t, err)
+	require.NoError(t, content.Close())
+	downloaded := totalAlloc() - before
+
+	require.EqualValues(t, size, written)
+	assert.Less(t, downloaded, uint64(allowed),
+		"downloading %d bytes allocated %d: something on the path is holding the body",
+		size, downloaded)
+}
+
+// An attachment's content is the one response that is not compressed, so a
+// download costs neither the time nor the compressor state to make opaque
+// bytes no smaller. Everything else the API answers still is.
+func TestAttachmentContentIsNotCompressed(t *testing.T) {
+	h := newServeHandler(t)
+
+	call := func(method, path, contentType, body string, gzipped bool) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		if gzipped {
+			req.Header.Set("Accept-Encoding", "gzip")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// The fixtures ask for no compression, so their bodies can simply be read.
+	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`, false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"Parser crashes"}`, false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
+
+	rec = call(http.MethodPost, "/api/issues/"+issue.ID+"/attachments?name=trace.txt",
+		"application/octet-stream", "boom\n", false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var attachment domain.Attachment
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &attachment))
+
+	// A client that would take gzip is given none for the content, and gets the
+	// bytes as they were stored.
+	rec = call(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "", "", true)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "boom\n", rec.Body.String())
+
+	// The same client asking for the metadata beside it is compressed as
+	// before, so what was switched off is the one response and not the
+	// mechanism.
+	rec = call(http.MethodGet, "/api/attachments/"+attachment.ID, "", "", true)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
 }

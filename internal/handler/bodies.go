@@ -21,22 +21,33 @@ func bodyWasCarried(r *http.Request) bool { return r.ContentLength != 0 }
 // rejectBody refuses a body on an operation that declares none. Ignoring one
 // would let a client believe it had said something the server never read, so
 // what is refused is any body at all rather than any body that says something.
+//
+// One byte answers the whole question, and only one is read. Reading the body
+// out in full would let any caller make the server hold the transport cap in
+// memory purely to be told the endpoint wanted nothing — and would report the
+// size of a body whose size was never the problem.
 func rejectBody(r *http.Request) error {
 	if r.Body == nil {
 		return nil
 	}
-	raw, err := io.ReadAll(r.Body)
+	var probe [1]byte
+	// io.ReadFull rather than a bare Read, because a Reader may legally return
+	// (0, nil) and this must not mistake that for an empty body.
+	n, err := io.ReadFull(r.Body, probe[:])
+	if n > 0 {
+		return awberr.Usagef("this endpoint takes no request body")
+	}
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
 	if err != nil {
-		// http.MaxBytesHandler surfaces the transport cap as a read error, and
+		// http.MaxBytesReader surfaces the transport cap as a read error, and
 		// NewError turns that into the status that describes it.
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return err
 		}
 		return awberr.Wrap(awberr.Runtime, err, "read request body")
-	}
-	if len(raw) > 0 {
-		return awberr.Usagef("this endpoint takes no request body")
 	}
 	return nil
 }

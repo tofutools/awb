@@ -1061,3 +1061,24 @@ func TestPatchIgnoresAttachments(t *testing.T) {
 	assert.Equal(t, "Parser still crashes", updated.Title)
 	assert.Len(t, updated.Attachments, 1)
 }
+
+// A body on an endpoint that declares none is refused for being there at all,
+// and only one byte of it is ever read: reading it out in full would let a
+// caller make the server hold the transport cap in memory to be told the
+// endpoint wanted nothing.
+func TestBodyOnANoBodyEndpointIsRefusedWithoutReadingIt(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	// A body far larger than the transport cap: it is still the endpoint taking
+	// no body that is reported, not its size, because its size was never the
+	// problem and nothing here counted it.
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID,
+		strings.Repeat("x", 4<<20))
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, "this endpoint takes no request body")
+
+	// An empty body is not a body, so the request is answered normally.
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
+}

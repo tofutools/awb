@@ -142,6 +142,12 @@ The server serves content as `application/octet-stream` with a
 uploads come back from the same origin as the UI and a browser must not be
 invited to render one there.
 
+Content is streamed in both directions and never held in memory whole, so what
+one transfer costs the server is a copy buffer rather than the size of the
+file. It is also the one response the server does not compress: an attachment
+is opaque bytes and as likely as not already compressed, so gzipping it would
+spend time and memory to make it no smaller.
+
 ### Vocabulary
 
 Everything a team wants to express beyond this goes into labels.

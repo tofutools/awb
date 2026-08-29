@@ -76,6 +76,20 @@ is when the caller says nothing. It is sniffed from the content rather than
 from the name's extension, because an extension table is a file on the machine
 and would make the same upload get different answers on two of them.
 
+**Content is streamed end to end and never held whole.** Not as an
+optimisation: a server that buffered an upload would let a handful of
+concurrent callers cost it the attachment maximum each, and the size limit
+would become a limit on memory rather than on a file. So an upload is copied
+from the request body to disk as it arrives, hashed on the way past, and a
+download is copied from the file to the response the same way. What one
+transfer costs the server is a copy buffer, whatever the file's size.
+
+That is a property of the whole path rather than of one function — the client,
+the transport, the middleware, the generated decoder, the handler and the blob
+store all have to keep it, and any one of them could quietly stop. It is
+therefore measured rather than asserted: a test moves a payload through the
+real server and fails if either direction allocates anything approaching it.
+
 ### Identifiers
 
 An issue ID is `<project-key>-<hash>`, where the hash is derived from the

@@ -418,7 +418,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 	// the other; curl, which does not ask for gzip by default, sees nothing
 	// wrong. Keeping the two apart is what stops that.
 	withAPI := func(h http.Handler) http.Handler {
-		return recovery.Middleware(httputil.Gzip(handler.NoStore(h)))
+		return recovery.Middleware(gzipExcept(isAttachmentDownload, handler.NoStore(h)))
 	}
 
 	// Everything under /api/ is the JSON API and /openapi.json and /openapi.yaml
@@ -519,6 +519,26 @@ func isAttachmentDownload(r *http.Request) bool {
 		return false
 	}
 	return oneSegmentBetween(r.URL.Path, "/api/attachments/", "/content")
+}
+
+// gzipExcept compresses every response but the ones skip names.
+//
+// The one it skips is an attachment's content. Everything else the API answers
+// is JSON, which compresses to a fraction of itself; an attachment is opaque
+// bytes the server never looks at, and is as likely as not already compressed
+// — a screenshot, a zip, a captured core. Compressing those spends the time
+// and about a megabyte of compressor state per download to make them no
+// smaller, and the state is per concurrent request, which is exactly where a
+// server should not be spending memory.
+func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
+	compressed := httputil.Gzip(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skip(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		compressed.ServeHTTP(w, r)
+	})
 }
 
 // oneSegmentBetween reports whether path is prefix, exactly one path segment,
