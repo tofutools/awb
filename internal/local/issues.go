@@ -61,7 +61,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 
-	err = b.write(ctx, func(tx *storage.Tx) error {
+	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		exists, err := tx.ProjectExists(issue.Project)
 		if err != nil {
 			return err
@@ -137,7 +137,7 @@ func (b *Backend) GetIssue(ctx context.Context, ref string) (*domain.Issue, erro
 // served: they are the same query with the filter fixed differently.
 func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backend.IssuePage, error) {
 	var page backend.IssuePage
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		if err := checkFilterProjects(tx, filter); err != nil {
 			return err
 		}
@@ -268,7 +268,7 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 		deleted backend.DeletedIssue
 		digests []string
 	)
-	err := b.write(ctx, func(tx *storage.Tx) error {
+	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
 			return err
@@ -325,7 +325,7 @@ func (b *Backend) RemoveLabel(ctx context.Context, ref, label, ifMatch string) (
 // Tree returns the subtree of children rooted at an issue.
 func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, error) {
 	var tree *domain.IssueTree
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		id, err := resolve(tx, ref)
 		if err != nil {
 			return err
@@ -352,7 +352,7 @@ func (b *Backend) AssigneeFacets(ctx context.Context, filter *domain.Filter) (ba
 func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 	query func(*storage.Tx, *domain.Filter) ([]domain.Facet, error)) (backend.FacetPage, error) {
 	var page backend.FacetPage
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		if err := checkFilterProjects(tx, filter); err != nil {
 			return err
 		}
@@ -380,7 +380,7 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 func (b *Backend) mutate(ctx context.Context, ref, ifMatch string,
 	apply func(*storage.Tx, *domain.Issue) error) (*domain.Issue, error) {
 	var result *domain.Issue
-	err := b.write(ctx, func(tx *storage.Tx) error {
+	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
 			return err

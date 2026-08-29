@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 1.2.0
+  version: 1.3.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -22,6 +22,19 @@ info:
     rather than ignored, because something the server never reads is a thing
     the client believes it said.
 
+    **Authorization.** A server whose database holds at least one user
+    authenticates every request and answers it with that user's permissions. A
+    user works in the projects they are a member of and sees nothing else: a
+    project they hold no access to, and every issue in it, is answered `404`
+    rather than `403`, and is absent from every listing, search, facet and
+    tree, unpaged totals included. `403` is for something they can see and may
+    not do. A database holding no user at all is a server without
+    authentication, exactly as version 1 was, and applies none of this.
+
+    Two flags stand outside the projects: `project_admin` creates, changes and
+    deletes projects and holds `admin` access in every one of them, and
+    `user_admin` creates, changes and deletes users. Neither implies the other.
+
     Within a major version, changes to this document are additive only.
     `info.version` tracks the API, not the binary.
   license:
@@ -36,8 +49,8 @@ servers:
       the request arrives.
 
 security:
-  # Declared optional: a server started without --basic-auth-file accepts
-  # requests that carry no credentials.
+  # Declared optional: a server whose database holds no user accepts requests
+  # that carry no credentials.
   - {}
   - basicAuth: []
 
@@ -46,6 +59,7 @@ tags:
   - name: relations
   - name: attachments
   - name: projects
+  - name: users
   - name: metadata
 
 paths:
@@ -602,6 +616,174 @@ paths:
               schema: { $ref: '#/components/schemas/Project' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/projects/{key}/members:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    get:
+      tags: [projects]
+      operationId: listProjectMembers
+      summary: The users with access to a project, ordered by username ascending
+      description: |
+        Readable by any member of the project: knowing who else works on a
+        board is part of working on it, and every one of those names is
+        already visible as an assignee. A project the caller has no access to
+        is a `404`, as it is everywhere else.
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/MembershipList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/members/{user}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+      - name: user
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Username' }
+    put:
+      tags: [projects]
+      operationId: setProjectMember
+      summary: Grant a user access to a project
+      description: |
+        Replaces whatever access the user held in the project, so granting the
+        level they already hold succeeds and changes nothing. `PUT` rather than
+        `POST` because a membership is addressed by its own path and setting it
+        is idempotent.
+
+        Requires `admin` access to that project, which the `project_admin` flag
+        also confers. Naming a user who does not exist is a `404`.
+
+        A membership carries no timestamps and no ETag, having one field; there
+        is no `If-Match` here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipSet' }
+      responses:
+        '200': { $ref: '#/components/responses/Membership' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [projects]
+      operationId: removeProjectMember
+      summary: Withdraw a user's access to a project
+      description: |
+        Requires `admin` access to that project. Withdrawing access nobody
+        holds is a `404`, exactly as deleting an attachment that is not there
+        is.
+      responses:
+        '200':
+          description: |
+            The membership as it was immediately before it was withdrawn.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: List users, ordered by name ascending
+      description: Requires the `user_admin` flag.
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/UserList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [users]
+      operationId: createUser
+      summary: Create a user
+      description: |
+        Requires the `user_admin` flag.
+
+        Creating the first user of a database turns authentication on, from the
+        next request onwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/UserCreated' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/users/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Username' }
+    get:
+      tags: [users]
+      operationId: getUser
+      summary: Read one user, with their project memberships
+      description: |
+        Requires the `user_admin` flag, except that a user may always read
+        their own account — which is how somebody without that flag learns what
+        they are permitted to do.
+      responses:
+        '200': { $ref: '#/components/responses/User' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [users]
+      operationId: updateUser
+      summary: Change a user's password or what they may do
+      description: |
+        The two halves are permitted separately, because they are different
+        powers: `project_admin` and `user_admin` may be changed only by a user
+        administrator, and the password by one or by the account holder
+        themselves. So a user may set their own password without being able to
+        grant themselves anything.
+
+        `password` and `password_hash` may not both appear: they are two ways
+        of stating one credential, and picking either would be a guess.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserPatch' }
+      responses:
+        '200': { $ref: '#/components/responses/User' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [users]
+      operationId: deleteUser
+      summary: Delete a user
+      description: |
+        Requires the `user_admin` flag. Every membership the user held goes
+        with them.
+
+        The issues they were assigned are left exactly as they are: an assignee
+        records who holds or held a piece of work, and rewriting that because
+        somebody's access was withdrawn would lose the only record of who did
+        it.
+
+        Deleting the last user of a database turns authentication off again.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200':
+          description: |
+            The user as they were immediately before deletion, memberships
+            included. It carries no ETag: the version it describes is gone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/labels:
     get:
       tags: [metadata]
@@ -669,8 +851,10 @@ paths:
         for itself, and without it no UI could offer "my issues", show that an
         issue is held by *this* user, or fill in `expect_assignee`.
 
-        It is read-only and says nothing about what the caller may do, there
-        being no authorization to describe.
+        It is read-only and says nothing about what the caller may do. That is
+        `GET /api/users/{name}`, which a user may always call for themselves,
+        and which answers with their two flags and every project they have
+        access to.
       responses:
         '200':
           description: The identity.
@@ -685,9 +869,15 @@ components:
       type: http
       scheme: basic
       description: |
-        Enabled by `awb serve --basic-auth-file`. There is authentication but no
-        authorization: every user the server knows may do everything every other
-        one may, and credentials serve only to say who is calling.
+        In force whenever the database holds at least one user, and absent when
+        it holds none. The username and password are checked against the `users`
+        table, whose passwords are bcrypt hashes; the username is also the
+        identity every action of that request is attributed to.
+
+        Credentials that are missing or wrong are a `401`, which is about the
+        credentials rather than about what was asked for and therefore carries
+        no exit code. What the authenticated user may then do is the `403` the
+        Error response describes.
 
   headers:
     ETag:
@@ -920,10 +1110,48 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Attachment' }
+    User:
+      description: The user.
+      headers:
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/User' }
+    UserCreated:
+      description: The new user.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+        ETag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/User' }
+    UserList:
+      description: The users.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/User' }
+    Membership:
+      description: The membership.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Membership' }
+    MembershipList:
+      description: The memberships, by username ascending.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Membership' }
     Error:
       description: |
         A failure, carrying the server's own message. The status says which
-        kind it is, and the four kinds carry the command line's exit codes:
+        kind it is, and the five kinds carry the command line's exit codes:
 
         * `400` — the request asked for something invalid: an unknown enum
           value, text failing the input rules, a parameter the endpoint does
@@ -933,13 +1161,19 @@ components:
         * `409` — a constraint that depends on stored state: a dependency
           cycle, a duplicate, a claim held by somebody else, a parent already
           set, or a project that still holds issues. Exit code 4.
+        * `403` — the caller's permissions do not cover what they asked for.
+          It is always about something they can see: a project or an issue they
+          hold no access to is a `404` instead, since they are not being told
+          it exists. Exit code 5.
         * `500` — the request was fine and something else was not. Exit code 1.
 
-        The statuses with no exit code behind them are `405`, answered when a
-        path exists and the method does not; `412`, answered when an `If-Match`
-        no longer matches; `413`, answered when a body is over the transport
-        cap; and `415`, answered when a request carries a body whose content
-        type is not the one that endpoint declares — a missing `Content-Type`
+        The statuses with no exit code behind them are `401`, answered when
+        credentials are missing or wrong, which is about the credentials rather
+        than about what was asked for; `405`, answered when a path exists and
+        the method does not; `412`, answered when an `If-Match` no longer
+        matches; `413`, answered when a body is over the transport cap; and
+        `415`, answered when a request carries a body whose content type is not
+        the one that endpoint declares — a missing `Content-Type`
         counts, a body claiming nothing claiming nothing useful. Every endpoint
         but the attachment upload declares `application/json`; that one
         declares `application/octet-stream`, and has a far larger size cap to
@@ -1013,6 +1247,64 @@ components:
       pattern: '^[a-z][a-z0-9-]*$'
       minLength: 1
       maxLength: 16
+
+    Username:
+      type: string
+      description: |
+        The same character set as a label and an assignee, and like them
+        rejected rather than normalised. A username *is* an assignee: it is
+        what the issues that user works on record, so the two vocabularies are
+        one. It is immutable, for that same reason.
+      pattern: '^[a-z0-9._/-]+$'
+      minLength: 1
+      maxLength: 64
+
+    Access:
+      type: string
+      description: |
+        What one user may do in one project, and the only per-project
+        vocabulary there is. `regular` is working with the project's issues —
+        reading them, creating them, editing them, claiming them, everything
+        awb does to an issue. `admin` is that and, in addition, adding and
+        removing the project's other users.
+
+        `admin` is not power over the project itself: creating, renaming and
+        deleting a project is the `project_admin` flag's, because a project's
+        own existence is not something its members decide.
+
+        Holding neither in a project means the project does not exist as far
+        as that user is concerned.
+      enum: [regular, admin]
+
+    Password:
+      type: string
+      description: |
+        A plaintext password, hashed with bcrypt on arrival and then dropped.
+        It is never returned by anything.
+
+        The maximum is bcrypt's own limit rather than a policy: bcrypt hashes
+        the first 72 bytes and ignores the rest, so a longer one is refused
+        rather than silently truncated. Nothing else about it is prescribed.
+      minLength: 1
+      maxLength: 72
+      writeOnly: true
+
+    PasswordHash:
+      type: string
+      description: |
+        A bcrypt hash computed elsewhere, so a password can be set without the
+        plaintext ever reaching the server — what `htpasswd -Bn <name>` writes.
+        That command prints `<name>:<hash>`, and both that whole line and the
+        bare hash are accepted, a bcrypt hash never containing a colon; a line
+        naming another user is refused rather than applied to the wrong
+        account.
+
+        Only bcrypt is accepted. htpasswd's other schemes are refused, because
+        a hash the server cannot verify is a login that would never work.
+      minLength: 1
+      maxLength: 255
+      writeOnly: true
+      examples: ['$2y$05$Ny0MyCVMdmDSlaCT1UOs6.YAxHTDD9DcpFsAiOr6mHWkNaxIeLp0e']
 
     AttachmentName:
       type: string
@@ -1230,6 +1522,58 @@ components:
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
+    Membership:
+      type: object
+      description: |
+        One user's access to one project. Both ends are named whichever way
+        round it is read, so a project's member list and a user's own project
+        list are one shape.
+
+        A membership is identified by `project` and `user` together and carries
+        no id of its own, exactly as an attachment is identified by its issue
+        and its name. It has no timestamps and therefore no ETag.
+      additionalProperties: false
+      required: [project, user, access]
+      properties:
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        user: { $ref: '#/components/schemas/Username' }
+        access: { $ref: '#/components/schemas/Access' }
+
+    User:
+      type: object
+      description: |
+        One account. There is no password field in either direction of the
+        wire: a password goes in through `password` or `password_hash` and
+        never comes back out.
+      additionalProperties: false
+      required: [name, project_admin, user_admin, created_at, updated_at, projects]
+      properties:
+        name: { $ref: '#/components/schemas/Username' }
+        project_admin:
+          type: boolean
+          description: |
+            May create, change and delete projects, and holds `admin` access in
+            every one of them — including the ones nobody has been given access
+            to, since somebody has to be able to.
+        user_admin:
+          type: boolean
+          description: |
+            May create, change and delete users, which includes granting both
+            of these flags.
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at:
+          allOf: [$ref: '#/components/schemas/Timestamp']
+          description: |
+            Moves when the password or either flag changes, and is strictly
+            increasing per user. Granting or withdrawing access to a project
+            does not move it, exactly as an issue's relations do not move its.
+        projects:
+          type: array
+          description: |
+            Derived and read-only: the projects this user has access to, by key
+            ascending. Membership is changed by its own endpoints.
+          items: { $ref: '#/components/schemas/Membership' }
+
     Facet:
       type: object
       description: A distinct value in use, with the number of matching issues carrying it.
@@ -1436,3 +1780,55 @@ components:
         active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    UserCreate:
+      type: object
+      description: |
+        Exactly one of `password` and `password_hash` is required: a body
+        carrying both says two things about one credential, and one carrying
+        neither describes an account nobody can log in to.
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { $ref: '#/components/schemas/Username' }
+        password: { $ref: '#/components/schemas/Password' }
+        password_hash: { $ref: '#/components/schemas/PasswordHash' }
+        project_admin: { type: boolean, default: false }
+        user_admin: { type: boolean, default: false }
+
+    UserPatch:
+      type: object
+      description: |
+        Replaces each field it carries and leaves the others alone. An empty
+        body succeeds and changes nothing.
+
+        `password` and `password_hash` may not both appear, for the reason
+        UserCreate gives. `name` may appear but may not change; `projects` and
+        the timestamps are derived and their values ignored, so a UI can send
+        back the object it read. As elsewhere, ignored is not unchecked: each
+        is still validated against the schema declared for it.
+      additionalProperties: false
+      properties:
+        password: { $ref: '#/components/schemas/Password' }
+        password_hash: { $ref: '#/components/schemas/PasswordHash' }
+        project_admin: { type: boolean }
+        user_admin: { type: boolean }
+        name: { $ref: '#/components/schemas/Username' }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    MembershipSet:
+      type: object
+      description: |
+        The body of `PUT /api/projects/{key}/members/{user}`. `project` and
+        `user` may appear but may not change: they are in the path, which is
+        what identifies the membership.
+      additionalProperties: false
+      required: [access]
+      properties:
+        access: { $ref: '#/components/schemas/Access' }
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        user: { $ref: '#/components/schemas/Username' }

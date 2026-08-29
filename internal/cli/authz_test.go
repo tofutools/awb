@@ -1,0 +1,257 @@
+package cli
+
+import (
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/openapi"
+	"github.com/tofutools/awb/internal/remote"
+	"github.com/tofutools/awb/internal/storage"
+)
+
+// A database holding no user is a server that authenticates nobody, which is
+// what version 1 was and what a local tracker still is.
+func TestAServerWithNoUsersAuthenticatesNobody(t *testing.T) {
+	h := newServeHandler(t)
+
+	resp, body := get(t, h, http.MethodGet, "/api/identity")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "mikael", "the fixed identity stands in for a caller")
+
+	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// Adding the first user closes the door, and it closes on the next request
+// rather than on the next restart.
+func TestAddingTheFirstUserTurnsAuthenticationOn(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+
+	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	// The same handler, no restart.
+	resp, body := get(t, h, http.MethodGet, "/api/projects")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("WWW-Authenticate"), `realm="awb"`)
+	assert.JSONEq(t, `{"error":"unauthorized"}`, body)
+
+	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// And deleting the last one opens it again.
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// A wrong password and an unknown username are the same answer, and neither is
+// distinguishable from the other in what the server says.
+func TestWrongCredentialsSayNothingAboutTheAccount(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	wrong, wrongBody := get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter3")...)
+	unknown, unknownBody := get(t, h, http.MethodGet, "/api/projects", basicAuth("mallory", "hunter2")...)
+
+	assert.Equal(t, http.StatusUnauthorized, wrong.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, unknown.StatusCode)
+	assert.Equal(t, wrongBody, unknownBody)
+}
+
+// Nothing is exempt: the document and the web UI sit behind authentication
+// with the API.
+func TestAuthenticationCoversEverythingTheServerServes(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	for _, path := range []string{"/", "/api/issues", "/openapi.json", "/openapi.yaml"} {
+		resp, _ := get(t, h, http.MethodGet, path)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
+	}
+}
+
+// The API answers each request with the caller's own permissions, which is the
+// whole point of authenticating.
+func TestTheAPIAnswersWithTheCallersPermissions(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	ctx := t.Context()
+
+	for _, key := range []string{"awb", "web"} {
+		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		require.NoError(t, err)
+	}
+	_, err := be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.SetMember(ctx, "awb", "bob", domain.AccessRegular)
+	require.NoError(t, err)
+
+	resp, body := get(t, h, http.MethodGet, "/api/projects", basicAuth("bob", "hunter2")...)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"), "the total counts what bob may see")
+
+	var projects []domain.Project
+	require.NoError(t, json.Unmarshal([]byte(body), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "awb", projects[0].Key)
+
+	// One he cannot see is not found, and one he can see but may not create is
+	// forbidden.
+	resp, _ = get(t, h, http.MethodGet, "/api/projects/web", basicAuth("bob", "hunter2")...)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	resp, _ = send(t, h, http.MethodPost, "/api/projects", `{"key":"third"}`,
+		append(basicAuth("bob", "hunter2"), "Origin", "http://127.0.0.1:7777")...)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// A 403 becomes exit code 5 in remote mode and a 404 becomes 3, so a command
+// reports the same thing through a server as it would on a file.
+func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
+		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+	require.NoError(t, err)
+
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	for _, key := range []string{"awb", "web"} {
+		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		require.NoError(t, err)
+	}
+	hidden, err := be.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.SetMember(ctx, "awb", "bob", domain.AccessRegular)
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "bob", "hunter2", "bob")
+	t.Cleanup(func() { _ = client.Close() })
+
+	// Forbidden: something bob can see and may not do.
+	_, err = client.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	require.Error(t, err)
+	assert.Equal(t, 5, awberr.ExitCode(err))
+
+	// Not found: something he is not told about.
+	_, err = client.GetIssue(ctx, hidden.ID)
+	require.Error(t, err)
+	assert.Equal(t, 3, awberr.ExitCode(err))
+
+	// And what he may do, he does.
+	issue, err := client.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+	assert.Equal(t, "awb", issue.Project)
+
+	// Wrong credentials are about the credentials rather than about the
+	// request, so they are exit code 1 and not 5.
+	wrong := remote.New(base, "bob", "hunter3", "bob")
+	t.Cleanup(func() { _ = wrong.Close() })
+	_, err = wrong.ListProjects(ctx, nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, awberr.ExitCode(err))
+}
+
+// The whole user and membership surface goes over the wire and behaves as it
+// does on a file, which is what one interface with two implementations buys.
+func TestRemoteModeManagesUsers(t *testing.T) {
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
+		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+	require.NoError(t, err)
+
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	_, err = be.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	_, err = be.CreateUser(ctx, backend.UserCreate{
+		Name: "alice", Password: "hunter2", ProjectAdmin: true, UserAdmin: true})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "alice", "hunter2", "alice")
+	t.Cleanup(func() { _ = client.Close() })
+
+	created, err := client.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	assert.Equal(t, "bob", created.Name)
+	assert.False(t, created.UserAdmin)
+	assert.Empty(t, created.Projects)
+
+	membership, err := client.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessAdmin, membership.Access)
+	assert.Equal(t, "awb", membership.Project)
+	assert.Equal(t, "bob", membership.User)
+
+	members, err := client.ListMembers(ctx, "awb", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, members.Members, 1)
+	assert.Equal(t, 1, members.Total)
+
+	users, err := client.ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, users.Users, 2)
+
+	yes := true
+	updated, err := client.UpdateUser(ctx, "bob", backend.UserPatch{ProjectAdmin: &yes}, "")
+	require.NoError(t, err)
+	assert.True(t, updated.ProjectAdmin)
+	require.Len(t, updated.Projects, 1)
+
+	removed, err := client.RemoveMember(ctx, "awb", "bob")
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessAdmin, removed.Access)
+
+	deleted, err := client.DeleteUser(ctx, "bob", "")
+	require.NoError(t, err)
+	assert.Equal(t, "bob", deleted.User.Name)
+
+	_, err = client.GetUser(ctx, "bob")
+	require.Error(t, err)
+	assert.Equal(t, 3, awberr.ExitCode(err))
+}

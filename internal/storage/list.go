@@ -39,9 +39,15 @@ func (c *conditions) where() string {
 // issues behind them.
 //
 // Repeated values of one filter are ORed; different filters are ANDed.
-func selection(f *domain.Filter) *conditions {
+//
+// It is a method on the transaction so that the visibility scope is part of
+// every selection it builds, and therefore of every listing, search and facet:
+// a caller sees the issues of the projects they are a member of, and the
+// unpaged total counts those and no others.
+func (t *Tx) selection(f *domain.Filter) *conditions {
 	c := &conditions{}
 
+	t.visible(c, "i.project")
 	c.addIn("i.status", anyArgs(f.EffectiveStatuses()))
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))
@@ -130,7 +136,7 @@ func (t *Tx) ListIssues(f *domain.Filter) (issues []domain.Issue, total int, err
 		return t.searchIssues(f)
 	}
 
-	c := selection(f)
+	c := t.selection(f)
 	if err := t.q.QueryRowContext(t.ctx,
 		`SELECT count(*) FROM issues i WHERE `+c.where(), c.args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count issues")
@@ -153,7 +159,7 @@ func (t *Tx) ListIssues(f *domain.Filter) (issues []domain.Issue, total int, err
 func (t *Tx) searchIssues(f *domain.Filter) (issues []domain.Issue, total int, err error) {
 	match := ftsQuery(f.Terms)
 
-	c := selection(f)
+	c := t.selection(f)
 	c.clauses = append([]string{`i.rowid IN (SELECT rowid FROM issues_fts WHERE issues_fts MATCH ?)`},
 		c.clauses...)
 	c.args = append([]any{match}, c.args...)
@@ -225,7 +231,7 @@ func (t *Tx) queryIssues(query string, args []any) ([]domain.Issue, error) {
 // with a count of zero is not listed at all: "in use" means in use under the
 // filters in force.
 func (t *Tx) LabelFacets(f *domain.Filter) ([]domain.Facet, error) {
-	c := selection(f)
+	c := t.selection(f)
 	return t.scanFacets(`
 		SELECT l.label, count(*)
 		  FROM issue_labels l
@@ -238,7 +244,7 @@ func (t *Tx) LabelFacets(f *domain.Filter) ([]domain.Facet, error) {
 // AssigneeFacets is LabelFacets for assignees. There is no row for the empty
 // assignee: unassigned is a filter, not a value.
 func (t *Tx) AssigneeFacets(f *domain.Filter) ([]domain.Facet, error) {
-	c := selection(f)
+	c := t.selection(f)
 	c.add("i.assignee <> ''")
 	return t.scanFacets(`
 		SELECT i.assignee, count(*)

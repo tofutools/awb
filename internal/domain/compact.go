@@ -65,6 +65,45 @@ func CompactProjectLine(p *Project) string {
 	return p.Key + " " + strconv.Itoa(p.ActiveIssues) + " " + jsonString(p.Name)
 }
 
+// CompactUserLine renders a user as the compact one-line form:
+//
+//	alice +project-admin awb:admin web:regular
+//
+// The line begins with the one mandatory field, the username. Any further
+// field is optional and identified by its shape rather than its position, and
+// they appear in this fixed order when present: "+project-admin",
+// "+user-admin", and one "<project>:<access>" per membership, in project
+// order. A project key cannot contain a colon and neither can an access level,
+// so a membership token splits on its only one.
+//
+// A password is not in it, and there is no field it could go in: nothing that
+// leaves the storage layer carries one.
+func CompactUserLine(u *User) string {
+	var b strings.Builder
+
+	b.WriteString(u.Name)
+	if u.ProjectAdmin {
+		b.WriteString(" +project-admin")
+	}
+	if u.UserAdmin {
+		b.WriteString(" +user-admin")
+	}
+	for _, m := range u.Projects {
+		b.WriteByte(' ')
+		b.WriteString(m.Project)
+		b.WriteByte(':')
+		b.WriteString(string(m.Access))
+	}
+
+	return b.String()
+}
+
+// CompactMembershipLine renders one membership as "<project> <user> <access>",
+// all three of which are drawn from character sets with no spaces in them.
+func CompactMembershipLine(m *Membership) string {
+	return m.Project + " " + m.User + " " + string(m.Access)
+}
+
 // CompactTreePrefix is the indentation dep tree --compact puts before a node's
 // compact line: two spaces per level of depth, the root at depth zero and
 // therefore unindented. That prefix is the one thing that may precede the id,

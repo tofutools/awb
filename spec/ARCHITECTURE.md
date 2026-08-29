@@ -216,16 +216,19 @@ without a database, and there is exactly one place it is written down.
 
 ### Failure is classified once
 
-Four kinds — usage, not found, conflict, runtime — are shared by every layer.
-The command line maps them to exit codes and the API to status codes, and the
-HTTP client maps them back. Because the mapping is defined once, in one place, a
-command's exit code is the same in both modes without either adapter knowing
-about the other.
+Five kinds — usage, not found, conflict, forbidden, runtime — are shared by
+every layer. The command line maps them to exit codes and the API to status
+codes, and the HTTP client maps them back. Because the mapping is defined once,
+in one place, a command's exit code is the same in both modes without either
+adapter knowing about the other.
 
 Statuses that no kind maps onto — authentication, cross-site rejection, failed
 precondition, and the rest — are the ones provoked by *how* a client behaved
 rather than by *what* it asked for. They collapse to the generic runtime code,
-because the command line has no separate meaning for them.
+because the command line has no separate meaning for them. Authentication is
+among them and authorization is not: a 403 refuses what the caller asked for and
+carries its own code, while a 401 says the credentials themselves are wrong,
+which is a failure to connect.
 
 ## 4. Storage
 
@@ -418,18 +421,43 @@ Its frontend is compiled ahead of time and embedded, so the shipped artifact
 stays one file. Third-party browser code is committed pre-built; no package
 manager runs at build time.
 
-### Authentication, and the absence of authorization
+### Authentication and authorization
 
-The server can identify its callers and does nothing else with the result.
-**Every user it knows may do everything every other one may**; credentials serve
-only to say who is calling. Authorization is a version 2 concern, and version 1
-deliberately carries none of it rather than half of it.
+**The database decides whether the server authenticates.** Users are rows, with
+their bcrypt password hashes, and a database holding none is a server that
+authenticates nobody — which is what a local tracker is, and what every version
+1 database still is after migrating. Adding the first user closes the door.
+The question is asked per request rather than at startup, so it closes without a
+restart, and it costs one indexed lookup.
 
-Without credentials configured there is no authentication at all and any client
-that can reach the port has full access — which is why the default binds
-loopback. It is still not *anonymous*: the server resolves one identity at
-startup and attributes every request to it, so the layer below never has to
-handle the absence of an identity.
+An open server is still not *anonymous*: it resolves one identity at startup and
+attributes every request to it, so the layer below never has to handle the
+absence of an identity.
+
+**Membership of a project is the whole of the read model.** A user works in the
+projects they have access to and sees nothing else. That is expressed as one
+condition on a project key, carried by the transaction rather than passed to
+each query, because a read that forgets it does not fail — it leaks. There is
+one place a transaction is restricted, one place the caller's permissions are
+read, and every query consults the transaction it is running in.
+
+An invisible project is answered *not found* rather than *forbidden*, and so is
+every issue in it, and so is every spelling of an issue reference that would
+resolve to one. Forbidden is reserved for what a caller can see and may not
+change. Two flags stand outside the projects — one over projects, one over users
+— and neither implies the other.
+
+**Both live in the same transaction as the write they guard.** The permissions
+are read from the user row inside the operation's own `BEGIN IMMEDIATE`, so they
+are the permissions at the moment of the write and not at the moment the request
+arrived; the rules themselves are pure functions in the domain layer, shared by
+both surfaces as every other rule is.
+
+**None of it applies to direct mode.** The CLI on a database file authorizes
+nothing, because whoever can open the file can already read and write every byte
+of it and a check there would be a suggestion rather than a control. That is
+also the bootstrap — the first user is created there — and the recovery path
+when an instance's last administrator is gone.
 
 Cross-origin access and cross-site writes are both opt-in, because a browser
 attaches stored credentials to cross-site requests of its own accord.
@@ -481,8 +509,8 @@ design is holding *out*.
 
 **Deliberately absent:** versioning, history, merge and offline replication;
 comments; audit logs; sprints, boards, burndowns and time tracking;
-notifications; continuous synchronisation with external trackers; authorization;
-custom fields and workflows; bulk import.
+notifications; continuous synchronisation with external trackers; custom fields
+and workflows; bulk import.
 
 **Nothing is ever archived or purged.** Closed issues stay queryable forever.
 

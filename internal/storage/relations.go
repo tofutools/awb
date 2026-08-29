@@ -208,12 +208,19 @@ func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 
 // Children returns the direct children of an issue, ordered as siblings are
 // ordered everywhere: priority ascending, then created_at, then id.
+//
+// The walk crosses project boundaries, so the scope applies: a child in a
+// project the caller is not a member of is not listed, and neither is the
+// subtree below it. A tree is therefore what the caller can see of a
+// decomposition, not a claim that it is the whole of one.
 func (t *Tx) Children(id string) ([]*domain.Issue, error) {
+	visible, scopeArgs := t.visibleClause("project")
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT `+issueColumns+`
 		  FROM issues
 		 WHERE id IN (SELECT subject FROM relations WHERE type = 'has-parent' AND other = ?)
-		 ORDER BY priority ASC, created_at ASC, id ASC`, id)
+		   AND `+visible+`
+		 ORDER BY priority ASC, created_at ASC, id ASC`, append([]any{id}, scopeArgs...)...)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read children of %s", id)
 	}

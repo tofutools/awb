@@ -68,11 +68,14 @@ func NewServer(backendFor func(context.Context) backend.Backend,
 
 // HandleBasicAuth accepts whatever credentials reach it.
 //
-// Authentication happens in front of this server, in the middleware that reads
-// the htpasswd file, and a request that failed it never arrives. The document
+// Authentication happens in front of this server, in the middleware that checks
+// the users table, and a request that failed it never arrives. The document
 // declares the scheme because it describes the API, and the generated server
 // asks about it because the document declares it; there is nothing left here
 // to check.
+//
+// What the authenticated caller may then do is decided in the layer below, in
+// the same transaction as the write it guards, and not here.
 func (h *Handler) HandleBasicAuth(ctx context.Context, _ api.OperationName,
 	_ api.BasicAuth) (context.Context, error) {
 	return ctx, nil
@@ -124,7 +127,7 @@ func (h *Handler) middleware() api.Middleware {
 
 // NewError maps a failure onto its status and the Error body.
 //
-// The four kinds carry the exit-code taxonomy; a failed precondition is the
+// The five kinds carry the exit-code taxonomy; a failed precondition is the
 // one extra case, answered 412, which has no exit code of its own, and a body
 // over the transport cap the other, answered 413.
 func (h *Handler) NewError(_ context.Context, err error) *api.ErrorStatusCode {

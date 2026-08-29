@@ -14,6 +14,13 @@ import (
 // The demo project. It is the only project awb demo creates or deletes, but
 // deleting it removes the relations its issues are on either end of, which can
 // unblock work in another project.
+//
+// It creates no user, deliberately, although the data set otherwise shows
+// everything there is to show. A database holding no user is a server without
+// authentication, so seeding one would make "awb demo" quietly turn a server's
+// authentication on — with a password the operator never chose and would then
+// have to guess. What users look like is shown by "awb user add" instead,
+// which is a decision somebody made.
 const (
 	demoProjectKey  = "demo"
 	demoProjectName = "DEMO"

@@ -1,0 +1,594 @@
+package local_test
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/local"
+	"github.com/tofutools/awb/internal/storage"
+)
+
+// newInstance is a database with two projects and no users: direct mode, where
+// nothing is authorized. root is the unrestricted backend a CLI on the file
+// gets, and is what the fixtures are built with.
+func newInstance(t *testing.T) (root *local.Backend, ctx context.Context) {
+	t.Helper()
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	root = local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	for _, key := range []string{"awb", "web"} {
+		_, err := root.CreateProject(t.Context(), backend.ProjectCreate{Key: key})
+		require.NoError(t, err)
+	}
+	return root, t.Context()
+}
+
+// addUser creates an account through the unrestricted backend, which is how a
+// real instance is bootstrapped.
+func addUser(t *testing.T, root *local.Backend, ctx context.Context, name string,
+	projectAdmin, userAdmin bool) {
+	t.Helper()
+	_, err := root.CreateUser(ctx, backend.UserCreate{
+		Name: name, Password: "hunter2",
+		ProjectAdmin: projectAdmin, UserAdmin: userAdmin,
+	})
+	require.NoError(t, err)
+}
+
+func grant(t *testing.T, root *local.Backend, ctx context.Context,
+	project, user string, access domain.Access) {
+	t.Helper()
+	_, err := root.SetMember(ctx, project, user, access)
+	require.NoError(t, err)
+}
+
+// forbidden and notFound name the two refusals the model turns on: a caller who
+// may see a thing and may not change it, and one who is not told it is there.
+func forbidden(t *testing.T, err error, because ...any) {
+	t.Helper()
+	require.Error(t, err, because...)
+	assert.Equal(t, awberr.Forbidden, awberr.KindOf(err), err)
+	assert.Equal(t, 5, awberr.ExitCode(err))
+}
+
+func notFound(t *testing.T, err error, because ...any) {
+	t.Helper()
+	require.Error(t, err, because...)
+	assert.Equal(t, awberr.NotFound, awberr.KindOf(err), err)
+	assert.Equal(t, 3, awberr.ExitCode(err))
+}
+
+// Direct mode applies no authorization at all, whoever the users table says
+// may do what. The CLI on a database file can already read and write every
+// byte of it.
+func TestDirectModeIsUnauthorized(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+
+	// bob is a member of nothing and holds no flag, and the unrestricted
+	// backend acting as bob does everything anyway.
+	direct := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
+
+	page, err := direct.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, page.Projects, 2)
+
+	_, err = direct.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	require.NoError(t, err)
+	_, err = direct.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+	_, err = direct.CreateUser(ctx, backend.UserCreate{Name: "carol", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = direct.SetMember(ctx, "awb", "carol", domain.AccessAdmin)
+	require.NoError(t, err)
+}
+
+// A user works in the projects they are a member of and sees nothing else:
+// every listing, and the unpaged total with it.
+func TestVisibilityIsMembership(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	inAwb, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+	inWeb, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+
+	projects, err := bob.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, projects.Projects, 1)
+	assert.Equal(t, "awb", projects.Projects[0].Key)
+	assert.Equal(t, 1, projects.Total, "the unpaged total counts what the caller may see")
+
+	issues, err := bob.ListIssues(ctx, &domain.Filter{})
+	require.NoError(t, err)
+	require.Len(t, issues.Issues, 1)
+	assert.Equal(t, inAwb.ID, issues.Issues[0].ID)
+	assert.Equal(t, 1, issues.Total)
+
+	// The visible one is readable and the invisible one is not there at all.
+	_, err = bob.GetIssue(ctx, inAwb.ID)
+	require.NoError(t, err)
+	_, err = bob.GetIssue(ctx, inWeb.ID)
+	notFound(t, err)
+	_, err = bob.GetProject(ctx, "web")
+	notFound(t, err)
+}
+
+// A project a caller cannot see is answered "no such project" and never
+// "forbidden": it is not theirs to know about.
+func TestAnInvisibleProjectIsNotFoundEverywhere(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	bob := root.WithUser("bob")
+
+	_, err := bob.GetProject(ctx, "web")
+	notFound(t, err)
+
+	// A listing filtered to it reports the project rather than matching nothing.
+	_, err = bob.ListIssues(ctx, &domain.Filter{Projects: []string{"web"}})
+	notFound(t, err)
+
+	// And creating an issue in it is the same answer.
+	_, err = bob.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	notFound(t, err)
+
+	_, err = bob.ListMembers(ctx, "web", nil, nil)
+	notFound(t, err)
+}
+
+// An issue the caller may not see must not be reachable by any spelling of its
+// reference, and must not make a prefix of a visible one ambiguous.
+func TestReferencesDoNotResolveOutsideTheScope(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+	bob := root.WithUser("bob")
+
+	// The full ID, the project-qualified prefix and the bare hash all say the
+	// same thing.
+	hash := hidden.ID[len("web-"):]
+	for _, ref := range []string{hidden.ID, hidden.ID[:len("web-")+3], hash, hash[:3]} {
+		_, err := bob.GetIssue(ctx, ref)
+		notFound(t, err, ref)
+	}
+
+	// And the unrestricted backend still finds it, so what changed is the
+	// scope and not the data.
+	_, err = root.GetIssue(ctx, hidden.ID)
+	require.NoError(t, err)
+}
+
+// Membership is the whole of the question for an issue: a member works with
+// the issues of their project, and admin adds nothing there.
+func TestAMemberWorksWithTheIssuesOfTheirProject(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	bob := root.WithUser("bob")
+
+	issue, err := bob.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+
+	title := "Parser crashes on empty input"
+	_, err = bob.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Title: &title}, "")
+	require.NoError(t, err)
+	_, err = bob.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "bob"}, "")
+	require.NoError(t, err)
+	_, err = bob.AddLabel(ctx, issue.ID, "parser", "")
+	require.NoError(t, err)
+	_, err = bob.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+	_, err = bob.DeleteIssue(ctx, issue.ID, "")
+	require.NoError(t, err)
+}
+
+// A project's own existence is the project_admin flag's, not its members'.
+func TestOnlyAProjectAdministratorManagesProjects(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "carol", false, false)
+	addUser(t, root, ctx, "alice", true, false)
+	grant(t, root, ctx, "awb", "carol", domain.AccessAdmin)
+
+	carol := root.WithUser("carol")
+	name := "Renamed"
+
+	_, err := carol.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	forbidden(t, err)
+	// She can see awb, so changing it is refused rather than hidden.
+	_, err = carol.UpdateProject(ctx, "awb", backend.ProjectPatch{Name: &name}, "")
+	forbidden(t, err)
+	_, err = carol.DeleteProject(ctx, "awb", false, "")
+	forbidden(t, err)
+
+	// One she cannot see is not found instead, the refusal never being the
+	// thing that reveals it.
+	_, err = carol.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &name}, "")
+	notFound(t, err)
+
+	alice := root.WithUser("alice")
+	_, err = alice.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	require.NoError(t, err)
+	_, err = alice.UpdateProject(ctx, "awb", backend.ProjectPatch{Name: &name}, "")
+	require.NoError(t, err)
+}
+
+// The project_admin flag holds admin access in every project, with no row
+// saying so — including the ones nobody has been given access to.
+func TestAProjectAdministratorSeesEverything(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "alice", true, false)
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+
+	alice := root.WithUser("alice")
+	projects, err := alice.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, projects.Projects, 2)
+
+	issues, err := alice.ListIssues(ctx, &domain.Filter{})
+	require.NoError(t, err)
+	assert.Len(t, issues.Issues, 1)
+
+	// And she may run the membership of a project she holds no row in.
+	_, err = alice.SetMember(ctx, "web", "alice", domain.AccessRegular)
+	require.NoError(t, err)
+}
+
+// Adding and removing a project's users is what admin adds over regular.
+func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "carol", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	grant(t, root, ctx, "awb", "carol", domain.AccessAdmin)
+
+	_, err := root.WithUser("bob").SetMember(ctx, "awb", "bob", domain.AccessAdmin)
+	forbidden(t, err, "a regular member cannot promote themselves")
+
+	carol := root.WithUser("carol")
+	membership, err := carol.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessAdmin, membership.Access)
+
+	// Granting the access already held changes nothing and still succeeds.
+	_, err = carol.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
+	require.NoError(t, err)
+
+	removed, err := carol.RemoveMember(ctx, "awb", "bob")
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessAdmin, removed.Access, "the access as it was before")
+
+	// Withdrawing access nobody holds is not found.
+	_, err = carol.RemoveMember(ctx, "awb", "bob")
+	notFound(t, err)
+
+	// And a membership must name an account that exists.
+	_, err = carol.SetMember(ctx, "awb", "nobody", domain.AccessRegular)
+	notFound(t, err)
+}
+
+// Revoking access makes the project and its issues vanish for that user, and
+// leaves their issues exactly as they were.
+func TestRevokingAccessHidesTheProjectAndKeepsTheWork(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	bob := root.WithUser("bob")
+	issue, err := bob.CreateIssue(ctx,
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignee: "bob"})
+	require.NoError(t, err)
+
+	_, err = root.RemoveMember(ctx, "awb", "bob")
+	require.NoError(t, err)
+
+	_, err = bob.GetIssue(ctx, issue.ID)
+	notFound(t, err)
+
+	kept, err := root.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "bob", kept.Assignee, "the record of who did the work outlives the access")
+}
+
+// Managing users is the user_admin flag's, and neither flag implies the other.
+func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "alice", true, false)
+	addUser(t, root, ctx, "dana", false, true)
+
+	bob, alice, dana := root.WithUser("bob"), root.WithUser("alice"), root.WithUser("dana")
+
+	for _, be := range []*local.Backend{bob, alice} {
+		_, err := be.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
+		forbidden(t, err)
+		_, err = be.ListUsers(ctx, nil, nil)
+		forbidden(t, err)
+		_, err = be.GetUser(ctx, "dana")
+		forbidden(t, err)
+		_, err = be.DeleteUser(ctx, "dana", "")
+		forbidden(t, err)
+	}
+
+	_, err := dana.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
+	require.NoError(t, err)
+	users, err := dana.ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, users.Users, 4)
+
+	// Managing users confers no access to any project.
+	projects, err := dana.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, projects.Projects)
+}
+
+// Anybody may read their own account and set their own password, and nobody
+// may grant themselves anything by doing so.
+func TestAUserMayChangeTheirOwnPassword(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	bob := root.WithUser("bob")
+
+	self, err := bob.GetUser(ctx, "bob")
+	require.NoError(t, err)
+	assert.False(t, self.UserAdmin)
+	require.Len(t, self.Projects, 1, "which is how they learn what they may do")
+	assert.Equal(t, domain.AccessRegular, self.Projects[0].Access)
+
+	changed := "hunter3"
+	updated, err := bob.UpdateUser(ctx, "bob", backend.UserPatch{Password: &changed}, "")
+	require.NoError(t, err)
+	assert.Greater(t, updated.UpdatedAt, self.UpdatedAt, "a password change moves updated_at")
+
+	// But not the flags, and not anybody else's password.
+	yes := true
+	_, err = bob.UpdateUser(ctx, "bob", backend.UserPatch{UserAdmin: &yes}, "")
+	forbidden(t, err)
+	_, err = bob.UpdateUser(ctx, "alice", backend.UserPatch{Password: &changed}, "")
+	forbidden(t, err)
+}
+
+// The two ways of stating a credential are two ways of stating one credential.
+func TestAPasswordOrAHashButNeverBoth(t *testing.T) {
+	root, ctx := newInstance(t)
+
+	_, err := root.CreateUser(ctx, backend.UserCreate{Name: "alice"})
+	require.Error(t, err, "an account nobody can log in to")
+	assert.Equal(t, 2, awberr.ExitCode(err))
+
+	_, err = root.CreateUser(ctx, backend.UserCreate{
+		Name: "alice", Password: "hunter2",
+		PasswordHash: "$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by",
+	})
+	require.Error(t, err)
+	assert.Equal(t, 2, awberr.ExitCode(err))
+
+	// A hash alone is enough, and is stored as given.
+	user, err := root.CreateUser(ctx, backend.UserCreate{
+		Name:         "alice",
+		PasswordHash: "alice:$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "alice", user.Name)
+}
+
+// Deleting a user takes their memberships and leaves their issues.
+func TestDeletingAUserTakesTheirMemberships(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	issue, err := root.CreateIssue(ctx,
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignee: "bob"})
+	require.NoError(t, err)
+
+	deleted, err := root.DeleteUser(ctx, "bob", "")
+	require.NoError(t, err)
+	require.Len(t, deleted.User.Projects, 1, "the memberships as they were")
+
+	members, err := root.ListMembers(ctx, "awb", nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, members.Members)
+
+	kept, err := root.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "bob", kept.Assignee)
+}
+
+// An account deleted between authentication and the operation cannot act.
+func TestAnUnknownCallerIsRefused(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+
+	ghost := root.WithUser("nobody")
+	_, err := ghost.ListProjects(ctx, nil, nil)
+	forbidden(t, err)
+}
+
+// A user object never carries a password, in any direction.
+func TestAUserNeverCarriesAPassword(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+
+	user, err := root.GetUser(ctx, "bob")
+	require.NoError(t, err)
+	assert.NotNil(t, user.Projects)
+	assert.Empty(t, user.Projects)
+	assert.NotEmpty(t, user.CreatedAt)
+	assert.Equal(t, user.CreatedAt, user.UpdatedAt)
+}
+
+// A tree crosses projects, so it shows what the caller can see of a
+// decomposition rather than claiming to be the whole of one.
+func TestATreeStopsAtTheScope(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	parent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Epic"})
+	require.NoError(t, err)
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Visible child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
+	})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "web", Title: "Hidden child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
+	})
+	require.NoError(t, err)
+
+	whole, err := root.Tree(ctx, parent.ID)
+	require.NoError(t, err)
+	require.Len(t, whole.Children, 2)
+
+	scoped, err := root.WithUser("bob").Tree(ctx, parent.ID)
+	require.NoError(t, err)
+	require.Len(t, scoped.Children, 1)
+	assert.Equal(t, visible.ID, scoped.Children[0].ID)
+}
+
+// The facet endpoints run the same selection as a listing, so they are scoped
+// with it: a label used only in a project the caller cannot see is not in use
+// as far as they are concerned.
+func TestFacetsAreScoped(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignee: "bob"})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "web", Title: "Button drifts", Labels: []string{"css"}, Assignee: "carol"})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+
+	labels, err := bob.LabelFacets(ctx, &domain.Filter{})
+	require.NoError(t, err)
+	require.Len(t, labels.Facets, 1)
+	assert.Equal(t, "parser", labels.Facets[0].Value)
+
+	assignees, err := bob.AssigneeFacets(ctx, &domain.Filter{})
+	require.NoError(t, err)
+	require.Len(t, assignees.Facets, 1)
+	assert.Equal(t, "bob", assignees.Facets[0].Value)
+}
+
+// Search runs the same selection too, index and all.
+func TestSearchIsScoped(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Parser drifts"})
+	require.NoError(t, err)
+
+	all, err := root.ListIssues(ctx, &domain.Filter{Terms: []string{"parser"}})
+	require.NoError(t, err)
+	assert.Equal(t, 2, all.Total)
+
+	scoped, err := root.WithUser("bob").ListIssues(ctx, &domain.Filter{Terms: []string{"parser"}})
+	require.NoError(t, err)
+	require.Len(t, scoped.Issues, 1)
+	assert.Equal(t, 1, scoped.Total)
+	assert.Equal(t, "awb", scoped.Issues[0].Project)
+}
+
+// Attachments hang off an issue, so they are scoped with it.
+func TestAttachmentsAreScoped(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+	_, err = root.AddAttachment(ctx, hidden.ID, backend.AttachmentCreate{
+		Name: "trace.txt", Content: strings.NewReader("boom")})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	_, err = bob.ListAttachments(ctx, hidden.ID, nil, nil)
+	notFound(t, err)
+	_, err = bob.GetAttachment(ctx, hidden.ID, "trace.txt")
+	notFound(t, err)
+	_, err = bob.DeleteAttachment(ctx, hidden.ID, "trace.txt")
+	notFound(t, err)
+	_, err = bob.AddAttachment(ctx, hidden.ID, backend.AttachmentCreate{
+		Name: "other.txt", Content: strings.NewReader("boom")})
+	notFound(t, err)
+}
+
+// A member of a project may read who else works on it.
+func TestAMemberSeesTheMemberList(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "carol", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	grant(t, root, ctx, "awb", "carol", domain.AccessAdmin)
+
+	page, err := root.WithUser("bob").ListMembers(ctx, "awb", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Members, 2)
+	assert.Equal(t, 2, page.Total)
+	assert.Equal(t, "bob", page.Members[0].User, "ordered by username ascending")
+	assert.Equal(t, "carol", page.Members[1].User)
+	assert.Equal(t, "awb", page.Members[0].Project)
+}
+
+// The permissions are read inside the operation's own transaction, so a change
+// to them is in force for the very next operation rather than for the next
+// connection.
+func TestPermissionsAreReadPerOperation(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	bob := root.WithUser("bob")
+
+	projects, err := bob.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, projects.Projects)
+
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	projects, err = bob.ListProjects(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
+}
+
+// An empty patch is still a read of the account, and answers with it, so a
+// caller who may not read one may not reach it by asking to change nothing.
+func TestAnEmptyPatchIsNotAWayToReadAnAccount(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "alice", true, true)
+	addUser(t, root, ctx, "bob", false, false)
+
+	_, err := root.WithUser("bob").UpdateUser(ctx, "alice", backend.UserPatch{}, "")
+	forbidden(t, err)
+
+	// Their own is theirs to ask about.
+	_, err = root.WithUser("bob").UpdateUser(ctx, "bob", backend.UserPatch{}, "")
+	require.NoError(t, err)
+}

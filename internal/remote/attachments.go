@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -69,17 +68,10 @@ func attachmentPath(issueRef, name string) string {
 
 func (b *Backend) ListAttachments(ctx context.Context, issueRef string,
 	limit, offset *int) (backend.AttachmentPage, error) {
-	query := url.Values{}
-	if limit != nil {
-		query.Set("limit", strconv.Itoa(*limit))
-	}
-	if offset != nil {
-		query.Set("offset", strconv.Itoa(*offset))
-	}
-
 	attachments := []domain.Attachment{}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/issues/"+url.PathEscape(issueRef)+"/attachments", query),
+		b.endpoint("/api/issues/"+url.PathEscape(issueRef)+"/attachments",
+			pageQuery(limit, offset)),
 		nil, "", &attachments)
 	if err != nil {
 		return backend.AttachmentPage{}, err

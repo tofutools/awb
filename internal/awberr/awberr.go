@@ -1,5 +1,5 @@
 // Package awberr carries the classification that both of awb's surfaces
-// report. A failure is one of four kinds, and each kind has exactly one exit
+// report. A failure is one of five kinds, and each kind has exactly one exit
 // code on the command line and one status code over HTTP, so the CLI and the
 // API can never disagree about what went wrong.
 //
@@ -10,6 +10,7 @@
 //	Usage        2     400
 //	NotFound     3     404
 //	Conflict     4     409
+//	Forbidden    5     403
 package awberr
 
 import (
@@ -34,6 +35,11 @@ const (
 	// Conflict is a constraint that depends on stored state: a dependency cycle,
 	// a duplicate, a claim held by somebody else, a parent already set.
 	Conflict
+	// Forbidden is an authenticated caller asking for something their
+	// permissions do not cover. It is distinct from NotFound: a caller who may
+	// not see a thing at all is told it does not exist, and one who may see it
+	// but may not change it is told this instead.
+	Forbidden
 )
 
 // ExitCode is the process exit status for a failure of this kind.
@@ -45,6 +51,8 @@ func (k Kind) ExitCode() int {
 		return 3
 	case Conflict:
 		return 4
+	case Forbidden:
+		return 5
 	case Runtime:
 		return 1
 	default:
@@ -61,6 +69,8 @@ func (k Kind) HTTPStatus() int {
 		return http.StatusNotFound
 	case Conflict:
 		return http.StatusConflict
+	case Forbidden:
+		return http.StatusForbidden
 	case Runtime:
 		return http.StatusInternalServerError
 	default:
@@ -69,10 +79,15 @@ func (k Kind) HTTPStatus() int {
 }
 
 // KindFromHTTPStatus inverts HTTPStatus for the remote backend. The statuses
-// that no kind maps onto — 401, 403, 405, 412, 413, 415 and anything else —
-// become Runtime, which is exit code 1: they say something about how the
-// client behaved rather than about what it asked for, and the command line has
-// no separate code for that.
+// that no kind maps onto — 401, 405, 412, 413, 415 and anything else — become
+// Runtime, which is exit code 1: they say something about how the client
+// behaved rather than about what it asked for, and the command line has no
+// separate code for that.
+//
+// 401 is deliberately among them and 403 is deliberately not: a 403 is a
+// refusal of what the caller asked for and has its own code, while a 401 says
+// the credentials themselves are missing or wrong, which is a failure to
+// connect rather than a failure to be permitted.
 func KindFromHTTPStatus(status int) Kind {
 	switch status {
 	case http.StatusBadRequest:
@@ -81,6 +96,8 @@ func KindFromHTTPStatus(status int) Kind {
 		return NotFound
 	case http.StatusConflict:
 		return Conflict
+	case http.StatusForbidden:
+		return Forbidden
 	default:
 		return Runtime
 	}
@@ -117,6 +134,12 @@ func NotFoundf(format string, a ...any) *Error {
 // Conflictf reports a constraint on stored state (exit 4, 409).
 func Conflictf(format string, a ...any) *Error {
 	return &Error{Kind: Conflict, Msg: fmt.Sprintf(format, a...)}
+}
+
+// Forbiddenf reports something the caller's permissions do not cover (exit 5,
+// 403).
+func Forbiddenf(format string, a ...any) *Error {
+	return &Error{Kind: Forbidden, Msg: fmt.Sprintf(format, a...)}
 }
 
 // Runtimef reports a failure that is not the caller's mistake (exit 1, 500).

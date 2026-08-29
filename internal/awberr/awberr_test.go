@@ -29,11 +29,13 @@ func TestKindMapping(t *testing.T) {
 	}
 }
 
-// The six statuses with no exit code behind them all fold into 1, which is
-// what the CLI reports in remote mode.
+// The statuses with no exit code behind them all fold into 1, which is what
+// the CLI reports in remote mode. 401 is among them and 403 is not: a 403 is a
+// refusal of what the caller asked for and has its own code, while a 401 says
+// the credentials themselves are missing or wrong.
 func TestKindFromHTTPStatusFoldsTheRest(t *testing.T) {
 	for _, status := range []int{
-		http.StatusUnauthorized, http.StatusForbidden, http.StatusMethodNotAllowed,
+		http.StatusUnauthorized, http.StatusMethodNotAllowed,
 		http.StatusPreconditionFailed, http.StatusRequestEntityTooLarge,
 		http.StatusUnsupportedMediaType, http.StatusBadGateway, http.StatusOK,
 	} {

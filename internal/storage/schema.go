@@ -19,6 +19,7 @@ const ApplicationID int32 = 0x41574200
 var migrations = [][]string{
 	schemaV1,
 	schemaV2,
+	schemaV3,
 }
 
 var schemaV1 = []string{
@@ -157,4 +158,57 @@ var schemaV2 = []string{
 	// What answers "does any other row still name this digest?" when one is
 	// deleted.
 	`CREATE INDEX idx_attachments_sha256 ON attachments (sha256)`,
+}
+
+// schemaV3 adds users and their access to projects, which is what awb serve
+// authenticates and authorizes against.
+//
+// It is deliberately data rather than a file beside the database: a server's
+// users are part of the tracker's state, they are managed through the same two
+// surfaces as everything else, and a membership is a row that a foreign key
+// can keep pointing at a project that still exists.
+//
+// A database that holds no user row at all is the version 1 database this
+// migration leaves behind, and it stays a server without authentication —
+// which is why nothing here is seeded.
+var schemaV3 = []string{
+	// A username is an assignee: it is what the issues that user works on record
+	// as their assignee, so the two vocabularies are one and the column holds
+	// the same values the issues table's assignee does.
+	//
+	// The password hash never leaves this table. It is bcrypt's own output,
+	// which carries its cost inside it, so a hash written under an older
+	// default keeps verifying after that default has risen.
+	`CREATE TABLE users (
+		name          TEXT PRIMARY KEY,
+		password_hash TEXT NOT NULL,
+		project_admin INTEGER NOT NULL DEFAULT 0,
+		user_admin    INTEGER NOT NULL DEFAULT 0,
+		created_at    TEXT NOT NULL,
+		updated_at    TEXT NOT NULL,
+		CHECK (name <> ''),
+		CHECK (password_hash <> ''),
+		CHECK (project_admin IN (0, 1)),
+		CHECK (user_admin IN (0, 1))
+	) STRICT, WITHOUT ROWID`,
+
+	// A membership is keyed on its project and its user, exactly as a label is
+	// keyed on its issue and its value: it carries no identifier of its own,
+	// because the pair is what identifies one, and a user therefore holds at
+	// most one access level in a project.
+	//
+	// Both ends cascade. Deleting a project takes its memberships with it, and
+	// so does deleting a user, because a membership without one of its two ends
+	// is not a permission anybody holds.
+	`CREATE TABLE project_members (
+		project TEXT NOT NULL REFERENCES projects (key) ON DELETE CASCADE,
+		user    TEXT NOT NULL REFERENCES users (name) ON DELETE CASCADE,
+		access  TEXT NOT NULL,
+		PRIMARY KEY (project, user),
+		CHECK (access IN ('regular', 'admin'))
+	) STRICT, WITHOUT ROWID`,
+
+	// What answers "which projects may this user see?", which is the condition
+	// every listing, search and facet carries on a server that authorizes.
+	`CREATE INDEX idx_project_members_user ON project_members (user)`,
 }

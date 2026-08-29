@@ -188,6 +188,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		newInitCommand(e),
 		newAgentGuideCommand(e),
 		newProjectCommand(e),
+		newUserCommand(e),
 		newCreateCommand(e),
 		newShowCommand(e),
 		newListCommand(e),
@@ -281,6 +282,17 @@ func exactArgs(n int) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if len(args) != n {
 			return awberr.Usagef("%s takes exactly %d argument(s), got %d",
+				cmd.CommandPath(), n, len(args))
+		}
+		return nil
+	}
+}
+
+// maxArgs is cobra.MaximumNArgs with awb's classification.
+func maxArgs(n int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) > n {
+			return awberr.Usagef("%s takes at most %d argument(s), got %d",
 				cmd.CommandPath(), n, len(args))
 		}
 		return nil

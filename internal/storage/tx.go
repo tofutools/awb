@@ -22,6 +22,9 @@ type queryer interface {
 type Tx struct {
 	ctx context.Context
 	q   queryer
+	// scope is what the caller running this transaction may see; see scope.go.
+	// The zero value hides nothing, which is direct mode.
+	scope Scope
 }
 
 // Write runs fn inside a BEGIN IMMEDIATE transaction.

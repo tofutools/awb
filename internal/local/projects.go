@@ -29,7 +29,13 @@ func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) 
 	}
 
 	var project *domain.Project
-	err = b.write(ctx, func(tx *storage.Tx) error {
+	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		// A project's existence is a project administrator's to decide. There is
+		// nothing to hide behind a 404 here: the caller named a key that is not
+		// there yet either way.
+		if !caller.MayManageProjects() {
+			return awberr.Forbiddenf("only a project administrator may create a project")
+		}
 		if err := tx.InsertProject(key, name, description); err != nil {
 			return err
 		}
@@ -48,7 +54,7 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 		return nil, err
 	}
 	var project *domain.Project
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
 		project, err = tx.GetProject(key)
 		return err
@@ -63,7 +69,7 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 // that are not closed.
 func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend.ProjectPage, error) {
 	var page backend.ProjectPage
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
 		page.Projects, page.Total, err = tx.ListProjects(limit, offset)
 		return err
@@ -86,10 +92,16 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 	}
 
 	var project *domain.Project
-	err := b.write(ctx, func(tx *storage.Tx) error {
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		// Read first, so a project the caller cannot see is not found rather
+		// than refused: the refusal below is for one they can see and may not
+		// change.
 		existing, err := tx.GetProject(key)
 		if err != nil {
 			return err
+		}
+		if !caller.MayManageProjects() {
+			return awberr.Forbiddenf("only a project administrator may change project %s", key)
 		}
 		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
 			return err
@@ -140,10 +152,13 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		deleted backend.DeletedProject
 		digests []string
 	)
-	err := b.write(ctx, func(tx *storage.Tx) error {
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		project, err := tx.GetProject(key)
 		if err != nil {
 			return err
+		}
+		if !caller.MayManageProjects() {
+			return awberr.Forbiddenf("only a project administrator may delete project %s", key)
 		}
 		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the project"); err != nil {
 			return err
