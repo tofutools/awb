@@ -68,8 +68,8 @@ func (d *DescriptionFlags) read(e *env) ([]byte, error) {
 type createParams struct {
 	DescriptionFlags
 	Title          string   `positional:"true" required:"true"`
-	Type           string   `long:"type" default:"task" optional:"true" help:"epic, feature, bug, task or chore"`
-	Priority       int      `long:"priority" default:"2" optional:"true" help:"0 (highest) to 4 (lowest)"`
+	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
+	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignee       string   `long:"assignee" optional:"true" help:"create and claim in one step"`
 	Project        string   `long:"project" optional:"true" help:"the project to create the issue in"`
@@ -309,8 +309,8 @@ type updateParams struct {
 	DescriptionFlags
 	ID       string  `positional:"true" required:"true"`
 	Title    *string `long:"title" help:"new title"`
-	Type     *string `long:"type" help:"epic, feature, bug, task or chore"`
-	Priority *int    `long:"priority" help:"0 (highest) to 4 (lowest)"`
+	Type     *string `long:"type" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
+	Priority *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 }
 
 func newUpdateCommand(e *env) *cobra.Command {
