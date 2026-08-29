@@ -87,6 +87,9 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .id { font-family: var(--mono); font-size: 0.85em; }
 .title { flex: 1 1 18rem; }
+/* The id beside it already carries the accent; a second accent-coloured
+   link would make every listing loud, so the title link only underlines. */
+a.title { color: inherit; }
 .count { color: var(--muted); font-size: 0.85em; }
 
 .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }

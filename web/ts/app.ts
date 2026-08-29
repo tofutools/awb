@@ -44,6 +44,16 @@ function link(href: string, text: string, className = ""): HTMLAnchorElement {
   return anchor;
 }
 
+/**
+ * titleLink renders a row's title as a second link to wherever its id leads,
+ * so the whole of the naming is clickable and not just the id. A project
+ * without a name gets a plain span instead: an empty anchor would be a
+ * keyboard focus stop with nothing in it.
+ */
+function titleLink(href: string, text: string): HTMLElement {
+  return text === "" ? element("span", "title") : link(href, text, "title");
+}
+
 function element(tag: string, className = "", text = ""): HTMLElement {
   const node = document.createElement(tag);
   if (className !== "") node.className = className;
@@ -72,8 +82,9 @@ function issueBadges(issue: Issue): HTMLElement {
 
 function issueRow(issue: Issue): HTMLElement {
   const row = element("li", "issue-row");
-  row.append(link(`#/issues/${issue.id}`, issue.id, "id"));
-  row.append(element("span", "title", issue.title));
+  const href = `#/issues/${issue.id}`;
+  row.append(link(href, issue.id, "id"));
+  row.append(titleLink(href, issue.title));
   row.append(issueBadges(issue));
   return row;
 }
@@ -209,8 +220,9 @@ async function viewProjects(): Promise<HTMLElement> {
 
 function projectRow(project: Project): HTMLElement {
   const row = element("li", "project-row");
-  row.append(link(`#/issues?project=${encodeURIComponent(project.key)}`, project.key, "id"));
-  row.append(element("span", "title", project.name));
+  const href = `#/issues?project=${encodeURIComponent(project.key)}`;
+  row.append(link(href, project.key, "id"));
+  row.append(titleLink(href, project.name));
   row.append(element("span", "count", `${project.active_issues} open`));
   if (project.description !== "") {
     const description = element("div", "markdown");
@@ -338,8 +350,9 @@ async function viewTree(id: string): Promise<HTMLElement> {
 function treeNode(node: IssueTree, depth: number): HTMLElement {
   const list = element("ul", depth === 0 ? "tree" : "tree-children");
   const row = element("li", "tree-row");
-  row.append(link(`#/issues/${node.id}`, node.id, "id"));
-  row.append(element("span", "title", node.title));
+  const href = `#/issues/${node.id}`;
+  row.append(link(href, node.id, "id"));
+  row.append(titleLink(href, node.title));
   row.append(issueBadges(node));
   list.append(row);
 
