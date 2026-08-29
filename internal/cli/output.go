@@ -540,8 +540,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 		tbl := section()
 		for i := range issue.Attachments {
 			a := &issue.Attachments[i]
-			tbl.Row(t.apply(t.id, a.ID), a.Name,
-				t.apply(t.dim, humanSize(a.Size)), t.apply(t.dim, a.ContentType))
+			tbl.Row(a.Name, t.apply(t.dim, humanSize(a.Size)), t.apply(t.dim, a.ContentType))
 		}
 		e.writeSection(tbl)
 	}
@@ -739,6 +738,13 @@ func (e *env) mutated(issue *domain.Issue) error {
 	return nil
 }
 
+func (e *env) attached(attachment *domain.Attachment) error {
+	if e.json {
+		return e.writeJSON(attachment)
+	}
+	return nil
+}
+
 func (e *env) mutatedProject(project *domain.Project) error {
 	if e.json {
 		return e.writeJSON(project)
@@ -781,15 +787,15 @@ func (e *env) printAttachmentTable(attachments []domain.Attachment) {
 		return out
 	}
 
+	// The name comes first because it is what addresses the attachment, which
+	// is the job the id column used to do in an issue listing.
 	e.writeListing(t, []col{
-		{header: "ID", paint: always(t.id),
-			cells: cells(func(a *domain.Attachment) string { return a.ID })},
+		{header: "NAME", floor: nameFloor, paint: always(t.id),
+			cells: cells(func(a *domain.Attachment) string { return a.Name })},
 		{header: "SIZE", right: true,
 			cells: cells(func(a *domain.Attachment) string { return humanSize(a.Size) })},
 		{header: "TYPE", floor: typeFloor, expendable: true,
 			cells: cells(func(a *domain.Attachment) string { return a.ContentType })},
-		{header: "NAME", floor: nameFloor,
-			cells: cells(func(a *domain.Attachment) string { return a.Name })},
 	})
 }
 
@@ -807,8 +813,9 @@ func (e *env) printAttachment(attachment *domain.Attachment) error {
 		return nil
 	default:
 		t := e.theme()
-		e.writeHeading(t, attachment.ID, attachment.Name)
-		e.field(t, "Issue", t.apply(t.id, attachment.Issue))
+		// The heading is the pair that identifies it, in the order the command
+		// takes them.
+		e.writeHeading(t, attachment.Issue, attachment.Name)
 		e.field(t, "Type", attachment.ContentType)
 		e.field(t, "Size", fmt.Sprintf("%s (%d bytes)", humanSize(attachment.Size), attachment.Size))
 		e.field(t, "SHA-256", t.apply(t.dim, attachment.Sha256))

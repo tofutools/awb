@@ -37,7 +37,9 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	// An early refusal, so that a mistyped issue reference does not first copy
 	// a large file onto the disk to throw it away. It is not the check: the
 	// reference is resolved again inside the transaction below, which is the
-	// only place the answer is good at the moment it is used.
+	// only place the answer is good at the moment it is used. The name is not
+	// checked here at all — whether it is taken is exactly the kind of question
+	// that has to be asked inside the write lock.
 	if err := b.db.Read(ctx, func(tx *storage.Tx) error {
 		_, err := resolve(tx, issueRef)
 		return err
@@ -75,10 +77,10 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 		}
 		attachment.Issue = issueID
 
-		// The row goes in first: if it fails the transaction rolls back and
-		// nothing has been written to the store either. The content is placed
-		// before the commit, so a committed row never names a file that is not
-		// there.
+		// The row goes in first: if it fails — because the name is taken, most
+		// likely — the transaction rolls back and nothing has been written to the
+		// store either. The content is placed before the commit, so a committed
+		// row never names a file that is not there.
 		if err := tx.InsertAttachment(attachment); err != nil {
 			return err
 		}
@@ -95,11 +97,12 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 }
 
 // GetAttachment reads one attachment's metadata.
-func (b *Backend) GetAttachment(ctx context.Context, ref string) (*domain.Attachment, error) {
+func (b *Backend) GetAttachment(ctx context.Context, issueRef, name string) (
+	*domain.Attachment, error) {
 	var attachment *domain.Attachment
 	err := b.db.Read(ctx, func(tx *storage.Tx) error {
 		var err error
-		attachment, err = loadAttachment(tx, ref)
+		attachment, err = loadAttachment(tx, issueRef, name)
 		return err
 	})
 	if err != nil {
@@ -128,9 +131,9 @@ func (b *Backend) ListAttachments(ctx context.Context, issueRef string,
 
 // OpenAttachment reads one attachment's metadata and opens its content. The
 // reader is the caller's to close.
-func (b *Backend) OpenAttachment(ctx context.Context, ref string) (
+func (b *Backend) OpenAttachment(ctx context.Context, issueRef, name string) (
 	*domain.Attachment, io.ReadCloser, error) {
-	attachment, err := b.GetAttachment(ctx, ref)
+	attachment, err := b.GetAttachment(ctx, issueRef, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,14 +146,15 @@ func (b *Backend) OpenAttachment(ctx context.Context, ref string) (
 
 // DeleteAttachment removes an attachment and, when no other attachment holds
 // the same content, the file behind it.
-func (b *Backend) DeleteAttachment(ctx context.Context, ref string) (*domain.Attachment, error) {
+func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
+	*domain.Attachment, error) {
 	var deleted *domain.Attachment
 	err := b.write(ctx, func(tx *storage.Tx) error {
-		attachment, err := loadAttachment(tx, ref)
+		attachment, err := loadAttachment(tx, issueRef, name)
 		if err != nil {
 			return err
 		}
-		if err := tx.DeleteAttachment(attachment.ID); err != nil {
+		if err := tx.DeleteAttachment(attachment.Issue, attachment.Name); err != nil {
 			return err
 		}
 		deleted = attachment
@@ -163,17 +167,21 @@ func (b *Backend) DeleteAttachment(ctx context.Context, ref string) (*domain.Att
 	return deleted, nil
 }
 
-// loadAttachment resolves a reference and reads the attachment behind it.
-func loadAttachment(tx *storage.Tx, ref string) (*domain.Attachment, error) {
-	parsed, err := domain.ParseAttachmentRef(ref)
+// loadAttachment resolves the issue reference and reads the attachment that
+// issue holds under this name.
+func loadAttachment(tx *storage.Tx, issueRef, name string) (*domain.Attachment, error) {
+	issueID, err := resolve(tx, issueRef)
 	if err != nil {
 		return nil, err
 	}
-	id, err := tx.ResolveAttachmentRef(parsed)
+	// The name is put through the same gate it passed on the way in, so that a
+	// reference that could never have been stored is a usage error rather than
+	// a lookup that finds nothing.
+	valid, err := domain.ValidateAttachmentName(name)
 	if err != nil {
 		return nil, err
 	}
-	return tx.GetAttachment(id)
+	return tx.GetAttachment(issueID, valid)
 }
 
 // sweep removes the content behind each digest that no attachment row names

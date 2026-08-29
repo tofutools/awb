@@ -89,13 +89,19 @@ func (b *Backend) Identity(_ context.Context) (string, error) {
 }
 
 // endpoint builds a URL under the server's base path.
+//
+// path is already escaped, and is appended to the base as text rather than
+// assigned to url.URL.Path — which holds the *decoded* path, so putting an
+// escaped one there escapes it a second time and an attachment named "release
+// notes.md" is asked for as "release%2520notes.md". The base is safe to append
+// to because it was validated when it was read: an http or https URL with a
+// host, no userinfo, no query, no fragment and no trailing slash.
 func (b *Backend) endpoint(path string, query url.Values) string {
-	u := *b.base
-	u.Path = b.base.Path + path
+	endpoint := b.base.String() + path
 	if len(query) > 0 {
-		u.RawQuery = query.Encode()
+		endpoint += "?" + query.Encode()
 	}
-	return u.String()
+	return endpoint
 }
 
 // call performs one request and decodes the response into out.

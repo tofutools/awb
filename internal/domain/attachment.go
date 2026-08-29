@@ -30,10 +30,14 @@ const (
 // tag and takes no conditional edit — there is no second version to guard
 // against.
 //
+// It is identified by the issue it belongs to and its name, which is what a
+// label is identified by too. It carries no identifier of its own: a synthetic
+// one would be a second name for something that already has one, and nobody
+// would ever type it. That is why a name is unique within an issue.
+//
 // The content itself is not in the database. It lives as a file in the
 // attachments directory, named by Sha256, and the row here is the metadata.
 type Attachment struct {
-	ID          string `json:"id"`
 	Issue       string `json:"issue"`
 	Name        string `json:"name"`
 	ContentType string `json:"content_type"`
@@ -43,20 +47,20 @@ type Attachment struct {
 }
 
 // SortAttachments puts attachments into their specified order — oldest first,
-// then by id — so two invocations against unchanged data produce
-// byte-identical output. Ordering by name instead would reshuffle the list
+// then by name — so two invocations against unchanged data produce
+// byte-identical output. Sorting by name alone would reshuffle the list
 // whenever a file is added, which is the one thing an upload should not do.
 //
 // The timestamp has millisecond resolution and is not forced upward the way an
 // issue's updated_at is, so two uploads within one millisecond share it and
-// the id decides between them. The order is therefore total and stable, which
-// is what it is for; it is not a promise that it is the upload order.
+// the name decides between them. A name is unique within an issue, so that is
+// a total order.
 func SortAttachments(attachments []Attachment) {
 	slices.SortFunc(attachments, func(a, b Attachment) int {
 		if c := cmp.Compare(a.CreatedAt, b.CreatedAt); c != 0 {
 			return c
 		}
-		return cmp.Compare(a.ID, b.ID)
+		return cmp.Compare(a.Name, b.Name)
 	})
 }
 
@@ -141,38 +145,27 @@ func DetectContentType(head []byte) string {
 	return http.DetectContentType(head)
 }
 
-// ParseAttachmentRef reads an attachment reference: a full attachment ID or an
-// unambiguous prefix of one, lower-cased before matching exactly as an issue
-// reference is.
-func ParseAttachmentRef(s string) (string, error) {
-	raw := s
-	s = strings.ToLower(s)
-	if s == "" {
-		return "", awberr.Usagef("attachment id must not be empty")
-	}
-	if !IsHex(s) || len(s) > AttachmentIDLen {
-		return "", awberr.Usagef(
-			"invalid attachment id %q: expected up to %d hexadecimal characters",
-			raw, AttachmentIDLen)
-	}
-	return s, nil
-}
-
 // CompactAttachmentLine renders an attachment as the compact one-line form:
 //
-//	3f2a91c40d17 12345 9f86d0…b0f00a "text/markdown; charset=utf-8" "notes.md"
+//	awb-5c1d84 12345 9f86d0…b0f00a "text/markdown; charset=utf-8" "notes.md"
 //
-// The five fields are id, size in bytes, the content's SHA-256, the content
-// type and the name. The first three cannot contain a space; the last two are
-// JSON strings, including their surrounding double quotes and JSON escaping,
-// and are last for that reason. So a line is read by splitting the first three
-// fields on whitespace and decoding the two JSON strings that follow.
+// The five fields are the issue, the size in bytes, the content's SHA-256, the
+// content type and the name. The first three cannot contain a space; the last
+// two are JSON strings, including their surrounding double quotes and JSON
+// escaping, and are last for that reason. So a line is read by splitting the
+// first three fields on whitespace and decoding the two JSON strings that
+// follow.
+//
+// The line begins with the issue, as an issue's own compact line begins with
+// its id, so that a line says what it is about away from the command that
+// produced it. Together with the name it is the whole of what addresses the
+// attachment.
 //
 // The content type is quoted rather than written bare because it may carry
 // parameters — the sniffed default is "text/plain; charset=utf-8" — and a bare
 // one would put a space in the middle of a positional field and turn a
 // five-field line into six.
 func CompactAttachmentLine(a *Attachment) string {
-	return a.ID + " " + strconv.FormatInt(a.Size, 10) + " " + a.Sha256 + " " +
+	return a.Issue + " " + strconv.FormatInt(a.Size, 10) + " " + a.Sha256 + " " +
 		jsonString(a.ContentType) + " " + jsonString(a.Name)
 }

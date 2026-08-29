@@ -506,19 +506,35 @@ func transferLimits(next http.Handler) http.Handler {
 // isAttachmentUpload recognises POST /api/issues/{id}/attachments, the one
 // request whose body is a file.
 func isAttachmentUpload(r *http.Request) bool {
-	if r.Method != http.MethodPost {
-		return false
-	}
-	return oneSegmentBetween(r.URL.Path, "/api/issues/", "/attachments")
+	return r.Method == http.MethodPost && matchPath(r, "api", "issues", "*", "attachments")
 }
 
-// isAttachmentDownload recognises GET /api/attachments/{aid}/content, the one
-// response that is a file.
+// isAttachmentDownload recognises GET
+// /api/issues/{id}/attachments/{name}/content, the one response that is a
+// file.
 func isAttachmentDownload(r *http.Request) bool {
-	if r.Method != http.MethodGet {
+	return r.Method == http.MethodGet &&
+		matchPath(r, "api", "issues", "*", "attachments", "*", "content")
+}
+
+// matchPath compares the request's path against a pattern in which "*" stands
+// for exactly one non-empty segment.
+//
+// It reads the escaped path, so a segment is what the client actually sent
+// between two slashes. An attachment's name travels percent-encoded and cannot
+// contain a slash; reading the decoded path would let one that had smuggled an
+// encoded slash look like two segments and slip past.
+func matchPath(r *http.Request, pattern ...string) bool {
+	segments := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
+	if len(segments) != len(pattern) {
 		return false
 	}
-	return oneSegmentBetween(r.URL.Path, "/api/attachments/", "/content")
+	for i, want := range pattern {
+		if segments[i] == "" || (want != "*" && segments[i] != want) {
+			return false
+		}
+	}
+	return true
 }
 
 // gzipExcept compresses every response but the ones skip names.
@@ -546,17 +562,6 @@ func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 		}
 		compressed.ServeHTTP(w, r)
 	})
-}
-
-// oneSegmentBetween reports whether path is prefix, exactly one path segment,
-// and suffix.
-func oneSegmentBetween(path, prefix, suffix string) bool {
-	rest, found := strings.CutPrefix(path, prefix)
-	if !found {
-		return false
-	}
-	segment, found := strings.CutSuffix(rest, suffix)
-	return found && segment != "" && !strings.Contains(segment, "/")
 }
 
 // contentSecurityPolicy pins the UI's script sources to the import map the

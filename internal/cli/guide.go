@@ -38,13 +38,14 @@ awb search parser --compact   # literal terms, whole-token matching
 awb dep tree <id>             # the decomposition below an issue
 ` + "```" + `
 
-**Attach files** (evidence: a log, a trace, a screenshot):
+**Attach files** (evidence: a log, a trace, a screenshot). An attachment is
+addressed by its issue and its name, like a label; one name per issue:
 
 ` + "```" + `
-awb attach add <id> ./trace.txt   # prints the attachment id
-awb attach list <id> --compact    # what is attached
-awb attach get <aid> --output f   # write the content out (stdout without it)
-awb attach delete <aid> --force
+awb attach add <id> ./trace.txt          # named trace.txt unless --name
+awb attach list <id> --compact           # what is attached
+awb attach get <id> trace.txt --output f # content out (stdout without it)
+awb attach delete <id> trace.txt --force
 ` + "```" + `
 
 **Vocabulary** (fixed; put anything else in labels):

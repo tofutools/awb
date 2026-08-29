@@ -21,8 +21,11 @@ func newAttachCommand(e *env) *cobra.Command {
 			"unless --attachments, AWB_ATTACHMENTS or the configuration file says\n" +
 			"otherwise. Only the metadata is in the database: name, content type, size\n" +
 			"and the SHA-256 of the content.\n\n" +
-			"An attachment is immutable. There is no command that changes one: attach\n" +
-			"the file again and delete the old one.",
+			"An attachment is addressed by its issue and its name, the way a label is,\n" +
+			"and holds no id of its own. An issue holds at most one attachment under\n" +
+			"any one name.\n\n" +
+			"An attachment is immutable. There is no command that changes one: delete\n" +
+			"it and attach the file again.",
 	}
 	cmd.AddCommand(
 		newAttachAddCommand(e),
@@ -44,14 +47,17 @@ func newAttachAddCommand(e *env) *cobra.Command {
 		Use:   "add <id> <file>",
 		Short: "Attach a file to an issue",
 		Long: "Attach a file, which is read and stored as it is.\n\n" +
-			"The name it is shown under is the file's own base name unless --name says\n" +
-			"otherwise. \"-\" reads the content from stdin, and then --name is required,\n" +
-			"stdin having no name of its own.\n\n" +
+			"The name it is held under is the file's own base name unless --name says\n" +
+			"otherwise, and that name is how it is addressed afterwards. \"-\" reads the\n" +
+			"content from stdin, and then --name is required, stdin having no name of\n" +
+			"its own.\n\n" +
+			"An issue holds at most one attachment under any one name, so attaching a\n" +
+			"second file under a name it already holds fails; delete that one first,\n" +
+			"or give --name. Two issues may each hold one called the same thing, and if\n" +
+			"the bytes are identical they share one stored copy.\n\n" +
 			"What the file is is sniffed from its first bytes unless --content-type says\n" +
 			"otherwise. It is sniffed from the content rather than from the extension,\n" +
-			"so the same file is typed the same way on every machine.\n\n" +
-			"Attaching the same file twice makes two attachments, each with its own id;\n" +
-			"they share one stored copy of the bytes.",
+			"so the same file is typed the same way on every machine.",
 		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			content, defaultName, err := openContent(e, args[1])
@@ -79,14 +85,11 @@ func newAttachAddCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			if e.json {
-				return e.writeJSON(attachment)
-			}
-			// Like awb create, this prints the new id: minting it is the point,
-			// since nothing else names the attachment afterwards.
-			_, err = io.WriteString(e.stdout, attachment.ID+"\n")
-			return err
+			// A mutating command that prints nothing on success, like almost all
+			// of them: awb create prints an id because minting one is the point,
+			// and there is no id here to print. The caller already knows what it
+			// attached and under what name, which is the whole of the reference.
+			return e.attached(attachment)
 		},
 	}
 
@@ -135,17 +138,17 @@ func newAttachListCommand(e *env) *cobra.Command {
 
 func newAttachShowCommand(e *env) *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <attachment-id>",
+		Use:   "show <id> <name>",
 		Short: "Print one attachment's metadata",
 		Long: "Print what is recorded about an attachment. Its content is what\n" +
 			"awb attach get writes.",
-		Args: exactArgs(1),
+		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			attachment, err := be.GetAttachment(cmd.Context(), args[0])
+			attachment, err := be.GetAttachment(cmd.Context(), args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -158,7 +161,7 @@ func newAttachGetCommand(e *env) *cobra.Command {
 	var output string
 
 	cmd := &cobra.Command{
-		Use:   "get <attachment-id>",
+		Use:   "get <id> <name>",
 		Short: "Write an attachment's content to a file or to stdout",
 		Long: "Write the bytes exactly as they were uploaded.\n\n" +
 			"They go to stdout unless --output names a file, so the content can be\n" +
@@ -167,13 +170,13 @@ func newAttachGetCommand(e *env) *cobra.Command {
 			"prints the metadata.\n\n" +
 			"--output never writes to a name the attachment chose: what a file is\n" +
 			"called on this machine is the caller's decision, not the uploader's.",
-		Args: exactArgs(1),
+		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			_, content, err := be.OpenAttachment(cmd.Context(), args[0])
+			_, content, err := be.OpenAttachment(cmd.Context(), args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -211,12 +214,12 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "delete <attachment-id> --force",
+		Use:   "delete <id> <name> --force",
 		Short: "Delete an attachment",
 		Long: "Delete an attachment. This is not recoverable.\n\n" +
 			"The stored content goes with it unless another attachment holds the same\n" +
 			"bytes, in which case that copy stays.",
-		Args: exactArgs(1),
+		Args: exactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A missing --force depends on the arguments alone and not on anything
 			// the database holds, so it is a usage error.
@@ -228,7 +231,7 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			deleted, err := be.DeleteAttachment(cmd.Context(), args[0])
+			deleted, err := be.DeleteAttachment(cmd.Context(), args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -237,7 +240,7 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 			}
 			// The one line a deleting command says, in the form the other two
 			// deleting commands say it.
-			return e.summarise("Deleted attachment %s (%s).\n", deleted.ID, deleted.Name)
+			return e.summarise("Deleted attachment %q from %s.\n", deleted.Name, deleted.Issue)
 		},
 	}
 

@@ -304,7 +304,10 @@ async function viewIssue(id: string): Promise<HTMLElement> {
  */
 function attachmentRow(attachment: Attachment): HTMLElement {
   const row = element("li");
-  row.append(link(`api/attachments/${encodeURIComponent(attachment.id)}/content`, attachment.name));
+  const href =
+    `api/issues/${encodeURIComponent(attachment.issue)}` +
+    `/attachments/${encodeURIComponent(attachment.name)}/content`;
+  row.append(link(href, attachment.name));
   row.append(element("span", "size", formatSize(attachment.size)));
   row.append(element("span", "content-type", attachment.content_type));
   return row;

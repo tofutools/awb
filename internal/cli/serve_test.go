@@ -612,13 +612,23 @@ func TestAttachmentTransferPaths(t *testing.T) {
 	assert.True(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments?name=x"))
 	assert.False(t, upload(http.MethodGet, "/api/issues/awb-5c1d84/attachments"))
 	assert.False(t, upload(http.MethodPost, "/api/issues//attachments"))
-	assert.False(t, upload(http.MethodPost, "/api/issues/a/b/attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments/trace.txt"))
 	assert.False(t, upload(http.MethodPost, "/api/issues"))
 
-	assert.True(t, download(http.MethodGet, "/api/attachments/3f2a91c40d17/content"))
-	assert.False(t, download(http.MethodGet, "/api/attachments/3f2a91c40d17"))
-	assert.False(t, download(http.MethodDelete, "/api/attachments/3f2a91c40d17/content"))
-	assert.False(t, download(http.MethodGet, "/api/attachments//content"))
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/trace.txt/content"))
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/release%20notes.md/content"),
+		"a name that needed escaping is still one segment")
+	assert.False(t, download(http.MethodGet, "/api/issues/awb-5c1d84/attachments/trace.txt"))
+	assert.False(t, download(http.MethodDelete,
+		"/api/issues/awb-5c1d84/attachments/trace.txt/content"))
+	assert.False(t, download(http.MethodGet, "/api/issues/awb-5c1d84/attachments//content"))
+
+	// A name carrying an encoded slash is one segment on the wire and must be
+	// read as one here, whatever the decoded path would look like.
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/a%2Fb.txt/content"))
 }
 
 // filler is a reader of arbitrary length that holds nothing: it is what an
@@ -708,7 +718,7 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 		"uploading %d bytes allocated %d: something on the path is holding the body", size, uploaded)
 
 	before = totalAlloc()
-	_, content, err := client.OpenAttachment(t.Context(), attachment.ID)
+	_, content, err := client.OpenAttachment(t.Context(), issue.ID, attachment.Name)
 	require.NoError(t, err)
 	written, err := io.Copy(io.Discard, content)
 	require.NoError(t, err)
@@ -750,15 +760,14 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
 
+	attachment := "/api/issues/" + issue.ID + "/attachments/trace.txt"
 	rec = call(http.MethodPost, "/api/issues/"+issue.ID+"/attachments?name=trace.txt",
 		"application/octet-stream", "boom\n", false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var attachment domain.Attachment
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &attachment))
 
 	// A client that would take gzip is given none for the content, and gets the
 	// bytes as they were stored.
-	rec = call(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "", "", true)
+	rec = call(http.MethodGet, attachment+"/content", "", "", true)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 	assert.Equal(t, "boom\n", rec.Body.String())
@@ -772,7 +781,74 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	// The same client asking for the metadata beside it is compressed as
 	// before, so what was switched off is the one response and not the
 	// mechanism.
-	rec = call(http.MethodGet, "/api/attachments/"+attachment.ID, "", "", true)
+	rec = call(http.MethodGet, attachment, "", "", true)
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
+}
+
+// A name that needs escaping survives the round trip through remote mode, and
+// so does a server published under a base path.
+//
+// The two are one test because they are one bug: the path a request is sent to
+// is assembled from an already-escaped name and a base that may carry a path
+// of its own, and getting that wrong escapes the name twice — an attachment
+// called "release notes.md" is then asked for as "release%2520notes.md" and
+// answered 404 by a server that holds it.
+func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	api, err := buildHandler(be, openapi.New(raw), nil,
+		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	require.NoError(t, err)
+
+	// A reverse proxy publishing the server under /awb/ and stripping that base
+	// before the request arrives, which is the contract the document states.
+	proxy := http.NewServeMux()
+	proxy.Handle("/awb/", http.StripPrefix("/awb", api))
+	server := httptest.NewServer(proxy)
+	t.Cleanup(server.Close)
+
+	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue, err := be.CreateIssue(t.Context(),
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL + "/awb")
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael")
+	t.Cleanup(func() { _ = client.Close() })
+
+	for _, name := range []string{
+		"trace.txt", "release notes.md", "100% done?.txt", "Ωmega#1.txt",
+		"a&b=c.txt", "semi;colon.txt", "quote\".txt", "percent%2Fnotslash.txt",
+	} {
+		content := "content of " + name
+		added, err := client.AddAttachment(t.Context(), issue.ID, backend.AttachmentCreate{
+			Name: name, Content: strings.NewReader(content),
+		})
+		require.NoError(t, err, "%q", name)
+		require.Equal(t, name, added.Name)
+
+		read, err := client.GetAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		assert.Equal(t, added, read)
+
+		_, body, err := client.OpenAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		got, err := io.ReadAll(body)
+		require.NoError(t, err)
+		require.NoError(t, body.Close())
+		assert.Equal(t, content, string(got), "%q", name)
+
+		deleted, err := client.DeleteAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		assert.Equal(t, name, deleted.Name)
+	}
 }

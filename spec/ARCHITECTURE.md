@@ -50,6 +50,19 @@ screenshot is evidence that has to travel with the issue, so an **attachment**
 is a file attached to one, carrying a name, a content type, a size and the
 SHA-256 of its content.
 
+**An attachment is identified by its issue and its name**, and carries no
+identifier of its own. That is how a label is identified too, and an attachment
+is the same shape of thing: a set of values hanging off one issue rather than
+an entity in its own right. A synthetic id would be a second name for something
+that already has one, and one nobody would ever type — where an issue id is
+minted because an issue arrives with nothing to call it, an attachment arrives
+with a name.
+
+The consequence is that a name is unique within an issue. A second file under a
+name the issue already holds is refused rather than being given a name it was
+not asked to have, which is also what a filesystem does. Two issues may each
+hold one called the same thing.
+
 **The content is not in the database.** It is a file in a directory of them,
 which defaults to sitting beside the database and can be pointed at a
 filesystem of its own — because the reason to store files is that they are

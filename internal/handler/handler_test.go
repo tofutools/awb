@@ -832,6 +832,12 @@ func (a *api) upload(issueID, query, contentType, content string) (*http.Respons
 	return resp, string(data)
 }
 
+// attachmentPath addresses one attachment the way the API does: the issue it
+// belongs to and its name, escaped.
+func attachmentPath(a *domain.Attachment) string {
+	return "/api/issues/" + url.PathEscape(a.Issue) + "/attachments/" + url.PathEscape(a.Name)
+}
+
 // attach uploads one file and returns the attachment.
 func (a *api) attach(issueID, name, content string) domain.Attachment {
 	a.t.Helper()
@@ -861,7 +867,8 @@ func TestAddAttachment(t *testing.T) {
 
 	// 201 carries the new object and a Location header naming it. It carries no
 	// ETag: an attachment is immutable and has no version to guard.
-	assert.Equal(t, "/api/attachments/"+attachment.ID, resp.Header.Get("Location"))
+	assert.Equal(t, "/api/issues/"+issue.ID+"/attachments/trace.txt",
+		resp.Header.Get("Location"))
 	assert.Empty(t, resp.Header.Get("ETag"))
 }
 
@@ -957,7 +964,7 @@ func TestListAndGetAttachments(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.Equal(t, attachment, listed[0])
 
-	resp, payload = a.do(http.MethodGet, "/api/attachments/"+attachment.ID, "")
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment), "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var one domain.Attachment
 	require.NoError(t, json.Unmarshal([]byte(payload), &one))
@@ -985,7 +992,7 @@ func TestGetAttachmentContent(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(payload), &attachment))
 	assert.Equal(t, "text/html", attachment.ContentType, "the metadata records what it is")
 
-	resp, payload = a.do(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "")
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Equal(t, "<script>alert(1)</script>", payload, "the bytes exactly as uploaded")
 	assert.Equal(t, "application/octet-stream", resp.Header.Get("Content-Type"))
@@ -1007,7 +1014,7 @@ func TestGetEmptyAttachmentContentStatesZero(t *testing.T) {
 	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "empty.bin", "")
 
-	resp, payload := a.do(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "")
+	resp, payload := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Equal(t, "0", resp.Header.Get("Content-Length"))
 	assert.Empty(t, payload)
@@ -1027,7 +1034,7 @@ func TestTruncatedContentBreaksTheTransfer(t *testing.T) {
 	require.NoError(t, os.WriteFile(blob, []byte("short"), 0o600))
 
 	resp, err := a.server.Client().Get(
-		a.server.URL + "/api/attachments/" + attachment.ID + "/content")
+		a.server.URL + attachmentPath(&attachment) + "/content")
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck // the body is being read out
 
@@ -1043,7 +1050,7 @@ func TestAttachmentContentDispositionEncodesTheName(t *testing.T) {
 	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, `Ω "notes".txt`, "boom\n")
 
-	resp, _ := a.do(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "")
+	resp, _ := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	disposition := resp.Header.Get("Content-Disposition")
@@ -1058,7 +1065,7 @@ func TestDeleteAttachment(t *testing.T) {
 	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
 
-	resp, payload := a.do(http.MethodDelete, "/api/attachments/"+attachment.ID, "")
+	resp, payload := a.do(http.MethodDelete, attachmentPath(&attachment), "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	var deleted domain.Attachment
@@ -1066,24 +1073,77 @@ func TestDeleteAttachment(t *testing.T) {
 	assert.Equal(t, attachment, deleted, "the object as it was immediately before deletion")
 	assert.Empty(t, resp.Header.Get("ETag"))
 
-	resp, payload = a.do(http.MethodGet, "/api/attachments/"+attachment.ID, "")
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment), "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
 }
 
-// A prefix addresses an attachment, and one naming nothing is a 404.
+// An attachment is addressed by its issue and its name. A name the issue does
+// not hold is a 404, and one outside the name rules is a 400.
 func TestAttachmentReferences(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
 
-	resp, payload := a.do(http.MethodGet, "/api/attachments/"+attachment.ID[:6], "")
+	// The issue half takes any reference an issue takes.
+	_, hash, _ := domain.SplitID(issue.ID)
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+hash+"/attachments/trace.txt", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
-	resp, payload = a.do(http.MethodGet, "/api/attachments/ffffffffffff", "")
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/attachments/nothing.txt", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
 
-	resp, payload = a.do(http.MethodGet, "/api/attachments/not-hex", "")
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/awb-ffffff/attachments/trace.txt", "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/attachments/"+url.PathEscape("../escape.txt"), "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+
+	_ = attachment
+}
+
+// A name is unique within an issue, so a second under the same name is a 409;
+// another issue may hold that name.
+func TestOneAttachmentNamePerIssue(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	other := a.createIssue(`{"project":"awb","title":"Tokeniser drops a newline"}`)
+	a.attach(issue.ID, "trace.txt", "the first one\n")
+
+	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/octet-stream",
+		"the second one\n")
+	assert.Equal(t, http.StatusConflict, resp.StatusCode, payload)
+	assert.Contains(t, payload, "trace.txt")
+
+	resp, payload = a.upload(other.ID, "?name=trace.txt", "application/octet-stream",
+		"the first one\n")
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+}
+
+// A name that needs escaping survives the round trip through the path.
+func TestAwkwardAttachmentNames(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	for _, name := range []string{
+		"release notes.md", "100% done.txt", "what?.log", "a#b.txt", "Ωmega.txt",
+		"quote\".txt", "percent%2Fnotslash.txt",
+	} {
+		attachment := a.attach(issue.ID, name, "content of "+name)
+		require.Equal(t, name, attachment.Name)
+
+		resp, payload := a.do(http.MethodGet, attachmentPath(&attachment), "")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "%q: %s", name, payload)
+		var read domain.Attachment
+		require.NoError(t, json.Unmarshal([]byte(payload), &read))
+		assert.Equal(t, name, read.Name)
+
+		resp, payload = a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "%q", name)
+		assert.Equal(t, "content of "+name, payload)
+	}
 }
 
 // A PATCH may carry the attachments it read back, and their values are

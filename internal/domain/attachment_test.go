@@ -57,46 +57,8 @@ func TestDetectContentType(t *testing.T) {
 	assert.Equal(t, "application/pdf", domain.DetectContentType([]byte("%PDF-1.7\n")))
 }
 
-func TestParseAttachmentRef(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{"3f2a91c40d17", "3f2a91c40d17"},
-		{"3F2A91C40D17", "3f2a91c40d17"},
-		{"3f2a", "3f2a"},
-	} {
-		got, err := domain.ParseAttachmentRef(tc.in)
-		require.NoError(t, err, tc.in)
-		assert.Equal(t, tc.want, got)
-	}
-
-	for _, bad := range []string{"", "zz", "3f2a91c40d17a", "awb-5c1d84", " 3f2a"} {
-		_, err := domain.ParseAttachmentRef(bad)
-		assert.Error(t, err, "%q", bad)
-	}
-}
-
-// An attachment ID is minted the way an issue ID is: from the name, the
-// timestamp and a fresh salt, so two uploads of the same file are two
-// attachments.
-func TestMintAttachmentID(t *testing.T) {
-	salt := make([]byte, domain.SaltLen)
-	id := domain.MintAttachmentID("notes.md", "2026-08-26T09:12:03.412Z", salt)
-	assert.Len(t, id, domain.AttachmentIDLen)
-	assert.True(t, domain.IsHex(id))
-	assert.Equal(t, id, domain.MintAttachmentID("notes.md", "2026-08-26T09:12:03.412Z", salt),
-		"the derivation is a function of its inputs")
-
-	other := domain.MintAttachmentID("notes.md", "2026-08-26T09:12:03.413Z", salt)
-	assert.NotEqual(t, id, other)
-
-	// The first six characters are an issue's whole hash, so the two derivations
-	// stay one function cut to two lengths.
-	assert.Equal(t, domain.MintHash("notes.md", "2026-08-26T09:12:03.412Z", salt),
-		id[:domain.HashLen])
-}
-
 func TestCompactAttachmentLine(t *testing.T) {
 	a := &domain.Attachment{
-		ID:          "3f2a91c40d17",
 		Issue:       "awb-5c1d84",
 		Name:        "release notes.md",
 		ContentType: "text/markdown; charset=utf-8",
@@ -105,7 +67,7 @@ func TestCompactAttachmentLine(t *testing.T) {
 		CreatedAt:   "2026-08-26T09:12:03.412Z",
 	}
 	assert.Equal(t,
-		`3f2a91c40d17 12345 `+strings.Repeat("ab", 32)+
+		`awb-5c1d84 12345 `+strings.Repeat("ab", 32)+
 			` "text/markdown; charset=utf-8" "release notes.md"`,
 		domain.CompactAttachmentLine(a))
 
@@ -113,13 +75,13 @@ func TestCompactAttachmentLine(t *testing.T) {
 	// fields when either of them holds a space, which the sniffed default
 	// content type always does.
 	fields := strings.Fields(domain.CompactAttachmentLine(a))
-	assert.Equal(t, a.ID, fields[0])
+	assert.Equal(t, a.Issue, fields[0])
 	assert.Equal(t, "12345", fields[1])
 	assert.Equal(t, a.Sha256, fields[2])
 
 	var contentType, name string
 	rest := strings.TrimPrefix(domain.CompactAttachmentLine(a),
-		a.ID+" 12345 "+a.Sha256+" ")
+		a.Issue+" 12345 "+a.Sha256+" ")
 	decoder := json.NewDecoder(strings.NewReader(rest))
 	require.NoError(t, decoder.Decode(&contentType))
 	require.NoError(t, decoder.Decode(&name))
@@ -127,17 +89,18 @@ func TestCompactAttachmentLine(t *testing.T) {
 	assert.Equal(t, a.Name, name)
 }
 
-// Attachments are ordered oldest first, then by id: a total order, and one an
-// upload extends rather than reshuffles.
+// Attachments are ordered oldest first, then by name: a total order, since a
+// name is unique within an issue, and one an upload extends rather than
+// reshuffles.
 func TestSortAttachments(t *testing.T) {
 	attachments := []domain.Attachment{
-		{ID: "bbbb", CreatedAt: "2026-08-26T09:12:03.412Z"},
-		{ID: "aaaa", CreatedAt: "2026-08-26T09:12:03.412Z"},
-		{ID: "cccc", CreatedAt: "2026-08-26T09:12:03.411Z"},
+		{Name: "b.txt", CreatedAt: "2026-08-26T09:12:03.412Z"},
+		{Name: "a.txt", CreatedAt: "2026-08-26T09:12:03.412Z"},
+		{Name: "c.txt", CreatedAt: "2026-08-26T09:12:03.411Z"},
 	}
 	domain.SortAttachments(attachments)
-	assert.Equal(t, []string{"cccc", "aaaa", "bbbb"},
-		[]string{attachments[0].ID, attachments[1].ID, attachments[2].ID})
+	assert.Equal(t, []string{"c.txt", "a.txt", "b.txt"},
+		[]string{attachments[0].Name, attachments[1].Name, attachments[2].Name})
 }
 
 // Normalize leaves an issue with an empty array rather than a nil one, so the

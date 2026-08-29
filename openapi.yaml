@@ -297,9 +297,15 @@ paths:
         statement about the body on the wire — and makes the two ways of saying
         what the file *is* one way.
 
-        An attachment is immutable: there is no endpoint that changes one.
-        Attaching a file twice makes two attachments, even when the bytes are
-        identical, and each has its own id.
+        An attachment is immutable: there is no endpoint that changes one, and
+        the way to replace one is to delete it and attach the file again.
+
+        An issue holds at most one attachment under any one name, that pair
+        being what identifies one — as an issue holds at most one label of any
+        one value. A second under the same name is a 409 rather than being
+        given a name it was not asked to have. Two issues may each hold one
+        called `trace.txt`, and if the bytes are identical they share a single
+        stored copy.
 
         Content is stored outside the database, in a directory of files named
         by their own SHA-256, so two attachments holding the same bytes share
@@ -310,10 +316,10 @@ paths:
           in: query
           required: true
           description: |
-            The file name to show it under. It is a name and not a path: a
-            slash, a backslash, a control character, and the two names that
-            mean a directory are refused rather than stripped. It is never used
-            to build a path.
+            The name to hold it under, and half of what identifies it. It is a
+            name and not a path: a slash, a backslash, a control character, and
+            the two names that mean a directory are refused rather than
+            stripped. It is never used to build a filesystem path.
           schema: { $ref: '#/components/schemas/AttachmentName' }
         - name: content-type
           in: query
@@ -332,9 +338,10 @@ paths:
         '201': { $ref: '#/components/responses/AttachmentCreated' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/attachments/{aid}:
+  /api/issues/{id}/attachments/{name}:
     parameters:
-      - $ref: '#/components/parameters/attachmentId'
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/attachmentName'
     get:
       tags: [attachments]
       operationId: getAttachment
@@ -345,7 +352,7 @@ paths:
     delete:
       tags: [attachments]
       operationId: deleteAttachment
-      summary: Remove an attachment and, if nothing else holds them, its bytes
+      summary: Delete an attachment and, if nothing else holds them, its bytes
       description: |
         It takes no `If-Match`: an attachment has no mutable field, so there is
         no second version of one to guard against.
@@ -359,9 +366,10 @@ paths:
               schema: { $ref: '#/components/schemas/Attachment' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/attachments/{aid}/content:
+  /api/issues/{id}/attachments/{name}/content:
     parameters:
-      - $ref: '#/components/parameters/attachmentId'
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/attachmentName'
     get:
       tags: [attachments]
       operationId: getAttachmentContent
@@ -709,14 +717,16 @@ components:
         prefix that is unique across the database. Matching more than one issue
         is a 400; matching none is a 404.
       schema: { type: string, minLength: 1 }
-    attachmentId:
-      name: aid
+    attachmentName:
+      name: name
       in: path
       required: true
       description: |
-        A full attachment ID or an unambiguous prefix of one. Matching more
-        than one attachment is a 400; matching none is a 404.
-      schema: { type: string, minLength: 1 }
+        The attachment's name, percent-encoded. Together with the issue it is
+        the whole of what identifies an attachment: there is no id. A name the
+        issue does not hold is a 404, and one outside the name rules is a 400,
+        since it is a name that could never have been stored.
+      schema: { $ref: '#/components/schemas/AttachmentName' }
     ifMatch:
       name: If-Match
       in: header
@@ -1028,21 +1038,23 @@ components:
       description: |
         One file attached to an issue: its metadata. The content is not in the
         database and is fetched from
-        `GET /api/attachments/{aid}/content`.
+        `GET /api/issues/{id}/attachments/{name}/content`.
+
+        An attachment is identified by `issue` and `name` together and carries
+        no id of its own: a synthetic one would be a second name for something
+        that already has one. That is why a name is unique within an issue.
 
         An attachment is immutable — nothing changes any field of one — which
         is why it carries no `updated_at` and no ETag, and why no endpoint that
         touches one takes an `If-Match`.
       additionalProperties: false
-      required: [id, issue, name, content_type, size, sha256, created_at]
+      required: [issue, name, content_type, size, sha256, created_at]
       properties:
-        id:
-          type: string
-          description: 12 hexadecimal characters, assigned at upload and immutable.
-          examples: [3f2a91c40d17]
         issue:
           type: string
-          description: The full ID of the issue this is attached to.
+          description: |
+            The full ID of the issue this is attached to. It and `name` are what
+            identify the attachment; there is no id of its own.
         name: { $ref: '#/components/schemas/AttachmentName' }
         content_type: { $ref: '#/components/schemas/ContentType' }
         size:

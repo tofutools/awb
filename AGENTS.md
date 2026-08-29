@@ -95,6 +95,9 @@ Three structural rules hold the design together:
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.
+* An attachment is keyed on `(issue, name)` and has no id of its own, as a
+  label is keyed on `(issue, label)`. A name is therefore unique within an
+  issue, and both surfaces address one by that pair.
 * Attachment content is not in the database. It is a file per distinct content
   in the attachments directory, named by its own SHA-256, and the row is only
   the metadata. An upload places its content **inside** the write transaction,

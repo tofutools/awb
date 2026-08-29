@@ -70,7 +70,6 @@ func TestAddAttachment(t *testing.T) {
 	issue := create(t, b, ctx, "Parser crashes")
 
 	attachment := attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
-	assert.Len(t, attachment.ID, domain.AttachmentIDLen)
 	assert.Equal(t, issue.ID, attachment.Issue)
 	assert.Equal(t, "trace.txt", attachment.Name)
 	assert.Equal(t, "text/plain; charset=utf-8", attachment.ContentType)
@@ -117,7 +116,7 @@ func TestIssueCarriesItsAttachments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, read.Attachments, 2)
 
-	// The order is created_at then id. Two uploads within one millisecond of
+	// The order is created_at then name. Two uploads within one millisecond of
 	// the clock share a timestamp, so what is pinned here is that the order is
 	// total and the same everywhere, not that it is the upload order.
 	want := []domain.Attachment{*first, *second}
@@ -151,7 +150,7 @@ func TestAttachingDoesNotTouchTheIssue(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, issue.UpdatedAt, read.UpdatedAt)
 
-	_, err = b.DeleteAttachment(ctx, attachment.ID)
+	_, err = b.DeleteAttachment(ctx, issue.ID, attachment.Name)
 	require.NoError(t, err)
 
 	read, err = b.GetIssue(ctx, issue.ID)
@@ -169,16 +168,15 @@ func TestIdenticalContentIsStoredOnce(t *testing.T) {
 	first := attach(t, b, ctx, issue.ID, "one.txt", "same bytes")
 	second := attach(t, b, ctx, other.ID, "two.txt", "same bytes")
 
-	assert.NotEqual(t, first.ID, second.ID)
 	assert.Equal(t, first.Sha256, second.Sha256)
 	assert.Equal(t, []string{first.Sha256}, blobFiles(t, dir), "one file for both")
 
-	_, err := b.DeleteAttachment(ctx, first.ID)
+	_, err := b.DeleteAttachment(ctx, issue.ID, first.Name)
 	require.NoError(t, err)
 	assert.Equal(t, []string{second.Sha256}, blobFiles(t, dir),
 		"the other attachment still holds the content")
 
-	_, content, err := b.OpenAttachment(ctx, second.ID)
+	_, content, err := b.OpenAttachment(ctx, other.ID, second.Name)
 	require.NoError(t, err)
 	defer content.Close() //nolint:errcheck // read to its end below
 	data, err := io.ReadAll(content)
@@ -192,12 +190,12 @@ func TestDeletingTheLastAttachmentRemovesTheContent(t *testing.T) {
 	issue := create(t, b, ctx, "Parser crashes")
 	attachment := attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
 
-	deleted, err := b.DeleteAttachment(ctx, attachment.ID)
+	deleted, err := b.DeleteAttachment(ctx, issue.ID, attachment.Name)
 	require.NoError(t, err)
-	assert.Equal(t, attachment.ID, deleted.ID, "the object as it was before deletion")
+	assert.Equal(t, attachment, deleted, "the object as it was before deletion")
 	assert.Empty(t, blobFiles(t, dir))
 
-	_, err = b.GetAttachment(ctx, attachment.ID)
+	_, err = b.GetAttachment(ctx, issue.ID, attachment.Name)
 	assert.Equal(t, 3, exitOf(err))
 }
 
@@ -211,8 +209,8 @@ func TestDeletingAnIssueRemovesItsAttachments(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, blobFiles(t, dir))
-	_, err = b.GetAttachment(ctx, attachment.ID)
-	assert.Equal(t, 3, exitOf(err))
+	_, err = b.GetAttachment(ctx, issue.ID, attachment.Name)
+	assert.Equal(t, 3, exitOf(err), "the issue is gone, so nothing holds the attachment")
 }
 
 // A cascading project delete does the same for every issue it takes.
@@ -226,26 +224,65 @@ func TestCascadingProjectDeleteRemovesAttachments(t *testing.T) {
 	assert.Empty(t, blobFiles(t, dir))
 }
 
-// An attachment is addressed by a full id or an unambiguous prefix, and an
-// ambiguous one is reported rather than guessed at.
+// An attachment is addressed by its issue and its name. The issue half takes
+// any reference an issue takes; the name half is exact.
 func TestAttachmentReferences(t *testing.T) {
 	b, ctx, _ := newBackendWithBlobs(t)
 	issue := create(t, b, ctx, "Parser crashes")
 	attachment := attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
 
-	read, err := b.GetAttachment(ctx, attachment.ID[:6])
+	_, hash, _ := domain.SplitID(issue.ID)
+	read, err := b.GetAttachment(ctx, hash, "trace.txt")
 	require.NoError(t, err)
-	assert.Equal(t, attachment.ID, read.ID)
+	assert.Equal(t, attachment, read, "a bare issue hash addresses it as well")
 
-	read, err = b.GetAttachment(ctx, strings.ToUpper(attachment.ID))
-	require.NoError(t, err)
-	assert.Equal(t, attachment.ID, read.ID)
+	_, err = b.GetAttachment(ctx, issue.ID, "nothing.txt")
+	assert.Equal(t, 3, exitOf(err), "a name the issue does not hold is not found")
 
-	_, err = b.GetAttachment(ctx, "ffffffffffff")
-	assert.Equal(t, 3, exitOf(err))
+	_, err = b.GetAttachment(ctx, "awb-ffffff", "trace.txt")
+	assert.Equal(t, 3, exitOf(err), "and neither is an issue that does not exist")
 
-	_, err = b.GetAttachment(ctx, "not-hex")
+	// A name that could never have been stored is a usage error rather than a
+	// lookup that finds nothing.
+	_, err = b.GetAttachment(ctx, issue.ID, "../escape.txt")
 	assert.Equal(t, 2, exitOf(err))
+	_, err = b.GetAttachment(ctx, issue.ID, "")
+	assert.Equal(t, 2, exitOf(err))
+}
+
+// An issue holds at most one attachment under any one name, that pair being
+// what identifies one. The second is refused rather than given a name it was
+// not asked to have, and nothing of it is left behind.
+func TestOneNamePerIssue(t *testing.T) {
+	b, ctx, dir := newBackendWithBlobs(t)
+	issue := create(t, b, ctx, "Parser crashes")
+	other := create(t, b, ctx, "Tokeniser drops a newline")
+
+	first := attach(t, b, ctx, issue.ID, "trace.txt", "the first one\n")
+
+	_, err := b.AddAttachment(ctx, issue.ID, backend.AttachmentCreate{
+		Name: "trace.txt", Content: strings.NewReader("the second one\n"),
+	})
+	require.Error(t, err)
+	assert.Equal(t, 4, exitOf(err), "it depends on what is stored, so it is a conflict")
+	assert.Contains(t, err.Error(), "trace.txt")
+
+	// The one that was there is untouched, and the refused upload left no file.
+	read, err := b.GetAttachment(ctx, issue.ID, "trace.txt")
+	require.NoError(t, err)
+	assert.Equal(t, first, read)
+	assert.Equal(t, []string{first.Sha256}, blobFiles(t, dir))
+
+	// Another issue may hold the same name.
+	elsewhere := attach(t, b, ctx, other.ID, "trace.txt", "the first one\n")
+	assert.Equal(t, first.Sha256, elsewhere.Sha256, "and share the one stored copy")
+	assert.Equal(t, []string{first.Sha256}, blobFiles(t, dir))
+
+	// Deleting the first frees the name.
+	_, err = b.DeleteAttachment(ctx, issue.ID, "trace.txt")
+	require.NoError(t, err)
+	again := attach(t, b, ctx, issue.ID, "trace.txt", "the second one\n")
+	assert.Equal(t, "trace.txt", again.Name)
 }
 
 // Content over the maximum is refused, and nothing is left behind by the
@@ -322,7 +359,7 @@ func TestMissingContentIsARuntimeFailure(t *testing.T) {
 
 	require.NoError(t, os.Remove(filepath.Join(dir, attachment.Sha256)))
 
-	_, _, err := b.OpenAttachment(ctx, attachment.ID)
+	_, _, err := b.OpenAttachment(ctx, issue.ID, attachment.Name)
 	require.Error(t, err)
 	assert.Equal(t, 1, exitOf(err))
 	assert.Equal(t, awberr.Runtime, awberr.KindOf(err))
@@ -345,11 +382,11 @@ func TestDeleteSucceedsWhenTheContentCannotBeRemoved(t *testing.T) {
 	require.NoError(t, os.Chmod(dir, 0o500))
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
-	deleted, err := b.DeleteAttachment(ctx, attachment.ID)
+	deleted, err := b.DeleteAttachment(ctx, issue.ID, attachment.Name)
 	require.NoError(t, err)
-	assert.Equal(t, attachment.ID, deleted.ID)
+	assert.Equal(t, attachment, deleted)
 
-	_, err = b.GetAttachment(ctx, attachment.ID)
+	_, err = b.GetAttachment(ctx, issue.ID, attachment.Name)
 	assert.Equal(t, 3, exitOf(err), "the attachment is gone whatever became of its content")
 	assert.Equal(t, []string{attachment.Sha256}, blobFiles(t, dir),
 		"and what is left is an unreferenced file, which is the tolerated failure")

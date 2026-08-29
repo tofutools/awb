@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"mime"
+	"net/url"
 
 	"github.com/tofutools/awb/internal/api"
 	"github.com/tofutools/awb/internal/backend"
@@ -26,14 +27,21 @@ func (h *Handler) AddAttachment(ctx context.Context, req api.AddAttachmentReq,
 		return nil, err
 	}
 	return &api.AttachmentCreatedHeaders{
-		Location: api.NewOptString("/api/attachments/" + attachment.ID),
+		Location: api.NewOptString(attachmentPath(attachment)),
 		Response: toAttachment(attachment),
 	}, nil
 }
 
+// attachmentPath is where the new attachment can be read, which is the pair
+// that identifies it. The name is escaped because it may hold anything but a
+// slash — a space, a percent, a question mark, a character outside ASCII.
+func attachmentPath(a *domain.Attachment) string {
+	return "/api/issues/" + url.PathEscape(a.Issue) + "/attachments/" + url.PathEscape(a.Name)
+}
+
 func (h *Handler) GetAttachment(ctx context.Context, params api.GetAttachmentParams) (
 	*api.Attachment, error) {
-	attachment, err := h.backendFor(ctx).GetAttachment(ctx, params.Aid)
+	attachment, err := h.backendFor(ctx).GetAttachment(ctx, params.ID, string(params.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +79,8 @@ func (h *Handler) ListAttachments(ctx context.Context, params api.ListAttachment
 // written.
 func (h *Handler) GetAttachmentContent(ctx context.Context,
 	params api.GetAttachmentContentParams) (*api.GetAttachmentContentOKHeaders, error) {
-	attachment, content, err := h.backendFor(ctx).OpenAttachment(ctx, params.Aid)
+	attachment, content, err := h.backendFor(ctx).OpenAttachment(ctx, params.ID,
+		string(params.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +95,7 @@ func (h *Handler) GetAttachmentContent(ctx context.Context,
 // deletion. It carries no ETag, an attachment having never had one.
 func (h *Handler) DeleteAttachment(ctx context.Context, params api.DeleteAttachmentParams) (
 	*api.Attachment, error) {
-	deleted, err := h.backendFor(ctx).DeleteAttachment(ctx, params.Aid)
+	deleted, err := h.backendFor(ctx).DeleteAttachment(ctx, params.ID, string(params.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +117,6 @@ func contentDisposition(name string) string {
 
 func toAttachment(a *domain.Attachment) api.Attachment {
 	return api.Attachment{
-		ID:          a.ID,
 		Issue:       a.Issue,
 		Name:        api.AttachmentName(a.Name),
 		ContentType: api.ContentType(a.ContentType),

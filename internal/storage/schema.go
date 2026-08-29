@@ -132,22 +132,27 @@ var schemaV1 = []string{
 // holding the same bytes therefore share one file, which is why deleting a row
 // removes the file only once no row names that digest any more.
 var schemaV2 = []string{
+	// An attachment is identified by its issue and its name, exactly as a label
+	// is identified by its issue and its value, so that is the key. It carries
+	// no identifier of its own — a synthetic one would be a second name for
+	// something that already has one — and the key is what makes a name unique
+	// within an issue.
 	`CREATE TABLE attachments (
-		id           TEXT PRIMARY KEY,
 		issue        TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
 		name         TEXT NOT NULL,
 		content_type TEXT NOT NULL,
 		size         INTEGER NOT NULL,
 		sha256       TEXT NOT NULL,
 		created_at   TEXT NOT NULL,
+		PRIMARY KEY (issue, name),
 		CHECK (name <> ''),
 		CHECK (content_type <> ''),
 		CHECK (size >= 0),
 		CHECK (length(sha256) = 64)
-	) STRICT`,
+	) STRICT, WITHOUT ROWID`,
 
-	// The listing order — oldest first, then id — is the index's order too.
-	`CREATE INDEX idx_attachments_issue ON attachments (issue, created_at, id)`,
+	// The listing order — oldest first, then name — is the index's order too.
+	`CREATE INDEX idx_attachments_order ON attachments (issue, created_at, name)`,
 
 	// What answers "does any other row still name this digest?" when one is
 	// deleted.

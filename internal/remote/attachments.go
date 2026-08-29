@@ -49,14 +49,22 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	return &attachment, nil
 }
 
-func (b *Backend) GetAttachment(ctx context.Context, ref string) (*domain.Attachment, error) {
+func (b *Backend) GetAttachment(ctx context.Context, issueRef, name string) (
+	*domain.Attachment, error) {
 	var attachment domain.Attachment
-	_, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/attachments/"+url.PathEscape(ref), nil), nil, "", &attachment)
+	_, err := b.call(ctx, http.MethodGet, b.endpoint(attachmentPath(issueRef, name), nil),
+		nil, "", &attachment)
 	if err != nil {
 		return nil, err
 	}
 	return &attachment, nil
+}
+
+// attachmentPath addresses one attachment: the issue it belongs to and its
+// name, which is the pair that identifies it. Both are escaped — a name may
+// hold anything but a slash.
+func attachmentPath(issueRef, name string) string {
+	return "/api/issues/" + url.PathEscape(issueRef) + "/attachments/" + url.PathEscape(name)
 }
 
 func (b *Backend) ListAttachments(ctx context.Context, issueRef string,
@@ -85,18 +93,17 @@ func (b *Backend) ListAttachments(ctx context.Context, issueRef string,
 // OpenAttachment reads the metadata and then opens the content, which is two
 // requests because the content endpoint answers with bytes and nothing else.
 // The reader is the response body, and closing it is the caller's job.
-func (b *Backend) OpenAttachment(ctx context.Context, ref string) (
+func (b *Backend) OpenAttachment(ctx context.Context, issueRef, name string) (
 	*domain.Attachment, io.ReadCloser, error) {
-	attachment, err := b.GetAttachment(ctx, ref)
+	attachment, err := b.GetAttachment(ctx, issueRef, name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// The metadata names the attachment exactly, so the content is fetched by
-	// its full id rather than by the prefix the caller may have written: two
-	// requests resolving one reference separately could otherwise answer for two
-	// different attachments.
-	endpoint := b.endpoint("/api/attachments/"+url.PathEscape(attachment.ID)+"/content", nil)
+	// Addressed by the resolved issue id rather than by the reference the caller
+	// wrote, so the two requests cannot resolve an issue prefix differently and
+	// answer for two different issues.
+	endpoint := b.endpoint(attachmentPath(attachment.Issue, attachment.Name)+"/content", nil)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, nil, awberr.Wrap(awberr.Runtime, err, "build request")
@@ -114,10 +121,11 @@ func (b *Backend) OpenAttachment(ctx context.Context, ref string) (
 	return attachment, resp.Body, nil
 }
 
-func (b *Backend) DeleteAttachment(ctx context.Context, ref string) (*domain.Attachment, error) {
+func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
+	*domain.Attachment, error) {
 	var attachment domain.Attachment
-	_, err := b.call(ctx, http.MethodDelete,
-		b.endpoint("/api/attachments/"+url.PathEscape(ref), nil), nil, "", &attachment)
+	_, err := b.call(ctx, http.MethodDelete, b.endpoint(attachmentPath(issueRef, name), nil),
+		nil, "", &attachment)
 	if err != nil {
 		return nil, err
 	}
