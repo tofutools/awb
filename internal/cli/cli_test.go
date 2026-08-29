@@ -105,6 +105,41 @@ func (h *harness) create(args ...string) string {
 	return strings.TrimSpace(h.mustRun(append([]string{"create"}, args...)...))
 }
 
+// Enum-like parameters advertise their complete vocabulary to Boa, which
+// validates their values and supplies these alternatives to shell completion.
+func TestEnumParameterCompletions(t *testing.T) {
+	h := newHarness(t)
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"create type", []string{"create", "--type"}, []string{"epic", "feature", "bug", "task", "chore"}},
+		{"create priority", []string{"create", "--priority"}, []string{"0", "1", "2", "3", "4"}},
+		{"update type", []string{"update", "--type"}, []string{"epic", "feature", "bug", "task", "chore"}},
+		{"update priority", []string{"update", "--priority"}, []string{"0", "1", "2", "3", "4"}},
+		{"list status", []string{"list", "--status"}, []string{"open", "in_progress", "closed"}},
+		{"list type", []string{"list", "--type"}, []string{"epic", "feature", "bug", "task", "chore"}},
+		{"list priority", []string{"list", "--priority"}, []string{"0", "1", "2", "3", "4"}},
+		{"list priority max", []string{"list", "--priority-max"}, []string{"0", "1", "2", "3", "4"}},
+		{"list sort", []string{"list", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id"}},
+		{"search sort", []string{"search", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
+		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"__complete"}, tt.args...)
+			stdout, stderr, code := h.run(append(args, "")...)
+			require.Equal(t, 0, code, stderr)
+			lines := strings.Fields(stdout)
+			require.NotEmpty(t, lines)
+			assert.Equal(t, ":0", lines[len(lines)-1])
+			assert.ElementsMatch(t, tt.want, lines[:len(lines)-1])
+		})
+	}
+}
+
 // The end-to-end example from the README, run verbatim.
 func TestWorkedExample(t *testing.T) {
 	h := newHarness(t)

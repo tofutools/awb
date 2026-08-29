@@ -68,8 +68,8 @@ func (d *DescriptionFlags) read(e *env) ([]byte, error) {
 type createParams struct {
 	DescriptionFlags
 	Title          string   `positional:"true" required:"true"`
-	Type           string   `long:"type" default:"task" optional:"true" help:"epic, feature, bug, task or chore"`
-	Priority       int      `long:"priority" default:"2" optional:"true" help:"0 (highest) to 4 (lowest)"`
+	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
+	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignee       string   `long:"assignee" optional:"true" help:"create and claim in one step"`
 	Project        string   `long:"project" optional:"true" help:"the project to create the issue in"`
@@ -204,11 +204,12 @@ func newShowCommand(e *env) *cobra.Command {
 func listing(e *env, use, short, long string, opts filterOptions,
 	fix func(*domain.Filter), withBlockers bool) *cobra.Command {
 	cmd := boa.CmdT[FilterFlags]{
-		Use:         use,
-		Short:       short,
-		Long:        long,
-		ParamEnrich: boaParams,
-		InitFuncCtx: filterInit(opts),
+		Use:               use,
+		Short:             short,
+		Long:              long,
+		ParamEnrich:       boaParams,
+		InitFuncCtx:       filterInit(opts),
+		PostCreateFuncCtx: filterPostCreate(opts),
 		RunFuncE: func(flags *FilterFlags, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, flags, opts, fix, withBlockers, nil)
 		},
@@ -271,6 +272,9 @@ func newSearchCommand(e *env) *cobra.Command {
 		InitFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
 			return filterInit(opts)(ctx, &p.FilterFlags, cmd)
 		},
+		PostCreateFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
+			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
+		},
 		RunFuncE: func(p *searchParams, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, &p.FilterFlags, opts, nil, false, p.Terms)
 		},
@@ -309,8 +313,8 @@ type updateParams struct {
 	DescriptionFlags
 	ID       string  `positional:"true" required:"true"`
 	Title    *string `long:"title" help:"new title"`
-	Type     *string `long:"type" help:"epic, feature, bug, task or chore"`
-	Priority *int    `long:"priority" help:"0 (highest) to 4 (lowest)"`
+	Type     *string `long:"type" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
+	Priority *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 }
 
 func newUpdateCommand(e *env) *cobra.Command {

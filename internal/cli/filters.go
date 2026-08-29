@@ -14,11 +14,11 @@ import (
 // Status, type, priority, label, assignee and project repeat; every other
 // filter may occur once.
 type FilterFlags struct {
-	Statuses      []string `long:"status" collection:"array" optional:"true" help:"select this status; repeatable (open, in_progress, closed)"`
+	Statuses      []string `long:"status" collection:"array" optional:"true" alts:"open,in_progress,closed" help:"select this status; repeatable (open, in_progress, closed)"`
 	IncludeClosed bool     `long:"include-closed" optional:"true" help:"widen the status set to include closed issues"`
-	Types         []string `long:"type" collection:"array" optional:"true" help:"select this type; repeatable (epic, feature, bug, task, chore)"`
-	Priorities    []int    `long:"priority" optional:"true" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`
-	PriorityMax   *int     `long:"priority-max" help:"select issues at least this urgent, inclusive (0 highest)"`
+	Types         []string `long:"type" collection:"array" optional:"true" alts:"epic,feature,bug,task,chore" help:"select this type; repeatable (epic, feature, bug, task, chore)"`
+	Priorities    []int    `long:"priority" optional:"true" alts:"0,1,2,3,4" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`
+	PriorityMax   *int     `long:"priority-max" alts:"0,1,2,3,4" help:"select issues at least this urgent, inclusive (0 highest)"`
 	Labels        []string `long:"label" collection:"array" optional:"true" help:"select this label; repeatable"`
 	Assignees     []string `long:"assignee" collection:"array" optional:"true" help:"select this assignee; repeatable"`
 	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
@@ -26,7 +26,7 @@ type FilterFlags struct {
 	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this project; repeatable"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
-	Sort          string   `long:"sort" optional:"true"`
+	Sort          string   `long:"sort" optional:"true" alts:"priority,-priority,created,-created,updated,-updated,id,-id"`
 }
 
 // filterOptions says which of the flags a particular command accepts. A flag a
@@ -57,6 +57,21 @@ func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.
 			boa.GetParamT(ctx, &f.Assignees).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Mine).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
+		}
+		return nil
+	}
+}
+
+// filterPostCreate adds search's two extra sort values after Boa has read the
+// shared struct tag. Its completion function consults this metadata when it is
+// invoked, so other listing commands retain only the common sort vocabulary.
+func filterPostCreate(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.Command) error {
+	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
+		if opts.relevance {
+			boa.GetParamT(ctx, &f.Sort).SetAlternatives([]string{
+				"priority", "-priority", "created", "-created", "updated", "-updated",
+				"id", "-id", "relevance", "-relevance",
+			})
 		}
 		return nil
 	}
