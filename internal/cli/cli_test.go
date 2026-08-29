@@ -707,7 +707,11 @@ func TestServeRejectsAnAddressCarryingAPort(t *testing.T) {
 func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
 	h := newHarness(t)
 
-	_, stderr, code := h.run("serve", "--public-url", "example.com/awb")
-	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "--public-url")
+	// No scheme, so the path is the whole of it; and a path with no origin,
+	// which is the half that says where a browser reaches the server.
+	for _, publicURL := range []string{"example.com/awb", "/awb/"} {
+		_, stderr, code := h.run("serve", "--public-url", publicURL)
+		assert.Equal(t, 2, code, publicURL)
+		assert.Contains(t, stderr, "--public-url", publicURL)
+	}
 }
