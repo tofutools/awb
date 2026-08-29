@@ -16,7 +16,8 @@ func newInitCommand(e *env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Create the database if absent and bring its schema up to date",
-		Long: "Create the database, together with any missing parent directory.\n\n" +
+		Long: "Create the database, together with any missing parent directory, and the\n" +
+			"directory attachment content is stored in.\n\n" +
 			"This is the only command that creates one: any other command that finds it\n" +
 			"missing fails and names the path, so that a typo in --db or AWB_DB cannot\n" +
 			"silently produce a second, empty tracker.\n\n" +
@@ -29,6 +30,13 @@ func newInitCommand(e *env) *cobra.Command {
 			}
 			db, err := storage.Init(cmd.Context(), cfg.DB)
 			if err != nil {
+				return err
+			}
+			defer db.Close() //nolint:errcheck // closed again below, for its error
+			// The attachments directory is created here rather than on the first
+			// upload, so that the whole layout exists as soon as init has run and
+			// a mistyped --attachments is visible immediately.
+			if err := storage.NewBlobs(cfg.Attachments).Create(); err != nil {
 				return err
 			}
 			// init produces no object and ignores both output-mode flags on success.

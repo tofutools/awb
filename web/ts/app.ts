@@ -7,6 +7,7 @@ import {
   blockedFilters,
   facetFilters,
   readyFilters,
+  type Attachment,
   type Facet,
   type Filters,
   type Issue,
@@ -259,6 +260,13 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     view.append(list);
   }
 
+  if (issue.attachments.length > 0) {
+    view.append(element("h2", "", "Attachments"));
+    const list = element("ul", "attachments");
+    for (const attachment of issue.attachments) list.append(attachmentRow(attachment));
+    view.append(list);
+  }
+
   if (issue.relations.length > 0) {
     view.append(element("h2", "", "Relations"));
     const list = element("ul", "relations");
@@ -283,6 +291,38 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 
   view.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
   return view;
+}
+
+/**
+ * attachmentRow renders one attachment, its name linking to the content.
+ *
+ * The server serves that content as application/octet-stream with a
+ * Content-Disposition of attachment, whatever the recorded content type says,
+ * so the browser saves it rather than rendering somebody's upload on this
+ * origin. The link is an ordinary one for the same reason: nothing here opens
+ * the file in the page.
+ */
+function attachmentRow(attachment: Attachment): HTMLElement {
+  const row = element("li");
+  const href =
+    `api/issues/${encodeURIComponent(attachment.issue)}` +
+    `/attachments/${encodeURIComponent(attachment.name)}/content`;
+  row.append(link(href, attachment.name));
+  row.append(element("span", "size", formatSize(attachment.size)));
+  row.append(element("span", "content-type", attachment.content_type));
+  return row;
+}
+
+/** formatSize is a size for a human, the exact byte count being in the API. */
+function formatSize(size: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
 async function viewTree(id: string): Promise<HTMLElement> {

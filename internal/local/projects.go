@@ -136,7 +136,10 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		return nil, err
 	}
 
-	var deleted backend.DeletedProject
+	var (
+		deleted backend.DeletedProject
+		digests []string
+	)
 	err := b.write(ctx, func(tx *storage.Tx) error {
 		project, err := tx.GetProject(key)
 		if err != nil {
@@ -158,6 +161,11 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 
 		deleted.Project = *project
 		if cascade {
+			// Read before the rows go: the cascade takes the attachment rows with
+			// the issues, and there would be nothing left to ask afterwards.
+			if digests, err = tx.DigestsOfProject(key); err != nil {
+				return err
+			}
 			if _, err := tx.DeleteProjectIssues(key); err != nil {
 				return err
 			}
@@ -167,5 +175,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 	if err != nil {
 		return nil, err
 	}
+	// Once the rows are gone, and never before: see sweep.
+	b.sweep(ctx, digests)
 	return &deleted, nil
 }

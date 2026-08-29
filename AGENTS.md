@@ -49,7 +49,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | Path | Holds |
 | --- | --- |
 | `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the `--compact` encoders. |
-| `internal/storage` | The schema, the migrations and all SQL. |
+| `internal/storage` | The schema, the migrations, all SQL, and the attachment blob store. |
 | `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
 | `internal/backend` | The one interface every command is written against. |
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
@@ -95,6 +95,23 @@ Three structural rules hold the design together:
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.
+* An attachment is keyed on `(issue, name)` and has no id of its own, as a
+  label is keyed on `(issue, label)`. A name is therefore unique within an
+  issue, and both surfaces address one by that pair.
+* Attachment content is not in the database. It is a file per distinct content
+  in the attachments directory, named by its own SHA-256, and the row is only
+  the metadata. An upload places its content **inside** the write transaction,
+  after the row and before the commit; a delete unlinks unreferenced content in
+  a second write transaction **after** the first has committed, because an
+  unlink cannot be rolled back and one performed before a failed commit would
+  leave restored rows naming a file that is gone. Both hold the write lock,
+  which is what orders an upload against a concurrent delete of the same bytes.
+  The slow copy into a staging file happens outside any transaction.
+* Attachment content is **streamed** in both directions and never held whole,
+  by every layer on the path. `TestAttachmentContentIsStreamed` moves a payload
+  through the real server and fails if either direction allocates anything
+  approaching it, so a buffer introduced anywhere shows up there. That is also
+  why an attachment's content is the one response `serve` does not gzip.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
 * `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.

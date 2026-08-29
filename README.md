@@ -95,6 +95,9 @@ whatever is under the key is meant.
 | `awb label add\|rm <id> <label>` | One label per invocation. |
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |
 | `awb dep tree <id>` | The decomposition below an issue. |
+| `awb attach add <id> <file>` | Attach a file to an issue. Prints the new attachment ID. |
+| `awb attach list <id>` | The files attached to an issue. |
+| `awb attach show\|get\|delete <id> <name>` | One attachment: its metadata, its content, or its deletion. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
 | `awb project create\|update\|show\|list\|delete` | Projects. |
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
@@ -108,6 +111,49 @@ A description is Markdown, and `awb show` and `awb project show` draw it as
 such on a terminal: emphasis, headings, lists, code and links the terminal can
 open. Piped or redirected the description is the source text exactly as it was
 written, and so it is under `--json` and `--compact`.
+
+### Attachments
+
+Arbitrary files can be attached to an issue — a log, a stack trace, a
+screenshot, anything a link cannot stand in for.
+
+```console
+$ awb attach add awb-5c1d84 ./stack-trace.txt
+$ awb attach list awb-5c1d84 --compact
+awb-5c1d84 214 9f86d0…b0f00a "text/plain; charset=utf-8" "stack-trace.txt"
+$ awb attach get awb-5c1d84 stack-trace.txt --output ./trace.txt   # stdout without it
+$ awb attach delete awb-5c1d84 stack-trace.txt --force
+```
+
+An attachment is addressed by its issue and its name, the way a label is, and
+holds no id of its own — so an issue holds at most one attachment under any one
+name, and `--name` is how you attach a second `screenshot.png`.
+
+The content does **not** go in the database. It is stored as one file per
+distinct content in the attachments directory — `attachments` beside the
+database file unless `--attachments`, `AWB_ATTACHMENTS` or the configuration
+file says otherwise, so it can sit on a filesystem of its own. Each file is
+named by the SHA-256 of what is in it, so two attachments holding the same
+bytes share one copy, and removing one leaves the other's content where it is.
+
+What the database holds is the metadata: name, content type, size and that
+digest. An attachment is immutable — nothing changes one — and is at most
+32 MiB. Its content type is sniffed from the first bytes unless
+`--content-type` states it, sniffed from the content rather than the extension
+so that the same file is typed the same way on every machine.
+
+The server serves content as `application/octet-stream` with a
+`Content-Disposition` of `attachment` whatever the recorded type says, because
+uploads come back from the same origin as the UI and a browser must not be
+invited to render one there.
+
+Content is streamed in both directions and never held in memory whole, so what
+one transfer costs the server is a copy buffer rather than the size of the
+file. It is also the one response the server does not compress: an attachment
+is opaque bytes and as likely as not already compressed, so gzipping it would
+spend time and memory to make it no smaller — and that is what leaves the
+download free to state its `Content-Length`, so a client can show progress
+instead of reading an unbounded stream to its end.
 
 ### Vocabulary
 
@@ -155,7 +201,8 @@ invocation.
 
 Because the file may have been committed by somebody else, it may set only those
 two keys. A directory can shape what you see, but cannot redirect where your
-issues are stored, claim to be you, or make you send a password somewhere.
+issues or your files are stored, claim to be you, or make you send a password
+somewhere.
 
 ## Configuration
 
@@ -163,6 +210,7 @@ issues are stored, claim to be you, or make you send a password somewhere.
 
 ```yaml
 db: /home/you/.local/share/awb/awb.db   # a path, or an http(s) URL
+attachments: /files/awb/attachments     # defaults to "attachments" beside the database
 user: you                               # basic-auth credentials, remote mode only
 password: hunter2
 identity: you                           # default assignee, --mine, claim --as
@@ -170,10 +218,12 @@ project: awb                            # default project for create
 color: auto
 ```
 
-Precedence is command line flags, then `AWB_DB`, `AWB_USER`, `AWB_PASSWORD`,
-`AWB_IDENTITY`, `AWB_PROJECT` and `AWB_COLOR`, then `.awb.yaml`, then this file,
-then the defaults. The database lives at `$XDG_DATA_HOME/awb/awb.db` unless
-told otherwise, and one database spans everything you work on.
+Precedence is command line flags, then `AWB_DB`, `AWB_ATTACHMENTS`, `AWB_USER`,
+`AWB_PASSWORD`, `AWB_IDENTITY`, `AWB_PROJECT` and `AWB_COLOR`, then `.awb.yaml`,
+then this file, then the defaults. The database lives at
+`$XDG_DATA_HOME/awb/awb.db` unless told otherwise, and one database spans
+everything you work on. Attachment content lives in `attachments` beside it,
+and `awb init` creates both.
 
 ## Server and API
 

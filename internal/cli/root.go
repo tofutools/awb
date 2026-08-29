@@ -125,8 +125,9 @@ func (e *env) reportError(err error) {
 
 func newRootCommand(e *env, version string) *cobra.Command {
 	var (
-		dbFlag    string
-		colorFlag string
+		dbFlag          string
+		attachmentsFlag string
+		colorFlag       string
 	)
 
 	root := &cobra.Command{
@@ -147,6 +148,9 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			if cmd.Flags().Changed("db") {
 				e.flags.DB = &dbFlag
 			}
+			if cmd.Flags().Changed("attachments") {
+				e.flags.Attachments = &attachmentsFlag
+			}
 			if cmd.Flags().Changed("color") {
 				e.flags.Color = &colorFlag
 			}
@@ -159,6 +163,8 @@ func newRootCommand(e *env, version string) *cobra.Command {
 
 	root.PersistentFlags().StringVar(&dbFlag, "db", "",
 		"database file or http(s) URL of an awb server")
+	root.PersistentFlags().StringVar(&attachmentsFlag, "attachments", "",
+		"directory holding attachment content; defaults to \"attachments\" beside the database")
 	root.PersistentFlags().BoolVar(&e.json, "json", false,
 		"print stable JSON, one object or array per invocation")
 	root.PersistentFlags().BoolVar(&e.compact, "compact", false,
@@ -196,6 +202,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		newReopenCommand(e),
 		newDeleteCommand(e),
 		newDepCommand(e),
+		newAttachCommand(e),
 		newDemoCommand(e),
 		newServeCommand(e),
 	)
@@ -236,7 +243,7 @@ func (e *env) backend(ctx context.Context) (backend.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	e.be = local.New(db, cfg.Identity)
+	e.be = local.New(db, storage.NewBlobs(cfg.Attachments), cfg.Identity)
 	return e.be, nil
 }
 

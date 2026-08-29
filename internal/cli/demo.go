@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -51,6 +52,19 @@ type demoIssue struct {
 	blockedBy      []string
 	discoveredFrom []string
 	related        []string
+
+	// attachments are the files the issue carries. Their content is written out
+	// of the table, so the data set stays one thing to read and awb demo still
+	// needs nothing on disk.
+	attachments []demoAttachment
+}
+
+// demoAttachment is one file of the demo data set. Its content type is left to
+// the sniffing rule, exactly as awb attach add without --content-type leaves
+// it, so the demo exercises that too.
+type demoAttachment struct {
+	name    string
+	content string
 }
 
 // demoIssues is the demo data set, in creation order.
@@ -133,6 +147,20 @@ var demoIssues = []demoIssue{{
 	description: "Opening the catalogue with every widget filtered out renders a nil row.\n",
 	// Found while working on the feature, which is what discovered-from records.
 	discoveredFrom: []string{"catalogue"},
+	// A bug is where an attachment earns its place: the evidence is a file
+	// rather than something to paste into the description.
+	attachments: []demoAttachment{{
+		name: "stack-trace.txt",
+		content: "panic: runtime error: invalid memory address or nil pointer dereference\n" +
+			"\tcatalogue/render.go:118 renderRow(nil)\n" +
+			"\tcatalogue/render.go:74  renderList\n",
+	}, {
+		name: "steps-to-reproduce.md",
+		content: "# Steps to reproduce\n\n" +
+			"1. Open the catalogue.\n" +
+			"2. Filter by a tag no widget carries.\n" +
+			"3. The page renders an empty row and the server logs the trace above.\n",
+	}},
 }, {
 	key:       "docs",
 	title:     "Write the operator documentation",
@@ -288,6 +316,15 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 			return nil, err
 		}
 		ids[d.key] = issue.ID
+
+		for _, a := range d.attachments {
+			if _, err := be.AddAttachment(ctx, issue.ID, backend.AttachmentCreate{
+				Name:    a.name,
+				Content: strings.NewReader(a.content),
+			}); err != nil {
+				return nil, err
+			}
+		}
 
 		if d.closeReason != "" {
 			reason := d.closeReason

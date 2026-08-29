@@ -37,14 +37,38 @@ import (
 // The cap is a transport limit and not a second validation rule: it sits far
 // above anything the field maxima permit for one issue or one project, so no
 // body those rules would accept is ever refused for its size.
+//
+// Uploading an attachment is the one request whose body is not a description
+// of an issue, and it gets maxAttachmentBody instead. The two are separate on
+// purpose: raising the general cap to make room for files would let any caller
+// make the server buffer that much JSON.
+//
+// The two attachment requests get a longer deadline than everything else for
+// the same reason: moving a file of the maximum size over a slow link takes
+// longer than any request describing an issue ever could, and a bound short
+// enough for those would make the size limit depend on the connection. It is
+// granted per request rather than by raising readTimeout and writeTimeout, so
+// no other request gets to hold a connection that long.
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 15 * time.Second
 	writeTimeout      = 30 * time.Second
+	contentTimeout    = 10 * time.Minute
 	idleTimeout       = time.Minute
 	shutdownTimeout   = 10 * time.Second
 	maxRequestBody    = 1 << 20
 )
+
+// maxAttachmentBody is the transport cap on an upload, and sits above the
+// domain's attachment maximum on purpose.
+//
+// A file over that maximum has to be refused by the rule rather than by the
+// transport, because only the rule's refusal carries an exit code: 413 has
+// none and collapses to 1, so a file the CLI refuses with exit 2 in direct
+// mode would exit 1 through a server. The rule stops reading one byte past the
+// maximum, so the extra room is never occupied; the cap stays as the backstop
+// against a client that keeps sending after the rule has stopped listening.
+const maxAttachmentBody = 2 * domain.MaxAttachmentBytes
 
 // hsts is sent when --https says a TLS-terminating proxy sits in front. A year,
 // and this host only: awb may be one application among several on a domain, and
@@ -184,7 +208,7 @@ func newServeCommand(e *env) *cobra.Command {
 				}
 			}
 
-			base := local.New(db, fixedIdentity)
+			base := local.New(db, storage.NewBlobs(cfg.Attachments), fixedIdentity)
 			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, opts)
 			if err != nil {
 				return err
@@ -394,7 +418,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 	// the other; curl, which does not ask for gzip by default, sees nothing
 	// wrong. Keeping the two apart is what stops that.
 	withAPI := func(h http.Handler) http.Handler {
-		return recovery.Middleware(httputil.Gzip(handler.NoStore(h)))
+		return recovery.Middleware(gzipExcept(isAttachmentDownload, handler.NoStore(h)))
 	}
 
 	// Everything under /api/ is the JSON API and /openapi.json and /openapi.yaml
@@ -446,7 +470,98 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 		HSTS:           strictTransport,
 	})(chain)
 
-	return http.MaxBytesHandler(chain, maxRequestBody), nil
+	return transferLimits(chain), nil
+}
+
+// transferLimits caps how much of a request body the server will read, and
+// gives the two requests that carry a file the time to carry it.
+//
+// Everything gets maxRequestBody, which is far above anything the field maxima
+// permit; an attachment upload gets the domain's attachment maximum, that
+// body being a file rather than a description of one. Both have to be applied
+// before the router, which is inside the API server, so this recognises the
+// two paths rather than reading them out of the document — a wider limit on a
+// path that turns out to serve nothing is refused by the router a moment later
+// either way.
+//
+// Extending the deadline is best effort: a server that will not have it moved
+// leaves the request under the general timeouts, which is the behaviour
+// everything else already has.
+func transferLimits(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := int64(maxRequestBody)
+		deadline := time.Now().Add(contentTimeout)
+		switch {
+		case isAttachmentUpload(r):
+			limit = maxAttachmentBody
+			_ = http.NewResponseController(w).SetReadDeadline(deadline)
+		case isAttachmentDownload(r):
+			_ = http.NewResponseController(w).SetWriteDeadline(deadline)
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isAttachmentUpload recognises POST /api/issues/{id}/attachments, the one
+// request whose body is a file.
+func isAttachmentUpload(r *http.Request) bool {
+	return r.Method == http.MethodPost && matchPath(r, "api", "issues", "*", "attachments")
+}
+
+// isAttachmentDownload recognises GET
+// /api/issues/{id}/attachments/{name}/content, the one response that is a
+// file.
+func isAttachmentDownload(r *http.Request) bool {
+	return r.Method == http.MethodGet &&
+		matchPath(r, "api", "issues", "*", "attachments", "*", "content")
+}
+
+// matchPath compares the request's path against a pattern in which "*" stands
+// for exactly one non-empty segment.
+//
+// It reads the escaped path, so a segment is what the client actually sent
+// between two slashes. An attachment's name travels percent-encoded and cannot
+// contain a slash; reading the decoded path would let one that had smuggled an
+// encoded slash look like two segments and slip past.
+func matchPath(r *http.Request, pattern ...string) bool {
+	segments := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
+	if len(segments) != len(pattern) {
+		return false
+	}
+	for i, want := range pattern {
+		if segments[i] == "" || (want != "*" && segments[i] != want) {
+			return false
+		}
+	}
+	return true
+}
+
+// gzipExcept compresses every response but the ones skip names.
+//
+// The one it skips is an attachment's content. Everything else the API answers
+// is JSON, which compresses to a fraction of itself; an attachment is opaque
+// bytes the server never looks at, and is as likely as not already compressed
+// — a screenshot, a zip, a captured core. Compressing those spends the time
+// and about a megabyte of compressor state per download to make them no
+// smaller, and the state is per concurrent request, which is exactly where a
+// server should not be spending memory.
+//
+// That response is also the only one that states its own Content-Length, and
+// compressing it would leave that header describing a body of another length:
+// this middleware clears the header on its way in, and the generated encoder
+// sets it again on the way out. So the two belong together — putting the
+// content back through the compressor would need the header dropped in the
+// same change.
+func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
+	compressed := httputil.Gzip(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skip(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		compressed.ServeHTTP(w, r)
+	})
 }
 
 // contentSecurityPolicy pins the UI's script sources to the import map the

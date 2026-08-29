@@ -41,8 +41,69 @@ labels and an assignee.
 
 The description is the only free text on an issue. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
-there is no attachment or link entity, no file contents in the database and no
-link records to keep in step with anything.
+there is no link entity and no link records to keep in step with anything.
+
+### Attachments
+
+A link cannot stand in for everything. A stack trace, a failing log or a
+screenshot is evidence that has to travel with the issue, so an **attachment**
+is a file attached to one, carrying a name, a content type, a size and the
+SHA-256 of its content.
+
+**An attachment is identified by its issue and its name**, and carries no
+identifier of its own. That is how a label is identified too, and an attachment
+is the same shape of thing: a set of values hanging off one issue rather than
+an entity in its own right. A synthetic id would be a second name for something
+that already has one, and one nobody would ever type — where an issue id is
+minted because an issue arrives with nothing to call it, an attachment arrives
+with a name.
+
+The consequence is that a name is unique within an issue. A second file under a
+name the issue already holds is refused rather than being given a name it was
+not asked to have, which is also what a filesystem does. Two issues may each
+hold one called the same thing.
+
+**The content is not in the database.** It is a file in a directory of them,
+which defaults to sitting beside the database and can be pointed at a
+filesystem of its own — because the reason to store files is that they are
+large, and a tracker that swallowed them would stop being a small file anyone
+can copy, back up and read with a SQLite shell. Only the metadata is a row.
+
+Each file is named by its own SHA-256, and that one decision settles three
+things. Writing one is idempotent, because whatever is already under that name
+holds the same bytes. Two attachments of the same content share one file, which
+is why deleting one removes the file only once no row names that digest any
+more. And the content can be put in place *before the row that names it is
+committed* — the bytes are copied to a staging file before the transaction
+begins, and given their final name inside it, after the row is inserted and
+before the commit — so a committed row never points at a file that is not
+there. The failure that is left instead — a file no row names — is unreachable,
+harmless, and adopted by the next upload of the same bytes.
+
+An attachment is immutable. Nothing changes one, which is why it carries no
+update timestamp, no entity tag and no conditional edit: attach the file again
+and remove the old one. Attaching or removing one does not move the issue's own
+timestamp, exactly as a relation does not, because it is its own entity with
+its own lifecycle.
+
+The content type is what the caller says it is, and what the first bytes say it
+is when the caller says nothing. It is sniffed from the content rather than
+from the name's extension, because an extension table is a file on the machine
+and would make the same upload get different answers on two of them.
+
+**Content is streamed end to end and never held whole.** Not as an
+optimisation: a server that buffered an upload would let a handful of
+concurrent callers cost it the attachment maximum each, and the size limit
+would become a limit on memory rather than on a file. So an upload is copied
+from the request body to disk as it arrives, hashed on the way past, and a
+download is copied from the file to the response the same way. What one
+transfer costs the server is a copy buffer, whatever the file's size.
+
+That is a property of the whole path rather than of one function — the client,
+the transport, the middleware, the generated decoder, the handler and the blob
+store all have to keep it, and any one of them could quietly stop. It is
+therefore measured rather than asserted: a test moves a payload through the
+real server and fails if either direction allocates anything approaching it.
 
 ### Identifiers
 
@@ -168,8 +229,9 @@ because the command line has no separate meaning for them.
 
 ## 4. Storage
 
-A single SQLite file holds everything. There is no per-directory database, so a
-user has one tracker unless they explicitly point at another.
+A single SQLite file holds everything but attachment content, which is a
+directory of files beside it. There is no per-directory database, so a user has
+one tracker unless they explicitly point at another.
 
 **Only the initialising command creates it.** Every other command that finds the
 file missing fails and names the path, so a typo in a flag or an environment
@@ -205,6 +267,22 @@ of a claim, the timestamp bump and the identifier collision retry all happen
 inside one writer's exclusive turn, so no concurrent commit can slip between a
 check and the change it guards. A transaction that cannot take the lock fails
 rather than being retried in a loop.
+
+An attachment's content is copied into a staging file outside any transaction,
+that being the slow half. The rename that gives it its final name happens
+inside the transaction that writes its row, after the row and before the
+commit, so a committed row never names a file that is not there.
+
+Removing content is the mirror image, and cannot be done in the same place.
+An unlink cannot be rolled back, so one performed inside the deleting
+transaction and followed by a failed commit would restore the rows and leave
+them naming a file that is gone — the one state this design does not tolerate.
+So a delete commits first, and a second transaction, which writes nothing,
+takes the write lock to decide whether anything still names the content and to
+unlink it if not. Both halves holding that lock is what puts an upload and a
+concurrent delete of the same bytes in one order; the second transaction having
+nothing to commit is what makes its own failure cost nothing but an
+unreferenced file.
 
 There are no leases, locks or claim expiry. A claim is a single atomic update,
 and a crashed agent leaves an assigned issue that a human or another agent
@@ -285,14 +363,37 @@ the API means changing the document.
 
 Generation cannot state everything the API promises, and what is left over is
 deliberately small. The handler holds the translation between the API's shapes
-and the domain's, the mapping of the error taxonomy onto statuses, and three
+and the domain's, the mapping of the error taxonomy onto statuses, and four
 rules a generator does not enforce: a query parameter an operation does not
 declare is refused rather than ignored, so is a body sent to an operation that
-declares none, and a body must be well-formed UTF-8 with no unpaired surrogate
-escape — which has to be checked on the bytes, because a decoder replaces one
-with U+FFFD and that is indistinguishable from a U+FFFD the caller meant. The
-first two rules read what an operation declares back out of the document rather
-than restating it in Go, so they cannot drift from it either.
+declares none, a body must claim a content type that operation declares, and a
+text body must be well-formed UTF-8 with no unpaired surrogate escape — which
+has to be checked on the bytes, because a decoder replaces one with U+FFFD and
+that is indistinguishable from a U+FFFD the caller meant. The first three rules
+read what an operation declares back out of the document rather than restating
+it in Go, so they cannot drift from it either.
+
+One endpoint is not JSON. Uploading an attachment carries the file's bytes as
+the body and everything else about it as query parameters, which is what leaves
+`Content-Type` describing the body on the wire and lets an upload stream rather
+than be held whole. It is also the one endpoint whose body cap is the
+attachment maximum instead of the general one: raising the general cap to make
+room for files would let any caller make the server buffer that much JSON.
+
+Downloading one is always served as an octet-stream to be saved, whatever
+content type the metadata records. Uploaded content comes back from the same
+origin as the UI, and a browser invited to render it there would run whatever
+an uploaded HTML file said.
+
+It is also the one response that is not compressed, and the only one that
+states its own length. Those two facts are one decision: an attachment is
+opaque bytes and as likely as not already compressed, so the compressor would
+spend time and memory per concurrent download to make it no smaller — and not
+compressing it is what leaves the length able to say anything, since a
+compressed body is a different length from the recorded one. The length sent is
+the recorded size rather than one measured on the way past, so a stored file
+that no longer matches its metadata breaks the transfer instead of arriving as
+a plausible short one.
 
 **The API is specified as if a read/write UI existed**, even though the bundled
 one only reads. That means complete write coverage, optimistic concurrency
@@ -381,7 +482,7 @@ design is holding *out*.
 **Deliberately absent:** versioning, history, merge and offline replication;
 comments; audit logs; sprints, boards, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; authorization;
-custom fields and workflows; attachments and blobs; bulk import.
+custom fields and workflows; bulk import.
 
 **Nothing is ever archived or purged.** Closed issues stay queryable forever.
 

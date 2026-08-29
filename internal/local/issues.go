@@ -264,7 +264,10 @@ func checkUnchanged(issue *domain.Issue, req backend.IssuePatch) error {
 // reporting how many went, since removing a blocker silently makes other
 // issues ready.
 func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backend.DeletedIssue, error) {
-	var deleted backend.DeletedIssue
+	var (
+		deleted backend.DeletedIssue
+		digests []string
+	)
 	err := b.write(ctx, func(tx *storage.Tx) error {
 		issue, err := load(tx, ref)
 		if err != nil {
@@ -274,8 +277,16 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 			return err
 		}
 
+		// The digests are read before the rows go, since the cascade takes the
+		// attachment rows with the issue and there would be nothing left to ask
+		// afterwards.
+		if digests, err = tx.DigestsOfIssue(issue.ID); err != nil {
+			return err
+		}
+
 		// The object returned is the issue as it was immediately before deletion,
-		// which for an issue includes the relations that went with it.
+		// which for an issue includes the relations and the attachments that went
+		// with it.
 		deleted.Issue = *issue
 		deleted.RelationsRemoved, err = tx.DeleteIssue(issue.ID)
 		return err
@@ -283,6 +294,7 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 	if err != nil {
 		return nil, err
 	}
+	b.sweep(ctx, digests)
 	return &deleted, nil
 }
 

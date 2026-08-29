@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 1.1.0
+  version: 1.2.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -44,6 +44,7 @@ security:
 tags:
   - name: issues
   - name: relations
+  - name: attachments
   - name: projects
   - name: metadata
 
@@ -265,6 +266,149 @@ paths:
       description: Removing one that does not exist succeeds and changes nothing.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/{id}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+    get:
+      tags: [attachments]
+      operationId: listAttachments
+      summary: List the files attached to an issue
+      description: |
+        Oldest first, then by `id`. The same array appears on the issue itself
+        as `attachments`; this endpoint exists so that a UI can page it and can
+        read it without re-reading the issue.
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/AttachmentList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [attachments]
+      operationId: addAttachment
+      summary: Attach a file to an issue
+      description: |
+        The request body is the file's bytes and nothing else, so an upload
+        streams rather than being wrapped in JSON. Everything about the file
+        that is not its content travels as a query parameter, which is what
+        keeps `Content-Type` free to be what it is everywhere else — a
+        statement about the body on the wire — and makes the two ways of saying
+        what the file *is* one way.
+
+        An attachment is immutable: there is no endpoint that changes one, and
+        the way to replace one is to delete it and attach the file again.
+
+        An issue holds at most one attachment under any one name, that pair
+        being what identifies one — as an issue holds at most one label of any
+        one value. A second under the same name is a 409 rather than being
+        given a name it was not asked to have. Two issues may each hold one
+        called `trace.txt`, and if the bytes are identical they share a single
+        stored copy.
+
+        Content is stored outside the database, in a directory of files named
+        by their own SHA-256, so two attachments holding the same bytes share
+        one file. Adding or removing one does not move the issue's
+        `updated_at`, exactly as adding or removing a relation does not.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: |
+            The name to hold it under, and half of what identifies it. It is a
+            name and not a path: a slash, a backslash, a control character, and
+            the two names that mean a directory are refused rather than
+            stripped. It is never used to build a filesystem path.
+          schema: { $ref: '#/components/schemas/AttachmentName' }
+        - name: content-type
+          in: query
+          description: |
+            What the file is. Omitted, it is sniffed from the first bytes of
+            the content — from the content rather than from the name's
+            extension, because an extension table is a file on the machine and
+            would make the same upload get different answers on two of them.
+          schema: { $ref: '#/components/schemas/ContentType' }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201': { $ref: '#/components/responses/AttachmentCreated' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/{id}/attachments/{name}:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/attachmentName'
+    get:
+      tags: [attachments]
+      operationId: getAttachment
+      summary: Read one attachment's metadata
+      responses:
+        '200': { $ref: '#/components/responses/Attachment' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [attachments]
+      operationId: deleteAttachment
+      summary: Delete an attachment and, if nothing else holds them, its bytes
+      description: |
+        It takes no `If-Match`: an attachment has no mutable field, so there is
+        no second version of one to guard against.
+      responses:
+        '200':
+          description: |
+            The attachment as it was immediately before deletion. It carries no
+            ETag, having never had one.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attachment' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/{id}/attachments/{name}/content:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/attachmentName'
+    get:
+      tags: [attachments]
+      operationId: getAttachmentContent
+      summary: Download an attachment's content
+      description: |
+        The bytes exactly as they were uploaded.
+
+        They are always served as `application/octet-stream` with a
+        `Content-Disposition` of `attachment`, whatever `content_type` the
+        metadata records. Content a caller uploaded is served from the same
+        origin as the UI, and a browser invited to render it there would run
+        whatever an uploaded HTML file said. What the file is remains readable
+        as metadata, where nothing acts on it.
+      responses:
+        '200':
+          description: The content.
+          headers:
+            Content-Disposition:
+              description: |
+                `attachment`, with the stored name as its `filename`, so a
+                browser saves it under the name it was uploaded with.
+              schema: { type: string }
+            Content-Length:
+              description: |
+                The attachment's `size`, so a client can show progress and size
+                its buffer instead of reading an unbounded stream to its end.
+
+                It is the recorded size rather than one measured on the way
+                past, which is what makes a truncated response detectable: a
+                stored file that no longer matches its metadata breaks the
+                transfer rather than arriving as a plausible short one.
+
+                This is the one response the server does not compress, which is
+                what leaves the header able to say anything: a compressed body
+                is a different length from the one recorded here.
+              schema: { type: integer, minimum: 0 }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
         default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/tree:
@@ -553,8 +697,8 @@ components:
 
         It is not a cache validator and nothing should treat it as one: it
         guards the entity's own stored fields, which are what a form edits. Two
-        issue bodies differing only in `relations`, `blocked` or `blockers`
-        carry the same tag.
+        issue bodies differing only in `relations`, `blocked`, `blockers` or
+        `attachments` carry the same tag.
       schema: { type: string }
     XTotalCount:
       description: The number of rows before `limit` and `offset` were applied.
@@ -573,6 +717,16 @@ components:
         prefix that is unique across the database. Matching more than one issue
         is a 400; matching none is a 404.
       schema: { type: string, minLength: 1 }
+    attachmentName:
+      name: name
+      in: path
+      required: true
+      description: |
+        The attachment's name, percent-encoded. Together with the issue it is
+        the whole of what identifies an attachment: there is no id. A name the
+        issue does not hold is a 404, and one outside the name rules is a 400,
+        since it is a name that could never have been stored.
+      schema: { $ref: '#/components/schemas/AttachmentName' }
     ifMatch:
       name: If-Match
       in: header
@@ -745,6 +899,27 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Facet' }
+    Attachment:
+      description: The attachment.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Attachment' }
+    AttachmentCreated:
+      description: The new attachment.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Attachment' }
+    AttachmentList:
+      description: The attachments, oldest first.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Attachment' }
     Error:
       description: |
         A failure, carrying the server's own message. The status says which
@@ -763,9 +938,12 @@ components:
         The statuses with no exit code behind them are `405`, answered when a
         path exists and the method does not; `412`, answered when an `If-Match`
         no longer matches; `413`, answered when a body is over the transport
-        cap; and `415`, answered when a request carries a body without a JSON
-        content type — a missing `Content-Type` counts, a body claiming nothing
-        claiming nothing useful.
+        cap; and `415`, answered when a request carries a body whose content
+        type is not the one that endpoint declares — a missing `Content-Type`
+        counts, a body claiming nothing claiming nothing useful. Every endpoint
+        but the attachment upload declares `application/json`; that one
+        declares `application/octet-stream`, and has a far larger size cap to
+        go with it.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -836,6 +1014,62 @@ components:
       minLength: 1
       maxLength: 16
 
+    AttachmentName:
+      type: string
+      description: |
+        A file name, stored exactly as it arrived. It may hold anything but a
+        slash, a backslash, a control character, and the two names that mean a
+        directory; those are refused rather than stripped, because a name is
+        never somewhere to write.
+      minLength: 1
+      maxLength: 255
+
+    ContentType:
+      type: string
+      description: |
+        A media type as RFC 2045 spells one, stored exactly as it arrived
+        rather than lower-cased or stripped of its parameters.
+      minLength: 1
+      maxLength: 255
+      examples: ['text/markdown; charset=utf-8']
+
+    Attachment:
+      type: object
+      description: |
+        One file attached to an issue: its metadata. The content is not in the
+        database and is fetched from
+        `GET /api/issues/{id}/attachments/{name}/content`.
+
+        An attachment is identified by `issue` and `name` together and carries
+        no id of its own: a synthetic one would be a second name for something
+        that already has one. That is why a name is unique within an issue.
+
+        An attachment is immutable — nothing changes any field of one — which
+        is why it carries no `updated_at` and no ETag, and why no endpoint that
+        touches one takes an `If-Match`.
+      additionalProperties: false
+      required: [issue, name, content_type, size, sha256, created_at]
+      properties:
+        issue:
+          type: string
+          description: |
+            The full ID of the issue this is attached to. It and `name` are what
+            identify the attachment; there is no id of its own.
+        name: { $ref: '#/components/schemas/AttachmentName' }
+        content_type: { $ref: '#/components/schemas/ContentType' }
+        size:
+          type: integer
+          description: The content's length in bytes.
+          minimum: 0
+        sha256:
+          type: string
+          description: |
+            The SHA-256 of the content, in 64 lowercase hexadecimal characters.
+            It is also the name of the file the content is stored in, which is
+            what lets two attachments holding the same bytes share one.
+          pattern: '^[0-9a-f]{64}$'
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+
     Link:
       type: object
       description: A Markdown link found in the description. Derived and read-only.
@@ -866,13 +1100,14 @@ components:
         handling.
 
         `labels` and `blockers` are sorted; `relations` is sorted by type, then
-        other, then direction; `links` keeps the order the links occur in. Two
-        requests against unchanged data therefore produce byte-identical output.
+        other, then direction; `attachments` is oldest first, then by id;
+        `links` keeps the order the links occur in. Two requests against
+        unchanged data therefore produce byte-identical output.
       additionalProperties: false
       required:
         [id, project, title, description, type, status, priority, labels,
          assignee, close_reason, created_at, updated_at, blocked, blockers,
-         relations, links]
+         relations, links, attachments]
       properties:
         id:
           type: string
@@ -911,7 +1146,8 @@ components:
           description: |
             Moves only when a stored field actually changes, and is strictly
             increasing per issue, so it identifies a version rather than an
-            instant. Adding or removing a relation does not move it.
+            instant. Adding or removing a relation or an attachment does not
+            move it.
         blocked:
           type: boolean
           description: |
@@ -934,6 +1170,14 @@ components:
           type: array
           description: Derived and read-only; see Link.
           items: { $ref: '#/components/schemas/Link' }
+        attachments:
+          type: array
+          description: |
+            Derived and read-only: the files attached to the issue, oldest
+            first and then by id. They are added and removed by their own
+            endpoints, and doing either does not move `updated_at`, exactly as
+            a relation does not.
+          items: { $ref: '#/components/schemas/Attachment' }
 
     IssueTree:
       description: One Issue extended with its children, recursively.
@@ -1065,8 +1309,8 @@ components:
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
-        `project`, the timestamps, `blocked`, `blockers`, `relations` and
-        `links` — are accepted and their values ignored. Together those rules
+        `project`, the timestamps, `blocked`, `blockers`, `relations`, `links`
+        and `attachments` — are accepted and their values ignored. Together those rules
         let a UI send back the object it read with only the fields it edited
         changed.
 
@@ -1097,6 +1341,7 @@ components:
         blockers: { type: array, items: { type: string } }
         relations: { type: array, items: { $ref: '#/components/schemas/Relation' } }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
+        attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
 
     ClaimRequest:
       type: object

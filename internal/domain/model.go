@@ -38,25 +38,27 @@ type Relation struct {
 // field is always present: an unset string is "", never null or absent, so
 // consumers need no absence handling.
 //
-// Blocked, Blockers, Relations and Links are derived and read-only; they
-// cannot be written through update or PATCH.
+// Blocked, Blockers, Relations, Links and Attachments are derived and
+// read-only; they cannot be written through update or PATCH. An attachment is
+// added and removed by its own operations, exactly as a relation is.
 type Issue struct {
-	ID          string     `json:"id"`
-	Project     string     `json:"project"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Type        Type       `json:"type"`
-	Status      Status     `json:"status"`
-	Priority    int        `json:"priority"`
-	Labels      []string   `json:"labels"`
-	Assignee    string     `json:"assignee"`
-	CloseReason string     `json:"close_reason"`
-	CreatedAt   string     `json:"created_at"`
-	UpdatedAt   string     `json:"updated_at"`
-	Blocked     bool       `json:"blocked"`
-	Blockers    []string   `json:"blockers"`
-	Relations   []Relation `json:"relations"`
-	Links       []Link     `json:"links"`
+	ID          string       `json:"id"`
+	Project     string       `json:"project"`
+	Title       string       `json:"title"`
+	Description string       `json:"description"`
+	Type        Type         `json:"type"`
+	Status      Status       `json:"status"`
+	Priority    int          `json:"priority"`
+	Labels      []string     `json:"labels"`
+	Assignee    string       `json:"assignee"`
+	CloseReason string       `json:"close_reason"`
+	CreatedAt   string       `json:"created_at"`
+	UpdatedAt   string       `json:"updated_at"`
+	Blocked     bool         `json:"blocked"`
+	Blockers    []string     `json:"blockers"`
+	Relations   []Relation   `json:"relations"`
+	Links       []Link       `json:"links"`
+	Attachments []Attachment `json:"attachments"`
 }
 
 // IssueTree is one Issue extended with its children, recursively. It is what
@@ -122,6 +124,7 @@ func (i *Issue) Normalize() {
 	slices.Sort(i.Labels)
 	slices.Sort(i.Blockers)
 	SortRelations(i.Relations)
+	SortAttachments(i.Attachments)
 	if i.Labels == nil {
 		i.Labels = []string{}
 	}
@@ -133,5 +136,8 @@ func (i *Issue) Normalize() {
 	}
 	if i.Links == nil {
 		i.Links = []Link{}
+	}
+	if i.Attachments == nil {
+		i.Attachments = []Attachment{}
 	}
 }

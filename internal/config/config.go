@@ -50,23 +50,25 @@ func ParseColorMode(s string) (ColorMode, error) {
 
 // userFile is the user configuration file. Every key is optional.
 type userFile struct {
-	DB       *string `yaml:"db"`
-	User     *string `yaml:"user"`
-	Password *string `yaml:"password"`
-	Identity *string `yaml:"identity"`
-	Project  *string `yaml:"project"`
-	Color    *string `yaml:"color"`
+	DB          *string `yaml:"db"`
+	Attachments *string `yaml:"attachments"`
+	User        *string `yaml:"user"`
+	Password    *string `yaml:"password"`
+	Identity    *string `yaml:"identity"`
+	Project     *string `yaml:"project"`
+	Color       *string `yaml:"color"`
 }
 
 // localFile is the local configuration file.
 //
 // It holds only project and label on purpose. The file is meant to be
 // committed, so it may not have been written by the person running the
-// command, and it therefore may not set db, user, password, identity or color:
-// a directory can shape what you see, but cannot redirect where your issues
-// are stored, claim to be you, or make you send a password somewhere. Those
-// keys are ignored if present, exactly like unknown keys — and ignored means
-// unread, so their values are not type-checked either.
+// command, and it therefore may not set db, attachments, user, password,
+// identity or color: a directory can shape what you see, but cannot redirect
+// where your issues or your files are stored, claim to be you, or make you
+// send a password somewhere. Those keys are ignored if present, exactly like
+// unknown keys — and ignored means unread, so their values are not type-checked
+// either.
 type localFile struct {
 	Project *string `yaml:"project"`
 	Label   *string `yaml:"label"`
@@ -75,10 +77,11 @@ type localFile struct {
 // Flags are the values the command line supplied, each nil when the flag was
 // not given.
 type Flags struct {
-	DB        *string
-	Color     *string
-	NoColor   bool
-	NoContext bool
+	DB          *string
+	Attachments *string
+	Color       *string
+	NoColor     bool
+	NoContext   bool
 }
 
 // Config is everything resolved, ready to use.
@@ -87,6 +90,12 @@ type Config struct {
 	DB string
 	// RemoteURL is set when DB is a URL, already validated and normalised.
 	RemoteURL *url.URL
+
+	// Attachments is the directory attachment content is stored in, which
+	// defaults to "attachments" beside the database and may be set to a path on
+	// a filesystem of its own. It is empty in remote mode: the server holds the
+	// files, and a client that is not one has nowhere to put them.
+	Attachments string
 
 	// User and Password are the basic-authentication credentials the CLI presents
 	// in remote mode. They are ignored when DB is a path.
@@ -136,6 +145,9 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	cfg := &Config{LocalFilePath: localPath}
 
 	if err := resolveDB(cfg, flags, userCfg, userPath); err != nil {
+		return nil, err
+	}
+	if err := resolveAttachments(cfg, flags, userCfg, userPath); err != nil {
 		return nil, err
 	}
 	if err := resolveCredentials(cfg, userCfg, userPath); err != nil {
@@ -290,6 +302,42 @@ func setDB(cfg *Config, value string) error {
 
 	cfg.DB = value
 	cfg.RemoteURL = parsed
+	return nil
+}
+
+// DefaultAttachmentsDirName is what the attachments directory is called when
+// nothing says otherwise: a directory of that name beside the database file.
+const DefaultAttachmentsDirName = "attachments"
+
+// resolveAttachments applies the same precedence chain as the database to the
+// directory attachment content lives in: --attachments, else AWB_ATTACHMENTS,
+// else "attachments" in the user configuration file, else a directory of that
+// name beside the database.
+//
+// Remote mode has no such directory at all — the server owns the files — so
+// nothing is resolved there. A setting given anyway is not an error, for the
+// same reason a user and a password are not one in direct mode: one
+// configuration file serves both modes.
+func resolveAttachments(cfg *Config, flags Flags, userCfg *userFile, userPath string) error {
+	if cfg.Remote() {
+		return nil
+	}
+	switch {
+	case flags.Attachments != nil:
+		if *flags.Attachments == "" {
+			return usageError("--attachments", errors.New("directory must not be empty"))
+		}
+		cfg.Attachments = *flags.Attachments
+	case os.Getenv("AWB_ATTACHMENTS") != "":
+		cfg.Attachments = os.Getenv("AWB_ATTACHMENTS")
+	case userCfg.Attachments != nil:
+		if *userCfg.Attachments == "" {
+			return configError(userPath, errors.New("attachments directory must not be empty"))
+		}
+		cfg.Attachments = *userCfg.Attachments
+	default:
+		cfg.Attachments = filepath.Join(filepath.Dir(cfg.DB), DefaultAttachmentsDirName)
+	}
 	return nil
 }
 

@@ -23,6 +23,7 @@ import type { components, operations } from "./api-types.js";
 export type Issue = components["schemas"]["Issue"];
 export type Relation = components["schemas"]["Relation"];
 export type Link = components["schemas"]["Link"];
+export type Attachment = components["schemas"]["Attachment"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];

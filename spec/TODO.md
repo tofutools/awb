@@ -64,7 +64,5 @@ reasoning is not lost and so they are not re-litigated by accident.
   beyond it goes in labels. This one will be asked for repeatedly and should
   keep being declined.
 
-* **Attachments and blobs.** Links in a description cover it.
-
 * **Continuous synchronisation with external trackers.** A one-way import might
   be defensible one day; keeping two systems agreeing forever is not.

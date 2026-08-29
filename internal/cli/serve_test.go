@@ -5,13 +5,19 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/remote"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/local"
 	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
@@ -44,14 +51,16 @@ func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 
 func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.HtpasswdFile) http.Handler {
 	t.Helper()
-	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), htpasswd, opts)
+	h, err := buildHandler(local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael"),
+		openapi.New(raw), htpasswd, opts)
 	require.NoError(t, err)
 	return h
 }
@@ -538,5 +547,308 @@ func TestServeLogsWithATimestamp(t *testing.T) {
 		assert.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("the server did not shut down")
+	}
+}
+
+// The transport cap is per endpoint: the attachment upload gets the domain's
+// attachment maximum and everything else gets the general one, which is far
+// above anything the field maxima permit.
+func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
+	h := newServeHandler(t)
+
+	// The handler is the whole server, so the fixtures are made through it.
+	call := func(method, path, contentType, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", contentType)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"Parser crashes"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
+	upload := "/api/issues/" + issue.ID + "/attachments?name=big.bin"
+
+	// A file over the general cap is not too large: this endpoint's cap is the
+	// attachment maximum.
+	rec = call(http.MethodPost, upload, "application/octet-stream",
+		strings.Repeat("x", maxRequestBody+1))
+	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	// One over the attachment maximum is refused by the rule and not by the
+	// transport, so it is the 400 the CLI turns into exit 2 — the same code and
+	// the same message direct mode gives it. That is what the cap sitting above
+	// the maximum is for.
+	rec = call(http.MethodPost, upload, "application/octet-stream",
+		strings.Repeat("x", domain.MaxAttachmentBytes+1))
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "attachment is too large")
+
+	// A JSON body over the general cap still is, so raising one cap did not
+	// raise the other.
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"`+strings.Repeat("x", maxRequestBody)+`"}`)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+}
+
+// The two requests that carry a file are recognised by their exact shape, so
+// nothing else is given the long deadline.
+func TestAttachmentTransferPaths(t *testing.T) {
+	upload := func(method, path string) bool {
+		return isAttachmentUpload(httptest.NewRequest(method, path, nil))
+	}
+	download := func(method, path string) bool {
+		return isAttachmentDownload(httptest.NewRequest(method, path, nil))
+	}
+
+	assert.True(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments"))
+	assert.True(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments?name=x"))
+	assert.False(t, upload(http.MethodGet, "/api/issues/awb-5c1d84/attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues//attachments"))
+	assert.False(t, upload(http.MethodPost, "/api/issues/awb-5c1d84/attachments/trace.txt"))
+	assert.False(t, upload(http.MethodPost, "/api/issues"))
+
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/trace.txt/content"))
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/release%20notes.md/content"),
+		"a name that needed escaping is still one segment")
+	assert.False(t, download(http.MethodGet, "/api/issues/awb-5c1d84/attachments/trace.txt"))
+	assert.False(t, download(http.MethodDelete,
+		"/api/issues/awb-5c1d84/attachments/trace.txt/content"))
+	assert.False(t, download(http.MethodGet, "/api/issues/awb-5c1d84/attachments//content"))
+
+	// A name carrying an encoded slash is one segment on the wire and must be
+	// read as one here, whatever the decoded path would look like.
+	assert.True(t, download(http.MethodGet,
+		"/api/issues/awb-5c1d84/attachments/a%2Fb.txt/content"))
+}
+
+// filler is a reader of arbitrary length that holds nothing: it is what an
+// attachment of any size looks like to a caller that streams it.
+type filler struct{ left int }
+
+func (f *filler) Read(p []byte) (int, error) {
+	if f.left <= 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), f.left)
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	f.left -= n
+	return n, nil
+}
+
+// totalAlloc is every byte the process has allocated so far. It only ever
+// rises, so a difference across an operation is what that operation allocated
+// whether or not the collector ran — which is the question here, since a body
+// held whole shows up in it and a body streamed does not.
+func totalAlloc() uint64 {
+	runtime.GC()
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.TotalAlloc
+}
+
+// Attachment content is streamed through the server in both directions and is
+// never held whole.
+//
+// This runs the real thing: the whole serve middleware chain, over a real
+// listener, driven by the remote backend the CLI uses in remote mode. What it
+// measures is everything both ends allocated to move the payload — so a buffer
+// anywhere on the path, in the client, the transport, the middleware, the
+// generated decoder, the handler or the blob store, would show up here.
+//
+// The threshold is a fraction of the payload rather than a figure, because
+// what is being pinned is the shape of the cost: bounded by the size of a copy
+// buffer, not by the size of the file. It measured about 4% for the upload and
+// 7% for the download when it was written, so the headroom is wide and only a
+// real regression closes it.
+func TestAttachmentContentIsStreamed(t *testing.T) {
+	const (
+		size    = 24 << 20
+		allowed = size / 4
+	)
+
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	h, err := buildHandler(be, openapi.New(raw), nil,
+		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	require.NoError(t, err)
+
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue, err := be.CreateIssue(t.Context(),
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael")
+	t.Cleanup(func() { _ = client.Close() })
+
+	before := totalAlloc()
+	attachment, err := client.AddAttachment(t.Context(), issue.ID, backend.AttachmentCreate{
+		Name:    "big.bin",
+		Content: &filler{left: size},
+	})
+	require.NoError(t, err)
+	uploaded := totalAlloc() - before
+
+	require.EqualValues(t, size, attachment.Size)
+	assert.Less(t, uploaded, uint64(allowed),
+		"uploading %d bytes allocated %d: something on the path is holding the body", size, uploaded)
+
+	before = totalAlloc()
+	_, content, err := client.OpenAttachment(t.Context(), issue.ID, attachment.Name)
+	require.NoError(t, err)
+	written, err := io.Copy(io.Discard, content)
+	require.NoError(t, err)
+	require.NoError(t, content.Close())
+	downloaded := totalAlloc() - before
+
+	require.EqualValues(t, size, written)
+	assert.Less(t, downloaded, uint64(allowed),
+		"downloading %d bytes allocated %d: something on the path is holding the body",
+		size, downloaded)
+}
+
+// An attachment's content is the one response that is not compressed, so a
+// download costs neither the time nor the compressor state to make opaque
+// bytes no smaller. Everything else the API answers still is.
+func TestAttachmentContentIsNotCompressed(t *testing.T) {
+	h := newServeHandler(t)
+
+	call := func(method, path, contentType, body string, gzipped bool) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		if gzipped {
+			req.Header.Set("Accept-Encoding", "gzip")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// The fixtures ask for no compression, so their bodies can simply be read.
+	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`, false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	rec = call(http.MethodPost, "/api/issues", "application/json",
+		`{"project":"awb","title":"Parser crashes"}`, false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
+
+	attachment := "/api/issues/" + issue.ID + "/attachments/trace.txt"
+	rec = call(http.MethodPost, "/api/issues/"+issue.ID+"/attachments?name=trace.txt",
+		"application/octet-stream", "boom\n", false)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	// A client that would take gzip is given none for the content, and gets the
+	// bytes as they were stored.
+	rec = call(http.MethodGet, attachment+"/content", "", "", true)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Encoding"))
+	assert.Equal(t, "boom\n", rec.Body.String())
+
+	// And the length it states is the length of what it sent. The two go
+	// together: compressing this response would leave the header describing a
+	// body of another length, so a Content-Encoding here would be a bug and so
+	// would a Content-Length that disagreed with the body.
+	assert.Equal(t, strconv.Itoa(len("boom\n")), rec.Header().Get("Content-Length"))
+
+	// The same client asking for the metadata beside it is compressed as
+	// before, so what was switched off is the one response and not the
+	// mechanism.
+	rec = call(http.MethodGet, attachment, "", "", true)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
+}
+
+// A name that needs escaping survives the round trip through remote mode, and
+// so does a server published under a base path.
+//
+// The two are one test because they are one bug: the path a request is sent to
+// is assembled from an already-escaped name and a base that may carry a path
+// of its own, and getting that wrong escapes the name twice — an attachment
+// called "release notes.md" is then asked for as "release%2520notes.md" and
+// answered 404 by a server that holds it.
+func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	api, err := buildHandler(be, openapi.New(raw), nil,
+		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	require.NoError(t, err)
+
+	// A reverse proxy publishing the server under /awb/ and stripping that base
+	// before the request arrives, which is the contract the document states.
+	proxy := http.NewServeMux()
+	proxy.Handle("/awb/", http.StripPrefix("/awb", api))
+	server := httptest.NewServer(proxy)
+	t.Cleanup(server.Close)
+
+	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue, err := be.CreateIssue(t.Context(),
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL + "/awb")
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael")
+	t.Cleanup(func() { _ = client.Close() })
+
+	for _, name := range []string{
+		"trace.txt", "release notes.md", "100% done?.txt", "Ωmega#1.txt",
+		"a&b=c.txt", "semi;colon.txt", "quote\".txt", "percent%2Fnotslash.txt",
+	} {
+		content := "content of " + name
+		added, err := client.AddAttachment(t.Context(), issue.ID, backend.AttachmentCreate{
+			Name: name, Content: strings.NewReader(content),
+		})
+		require.NoError(t, err, "%q", name)
+		require.Equal(t, name, added.Name)
+
+		read, err := client.GetAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		assert.Equal(t, added, read)
+
+		_, body, err := client.OpenAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		got, err := io.ReadAll(body)
+		require.NoError(t, err)
+		require.NoError(t, body.Close())
+		assert.Equal(t, content, string(got), "%q", name)
+
+		deleted, err := client.DeleteAttachment(t.Context(), issue.ID, name)
+		require.NoError(t, err, "%q", name)
+		assert.Equal(t, name, deleted.Name)
 	}
 }

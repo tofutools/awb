@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -26,15 +29,19 @@ type api struct {
 	t      *testing.T
 	server *httptest.Server
 	be     *local.Backend
+	// blobs is where attachment content is stored, for the tests that look at
+	// the files rather than at the rows.
+	blobs string
 }
 
 func newAPI(t *testing.T) *api {
 	t.Helper()
-	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	be := local.New(db, "mikael")
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
 	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb", Name: "Agent Work Board"})
 	require.NoError(t, err)
 
@@ -51,7 +58,7 @@ func newAPI(t *testing.T) *api {
 
 	server := httptest.NewServer(handler.NoStore(apiServer))
 	t.Cleanup(server.Close)
-	return &api{t: t, server: server, be: be}
+	return &api{t: t, server: server, be: be, blobs: filepath.Join(dir, "attachments")}
 }
 
 // do performs a request and returns the response with its body read.
@@ -800,4 +807,387 @@ func TestWhitespaceBodyIsRefusedWhereABodyIsOptional(t *testing.T) {
 	var claimed domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &claimed))
 	assert.Equal(t, "mikael", claimed.Assignee, "the request's identity, as with no body")
+}
+
+// The attachment endpoints. The upload's body is the file's bytes and
+// everything else about it is a query parameter, which is what leaves
+// Content-Type free to describe the body on the wire.
+
+// upload posts content and returns the response with its body read.
+func (a *api) upload(issueID, query, contentType, content string) (*http.Response, string) {
+	a.t.Helper()
+	req, err := http.NewRequestWithContext(a.t.Context(), http.MethodPost,
+		a.server.URL+"/api/issues/"+issueID+"/attachments"+query, strings.NewReader(content))
+	require.NoError(a.t, err)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := a.server.Client().Do(req)
+	require.NoError(a.t, err)
+	defer resp.Body.Close() //nolint:errcheck // the body is being read out
+
+	data, err := io.ReadAll(resp.Body)
+	require.NoError(a.t, err)
+	return resp, string(data)
+}
+
+// attachmentPath addresses one attachment the way the API does: the issue it
+// belongs to and its name, escaped.
+func attachmentPath(a *domain.Attachment) string {
+	return "/api/issues/" + url.PathEscape(a.Issue) + "/attachments/" + url.PathEscape(a.Name)
+}
+
+// attach uploads one file and returns the attachment.
+func (a *api) attach(issueID, name, content string) domain.Attachment {
+	a.t.Helper()
+	resp, payload := a.upload(issueID, "?name="+url.QueryEscape(name),
+		"application/octet-stream", content)
+	require.Equal(a.t, http.StatusCreated, resp.StatusCode, payload)
+
+	var attachment domain.Attachment
+	require.NoError(a.t, json.Unmarshal([]byte(payload), &attachment))
+	return attachment
+}
+
+func TestAddAttachment(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/octet-stream", "boom\n")
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+
+	var attachment domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &attachment))
+	assert.Equal(t, issue.ID, attachment.Issue)
+	assert.Equal(t, "trace.txt", attachment.Name)
+	assert.Equal(t, "text/plain; charset=utf-8", attachment.ContentType,
+		"sniffed from the content when the caller states none")
+	assert.EqualValues(t, 5, attachment.Size)
+
+	// 201 carries the new object and a Location header naming it. It carries no
+	// ETag: an attachment is immutable and has no version to guard.
+	assert.Equal(t, "/api/issues/"+issue.ID+"/attachments/trace.txt",
+		resp.Header.Get("Location"))
+	assert.Empty(t, resp.Header.Get("ETag"))
+}
+
+// The stated content type is what is recorded, exactly as it arrived.
+func TestAddAttachmentWithAStatedContentType(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID,
+		"?name=notes.md&content-type="+url.QueryEscape("text/markdown; charset=utf-8"),
+		"application/octet-stream", "# Notes\n")
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+
+	var attachment domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &attachment))
+	assert.Equal(t, "text/markdown; charset=utf-8", attachment.ContentType)
+}
+
+// The upload declares application/octet-stream, so a body claiming JSON is the
+// 415 the rule describes — and the rule is read from the document, so it says
+// what this endpoint actually accepts rather than what most of them do.
+func TestAddAttachmentRefusesTheWrongContentType(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/json", "boom\n")
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, payload)
+	assert.Contains(t, payload, "application/octet-stream")
+
+	resp, payload = a.upload(issue.ID, "?name=trace.txt", "", "boom\n")
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode,
+		"a body claiming nothing claims nothing useful")
+	assert.Contains(t, payload, "application/octet-stream")
+}
+
+// A JSON endpoint still names JSON, which is what says the rule follows the
+// document rather than the one endpoint that differs.
+func TestJSONEndpointsStillDemandJSON(t *testing.T) {
+	a := newAPI(t)
+	resp, payload := a.do(http.MethodPost, "/api/issues", "")
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		a.server.URL+"/api/issues", strings.NewReader(`{"project":"awb","title":"t"}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "text/plain")
+	got, err := a.server.Client().Do(req)
+	require.NoError(t, err)
+	defer got.Body.Close() //nolint:errcheck // the body is being read out
+	body, err := io.ReadAll(got.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusUnsupportedMediaType, got.StatusCode)
+	assert.Contains(t, string(body), "application/json")
+}
+
+// name is required, and a name that is a path is refused rather than stripped.
+func TestAddAttachmentRefusesABadName(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID, "", "application/octet-stream", "boom\n")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+
+	resp, payload = a.upload(issue.ID, "?name="+url.QueryEscape("../escape.txt"),
+		"application/octet-stream", "boom\n")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+}
+
+// A query parameter the endpoint does not declare is refused rather than
+// ignored, exactly as everywhere else.
+func TestAddAttachmentRefusesAnUndeclaredParameter(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID, "?name=trace.txt&sort=priority",
+		"application/octet-stream", "boom\n")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, "sort")
+}
+
+func TestListAndGetAttachments(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
+
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID+"/attachments", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+
+	var listed []domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &listed))
+	require.Len(t, listed, 1)
+	assert.Equal(t, attachment, listed[0])
+
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment), "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var one domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &one))
+	assert.Equal(t, attachment, one)
+
+	// The same array is on the issue itself.
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var read domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &read))
+	assert.Equal(t, listed, read.Attachments)
+}
+
+// Content is always served as an octet-stream to be saved, whatever the
+// recorded content type says: uploads come back from the same origin as the
+// UI, and a browser must not be invited to render one there.
+func TestGetAttachmentContent(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	resp, payload := a.upload(issue.ID, "?name=page.html&content-type=text%2Fhtml",
+		"application/octet-stream", "<script>alert(1)</script>")
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	var attachment domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &attachment))
+	assert.Equal(t, "text/html", attachment.ContentType, "the metadata records what it is")
+
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "<script>alert(1)</script>", payload, "the bytes exactly as uploaded")
+	assert.Equal(t, "application/octet-stream", resp.Header.Get("Content-Type"))
+	assert.Equal(t, `attachment; filename=page.html`, resp.Header.Get("Content-Disposition"))
+
+	// The length is stated, so a client can show progress rather than reading
+	// an unbounded stream to its end. It is the recorded size, and it is the
+	// length of what actually arrived.
+	assert.Equal(t, strconv.FormatInt(attachment.Size, 10),
+		resp.Header.Get("Content-Length"))
+	assert.EqualValues(t, attachment.Size, resp.ContentLength)
+	assert.Len(t, payload, int(attachment.Size))
+}
+
+// An empty attachment states a length of zero rather than omitting the header,
+// which is a different thing: omitted means "read until I close".
+func TestGetEmptyAttachmentContentStatesZero(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "empty.bin", "")
+
+	resp, payload := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "0", resp.Header.Get("Content-Length"))
+	assert.Empty(t, payload)
+}
+
+// A stored file that no longer matches its metadata breaks the transfer rather
+// than arriving as a plausible short one, which is what stating the recorded
+// size rather than a measured one buys.
+func TestTruncatedContentBreaksTheTransfer(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "trace.txt", "the whole thing\n")
+
+	// Reach past awb and shorten the stored file, which nothing awb does can
+	// bring about: what is being pinned is what happens if something else does.
+	blob := filepath.Join(a.blobs, attachment.Sha256)
+	require.NoError(t, os.WriteFile(blob, []byte("short"), 0o600))
+
+	resp, err := a.server.Client().Get(
+		a.server.URL + attachmentPath(&attachment) + "/content")
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck // the body is being read out
+
+	assert.Equal(t, strconv.FormatInt(attachment.Size, 10), resp.Header.Get("Content-Length"),
+		"the length is what was recorded, not what is on the disk")
+	_, err = io.ReadAll(resp.Body)
+	assert.Error(t, err, "the short body is a failed read rather than a complete one")
+}
+
+// A name outside ASCII is encoded rather than dropped or mangled.
+func TestAttachmentContentDispositionEncodesTheName(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, `Ω "notes".txt`, "boom\n")
+
+	resp, _ := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	disposition := resp.Header.Get("Content-Disposition")
+	kind, params, err := mime.ParseMediaType(disposition)
+	require.NoError(t, err, disposition)
+	assert.Equal(t, "attachment", kind)
+	assert.Equal(t, `Ω "notes".txt`, params["filename"])
+}
+
+func TestDeleteAttachment(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
+
+	resp, payload := a.do(http.MethodDelete, attachmentPath(&attachment), "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	var deleted domain.Attachment
+	require.NoError(t, json.Unmarshal([]byte(payload), &deleted))
+	assert.Equal(t, attachment, deleted, "the object as it was immediately before deletion")
+	assert.Empty(t, resp.Header.Get("ETag"))
+
+	resp, payload = a.do(http.MethodGet, attachmentPath(&attachment), "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
+}
+
+// An attachment is addressed by its issue and its name. A name the issue does
+// not hold is a 404, and one outside the name rules is a 400.
+func TestAttachmentReferences(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
+
+	// The issue half takes any reference an issue takes.
+	_, hash, _ := domain.SplitID(issue.ID)
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+hash+"/attachments/trace.txt", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/attachments/nothing.txt", "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/awb-ffffff/attachments/trace.txt", "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/attachments/"+url.PathEscape("../escape.txt"), "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+
+	_ = attachment
+}
+
+// A name is unique within an issue, so a second under the same name is a 409;
+// another issue may hold that name.
+func TestOneAttachmentNamePerIssue(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	other := a.createIssue(`{"project":"awb","title":"Tokeniser drops a newline"}`)
+	a.attach(issue.ID, "trace.txt", "the first one\n")
+
+	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/octet-stream",
+		"the second one\n")
+	assert.Equal(t, http.StatusConflict, resp.StatusCode, payload)
+	assert.Contains(t, payload, "trace.txt")
+
+	resp, payload = a.upload(other.ID, "?name=trace.txt", "application/octet-stream",
+		"the first one\n")
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+}
+
+// A name that needs escaping survives the round trip through the path.
+func TestAwkwardAttachmentNames(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	for _, name := range []string{
+		"release notes.md", "100% done.txt", "what?.log", "a#b.txt", "Ωmega.txt",
+		"quote\".txt", "percent%2Fnotslash.txt",
+	} {
+		attachment := a.attach(issue.ID, name, "content of "+name)
+		require.Equal(t, name, attachment.Name)
+
+		resp, payload := a.do(http.MethodGet, attachmentPath(&attachment), "")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "%q: %s", name, payload)
+		var read domain.Attachment
+		require.NoError(t, json.Unmarshal([]byte(payload), &read))
+		assert.Equal(t, name, read.Name)
+
+		resp, payload = a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "%q", name)
+		assert.Equal(t, "content of "+name, payload)
+	}
+}
+
+// A PATCH may carry the attachments it read back, and their values are
+// ignored, so a UI can send back the object it read.
+func TestPatchIgnoresAttachments(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	a.attach(issue.ID, "trace.txt", "boom\n")
+
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var read map[string]any
+	require.NoError(t, json.Unmarshal([]byte(payload), &read))
+
+	read["title"] = "Parser still crashes"
+	edited, err := json.Marshal(read)
+	require.NoError(t, err)
+
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, string(edited))
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	var updated domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
+	assert.Equal(t, "Parser still crashes", updated.Title)
+	assert.Len(t, updated.Attachments, 1)
+}
+
+// A body on an endpoint that declares none is refused for being there at all,
+// and only one byte of it is ever read: reading it out in full would let a
+// caller make the server hold the transport cap in memory to be told the
+// endpoint wanted nothing.
+func TestBodyOnANoBodyEndpointIsRefusedWithoutReadingIt(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+
+	// A body far larger than the transport cap: it is still the endpoint taking
+	// no body that is reported, not its size, because its size was never the
+	// problem and nothing here counted it.
+	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID,
+		strings.Repeat("x", 4<<20))
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, "this endpoint takes no request body")
+
+	// An empty body is not a body, so the request is answered normally.
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
