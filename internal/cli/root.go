@@ -180,14 +180,18 @@ func (e *env) reportError(err error) {
 	_, _ = fmt.Fprintln(e.stderr, err.Error())
 }
 
-func newRootCommand(e *env, version string) *cobra.Command {
-	var (
-		dbFlag          string
-		attachmentsFlag string
-		colorFlag       string
-	)
+type rootParams struct {
+	DB          *string `long:"db" short:"D" persistent:"true" help:"database file or http(s) URL of an awb server"`
+	Attachments *string `long:"attachments" short:"A" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
+	JSON        bool    `long:"json" short:"J" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
+	Compact     bool    `long:"compact" short:"C" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
+	NoContext   bool    `long:"no-context" short:"N" persistent:"true" optional:"true" help:"ignore the project and label of the local configuration file"`
+	Color       string  `long:"color" short:"O" persistent:"true" default:"auto" optional:"true" help:"when to colour the default output: auto, always or never"`
+	NoColor     bool    `long:"no-color" short:"X" persistent:"true" optional:"true" help:"alias for --color never"`
+}
 
-	root := boa.CmdT[boa.NoParams]{
+func newRootCommand(e *env, version string) *cobra.Command {
+	root := boa.CmdT[rootParams]{
 		Use:   "awb",
 		Short: "Agent Work Board — an agent-first issue tracker",
 		Long: "awb is an agent-first issue tracker: a single binary over SQLite, with a\n" +
@@ -197,42 +201,27 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			"for humans and nothing should parse it.",
 		Version:     version,
 		ParamEnrich: boaParams,
+		PreValidateFunc: func(p *rootParams, cmd *cobra.Command, _ []string) error {
+			e.flags.DB = p.DB
+			e.flags.Attachments = p.Attachments
+			e.flags.NoContext = p.NoContext
+			e.flags.NoColor = p.NoColor
+			if cmd.Flags().Changed("color") {
+				e.flags.Color = &p.Color
+			}
+			e.json = p.JSON
+			e.compact = p.Compact
+			if e.json && e.compact {
+				return awberr.Usagef("--json and --compact are mutually exclusive")
+			}
+			return nil
+		},
 	}.ToCobra()
 	// awb owns error output and the exit codes, so Cobra's own usage-on-error
 	// and error printing are switched off and a usage error exits 2 rather than
 	// Cobra's 1.
 	root.SilenceUsage = true
 	root.SilenceErrors = true
-	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
-		if cmd.Flags().Changed("db") {
-			e.flags.DB = &dbFlag
-		}
-		if cmd.Flags().Changed("attachments") {
-			e.flags.Attachments = &attachmentsFlag
-		}
-		if cmd.Flags().Changed("color") {
-			e.flags.Color = &colorFlag
-		}
-		if e.json && e.compact {
-			return awberr.Usagef("--json and --compact are mutually exclusive")
-		}
-		return nil
-	}
-
-	root.PersistentFlags().StringVar(&dbFlag, "db", "",
-		"database file or http(s) URL of an awb server")
-	root.PersistentFlags().StringVar(&attachmentsFlag, "attachments", "",
-		"directory holding attachment content; defaults to \"attachments\" beside the database")
-	root.PersistentFlags().BoolVar(&e.json, "json", false,
-		"print stable JSON, one object or array per invocation")
-	root.PersistentFlags().BoolVar(&e.compact, "compact", false,
-		"print one terse line per issue, for agents")
-	root.PersistentFlags().BoolVar(&e.flags.NoContext, "no-context", false,
-		"ignore the project and label of the local configuration file")
-	root.PersistentFlags().StringVar(&colorFlag, "color", "auto",
-		"when to colour the default output: auto, always or never")
-	root.PersistentFlags().BoolVar(&e.flags.NoColor, "no-color", false,
-		"alias for --color never")
 
 	root.SetVersionTemplate("{{.Version}}\n")
 

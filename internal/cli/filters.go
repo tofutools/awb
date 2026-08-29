@@ -11,19 +11,19 @@ import (
 // FilterFlags are the filters list, ready, blocked and search share.
 //
 // Repeated values of one filter are ORed; different filters are ANDed. No
-// filter accepts comma-separated lists. Only status, type, priority, label,
-// assignee and project repeat; every other filter may occur once.
+// Status, type, priority, label, assignee and project repeat; every other
+// filter may occur once.
 type FilterFlags struct {
-	Statuses      []string `boa:"ignore"`
+	Statuses      []string `long:"status" collection:"array" optional:"true" help:"select this status; repeatable (open, in_progress, closed)"`
 	IncludeClosed bool     `long:"include-closed" optional:"true" help:"widen the status set to include closed issues"`
-	Types         []string `boa:"ignore"`
+	Types         []string `long:"type" collection:"array" optional:"true" help:"select this type; repeatable (epic, feature, bug, task, chore)"`
 	Priorities    []int    `long:"priority" optional:"true" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`
 	PriorityMax   *int     `long:"priority-max" help:"select issues at least this urgent, inclusive (0 highest)"`
-	Labels        []string `boa:"ignore"`
-	Assignees     []string `boa:"ignore"`
+	Labels        []string `long:"label" collection:"array" optional:"true" help:"select this label; repeatable"`
+	Assignees     []string `long:"assignee" collection:"array" optional:"true" help:"select this assignee; repeatable"`
 	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
 	Unassigned    bool     `long:"unassigned" optional:"true" help:"select unassigned issues"`
-	Projects      []string `boa:"ignore"`
+	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this project; repeatable"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
 	Sort          string   `long:"sort" optional:"true"`
@@ -42,34 +42,19 @@ type filterOptions struct {
 	relevance bool
 }
 
-func (f *FilterFlags) registerArrays(cmd *cobra.Command, opts filterOptions) {
-	flags := cmd.Flags()
-
-	if opts.status {
-		flags.StringArrayVar(&f.Statuses, "status", nil,
-			"select this status; repeatable (open, in_progress, closed)")
-	}
-	flags.StringArrayVar(&f.Types, "type", nil,
-		"select this type; repeatable (epic, feature, bug, task, chore)")
-	flags.StringArrayVar(&f.Labels, "label", nil, "select this label; repeatable")
-	if opts.assignee {
-		flags.StringArrayVar(&f.Assignees, "assignee", nil, "select this assignee; repeatable")
-	}
-	flags.StringArrayVar(&f.Projects, "project", nil, "select this project; repeatable")
-}
-
 func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.Command) error {
-	return func(ctx *boa.HookContext, f *FilterFlags, cmd *cobra.Command) error {
-		f.registerArrays(cmd, opts)
+	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
 		sortHelp := "priority, created, updated or id, optionally prefixed with \"-\""
 		if opts.relevance {
 			sortHelp = "relevance, priority, created, updated or id, optionally prefixed with \"-\""
 		}
 		boa.GetParamT(ctx, &f.Sort).SetDescription(sortHelp)
 		if !opts.status {
+			boa.GetParamT(ctx, &f.Statuses).SetIgnored(true)
 			boa.GetParamT(ctx, &f.IncludeClosed).SetIgnored(true)
 		}
 		if !opts.assignee {
+			boa.GetParamT(ctx, &f.Assignees).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Mine).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
 		}

@@ -70,13 +70,13 @@ type createParams struct {
 	Title          string   `positional:"true" required:"true"`
 	Type           string   `long:"type" default:"task" optional:"true" help:"epic, feature, bug, task or chore"`
 	Priority       int      `long:"priority" default:"2" optional:"true" help:"0 (highest) to 4 (lowest)"`
-	Labels         []string `boa:"ignore"`
+	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignee       string   `long:"assignee" optional:"true" help:"create and claim in one step"`
 	Project        string   `long:"project" optional:"true" help:"the project to create the issue in"`
 	HasParent      string   `long:"has-parent" optional:"true" help:"the new issue is part of decomposing this one"`
-	BlockedBy      []string `boa:"ignore"`
-	DiscoveredFrom []string `boa:"ignore"`
-	Related        []string `boa:"ignore"`
+	BlockedBy      []string `long:"blocked-by" collection:"array" optional:"true" help:"the new issue cannot start until this one is closed; repeatable"`
+	DiscoveredFrom []string `long:"discovered-from" collection:"array" optional:"true" help:"the new issue was found while working on this one; repeatable"`
+	Related        []string `long:"related" collection:"array" optional:"true" help:"loose association; repeatable"`
 }
 
 func newCreateCommand(e *env) *cobra.Command {
@@ -94,12 +94,6 @@ func newCreateCommand(e *env) *cobra.Command {
 			if err := describe("issue")(ctx, &p.DescriptionFlags, cmd); err != nil {
 				return err
 			}
-			cmd.Flags().StringArrayVar(&p.Labels, "label", nil, "add this label; repeatable")
-			cmd.Flags().StringArrayVar(&p.BlockedBy, "blocked-by", nil,
-				"the new issue cannot start until this one is closed; repeatable")
-			cmd.Flags().StringArrayVar(&p.DiscoveredFrom, "discovered-from", nil,
-				"the new issue was found while working on this one; repeatable")
-			cmd.Flags().StringArrayVar(&p.Related, "related", nil, "loose association; repeatable")
 			return nil
 		},
 		RunFuncE: func(p *createParams, cmd *cobra.Command, _ []string) error {

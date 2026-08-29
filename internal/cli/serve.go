@@ -157,7 +157,7 @@ type serveParams struct {
 	Port           int      `long:"port" default:"7777" optional:"true" help:"port to listen on"`
 	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
-	CORSOrigins    []string `boa:"ignore"`
+	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the single identity an unauthenticated server attributes every request to"`
 	BasicAuthFile  *string  `long:"basic-auth-file" help:"htpasswd file of username:bcrypt-hash entries"`
 	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
@@ -187,11 +187,6 @@ func newServeCommand(e *env) *cobra.Command {
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
 			"tells browsers to keep using TLS.",
 		ParamEnrich: boaParams,
-		InitFunc: func(p *serveParams, cmd *cobra.Command) error {
-			cmd.Flags().StringArrayVar(&p.CORSOrigins, "cors-origin", nil,
-				"allow this exact browser origin to call the API; repeatable")
-			return nil
-		},
 		RunFuncE: func(p *serveParams, cmd *cobra.Command, _ []string) error {
 			opts := p.options()
 			// What the flags say is checked before anything is opened, so a

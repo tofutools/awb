@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/GiGurra/boa v1.0.28
+	github.com/GiGurra/boa v1.0.30
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/go-faster/errors v0.8.0

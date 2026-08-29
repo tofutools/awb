@@ -186,6 +186,15 @@ func TestEmptyListings(t *testing.T) {
 	assert.Equal(t, "[]\n", h.mustRun("ready", "--json"))
 }
 
+func TestPersistentFlagsWorkBeforeAndAfterSubcommands(t *testing.T) {
+	h := newHarness(t)
+
+	assert.Equal(t,
+		h.mustRun("project", "list", "--compact"),
+		h.mustRun("--compact", "project", "list"),
+	)
+}
+
 // Two invocations against unchanged data produce byte-identical output.
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
