@@ -228,7 +228,7 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 }
 
 // The Basic scheme is declared and applied, and declared optional because a
-// server started without --basic-auth-file accepts requests carrying none.
+// server whose database holds no user accepts requests carrying none.
 func TestSecurityIsDeclaredAndOptional(t *testing.T) {
 	doc := document(t)
 
