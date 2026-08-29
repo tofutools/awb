@@ -188,6 +188,48 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	assert.Equal(t, 1, awberr.ExitCode(err))
 }
 
+// Dynamic completion goes through the selected backend with its credentials,
+// including search terms that the remote facet endpoints apply.
+func TestRemoteCompletionUsesAuthenticatedSearchFacets(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	for _, key := range []string{"awb", "hidden"} {
+		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		require.NoError(t, err)
+	}
+	_, err := be.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Parser failure", Labels: []string{"parser"},
+	})
+	require.NoError(t, err)
+	_, err = be.CreateIssue(ctx, backend.IssueCreate{
+		Project: "hidden", Title: "Parser elsewhere", Labels: []string{"secret"},
+	})
+	require.NoError(t, err)
+	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.SetMember(ctx, "awb", "bob", domain.AccessRegular)
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_USER", "bob")
+	t.Setenv("AWB_PASSWORD", "hunter2")
+	t.Setenv("AWB_IDENTITY", "bob")
+	t.Setenv("AWB_CONFIG_FILE", "")
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	code := Execute(ctx, "test", openapi.New(raw),
+		[]string{"__complete", "--no-context", "search", "Parser", "--label", ""},
+		&stdout, &stderr, strings.NewReader(""))
+	require.Equal(t, 0, code, stderr.String())
+	assert.Equal(t, "parser\n:0\n", stdout.String())
+}
+
 // The whole user and membership surface goes over the wire and behaves as it
 // does on a file, which is what one interface with two implementations buys.
 func TestRemoteModeManagesUsers(t *testing.T) {

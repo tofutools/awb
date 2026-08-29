@@ -50,10 +50,13 @@ func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
 		boa.GetParamT(ctx, &f.Projects).SetAlternativesFunc(e.completeProjects)
 		boa.GetParamT(ctx, &f.Labels).SetAlternativesFunc(
-			func(cmd *cobra.Command, _ []string, _ string) []string {
+			func(cmd *cobra.Command, args []string, _ string) []string {
 				e.prepareCompletion(cmd)
 				filter, err := f.build(e, cmd, opts)
 				if err != nil {
+					return nil
+				}
+				if err := addSearchTerms(filter, args, opts.relevance); err != nil {
 					return nil
 				}
 				if fix != nil {
@@ -84,10 +87,13 @@ func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
 		} else {
 			boa.GetParamT(ctx, &f.Assignees).SetAlternativesFunc(
-				func(cmd *cobra.Command, _ []string, _ string) []string {
+				func(cmd *cobra.Command, args []string, _ string) []string {
 					e.prepareCompletion(cmd)
 					filter, err := f.build(e, cmd, opts)
 					if err != nil {
+						return nil
+					}
+					if err := addSearchTerms(filter, args, opts.relevance); err != nil {
 						return nil
 					}
 					if fix != nil {
@@ -105,6 +111,20 @@ func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 		}
 		return nil
 	}
+}
+
+func addSearchTerms(filter *domain.Filter, terms []string, search bool) error {
+	if !search {
+		return nil
+	}
+	for _, term := range terms {
+		valid, err := domain.ValidateSearchTerm(term)
+		if err != nil {
+			return err
+		}
+		filter.Terms = append(filter.Terms, valid)
+	}
+	return nil
 }
 
 // filterPostCreate adds search's two extra sort values after Boa has read the

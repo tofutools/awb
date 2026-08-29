@@ -149,6 +149,7 @@ func TestDataBackedFilterCompletions(t *testing.T) {
 	h.create("Backend task", "--project", "awb", "--label", "backend", "--assignee", "alice")
 	h.create("Backend bug", "--project", "awb", "--type", "bug", "--label", "crash", "--assignee", "carol")
 	h.create("Ready task", "--project", "awb", "--label", "ready")
+	h.create("Parser failure", "--project", "awb", "--label", "parser")
 	h.create("Frontend task", "--project", "web", "--label", "frontend", "--assignee", "bob")
 
 	complete := func(args ...string) []string {
@@ -162,17 +163,18 @@ func TestDataBackedFilterCompletions(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{"awb", "web"}, complete("list", "--project"))
-	assert.Equal(t, []string{"backend", "crash", "ready"},
+	assert.Equal(t, []string{"backend", "crash", "parser", "ready"},
 		complete("list", "--project", "awb", "--label"))
 	assert.Equal(t, []string{"crash"},
 		complete("list", "--project", "awb", "--type", "bug", "--label"))
 	assert.Equal(t, []string{"bob"},
 		complete("list", "--project", "web", "--assignee"))
-	assert.Equal(t, []string{"ready"},
+	assert.Equal(t, []string{"parser", "ready"},
 		complete("ready", "--project", "awb", "--label"))
+	assert.Equal(t, []string{"parser"}, complete("search", "Parser", "--label"))
 	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
-	assert.Equal(t, []string{"backend", "crash", "ready"}, complete("list", "--label"))
-	assert.Equal(t, []string{"backend", "crash", "frontend", "ready"},
+	assert.Equal(t, []string{"backend", "crash", "parser", "ready"}, complete("list", "--label"))
+	assert.Equal(t, []string{"backend", "crash", "frontend", "parser", "ready"},
 		complete("--no-context", "list", "--label"))
 
 	otherDB := filepath.Join(h.root(), "other.db")

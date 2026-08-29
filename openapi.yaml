@@ -811,6 +811,14 @@ paths:
         them, so `count` is the same whatever page it appears on. `sort` is not
         accepted: the row order is fixed at value ascending.
       parameters:
+        - name: q
+          in: query
+          description: One literal full-text search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
         - $ref: '#/components/parameters/type'
@@ -836,6 +844,14 @@ paths:
         As `GET /api/labels`. There is no row for the empty assignee:
         unassigned is a filter, not a value.
       parameters:
+        - name: q
+          in: query
+          description: One literal full-text search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
         - $ref: '#/components/parameters/type'

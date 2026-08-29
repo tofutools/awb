@@ -705,8 +705,8 @@ func TestFacets(t *testing.T) {
 		}))
 	}
 
-	a := add("a")
-	b := add("b")
+	a := add("Parser failure")
+	b := add("Unrelated work")
 	closed := add("c")
 	label(a, "parser", "frontend")
 	label(b, "parser")
@@ -729,6 +729,14 @@ func TestFacets(t *testing.T) {
 		{Value: "frontend", Count: 1},
 		{Value: "parser", Count: 1},
 	}, narrowed)
+
+	searched := read(t, db, func(tx *storage.Tx) ([]domain.Facet, error) {
+		return tx.LabelFacets(&domain.Filter{Terms: []string{"Parser"}})
+	})
+	assert.Equal(t, []domain.Facet{
+		{Value: "frontend", Count: 1},
+		{Value: "parser", Count: 1},
+	}, searched)
 }
 
 func TestAssigneeFacetsHaveNoEmptyRow(t *testing.T) {

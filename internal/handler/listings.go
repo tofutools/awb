@@ -237,6 +237,7 @@ func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
 func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
+		terms:         params.Q,
 		statuses:      params.Status,
 		includeClosed: params.IncludeClosed.Or(false),
 		types:         params.Type,
@@ -259,6 +260,7 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
+		terms:         params.Q,
 		statuses:      params.Status,
 		includeClosed: params.IncludeClosed.Or(false),
 		types:         params.Type,

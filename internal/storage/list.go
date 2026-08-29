@@ -231,7 +231,7 @@ func (t *Tx) queryIssues(query string, args []any) ([]domain.Issue, error) {
 // with a count of zero is not listed at all: "in use" means in use under the
 // filters in force.
 func (t *Tx) LabelFacets(f *domain.Filter) ([]domain.Facet, error) {
-	c := t.selection(f)
+	c := t.facetSelection(f)
 	return t.scanFacets(`
 		SELECT l.label, count(*)
 		  FROM issue_labels l
@@ -244,7 +244,7 @@ func (t *Tx) LabelFacets(f *domain.Filter) ([]domain.Facet, error) {
 // AssigneeFacets is LabelFacets for assignees. There is no row for the empty
 // assignee: unassigned is a filter, not a value.
 func (t *Tx) AssigneeFacets(f *domain.Filter) ([]domain.Facet, error) {
-	c := t.selection(f)
+	c := t.facetSelection(f)
 	c.add("i.assignee <> ''")
 	return t.scanFacets(`
 		SELECT i.assignee, count(*)
@@ -252,6 +252,19 @@ func (t *Tx) AssigneeFacets(f *domain.Filter) ([]domain.Facet, error) {
 		 WHERE `+c.where()+`
 		 GROUP BY i.assignee
 		 ORDER BY i.assignee ASC`, c.args)
+}
+
+// facetSelection is the selection shared by the two facet queries, including
+// the full-text constraint search adds on top of the ordinary issue filters.
+func (t *Tx) facetSelection(f *domain.Filter) *conditions {
+	c := t.selection(f)
+	if len(f.Terms) > 0 {
+		c.clauses = append([]string{
+			`i.rowid IN (SELECT rowid FROM issues_fts WHERE issues_fts MATCH ?)`,
+		}, c.clauses...)
+		c.args = append([]any{ftsQuery(f.Terms)}, c.args...)
+	}
+	return c
 }
 
 // page applies limit and offset to already-ordered facet rows. The parameters

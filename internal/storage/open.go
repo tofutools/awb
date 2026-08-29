@@ -52,6 +52,37 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	return openExisting(ctx, path, false)
 }
 
+// OpenCurrent opens an existing database read-only and only when its schema is
+// already current. It is for advisory reads such as shell completion, which
+// must not apply migrations merely because somebody pressed Tab.
+func OpenCurrent(ctx context.Context, path string) (*DB, error) {
+	empty, err := isEmptyFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if empty {
+		return nil, awberr.Runtimef("no awb database at %s", path)
+	}
+	db, err := sql.Open("sqlite", readOnlyDSN(path))
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "open %s", path)
+	}
+	if err := checkStamp(ctx, db, path, false); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	version, err := readInt32Pragma(ctx, db, "user_version")
+	if err != nil {
+		_ = db.Close()
+		return nil, awberr.Wrap(awberr.Runtime, err, "read %s", path)
+	}
+	if version != int32(len(migrations)) {
+		_ = db.Close()
+		return nil, awberr.Runtimef("%s schema is not current", path)
+	}
+	return &DB{db: db, path: path}, nil
+}
+
 // Init creates the database if it is absent, together with any missing parent
 // directory, and brings its schema up to date. It is the only command that
 // creates one, and it is idempotent.
@@ -92,6 +123,11 @@ func openExisting(ctx context.Context, path string, adopt bool) (*DB, error) {
 // journalling is a property of the file and is set by the first migration.
 func dsn(path string) string {
 	return fmt.Sprintf("%s?_pragma=foreign_keys=on&_pragma=busy_timeout=%d", path, busyTimeoutMS)
+}
+
+func readOnlyDSN(path string) string {
+	return fmt.Sprintf("file:%s?mode=ro&_pragma=foreign_keys=on&_pragma=busy_timeout=%d",
+		path, busyTimeoutMS)
 }
 
 // checkStamp applies the file-identity rule.

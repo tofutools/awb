@@ -17,6 +17,7 @@ const completionTimeout = 2 * time.Second
 // for Cobra's hidden completion command, while a child parameter's dynamic
 // alternatives function does.
 func (e *env) prepareCompletion(cmd *cobra.Command) {
+	e.completion = true
 	if e.cfg != nil {
 		return
 	}
