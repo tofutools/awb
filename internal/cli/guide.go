@@ -64,7 +64,9 @@ The title is a JSON string, so split on whitespace outside it. ` + "`--json`" + 
 stable full representation. The default table is for humans; do not parse it.
 
 **Exit codes:** ` + "`0`" + ` ok, ` + "`1`" + ` runtime error, ` + "`2`" + ` usage error, ` + "`3`" + ` not found,
-` + "`4`" + ` constraint violation (a cycle, a duplicate, or an issue somebody else holds).
+` + "`4`" + ` constraint violation (a cycle, a duplicate, or an issue somebody else holds),
+` + "`5`" + ` forbidden (against a server: your account may see it but may not do that;
+a project you have no access to is ` + "`3`" + `, since it is not yours to know about).
 
 An issue ID is ` + "`<project>-<hash>`" + `; any unambiguous prefix, or a bare hash, works.
 `

@@ -205,6 +205,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			newInitCommand(e),
 			newAgentGuideCommand(e),
 			newProjectCommand(e),
+			newUserCommand(e),
 			newCreateCommand(e),
 			newShowCommand(e),
 			newListCommand(e),

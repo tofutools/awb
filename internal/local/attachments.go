@@ -40,7 +40,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	// only place the answer is good at the moment it is used. The name is not
 	// checked here at all — whether it is taken is exactly the kind of question
 	// that has to be asked inside the write lock.
-	if err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	if err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		_, err := resolve(tx, issueRef)
 		return err
 	}); err != nil {
@@ -70,7 +70,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 		Size:        staged.Size,
 		Sha256:      staged.Sha256,
 	}
-	err = b.write(ctx, func(tx *storage.Tx) error {
+	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		issueID, err := resolve(tx, issueRef)
 		if err != nil {
 			return err
@@ -100,7 +100,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 func (b *Backend) GetAttachment(ctx context.Context, issueRef, name string) (
 	*domain.Attachment, error) {
 	var attachment *domain.Attachment
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
 		attachment, err = loadAttachment(tx, issueRef, name)
 		return err
@@ -115,7 +115,7 @@ func (b *Backend) GetAttachment(ctx context.Context, issueRef, name string) (
 func (b *Backend) ListAttachments(ctx context.Context, issueRef string,
 	limit, offset *int) (backend.AttachmentPage, error) {
 	var page backend.AttachmentPage
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		issueID, err := resolve(tx, issueRef)
 		if err != nil {
 			return err
@@ -149,7 +149,7 @@ func (b *Backend) OpenAttachment(ctx context.Context, issueRef, name string) (
 func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 	*domain.Attachment, error) {
 	var deleted *domain.Attachment
-	err := b.write(ctx, func(tx *storage.Tx) error {
+	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		attachment, err := loadAttachment(tx, issueRef, name)
 		if err != nil {
 			return err
@@ -209,7 +209,12 @@ func (b *Backend) sweep(ctx context.Context, digests []string) {
 	if len(digests) == 0 {
 		return
 	}
-	_ = b.write(ctx, func(tx *storage.Tx) error {
+	// Deliberately the raw transaction rather than this backend's own write:
+	// the rows this reads are addressed by digest and belong to no project, and
+	// the delete that led here has already been permitted and committed. Asking
+	// again as the caller would only give the sweep a way to fail — leaving a
+	// file behind — because an account was removed between the two.
+	_ = b.db.Write(ctx, func(tx *storage.Tx) error {
 		for _, sum := range digests {
 			unreferenced, err := tx.DigestIsUnreferenced(sum)
 			if err != nil {

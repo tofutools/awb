@@ -35,14 +35,18 @@ func bumpedTimestamp(stored, now string) string {
 }
 
 // GetProject reads one project, with its derived active-issue count.
+//
+// A project outside the transaction's scope is not found rather than refused,
+// because a caller who is not a member of it is not being told that it exists.
 func (t *Tx) GetProject(key string) (*domain.Project, error) {
+	visible, args := t.visibleClause("p.key")
 	var p domain.Project
 	err := t.q.QueryRowContext(t.ctx, `
 		SELECT p.key, p.name, p.description, p.created_at, p.updated_at,
 		       (SELECT count(*) FROM issues i
 		         WHERE i.project = p.key AND i.status <> 'closed')
 		  FROM projects p
-		 WHERE p.key = ?`, key,
+		 WHERE p.key = ? AND `+visible, append([]any{key}, args...)...,
 	).Scan(&p.Key, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such project: %s", key)
@@ -53,10 +57,14 @@ func (t *Tx) GetProject(key string) (*domain.Project, error) {
 	return &p, nil
 }
 
-// ProjectExists reports whether a project with this key is stored.
+// ProjectExists reports whether a project with this key is stored and visible
+// to the caller.
 func (t *Tx) ProjectExists(key string) (bool, error) {
+	visible, args := t.visibleClause("key")
 	var one int
-	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM projects WHERE key = ?`, key).Scan(&one)
+	err := t.q.QueryRowContext(t.ctx,
+		`SELECT 1 FROM projects WHERE key = ? AND `+visible,
+		append([]any{key}, args...)...).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -70,7 +78,9 @@ func (t *Tx) ProjectExists(key string) (bool, error) {
 // makes the corresponding endpoint pageable. limit and offset page the result;
 // total is the unpaged count.
 func (t *Tx) ListProjects(limit, offset *int) (projects []domain.Project, total int, err error) {
-	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM projects`).Scan(&total); err != nil {
+	visible, args := t.visibleClause("p.key")
+	if err := t.q.QueryRowContext(t.ctx,
+		`SELECT count(*) FROM projects p WHERE `+visible, args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count projects")
 	}
 
@@ -79,9 +89,10 @@ func (t *Tx) ListProjects(limit, offset *int) (projects []domain.Project, total 
 		       (SELECT count(*) FROM issues i
 		         WHERE i.project = p.key AND i.status <> 'closed')
 		  FROM projects p
+		 WHERE ` + visible + `
 		 ORDER BY p.key ASC` + limitOffsetClause(limit, offset)
 
-	rows, err := t.q.QueryContext(t.ctx, query)
+	rows, err := t.q.QueryContext(t.ctx, query, args...)
 	if err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list projects")
 	}

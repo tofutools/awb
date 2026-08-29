@@ -38,9 +38,16 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
+// getIssueRow reads the stored half of one issue by its exact ID.
+//
+// An issue in a project outside the transaction's scope is not found rather
+// than refused, exactly as such a project itself is: a caller who is not a
+// member is not told that the issue exists.
 func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
+	visible, args := t.visibleClause("project")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
-		`SELECT `+issueColumns+` FROM issues WHERE id = ?`, id))
+		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
+		append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such issue: %s", id)
 	}
@@ -57,7 +64,14 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 // than one issue is a usage error (exit 2, 400) rather than a guess.
 // Uniqueness of a bare hash is a property of the data at that moment, not a
 // guarantee.
+//
+// The scope applies here too, and it has to: an issue the caller may not see
+// must not be reachable by any spelling of its reference, and a prefix must
+// not be reported ambiguous because of one. So a hash matching one visible and
+// one invisible issue resolves, and uniqueness is uniqueness among what the
+// caller can see.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
+	visible, scopeArgs := t.visibleClause("project")
 	var (
 		rows *sql.Rows
 		err  error
@@ -66,12 +80,13 @@ func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
 		// A bare hash matches on the hash part of any ID, in any project.
 		rows, err = t.q.QueryContext(t.ctx,
 			`SELECT id FROM issues
-			  WHERE substr(id, length(project) + 2) LIKE ? || '%'
-			  ORDER BY id LIMIT 2`, ref.Hash)
+			  WHERE substr(id, length(project) + 2) LIKE ? || '%' AND `+visible+`
+			  ORDER BY id LIMIT 2`, append([]any{ref.Hash}, scopeArgs...)...)
 	} else {
 		rows, err = t.q.QueryContext(t.ctx,
-			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%'
-			  ORDER BY id LIMIT 2`, ref.Project, ref.Project+"-"+ref.Hash)
+			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%' AND `+visible+`
+			  ORDER BY id LIMIT 2`,
+			append([]any{ref.Project, ref.Project + "-" + ref.Hash}, scopeArgs...)...)
 	}
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "resolve issue %s", ref.Raw)

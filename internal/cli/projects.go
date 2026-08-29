@@ -26,6 +26,9 @@ func newProjectCommand(e *env) *cobra.Command {
 		newProjectShowCommand(e),
 		newProjectListCommand(e),
 		newProjectDeleteCommand(e),
+		newProjectGrantCommand(e),
+		newProjectRevokeCommand(e),
+		newProjectMembersCommand(e),
 	)
 }
 

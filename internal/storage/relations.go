@@ -90,6 +90,12 @@ func (t *Tx) DeleteRelation(subject string, relType domain.RelationType, other s
 // would close a cycle.
 //
 // Each relation type is a graph of its own and is walked separately.
+//
+// This and the four walks below are deliberately unscoped, as is
+// BlockedByEdges. They answer the graph rules, and a rule answered over half a
+// graph is not the rule: a caller who cannot see part of a cycle could
+// otherwise close one. What follows is that a relation can be refused on
+// account of an edge the caller cannot see, which the API document states.
 func (t *Tx) Reaches(relType domain.RelationType, from, to string) (bool, error) {
 	var one int
 	err := t.q.QueryRowContext(t.ctx, `
@@ -208,12 +214,19 @@ func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 
 // Children returns the direct children of an issue, ordered as siblings are
 // ordered everywhere: priority ascending, then created_at, then id.
+//
+// The walk crosses project boundaries, so the scope applies: a child in a
+// project the caller is not a member of is not listed, and neither is the
+// subtree below it. A tree is therefore what the caller can see of a
+// decomposition, not a claim that it is the whole of one.
 func (t *Tx) Children(id string) ([]*domain.Issue, error) {
+	visible, scopeArgs := t.visibleClause("project")
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT `+issueColumns+`
 		  FROM issues
 		 WHERE id IN (SELECT subject FROM relations WHERE type = 'has-parent' AND other = ?)
-		 ORDER BY priority ASC, created_at ASC, id ASC`, id)
+		   AND `+visible+`
+		 ORDER BY priority ASC, created_at ASC, id ASC`, append([]any{id}, scopeArgs...)...)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read children of %s", id)
 	}

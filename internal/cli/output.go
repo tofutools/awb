@@ -187,6 +187,7 @@ const (
 	blockersFloor = 13
 	nameFloor     = 12
 	typeFloor     = 12
+	adminFloor    = 8
 )
 
 // always paints every row of a column the same.
@@ -667,6 +668,152 @@ func (e *env) printProjectDetail(project *domain.Project) {
 	e.field(t, "Updated", project.UpdatedAt)
 
 	e.writeDescription(t, project.Description)
+}
+
+// printUsers renders a user listing. Under --compact each line is the compact
+// user line.
+func (e *env) printUsers(users []domain.User) error {
+	switch {
+	case e.json:
+		if users == nil {
+			users = []domain.User{}
+		}
+		return e.writeJSON(users)
+	case e.compact:
+		for i := range users {
+			_, _ = fmt.Fprintln(e.stdout, domain.CompactUserLine(&users[i]))
+		}
+		return nil
+	default:
+		if len(users) == 0 {
+			return nil
+		}
+		t := e.theme()
+		names := make([]string, len(users))
+		flags := make([]string, len(users))
+		projects := make([]string, len(users))
+		for i := range users {
+			names[i] = users[i].Name
+			flags[i] = adminFlags(&users[i])
+			projects[i] = memberships(&users[i])
+		}
+		e.writeListing(t, []col{
+			{header: "NAME", cells: names, paint: always(t.id)},
+			{header: "ADMIN", cells: flags, floor: adminFloor},
+			{header: "PROJECTS", cells: projects, floor: labelsFloor},
+		})
+		return nil
+	}
+}
+
+// adminFlags is the two flags as one cell, and "-" when neither is set, so the
+// column never reads as a blank that might be a missing value.
+func adminFlags(user *domain.User) string {
+	switch {
+	case user.ProjectAdmin && user.UserAdmin:
+		return "projects, users"
+	case user.ProjectAdmin:
+		return "projects"
+	case user.UserAdmin:
+		return "users"
+	default:
+		return "-"
+	}
+}
+
+// memberships is a user's projects as one cell, each with its access level.
+func memberships(user *domain.User) string {
+	parts := make([]string, len(user.Projects))
+	for i, m := range user.Projects {
+		parts[i] = m.Project + ":" + string(m.Access)
+	}
+	return strings.Join(parts, " ")
+}
+
+// printUser renders one user.
+//
+// Under --compact it prints the same single line a user listing would; --json
+// is what a script reads. Neither carries a password: nothing that leaves the
+// storage layer does.
+func (e *env) printUser(user *domain.User) error {
+	switch {
+	case e.json:
+		return e.writeJSON(user)
+	case e.compact:
+		_, _ = fmt.Fprintln(e.stdout, domain.CompactUserLine(user))
+		return nil
+	default:
+		t := e.theme()
+		e.writeHeading(t, user.Name, adminTitle(user))
+		e.field(t, "Created", user.CreatedAt)
+		e.field(t, "Updated", user.UpdatedAt)
+		e.field(t, "Projects", memberships(user))
+		return nil
+	}
+}
+
+// adminTitle is what the two flags make somebody, in words, and never empty:
+// an account holding neither is a user, which is a thing to be.
+func adminTitle(user *domain.User) string {
+	switch {
+	case user.ProjectAdmin && user.UserAdmin:
+		return "project and user administrator"
+	case user.ProjectAdmin:
+		return "project administrator"
+	case user.UserAdmin:
+		return "user administrator"
+	default:
+		return "user"
+	}
+}
+
+// printMemberships renders a project's member listing.
+func (e *env) printMemberships(members []domain.Membership) error {
+	switch {
+	case e.json:
+		if members == nil {
+			members = []domain.Membership{}
+		}
+		return e.writeJSON(members)
+	case e.compact:
+		for i := range members {
+			_, _ = fmt.Fprintln(e.stdout, domain.CompactMembershipLine(&members[i]))
+		}
+		return nil
+	default:
+		if len(members) == 0 {
+			return nil
+		}
+		t := e.theme()
+		users := make([]string, len(members))
+		access := make([]string, len(members))
+		for i, m := range members {
+			users[i] = m.User
+			access[i] = string(m.Access)
+		}
+		e.writeListing(t, []col{
+			{header: "USER", cells: users, paint: always(t.id)},
+			{header: "ACCESS", cells: access},
+		})
+		return nil
+	}
+}
+
+// mutatedUser is what the commands that change a user print.
+func (e *env) mutatedUser(user *domain.User) error {
+	if e.json {
+		return e.writeJSON(user)
+	}
+	return e.printUser(user)
+}
+
+// mutatedMembership is what grant and revoke print.
+func (e *env) mutatedMembership(membership *domain.Membership) error {
+	if e.json {
+		return e.writeJSON(membership)
+	}
+	_, _ = fmt.Fprintln(e.stdout, domain.CompactMembershipLine(membership))
+	return e.stdout.Err()
 }
 
 // printTree renders a dependency tree.

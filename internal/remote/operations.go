@@ -315,7 +315,9 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 	return &project, nil
 }
 
-func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend.ProjectPage, error) {
+// pageQuery renders the two paging parameters, omitting each that was not
+// given: there is no default limit, so an omitted one returns every row.
+func pageQuery(limit, offset *int) url.Values {
 	query := url.Values{}
 	if limit != nil {
 		query.Set("limit", strconv.Itoa(*limit))
@@ -323,9 +325,13 @@ func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend
 	if offset != nil {
 		query.Set("offset", strconv.Itoa(*offset))
 	}
+	return query
+}
 
+func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend.ProjectPage, error) {
 	projects := []domain.Project{}
-	header, err := b.call(ctx, http.MethodGet, b.endpoint("/api/projects", query), nil, "", &projects)
+	header, err := b.call(ctx, http.MethodGet,
+		b.endpoint("/api/projects", pageQuery(limit, offset)), nil, "", &projects)
 	if err != nil {
 		return backend.ProjectPage{}, err
 	}

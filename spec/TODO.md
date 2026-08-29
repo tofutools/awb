@@ -16,14 +16,10 @@ These are loose ends in what has shipped, not new scope.
 
 ## Version 2 — multi-user and multi-machine
 
-Nothing here is designed, and version 1 deliberately carries none of it rather
-than half of it.
-
-* **Authorization.** Per-user permissions, ownership, and anything else that
-  would let two authenticated users differ in what they may do. Version 1 has
-  authentication and deliberately stops there. This is the piece that makes a
-  shared instance meaningful, and it is the one to design first, because the
-  rest depends on what it decides.
+Authorization is done: users are rows with their password hashes, membership of
+a project is what a user may work in and all they can see, and two flags stand
+outside the projects for managing projects and managing users. What is left is
+below.
 
 * **A shared instance**, for a team or an open source project, rather than a
   local surface that happens to speak HTTP. That is a deployment and operations

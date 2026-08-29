@@ -158,8 +158,7 @@ type serveParams struct {
 	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
-	Identity       *string  `long:"identity" help:"the single identity an unauthenticated server attributes every request to"`
-	BasicAuthFile  *string  `long:"basic-auth-file" help:"htpasswd file of username:bcrypt-hash entries"`
+	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
 	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
 }
 
@@ -176,12 +175,13 @@ func newServeCommand(e *env) *cobra.Command {
 		Short: "Serve the HTTP API and the bundled read-only web UI",
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
 			"reach it: third-party user interfaces, dashboards and integrations.\n\n" +
-			"There is authentication but no authorization: every user the server knows\n" +
-			"may do everything every other one may, and credentials serve only to say\n" +
-			"who is calling.\n\n" +
-			"Without --basic-auth-file there is no authentication and any client that can\n" +
-			"reach the port has full read and write access, which is why the default\n" +
-			"binds loopback.\n\n" +
+			"Authentication and authorization come from the database. A database that\n" +
+			"holds at least one user — see awb user — asks every request for a username\n" +
+			"and password and answers it with that user's permissions. One that holds no\n" +
+			"user at all authenticates nobody, and any client that can reach the port has\n" +
+			"full read and write access, which is why the default binds loopback.\n\n" +
+			"Which of the two it is, is decided per request rather than at startup, so\n" +
+			"adding the first user closes the door without a restart.\n\n" +
 			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
@@ -195,8 +195,8 @@ func newServeCommand(e *env) *cobra.Command {
 			if err := opts.validate(); err != nil {
 				return err
 			}
-			if p.Identity != nil && p.BasicAuthFile != nil {
-				return awberr.Usagef("--identity and --basic-auth-file are mutually exclusive")
+			if err := checkIdentityFlag(p.Identity); err != nil {
+				return err
 			}
 
 			cfg, err := e.requireLocal("serve")
@@ -210,76 +210,87 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			defer db.Close() //nolint:errcheck // closing on the way out
 
-			basicAuthFile := ""
-			if p.BasicAuthFile != nil {
-				basicAuthFile = *p.BasicAuthFile
-			}
-			htpasswd, err := loadHtpasswd(basicAuthFile)
-			if err != nil {
-				return err
-			}
-
-			fixedIdentity := ""
-			if htpasswd == nil {
-				identity := ""
-				if p.Identity != nil {
-					identity = *p.Identity
-				}
-				if fixedIdentity, err = resolveServerIdentity(cmd, cfg, identity); err != nil {
+			// The fixed identity is what an unauthenticated request is
+			// attributed to, and is therefore only required while the database
+			// holds no user. Whether it does is asked here so the demand is
+			// made at startup rather than on the first request that needs one.
+			fixedIdentity, missing := resolveServerIdentity(cfg, p.Identity)
+			if missing != nil {
+				// Only a server that would answer an unauthenticated request
+				// needs one, so whether this is fatal is the database's answer.
+				// A server that authenticates every request never uses the
+				// value, and demanding one there would be asking the operator
+				// to name somebody who stands for nobody.
+				open, err := serverIsOpen(cmd.Context(), db)
+				if err != nil {
 					return err
 				}
+				if open {
+					return missing
+				}
 			}
 
+			// serve is the one command that runs until it is stopped rather
+			// than answering and exiting, so what it writes is a log and is
+			// stamped with the time. It goes to the writer Execute was handed
+			// rather than to the package-level logger's os.Stderr, so that
+			// redirecting the command's output still captures all of it.
+			logger := log.New(e.stderr, "", log.LstdFlags)
+
 			base := local.New(db, storage.NewBlobs(cfg.Attachments), fixedIdentity)
-			httpHandler, err := buildHandler(base, e.openAPI, htpasswd, opts)
+			httpHandler, err := buildHandler(base, e.openAPI,
+				&authenticator{db: db, realm: opts.basicAuthRealm}, opts, logger)
 			if err != nil {
 				return err
 			}
 
-			return runServer(cmd.Context(), e, opts, httpHandler)
+			return runServer(cmd.Context(), logger, opts, httpHandler)
 		},
 	}.ToCobra()
 }
 
-// loadHtpasswd reads the credentials file strictly.
-//
-// Every line is read strictly: serve fails, naming the file and the line, when
-// the file cannot be read, when it holds no entry at all, or when any line is
-// not a username:bcrypt-hash pair — an MD5, crypt or SHA-1 hash included. A
-// line skipped silently would be a login the operator believes in and the
-// server does not.
-//
-// Every username in it must be a valid assignee, because that is what it
-// becomes: one that is not fails serve the same way, refused rather than
-// folded.
-func loadHtpasswd(path string) (*auth.HtpasswdFile, error) {
-	if path == "" {
-		return nil, nil
-	}
-	file, err := auth.LoadHtpasswdStrict(path, func(username string) error {
-		_, err := domain.ValidateAssignee(username)
+// serverIsOpen reports whether the database holds no user, which is the case
+// in which an unauthenticated request can arrive and a fixed identity is
+// therefore needed.
+func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
+	open := false
+	err := db.Read(ctx, func(tx *storage.Tx) error {
+		any, err := tx.AnyUsers()
+		open = !any
 		return err
 	})
-	if err != nil {
-		return nil, awberr.Runtimef("%s", err.Error())
-	}
-	return file, nil
+	return open, err
 }
 
-// resolveServerIdentity resolves the single identity an unauthenticated server
-// attributes every request to, from the same sources and in the same order as
-// the CLI's own: --identity, else AWB_IDENTITY, else identity in the user
-// configuration file, else the OS username folded to the assignee set.
+// checkIdentityFlag applies the assignee vocabulary to an explicit --identity,
+// which is what a nil pointer distinguishes from one that was never given.
 //
-// An explicit --identity outside that set is a usage error rather than
-// something to fold, and a resolution that yields nothing at all fails rather
-// than starting a server whose every claim would fail.
-func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) (string, error) {
-	if cmd.Flags().Changed("identity") {
-		if _, err := domain.ValidateAssignee(flag); err != nil {
-			return "", awberr.Usagef("--identity: %s", err.Error())
-		}
-		return flag, nil
+// It is separate from resolving one, and unconditional, because the two
+// failures are different failures: a value the operator typed and got wrong is
+// a usage mistake whatever the database holds, while having no identity at all
+// only matters on a server that would answer an unauthenticated request.
+// Folding the first into the second would let "--identity Mikael" start a
+// server that quietly ignored it.
+func checkIdentityFlag(flag *string) error {
+	if flag == nil {
+		return nil
+	}
+	if _, err := domain.ValidateAssignee(*flag); err != nil {
+		return awberr.Usagef("--identity: %s", err.Error())
+	}
+	return nil
+}
+
+// resolveServerIdentity resolves the identity an unauthenticated request is
+// attributed to, from the same sources and in the same order as the CLI's own:
+// --identity, else AWB_IDENTITY, else identity in the user configuration file,
+// else the OS username folded to the assignee set.
+//
+// The error it returns says only that there is none. Whether that is fatal is
+// the caller's question, and the database's answer.
+func resolveServerIdentity(cfg *config.Config, flag *string) (string, error) {
+	if flag != nil {
+		return *flag, nil
 	}
 	if cfg.Identity == "" {
 		return "", awberr.Runtimef(
@@ -369,17 +380,20 @@ func basePathOf(publicURL *url.URL) (string, error) {
 }
 
 // buildHandler assembles the middleware chain, outermost first.
-func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *auth.HtpasswdFile,
-	opts serveOptions) (http.Handler, error) {
-	// Whichever of the two identity mechanisms is in force, the request has
-	// exactly one identity, so the surface below never has to handle its absence.
-	// The username arrives in the request context, which is what the generated
+func buildHandler(base *local.Backend, document *openapi.Document, credentials *authenticator,
+	opts serveOptions, logger *log.Logger) (http.Handler, error) {
+	// Whichever of the two mechanisms is in force, the request has exactly one
+	// identity, so the surface below never has to handle its absence. The
+	// username arrives in the request context, which is what the generated
 	// server passes on to the handler.
+	//
+	// An authenticated request is also an authorized one: it acts as that user
+	// and may do exactly what that user may. A request that authenticated
+	// nobody, on a database that holds no user, acts as the server's fixed
+	// identity with no authorization at all — which is what version 1 was.
 	backendFor := func(ctx context.Context) backend.Backend {
 		if username, ok := auth.UsernameFromContext(ctx); ok {
-			// What a caller states explicitly is still honoured; there being no
-			// authorization, one user may claim an issue for another.
-			return base.WithIdentity(username)
+			return base.WithUser(username)
 		}
 		return base
 	}
@@ -452,10 +466,11 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 	}
 	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, opts.corsOrigins...)...)(chain)
 
-	if htpasswd != nil {
-		// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
-		// behind it.
-		chain = htpasswd.Middleware(opts.basicAuthRealm)(chain)
+	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
+	// behind it. Whether it asks for anything is the database's answer, given
+	// per request; see authenticator.
+	if credentials != nil {
+		chain = credentials.Middleware(logger)(chain)
 	}
 
 	// Strict-Transport-Security only when a proxy terminates TLS: sent over
@@ -582,14 +597,7 @@ func contentSecurityPolicy() (string, error) {
 		"script-src 'self' " + importMapHash, nil
 }
 
-func runServer(ctx context.Context, e *env, opts serveOptions, h http.Handler) error {
-	// serve is the one command that runs until it is stopped rather than
-	// answering and exiting, so what it writes is a log and is stamped with the
-	// time. It goes to the writer Execute was handed rather than to the
-	// package-level logger's os.Stderr, so that redirecting the command's
-	// output still captures all of it.
-	logger := log.New(e.stderr, "", log.LstdFlags)
-
+func runServer(ctx context.Context, logger *log.Logger, opts serveOptions, h http.Handler) error {
 	addr := opts.listenAddr()
 	srv := &http.Server{
 		Addr:              addr,

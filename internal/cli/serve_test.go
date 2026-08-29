@@ -10,6 +10,7 @@ import (
 	"github.com/tofutools/awb/internal/remote"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -46,10 +46,13 @@ func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 
 func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 	t.Helper()
-	return newServeHandlerAuth(t, opts, nil)
+	h, _ := newServeHandlerOn(t, opts)
+	return h
 }
 
-func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.HtpasswdFile) http.Handler {
+// newServeHandlerOn builds the server and hands back the database behind it,
+// so a test can add the user that turns authentication on.
+func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Backend) {
 	t.Helper()
 	dir := t.TempDir()
 	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
@@ -59,24 +62,17 @@ func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.Htpassw
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael"),
-		openapi.New(raw), htpasswd, opts)
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	h, err := buildHandler(be, openapi.New(raw),
+		&authenticator{db: db, realm: opts.basicAuthRealm}, opts, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
-	return h
+	return h, be
 }
 
-// credentials is one htpasswd entry, mikael:hunter2 at the lowest bcrypt cost
-// there is, because these tests care that the file is read and not how long
-// hashing takes.
-const credentials = "mikael:$2a$04$AL546dro6bMBAm/zEI.Yzet3uZisN1MTC1Rt4ut9s5F3qfJrx27iS\n"
-
-func newHtpasswd(t *testing.T) *auth.HtpasswdFile {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "htpasswd")
-	require.NoError(t, os.WriteFile(path, []byte(credentials), 0o600))
-	file, err := loadHtpasswd(path)
-	require.NoError(t, err)
-	return file
+// basicAuth is the header a client presents credentials in.
+func basicAuth(username, password string) []string {
+	return []string{"Authorization",
+		"Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))}
 }
 
 // get performs a request without a body, decoding the response the way a
@@ -451,9 +447,11 @@ func TestStrictTransportSecurity(t *testing.T) {
 // to carry the headers: a host pinned only on the way past authentication is
 // pinned after the password has been typed rather than before.
 func TestTheAuthenticationChallengeCarriesTheSecurityHeaders(t *testing.T) {
-	h := newServeHandlerAuth(t,
-		serveOptions{addr: "127.0.0.1", port: 7777, https: true, basicAuthRealm: "awb"},
-		newHtpasswd(t))
+	h, be := newServeHandlerOn(t,
+		serveOptions{addr: "127.0.0.1", port: 7777, https: true, basicAuthRealm: "awb"})
+	_, err := be.CreateUser(t.Context(),
+		backend.UserCreate{Name: "mikael", Password: "hunter2"})
+	require.NoError(t, err)
 
 	resp, _ := get(t, h, http.MethodGet, "/")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -462,9 +460,8 @@ func TestTheAuthenticationChallengeCarriesTheSecurityHeaders(t *testing.T) {
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 	assert.NotEmpty(t, resp.Header.Get("Content-Security-Policy"))
 
-	// And the credentials the file holds still get through.
-	resp, _ = get(t, h, http.MethodGet, "/api/identity",
-		"Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("mikael:hunter2")))
+	// And the credentials the database holds still get through.
+	resp, _ = get(t, h, http.MethodGet, "/api/identity", basicAuth("mikael", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -525,7 +522,8 @@ func TestServeLogsWithATimestamp(t *testing.T) {
 	opts := serveOptions{addr: "127.0.0.1", port: 0, publicURL: "https://example.com/awb/"}
 
 	stopped := make(chan error, 1)
-	go func() { stopped <- runServer(ctx, &env{stderr: &out}, opts, http.NotFoundHandler()) }()
+	logger := log.New(&out, "", log.LstdFlags)
+	go func() { stopped <- runServer(ctx, logger, opts, http.NotFoundHandler()) }()
 
 	stamped := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} `)
 	require.Eventually(t, func() bool {
@@ -687,8 +685,8 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 	require.NoError(t, err)
 
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	h, err := buildHandler(be, openapi.New(raw), nil,
-		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
+		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
 	server := httptest.NewServer(h)
@@ -803,8 +801,8 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	api, err := buildHandler(be, openapi.New(raw), nil,
-		serveOptions{port: 7777, basicAuthRealm: "awb"})
+	api, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
+		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
 	// A reverse proxy publishing the server under /awb/ and stripping that base

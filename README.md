@@ -100,12 +100,15 @@ whatever is under the key is meant.
 | `awb attach show\|get\|delete <id> <name>` | One attachment: its metadata, its content, or its deletion. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
 | `awb project create\|update\|show\|list\|delete` | Projects. |
+| `awb project grant\|revoke <key> <user>` | Who may work in a project, and at which level. |
+| `awb project members <key>` | The users with access to a project. |
+| `awb user add\|update\|show\|list\|delete` | The accounts a server authenticates and authorizes. |
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
 
 `awb <command> --help` has the detail. Exit codes are `0` success, `1` runtime
-error, `2` usage error, `3` not found, `4` constraint violation.
+error, `2` usage error, `3` not found, `4` constraint violation, `5` forbidden.
 
 A description is Markdown, and `awb show` and `awb project show` draw it as
 such on a terminal: emphasis, headings, lists, code and links the terminal can
@@ -211,7 +214,7 @@ somewhere.
 ```yaml
 db: /home/you/.local/share/awb/awb.db   # a path, or an http(s) URL
 attachments: /files/awb/attachments     # defaults to "attachments" beside the database
-user: you                               # basic-auth credentials, remote mode only
+user: you                               # the account to log in as, remote mode only
 password: hunter2
 identity: you                           # default assignee, --mine, claim --as
 project: awb                            # default project for create
@@ -257,15 +260,69 @@ $ AWB_DB=http://127.0.0.1:7777 awb ready --compact
 Commands behave identically in both modes, because each one is written against
 a single interface with two implementations and cannot tell them apart.
 
-**There is authentication but no authorization.** `--basic-auth-file` turns on
-HTTP basic authentication against an `htpasswd -B` file, and every user it knows
-may do everything every other one may; credentials serve only to say who is
-calling. Without it there is no authentication at all, which is why the default
-binds loopback. `--cors-origin` lets a separately hosted UI call the API, and is
-opt-in for the same reason.
+`--cors-origin` lets a separately hosted UI call the API, and is opt-in because
+any page in the browser could otherwise reach it.
 
 `--addr` and `--port` are independent: `--addr 0.0.0.0` reaches other machines
 on the default port, `--port 8080` moves the port and leaves the binding alone.
+
+### Users and permissions
+
+**The database decides whether the server authenticates.** One holding no user
+authenticates nobody, and any client that can reach the port has full read and
+write access — which is why the default binds loopback. Adding the first user
+turns authentication on, from the next request onwards; deleting the last turns
+it off again.
+
+```console
+$ echo hunter2 | awb user add alice --user-admin --project-admin
+$ awb project grant awb bob --access regular
+```
+
+A password is read from stdin, never from a flag: on the command line it would
+be in the process listing and in the shell history. At a terminal it is prompted
+for and typed without echo. `--password-hash` takes a bcrypt hash computed
+elsewhere instead — what `htpasswd -Bn alice` writes — so the plaintext never
+reaches `awb` at all.
+
+A user works in the projects they have been granted access to and sees nothing
+else: a project they hold no access to, and every issue in it, is simply not
+there for them — absent from every listing, search, facet and tree, and answered
+"no such project" rather than "forbidden", since it is not theirs to know about.
+
+The dependency graph is the exception, and deliberately: a visible issue's
+relations and blockers may *name* issues in projects you cannot reach, and
+whether it is blocked is computed over all of them. Readiness has to be true —
+an issue held up by work you cannot see is still held up — and a name is all
+that is exposed, since fetching one of those issues is still "no such issue".
+
+| | |
+| --- | --- |
+| `regular` in a project | Work with its issues: read, create, edit, claim, close, attach. |
+| `admin` in a project | That, and granting and revoking the project's other users. |
+| `--project-admin` | Create, change and delete projects, and `admin` access in every one. |
+| `--user-admin` | Create, change and delete users, which includes granting these two flags. |
+
+`admin` in a project is not power over the project itself: a project's own
+existence is `--project-admin`'s, because it is not something its members decide.
+Anybody may change their own password and read their own account — `awb user
+show` with no argument — without being able to grant themselves anything.
+
+Upgrading from a server that used `--basic-auth-file`: that flag is gone, and
+the entries move across without anybody re-typing a password, since a bcrypt
+hash is a bcrypt hash.
+
+```console
+$ while IFS=: read -r name _; do
+>   awb user add "$name" --password-hash "$(grep "^$name:" htpasswd)"
+> done < htpasswd
+```
+
+**None of this applies to the CLI on a database file.** Direct mode applies no
+authorization at all, because whoever can open the file can already read and
+write every byte of it, and a check there would be a suggestion rather than a
+control. That is how the first user is created, and how an instance whose last
+administrator is gone is recovered.
 
 ### Behind a reverse proxy
 
@@ -340,7 +397,7 @@ $ task run ADDR=0.0.0.0
 $ task watch ADDR=0.0.0.0 PORT=8080
 ```
 
-This exposes the server without authentication unless `--basic-auth-file` is
-also passed after `--`.
+This exposes the server without authentication unless the database holds a
+user.
 
 [License](LICENSE) (MIT)

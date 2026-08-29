@@ -73,6 +73,25 @@ type Backend interface {
 	LabelFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 	AssigneeFacets(ctx context.Context, filter *domain.Filter) (FacetPage, error)
 
+	// The user operations. A user is an account a server authenticates and
+	// authorizes; direct mode manages them but applies none of them to itself.
+	//
+	// A password never comes back out: no shape any of these returns carries
+	// one, in either direction of the wire.
+	CreateUser(ctx context.Context, req UserCreate) (*domain.User, error)
+	GetUser(ctx context.Context, name string) (*domain.User, error)
+	ListUsers(ctx context.Context, limit, offset *int) (UserPage, error)
+	UpdateUser(ctx context.Context, name string, req UserPatch, ifMatch string) (*domain.User, error)
+	DeleteUser(ctx context.Context, name string, ifMatch string) (*DeletedUser, error)
+
+	// The membership operations. A membership is keyed on its project and its
+	// user, as an attachment is keyed on its issue and its name, so it has no
+	// identifier of its own and none of these takes an ifMatch: a membership
+	// has one field and setting it is idempotent.
+	ListMembers(ctx context.Context, project string, limit, offset *int) (MemberPage, error)
+	SetMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
+	RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error)
+
 	// Close releases whatever the backend holds: the database file, or the idle
 	// connections of an HTTP client.
 	Close() error
@@ -102,6 +121,54 @@ type FacetPage struct {
 type AttachmentPage struct {
 	Attachments []domain.Attachment
 	Total       int
+}
+
+// UserPage is a user listing with its unpaged total.
+type UserPage struct {
+	Users []domain.User
+	Total int
+}
+
+// MemberPage is a project's member listing with its unpaged total.
+type MemberPage struct {
+	Members []domain.Membership
+	Total   int
+}
+
+// UserCreate is the body of awb user add and of POST /api/users.
+type UserCreate struct {
+	Name string
+	// Password is the plaintext, which is hashed and then dropped; PasswordHash
+	// is a bcrypt hash computed elsewhere, as "htpasswd -Bn" writes one. Exactly
+	// one of the two is given: a request carrying both says two things about one
+	// credential, and one carrying neither describes an account nobody can log
+	// in to.
+	Password     string
+	PasswordHash string
+
+	ProjectAdmin bool
+	UserAdmin    bool
+}
+
+// UserPatch is what awb user update and PATCH /api/users/{name} may change. A
+// nil field is left alone.
+//
+// The name itself is immutable, as a project key is: it is what the issues
+// that user works on record as their assignee, and renaming it would leave
+// that record pointing at nobody.
+type UserPatch struct {
+	// At most one of these two is given, for the reason UserCreate states.
+	Password     *string
+	PasswordHash *string
+
+	ProjectAdmin *bool
+	UserAdmin    *bool
+}
+
+// DeletedUser is what a delete returns: the user as they were immediately
+// before deletion, memberships included.
+type DeletedUser struct {
+	User domain.User
 }
 
 // AttachmentCreate is the body of awb attach add and of POST
