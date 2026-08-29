@@ -183,17 +183,36 @@ func usageError(source string, err error) error {
 	return awberr.Usagef("%s: %s", source, err.Error())
 }
 
+// loadUserFile reads the user configuration file, which is
+// $XDG_CONFIG_HOME/awb/config.yaml unless AWB_CONFIG_FILE names another one.
+//
+// A file named by the variable must exist: it was pointed at deliberately, and
+// silently falling back to the defaults would hide a typo in the path the same
+// way silently ignoring a malformed file would hide its contents. The default
+// path is under no such obligation, having been named by nobody.
 func loadUserFile() (*userFile, string, error) {
-	path := filepath.Join(configHome(), "awb", "config.yaml")
+	path, explicit := userFilePath()
 	var cfg userFile
 	found, err := readYAML(path, &cfg)
 	if err != nil {
 		return nil, path, err
 	}
 	if !found {
+		if explicit {
+			return nil, path, usageError("AWB_CONFIG_FILE", fmt.Errorf("%s: no such file", path))
+		}
 		return &userFile{}, path, nil
 	}
 	return &cfg, path, nil
+}
+
+// userFilePath is the user configuration file to read, and whether it was
+// named by AWB_CONFIG_FILE rather than derived from the XDG directories.
+func userFilePath() (string, bool) {
+	if path := os.Getenv("AWB_CONFIG_FILE"); path != "" {
+		return path, true
+	}
+	return filepath.Join(configHome(), "awb", "config.yaml"), false
 }
 
 // loadLocalFile performs the upward search: start at the working directory

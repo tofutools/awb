@@ -47,7 +47,7 @@ func newHarness(t *testing.T) *harness {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	t.Setenv("AWB_DB", filepath.Join(root, "awb.db"))
 	t.Setenv("AWB_IDENTITY", "mikael")
-	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_COLOR"} {
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_COLOR", "AWB_CONFIG_FILE"} {
 		t.Setenv(name, "")
 	}
 	// The default table mode is coloured only when stdout is a terminal, which it
