@@ -577,10 +577,14 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 		strings.Repeat("x", maxRequestBody+1))
 	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
-	// One over the attachment maximum is.
+	// One over the attachment maximum is refused by the rule and not by the
+	// transport, so it is the 400 the CLI turns into exit 2 — the same code and
+	// the same message direct mode gives it. That is what the cap sitting above
+	// the maximum is for.
 	rec = call(http.MethodPost, upload, "application/octet-stream",
 		strings.Repeat("x", domain.MaxAttachmentBytes+1))
-	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "attachment is too large")
 
 	// A JSON body over the general cap still is, so raising one cap did not
 	// raise the other.

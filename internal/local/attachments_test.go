@@ -327,3 +327,30 @@ func TestMissingContentIsARuntimeFailure(t *testing.T) {
 	assert.Equal(t, 1, exitOf(err))
 	assert.Equal(t, awberr.Runtime, awberr.KindOf(err))
 }
+
+// A failure to remove the content does not fail the deletion.
+//
+// The rows are already committed away by then — reporting a failure would say
+// something that is not true — and what is left behind is the unreferenced
+// file the design already tolerates.
+func TestDeleteSucceedsWhenTheContentCannotBeRemoved(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory permission this test relies on")
+	}
+	b, ctx, dir := newBackendWithBlobs(t)
+	issue := create(t, b, ctx, "Parser crashes")
+	attachment := attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
+
+	// A directory that cannot be written is one nothing can be unlinked from.
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	deleted, err := b.DeleteAttachment(ctx, attachment.ID)
+	require.NoError(t, err)
+	assert.Equal(t, attachment.ID, deleted.ID)
+
+	_, err = b.GetAttachment(ctx, attachment.ID)
+	assert.Equal(t, 3, exitOf(err), "the attachment is gone whatever became of its content")
+	assert.Equal(t, []string{attachment.Sha256}, blobFiles(t, dir),
+		"and what is left is an unreferenced file, which is the tolerated failure")
+}

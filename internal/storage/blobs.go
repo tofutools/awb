@@ -139,10 +139,11 @@ func (b *Blobs) fill(file *os.File, content io.Reader, maxBytes int64) (*Staged,
 
 // Place gives staged content its final name.
 //
-// It is called inside the write transaction, while that writer holds SQLite's
-// exclusive turn, which is what keeps it ordered against the unlink a delete
-// performs: without that, a delete that had just found the last row gone could
-// remove the file an upload had already written.
+// It is called inside the write transaction that writes the row, after the row
+// and before the commit, so a committed row never names a file that is not
+// there. Holding SQLite's exclusive turn across it is what keeps it ordered
+// against the unlink a delete performs: without that, a delete that had just
+// found the last row gone could remove the file an upload had already written.
 //
 // Renaming over an existing file is not a mistake to report: the name is the
 // digest, so whatever is there holds the same bytes.
@@ -180,6 +181,11 @@ func (b *Blobs) Open(sum string) (io.ReadCloser, error) {
 
 // Remove deletes stored content. A file that is already gone is not a failure:
 // what the caller asked for is that it not be there.
+//
+// It is called only once the rows that named the content have been committed
+// away, and never inside the transaction that removes them: an unlink cannot
+// be rolled back, and one that a failed commit then restored the rows behind
+// would leave them naming a file that is gone.
 func (b *Blobs) Remove(sum string) error {
 	err := os.Remove(b.pathOf(sum))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

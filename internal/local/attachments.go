@@ -142,11 +142,6 @@ func (b *Backend) OpenAttachment(ctx context.Context, ref string) (
 
 // DeleteAttachment removes an attachment and, when no other attachment holds
 // the same content, the file behind it.
-//
-// The unlink happens inside the transaction rather than after it, so that it
-// is ordered against a concurrent upload of the same bytes: outside it, an
-// upload that had already written the file could have it removed from under
-// the row it went on to commit.
 func (b *Backend) DeleteAttachment(ctx context.Context, ref string) (*domain.Attachment, error) {
 	var deleted *domain.Attachment
 	err := b.write(ctx, func(tx *storage.Tx) error {
@@ -157,15 +152,13 @@ func (b *Backend) DeleteAttachment(ctx context.Context, ref string) (*domain.Att
 		if err := tx.DeleteAttachment(attachment.ID); err != nil {
 			return err
 		}
-		if err := removeUnreferenced(tx, b.blobs, []string{attachment.Sha256}); err != nil {
-			return err
-		}
 		deleted = attachment
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	b.sweep(ctx, []string{deleted.Sha256})
 	return deleted, nil
 }
 
@@ -182,21 +175,44 @@ func loadAttachment(tx *storage.Tx, ref string) (*domain.Attachment, error) {
 	return tx.GetAttachment(id)
 }
 
-// removeUnreferenced deletes the content behind each digest that no attachment
-// row names any more. It is called after the rows are gone and inside the same
-// transaction, which is what keeps it ordered against a concurrent upload.
-func removeUnreferenced(tx *storage.Tx, blobs *storage.Blobs, digests []string) error {
-	for _, sum := range digests {
-		unreferenced, err := tx.DigestIsUnreferenced(sum)
-		if err != nil {
-			return err
-		}
-		if !unreferenced {
-			continue
-		}
-		if err := blobs.Remove(sum); err != nil {
-			return err
-		}
+// sweep removes the content behind each digest that no attachment row names
+// any more. It is what every delete calls once its rows are gone.
+//
+// It runs *after* the deleting transaction has committed, and never inside it.
+// A filesystem unlink cannot be rolled back, so one performed before the
+// commit and followed by a failure — an I/O error, a cancelled context — would
+// leave the restored rows naming a file that is no longer there, which is the
+// one state this design does not tolerate. Afterwards, the same failure leaves
+// an unreferenced file instead: unreachable, harmless, and adopted by the next
+// upload of the same bytes.
+//
+// It still takes the write lock, because that is what orders the unlink
+// against a concurrent upload of the same bytes: an upload places its content
+// inside its own transaction, so the count here and the unlink it guards
+// cannot be split by one. The transaction writes nothing, so its own commit
+// has nothing to lose.
+//
+// A failure to remove a file is not reported. It leaves exactly the
+// unreferenced file the design already tolerates, and the deletion the caller
+// asked for has already happened — failing it afterwards would report
+// something that is not true.
+func (b *Backend) sweep(ctx context.Context, digests []string) {
+	if len(digests) == 0 {
+		return
 	}
-	return nil
+	_ = b.write(ctx, func(tx *storage.Tx) error {
+		for _, sum := range digests {
+			unreferenced, err := tx.DigestIsUnreferenced(sum)
+			if err != nil {
+				return err
+			}
+			if !unreferenced {
+				continue
+			}
+			if err := b.blobs.Remove(sum); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

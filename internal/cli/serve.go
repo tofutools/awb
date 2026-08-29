@@ -39,9 +39,9 @@ import (
 // body those rules would accept is ever refused for its size.
 //
 // Uploading an attachment is the one request whose body is not a description
-// of an issue, and it gets the domain's own attachment maximum instead. The
-// two are separate on purpose: raising the general cap to make room for files
-// would let any caller make the server buffer that much JSON.
+// of an issue, and it gets maxAttachmentBody instead. The two are separate on
+// purpose: raising the general cap to make room for files would let any caller
+// make the server buffer that much JSON.
 //
 // The two attachment requests get a longer deadline than everything else for
 // the same reason: moving a file of the maximum size over a slow link takes
@@ -58,6 +58,17 @@ const (
 	shutdownTimeout   = 10 * time.Second
 	maxRequestBody    = 1 << 20
 )
+
+// maxAttachmentBody is the transport cap on an upload, and sits above the
+// domain's attachment maximum on purpose.
+//
+// A file over that maximum has to be refused by the rule rather than by the
+// transport, because only the rule's refusal carries an exit code: 413 has
+// none and collapses to 1, so a file the CLI refuses with exit 2 in direct
+// mode would exit 1 through a server. The rule stops reading one byte past the
+// maximum, so the extra room is never occupied; the cap stays as the backstop
+// against a client that keeps sending after the rule has stopped listening.
+const maxAttachmentBody = 2 * domain.MaxAttachmentBytes
 
 // hsts is sent when --https says a TLS-terminating proxy sits in front. A year,
 // and this host only: awb may be one application among several on a domain, and
@@ -482,7 +493,7 @@ func transferLimits(next http.Handler) http.Handler {
 		deadline := time.Now().Add(contentTimeout)
 		switch {
 		case isAttachmentUpload(r):
-			limit = domain.MaxAttachmentBytes
+			limit = maxAttachmentBody
 			_ = http.NewResponseController(w).SetReadDeadline(deadline)
 		case isAttachmentDownload(r):
 			_ = http.NewResponseController(w).SetWriteDeadline(deadline)

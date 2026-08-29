@@ -239,11 +239,21 @@ inside one writer's exclusive turn, so no concurrent commit can slip between a
 check and the change it guards. A transaction that cannot take the lock fails
 rather than being retried in a loop.
 
-An attachment's content is copied into a staging file outside the transaction,
-that being the slow half; the rename that gives it its final name, and the
-unlink that removes an unreferenced one, both happen inside it. That is what
-puts an upload and a concurrent delete of the same bytes in one order rather
-than letting the delete remove a file the upload had already written.
+An attachment's content is copied into a staging file outside any transaction,
+that being the slow half. The rename that gives it its final name happens
+inside the transaction that writes its row, after the row and before the
+commit, so a committed row never names a file that is not there.
+
+Removing content is the mirror image, and cannot be done in the same place.
+An unlink cannot be rolled back, so one performed inside the deleting
+transaction and followed by a failed commit would restore the rows and leave
+them naming a file that is gone — the one state this design does not tolerate.
+So a delete commits first, and a second transaction, which writes nothing,
+takes the write lock to decide whether anything still names the content and to
+unlink it if not. Both halves holding that lock is what puts an upload and a
+concurrent delete of the same bytes in one order; the second transaction having
+nothing to commit is what makes its own failure cost nothing but an
+unreferenced file.
 
 There are no leases, locks or claim expiry. A claim is a single atomic update,
 and a crashed agent leaves an assigned issue that a human or another agent

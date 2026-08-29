@@ -97,10 +97,13 @@ Three structural rules hold the design together:
 * A released migration batch is never edited, only followed by another.
 * Attachment content is not in the database. It is a file per distinct content
   in the attachments directory, named by its own SHA-256, and the row is only
-  the metadata. The rename that places one and the unlink that removes one both
-  happen **inside** the write transaction, which is what orders an upload
-  against a concurrent delete of the same bytes; the slow copy into a staging
-  file happens outside it.
+  the metadata. An upload places its content **inside** the write transaction,
+  after the row and before the commit; a delete unlinks unreferenced content in
+  a second write transaction **after** the first has committed, because an
+  unlink cannot be rolled back and one performed before a failed commit would
+  leave restored rows naming a file that is gone. Both hold the write lock,
+  which is what orders an upload against a concurrent delete of the same bytes.
+  The slow copy into a staging file happens outside any transaction.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
 * `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.
