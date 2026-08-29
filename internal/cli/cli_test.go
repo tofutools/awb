@@ -124,6 +124,7 @@ func TestEnumParameterCompletions(t *testing.T) {
 		{"list priority max", []string{"list", "--priority-max"}, []string{"0", "1", "2", "3", "4"}},
 		{"list sort", []string{"list", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id"}},
 		{"search sort", []string{"search", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
+		{"project access", []string{"project", "grant", "--access"}, []string{"regular", "admin"}},
 		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
 	}
 
@@ -138,6 +139,49 @@ func TestEnumParameterCompletions(t *testing.T) {
 			assert.ElementsMatch(t, tt.want, lines[:len(lines)-1])
 		})
 	}
+}
+
+// Dynamic alternatives use the same configured backend as the command would,
+// and Boa makes flags already present on the command available to the lookup.
+func TestDataBackedFilterCompletions(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "create", "web")
+	h.create("Backend task", "--project", "awb", "--label", "backend", "--assignee", "alice")
+	h.create("Backend bug", "--project", "awb", "--type", "bug", "--label", "crash", "--assignee", "carol")
+	h.create("Ready task", "--project", "awb", "--label", "ready")
+	h.create("Frontend task", "--project", "web", "--label", "frontend", "--assignee", "bob")
+
+	complete := func(args ...string) []string {
+		t.Helper()
+		stdout, stderr, code := h.run(append([]string{"__complete"}, append(args, "")...)...)
+		require.Equal(t, 0, code, stderr)
+		lines := strings.Fields(stdout)
+		require.NotEmpty(t, lines)
+		assert.Equal(t, ":0", lines[len(lines)-1])
+		return lines[:len(lines)-1]
+	}
+
+	assert.ElementsMatch(t, []string{"awb", "web"}, complete("list", "--project"))
+	assert.Equal(t, []string{"backend", "crash", "ready"},
+		complete("list", "--project", "awb", "--label"))
+	assert.Equal(t, []string{"crash"},
+		complete("list", "--project", "awb", "--type", "bug", "--label"))
+	assert.Equal(t, []string{"bob"},
+		complete("list", "--project", "web", "--assignee"))
+	assert.Equal(t, []string{"ready"},
+		complete("ready", "--project", "awb", "--label"))
+	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
+	assert.Equal(t, []string{"backend", "crash", "ready"}, complete("list", "--label"))
+	assert.Equal(t, []string{"backend", "crash", "frontend", "ready"},
+		complete("--no-context", "list", "--label"))
+
+	otherDB := filepath.Join(h.root(), "other.db")
+	h.mustRun("--db", otherDB, "init")
+	h.mustRun("--db", otherDB, "project", "create", "other")
+	assert.Equal(t, []string{"other"},
+		complete("--db", otherDB, "list", "--project"))
+	assert.Empty(t, complete("--db", "https://", "list", "--project"),
+		"a completion lookup failure is silent")
 }
 
 // The end-to-end example from the README, run verbatim.
