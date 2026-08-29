@@ -20,11 +20,9 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// boaParams keeps AWB's existing long-only flag surface. Boa's default
-// enricher also assigns short flags; adding those during this refactor would
-// create a second spelling for every option rather than merely changing how
-// the command tree is declared.
-var boaParams = boa.ParamEnricherName
+// boaParams applies Boa's conventional generated names, short flags and bool
+// defaults to every declarative parameter struct.
+var boaParams = boa.ParamEnricherDefault
 
 // command is the common Boa declaration for a command without flags. Commands
 // with flags use CmdT directly so their parameter struct stays visible beside
