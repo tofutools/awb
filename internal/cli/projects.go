@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -18,38 +19,37 @@ func (e *env) summarise(format string, args ...any) error {
 }
 
 func newProjectCommand(e *env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "project",
-		Short: "Manage projects",
-		Long:  "A project is the top-level organising unit; every issue belongs to exactly one.",
-	}
-	cmd.AddCommand(
+	return group("project", "Manage projects",
+		"A project is the top-level organising unit; every issue belongs to exactly one.",
 		newProjectCreateCommand(e),
 		newProjectUpdateCommand(e),
 		newProjectShowCommand(e),
 		newProjectListCommand(e),
 		newProjectDeleteCommand(e),
 	)
-	return grouping(cmd)
+}
+
+type projectCreateParams struct {
+	DescriptionFlags
+	Key  string `positional:"true" required:"true"`
+	Name string `long:"name" optional:"true" help:"human-readable name; defaults to the key"`
 }
 
 func newProjectCreateCommand(e *env) *cobra.Command {
-	var (
-		desc descriptionFlags
-		name string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "create <key>",
+	return boa.CmdT[projectCreateParams]{
+		Use:   "create",
 		Short: "Create a project",
 		Long: "Create a project.\n\n" +
 			"The key is lowercase ASCII letters, digits and hyphens, starting with a\n" +
 			"letter, at most 16 characters. It becomes the issue ID prefix and is\n" +
 			"immutable. --name defaults to the key.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			req := backend.ProjectCreate{Key: args[0], Name: name}
-			if description, err := desc.value(e, cmd); err != nil {
+		ParamEnrich: boaParams,
+		InitFuncCtx: func(ctx *boa.HookContext, p *projectCreateParams, cmd *cobra.Command) error {
+			return describe("project")(ctx, &p.DescriptionFlags, cmd)
+		},
+		RunFuncE: func(p *projectCreateParams, cmd *cobra.Command, _ []string) error {
+			req := backend.ProjectCreate{Key: p.Key, Name: p.Name}
+			if description, err := p.value(e); err != nil {
 				return err
 			} else if description != nil {
 				req.Description = *description
@@ -65,31 +65,28 @@ func newProjectCreateCommand(e *env) *cobra.Command {
 			}
 			return e.mutatedProject(project)
 		},
-	}
+	}.ToCobra()
+}
 
-	cmd.Flags().StringVar(&name, "name", "", "human-readable name; defaults to the key")
-	desc.register(cmd, "project")
-	return cmd
+type projectUpdateParams struct {
+	DescriptionFlags
+	Key  string  `positional:"true" required:"true"`
+	Name *string `long:"name" help:"human-readable name; \"\" restores the key"`
 }
 
 func newProjectUpdateCommand(e *env) *cobra.Command {
-	var (
-		desc descriptionFlags
-		name string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "update <key>",
+	return boa.CmdT[projectUpdateParams]{
+		Use:   "update",
 		Short: "Change a project's name or description",
 		Long: "Change a project's name or description. The key itself is immutable.\n\n" +
 			"--name \"\" restores the key as the name.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var patch backend.ProjectPatch
-			if cmd.Flags().Changed("name") {
-				patch.Name = &name
-			}
-			description, err := desc.value(e, cmd)
+		ParamEnrich: boaParams,
+		InitFuncCtx: func(ctx *boa.HookContext, p *projectUpdateParams, cmd *cobra.Command) error {
+			return describe("project")(ctx, &p.DescriptionFlags, cmd)
+		},
+		RunFuncE: func(p *projectUpdateParams, cmd *cobra.Command, _ []string) error {
+			patch := backend.ProjectPatch{Name: p.Name}
+			description, err := p.value(e)
 			if err != nil {
 				return err
 			}
@@ -99,49 +96,37 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.UpdateProject(cmd.Context(), args[0], patch, "")
+			project, err := be.UpdateProject(cmd.Context(), p.Key, patch, "")
 			if err != nil {
 				return err
 			}
 			return e.mutatedProject(project)
 		},
-	}
-
-	cmd.Flags().StringVar(&name, "name", "", "human-readable name; \"\" restores the key")
-	desc.register(cmd, "project")
-	return cmd
+	}.ToCobra()
 }
 
 func newProjectShowCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "show <key>",
-		Short: "Print one project in full",
-		Long: "Print a project with its description and its count of issues that are not\n" +
-			"closed.\n\n" +
-			"On a terminal the description is drawn as the Markdown it is. Under\n" +
-			"--compact this prints the same single line project list would and nothing\n" +
-			"else; --json is what a script uses when it needs the rest.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+	return idCommand("show", "Print one project in full",
+		"Print a project with its description and its count of issues that are not\n"+
+			"closed.\n\n"+
+			"On a terminal the description is drawn as the Markdown it is. Under\n"+
+			"--compact this prints the same single line project list would and nothing\n"+
+			"else; --json is what a script uses when it needs the rest.", func(cmd *cobra.Command, key string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			project, err := be.GetProject(cmd.Context(), args[0])
+			project, err := be.GetProject(cmd.Context(), key)
 			if err != nil {
 				return err
 			}
 			return e.printProject(project)
-		},
-	}
+		})
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List projects with counts of issues that are not closed",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+	return command("list", "List projects with counts of issues that are not closed", "",
+		func(cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
@@ -151,18 +136,18 @@ func newProjectListCommand(e *env) *cobra.Command {
 				return err
 			}
 			return e.printProjects(page.Projects)
-		},
-	}
+		})
+}
+
+type projectDeleteParams struct {
+	Key     string `positional:"true" required:"true"`
+	Force   bool   `long:"force" optional:"true" help:"confirm the deletion"`
+	Cascade bool   `long:"cascade" optional:"true" help:"also delete the issues the project holds"`
 }
 
 func newProjectDeleteCommand(e *env) *cobra.Command {
-	var (
-		force   bool
-		cascade bool
-	)
-
-	cmd := &cobra.Command{
-		Use:   "delete <key> --force",
+	return boa.CmdT[projectDeleteParams]{
+		Use:   "delete",
 		Short: "Delete a project",
 		Long: "Delete a project.\n\n" +
 			"It refuses while the project holds any issue at all — closed ones included,\n" +
@@ -170,9 +155,9 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 			"can never destroy closed history — unless --cascade is also given, which\n" +
 			"deletes those issues and their relations, including relations to issues in\n" +
 			"other projects, which may unblock work elsewhere.",
-		Args: exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if !force {
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *projectDeleteParams, cmd *cobra.Command, _ []string) error {
+			if !p.Force {
 				return awberr.Usagef("awb project delete needs --force: it is not recoverable")
 			}
 
@@ -180,22 +165,18 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			deleted, err := be.DeleteProject(cmd.Context(), args[0], cascade, "")
+			deleted, err := be.DeleteProject(cmd.Context(), p.Key, p.Cascade, "")
 			if err != nil {
 				return err
 			}
 			if e.json {
 				return e.writeJSON(&deleted.Project)
 			}
-			if cascade {
+			if p.Cascade {
 				return e.summarise("Deleted project %s and the issues it held.\n",
 					deleted.Project.Key)
 			}
 			return e.summarise("Deleted project %s.\n", deleted.Project.Key)
 		},
-	}
-
-	cmd.Flags().BoolVar(&force, "force", false, "confirm the deletion")
-	cmd.Flags().BoolVar(&cascade, "cascade", false, "also delete the issues the project holds")
-	return cmd
+	}.ToCobra()
 }

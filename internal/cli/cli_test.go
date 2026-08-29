@@ -361,6 +361,27 @@ func TestUnknownSubcommandIsAUsageError(t *testing.T) {
 	}
 }
 
+func TestArgumentCountErrorsAreUsageErrors(t *testing.T) {
+	h := newHarness(t)
+	for _, args := range [][]string{
+		{"show"},
+		{"show", "one", "two"},
+		{"list", "extra"},
+		{"search"},
+	} {
+		stdout, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, args)
+		assert.Empty(t, stdout, args)
+		assert.NotEmpty(t, stderr, args)
+	}
+}
+
+func TestRepeatableStringFlagsDoNotSplitCommas(t *testing.T) {
+	h := newHarness(t)
+	_, _, code := h.run("create", "t", "--project", "awb", "--label", "one,two")
+	assert.Equal(t, 2, code, "one flag occurrence is one label, not a comma-separated list")
+}
+
 func TestDescriptionFlagsAreMutuallyExclusive(t *testing.T) {
 	h := newHarness(t)
 	_, _, code := h.run("create", "t", "--project", "awb",

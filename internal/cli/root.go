@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -18,6 +19,61 @@ import (
 	"github.com/tofutools/awb/internal/remote"
 	"github.com/tofutools/awb/internal/storage"
 )
+
+// boaParams keeps AWB's existing long-only flag surface. Boa's default
+// enricher also assigns short flags; adding those during this refactor would
+// create a second spelling for every option rather than merely changing how
+// the command tree is declared.
+var boaParams = boa.ParamEnricherName
+
+// command is the common Boa declaration for a command without flags. Commands
+// with flags use CmdT directly so their parameter struct stays visible beside
+// the command it describes.
+func command(use, short, long string, run func(*cobra.Command, []string) error) *cobra.Command {
+	return boa.CmdT[boa.NoParams]{
+		Use: use, Short: short, Long: long,
+		ParamEnrich: boaParams,
+		RunFuncE: func(_ *boa.NoParams, cmd *cobra.Command, positional []string) error {
+			return run(cmd, positional)
+		},
+	}.ToCobra()
+}
+
+type idParams struct {
+	ID string `positional:"true" required:"true"`
+}
+
+func idCommand(use, short, long string,
+	run func(*cobra.Command, string) error) *cobra.Command {
+	return boa.CmdT[idParams]{
+		Use: use, Short: short, Long: long, ParamEnrich: boaParams,
+		RunFuncE: func(p *idParams, cmd *cobra.Command, _ []string) error {
+			return run(cmd, p.ID)
+		},
+	}.ToCobra()
+}
+
+type idNameParams struct {
+	ID   string `positional:"true" required:"true"`
+	Name string `positional:"true" required:"true"`
+}
+
+func idNameCommand(use, short, long string,
+	run func(*cobra.Command, string, string) error) *cobra.Command {
+	return boa.CmdT[idNameParams]{
+		Use: use, Short: short, Long: long, ParamEnrich: boaParams,
+		RunFuncE: func(p *idNameParams, cmd *cobra.Command, _ []string) error {
+			return run(cmd, p.ID, p.Name)
+		},
+	}.ToCobra()
+}
+
+func group(use, short, long string, subcommands ...*cobra.Command) *cobra.Command {
+	return grouping(boa.CmdT[boa.NoParams]{
+		Use: use, Short: short, Long: long, SubCmds: subcommands,
+		ParamEnrich: boaParams,
+	}.ToCobra())
+}
 
 // errWriter records the first write error, so the output helpers can report it
 // once at the end rather than checking every Fprint call. A closed pipe or a
@@ -110,6 +166,9 @@ func Execute(ctx context.Context, version string, document *openapi.Document, ar
 	if runErr == nil {
 		return 0
 	}
+	if boa.IsUserInputError(runErr) {
+		runErr = awberr.Usagef("%s", runErr.Error())
+	}
 
 	e.reportError(runErr)
 	return awberr.ExitCode(runErr)
@@ -130,7 +189,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		colorFlag       string
 	)
 
-	root := &cobra.Command{
+	root := boa.CmdT[boa.NoParams]{
 		Use:   "awb",
 		Short: "Agent Work Board — an agent-first issue tracker",
 		Long: "awb is an agent-first issue tracker: a single binary over SQLite, with a\n" +
@@ -138,27 +197,28 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			"Every command is non-interactive and safe to script. --compact is the\n" +
 			"cheapest output there is and --json is the stable one; the default table is\n" +
 			"for humans and nothing should parse it.",
-		Version: version,
-		// awb owns error output and the exit codes, so cobra's own usage-on-error
-		// and error printing are switched off and a usage error exits 2 rather than
-		// cobra's 1.
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if cmd.Flags().Changed("db") {
-				e.flags.DB = &dbFlag
-			}
-			if cmd.Flags().Changed("attachments") {
-				e.flags.Attachments = &attachmentsFlag
-			}
-			if cmd.Flags().Changed("color") {
-				e.flags.Color = &colorFlag
-			}
-			if e.json && e.compact {
-				return awberr.Usagef("--json and --compact are mutually exclusive")
-			}
-			return nil
-		},
+		Version:     version,
+		ParamEnrich: boaParams,
+	}.ToCobra()
+	// awb owns error output and the exit codes, so Cobra's own usage-on-error
+	// and error printing are switched off and a usage error exits 2 rather than
+	// Cobra's 1.
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if cmd.Flags().Changed("db") {
+			e.flags.DB = &dbFlag
+		}
+		if cmd.Flags().Changed("attachments") {
+			e.flags.Attachments = &attachmentsFlag
+		}
+		if cmd.Flags().Changed("color") {
+			e.flags.Color = &colorFlag
+		}
+		if e.json && e.compact {
+			return awberr.Usagef("--json and --compact are mutually exclusive")
+		}
+		return nil
 	}
 
 	root.PersistentFlags().StringVar(&dbFlag, "db", "",
@@ -275,29 +335,6 @@ func (e *env) identity() (string, error) {
 	return cfg.Identity, nil
 }
 
-// exactArgs is cobra.ExactArgs with awb's own classification, so a wrong
-// argument count exits 2 like every other usage mistake.
-func exactArgs(n int) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) != n {
-			return awberr.Usagef("%s takes exactly %d argument(s), got %d",
-				cmd.CommandPath(), n, len(args))
-		}
-		return nil
-	}
-}
-
-// minArgs is cobra.MinimumNArgs with awb's classification.
-func minArgs(n int) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		if len(args) < n {
-			return awberr.Usagef("%s takes at least %d argument(s), got %d",
-				cmd.CommandPath(), n, len(args))
-		}
-		return nil
-	}
-}
-
 // grouping prepares a command that only holds subcommands, so that a name it
 // does not have is reported rather than swallowed: bare, it prints its own
 // help, and given anything else it fails as a usage error. Both halves are
@@ -315,12 +352,4 @@ func grouping(cmd *cobra.Command) *cobra.Command {
 	}
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
 	return cmd
-}
-
-// noArgs rejects any positional argument.
-func noArgs(cmd *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		return awberr.Usagef("%s takes no arguments", cmd.CommandPath())
-	}
-	return nil
 }

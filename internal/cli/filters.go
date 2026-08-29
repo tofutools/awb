@@ -1,31 +1,32 @@
 package cli
 
 import (
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// filterFlags are the filters list, ready, blocked and search share.
+// FilterFlags are the filters list, ready, blocked and search share.
 //
 // Repeated values of one filter are ORed; different filters are ANDed. No
 // filter accepts comma-separated lists. Only status, type, priority, label,
 // assignee and project repeat; every other filter may occur once.
-type filterFlags struct {
-	statuses      []string
-	includeClosed bool
-	types         []string
-	priorities    []int
-	priorityMax   int
-	labels        []string
-	assignees     []string
-	mine          bool
-	unassigned    bool
-	projects      []string
-	parent        string
-	limit         int
-	sort          string
+type FilterFlags struct {
+	Statuses      []string `boa:"ignore"`
+	IncludeClosed bool     `long:"include-closed" optional:"true" help:"widen the status set to include closed issues"`
+	Types         []string `boa:"ignore"`
+	Priorities    []int    `long:"priority" optional:"true" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`
+	PriorityMax   *int     `long:"priority-max" help:"select issues at least this urgent, inclusive (0 highest)"`
+	Labels        []string `boa:"ignore"`
+	Assignees     []string `boa:"ignore"`
+	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
+	Unassigned    bool     `long:"unassigned" optional:"true" help:"select unassigned issues"`
+	Projects      []string `boa:"ignore"`
+	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
+	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
+	Sort          string   `long:"sort" optional:"true"`
 }
 
 // filterOptions says which of the flags a particular command accepts. A flag a
@@ -41,71 +42,74 @@ type filterOptions struct {
 	relevance bool
 }
 
-func (f *filterFlags) register(cmd *cobra.Command, opts filterOptions) {
+func (f *FilterFlags) registerArrays(cmd *cobra.Command, opts filterOptions) {
 	flags := cmd.Flags()
 
 	if opts.status {
-		flags.StringArrayVar(&f.statuses, "status", nil,
+		flags.StringArrayVar(&f.Statuses, "status", nil,
 			"select this status; repeatable (open, in_progress, closed)")
-		flags.BoolVar(&f.includeClosed, "include-closed", false,
-			"widen the status set to include closed issues")
 	}
-	flags.StringArrayVar(&f.types, "type", nil,
+	flags.StringArrayVar(&f.Types, "type", nil,
 		"select this type; repeatable (epic, feature, bug, task, chore)")
-	flags.IntSliceVar(&f.priorities, "priority", nil,
-		"select this priority exactly; repeatable (0 highest to 4 lowest)")
-	flags.IntVar(&f.priorityMax, "priority-max", -1,
-		"select issues at least this urgent, inclusive (0 highest)")
-	flags.StringArrayVar(&f.labels, "label", nil, "select this label; repeatable")
+	flags.StringArrayVar(&f.Labels, "label", nil, "select this label; repeatable")
 	if opts.assignee {
-		flags.StringArrayVar(&f.assignees, "assignee", nil, "select this assignee; repeatable")
-		flags.BoolVar(&f.mine, "mine", false, "shorthand for --assignee <your identity>")
-		flags.BoolVar(&f.unassigned, "unassigned", false, "select unassigned issues")
+		flags.StringArrayVar(&f.Assignees, "assignee", nil, "select this assignee; repeatable")
 	}
-	flags.StringArrayVar(&f.projects, "project", nil, "select this project; repeatable")
-	flags.StringVar(&f.parent, "parent", "", "select the direct children of this issue")
-	flags.IntVar(&f.limit, "limit", -1, "cap the number of results; zero returns none")
+	flags.StringArrayVar(&f.Projects, "project", nil, "select this project; repeatable")
+}
 
-	sortHelp := "priority, created, updated or id, optionally prefixed with \"-\""
-	if opts.relevance {
-		sortHelp = "relevance, priority, created, updated or id, optionally prefixed with \"-\""
+func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.Command) error {
+	return func(ctx *boa.HookContext, f *FilterFlags, cmd *cobra.Command) error {
+		f.registerArrays(cmd, opts)
+		sortHelp := "priority, created, updated or id, optionally prefixed with \"-\""
+		if opts.relevance {
+			sortHelp = "relevance, priority, created, updated or id, optionally prefixed with \"-\""
+		}
+		boa.GetParamT(ctx, &f.Sort).SetDescription(sortHelp)
+		if !opts.status {
+			boa.GetParamT(ctx, &f.IncludeClosed).SetIgnored(true)
+		}
+		if !opts.assignee {
+			boa.GetParamT(ctx, &f.Mine).SetIgnored(true)
+			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
+		}
+		return nil
 	}
-	flags.StringVar(&f.sort, "sort", "", sortHelp)
 }
 
 // build turns the flags into a domain filter, applying directory context and
 // the per-command rules.
-func (f *filterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*domain.Filter, error) {
+func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*domain.Filter, error) {
 	cfg, err := e.config()
 	if err != nil {
 		return nil, err
 	}
 
-	filter := &domain.Filter{IncludeClosed: f.includeClosed}
+	filter := &domain.Filter{IncludeClosed: f.IncludeClosed}
 
-	for _, s := range f.statuses {
+	for _, s := range f.Statuses {
 		status, err := domain.ParseStatus(s)
 		if err != nil {
 			return nil, err
 		}
 		filter.Statuses = append(filter.Statuses, status)
 	}
-	for _, s := range f.types {
+	for _, s := range f.Types {
 		issueType, err := domain.ParseType(s)
 		if err != nil {
 			return nil, err
 		}
 		filter.Types = append(filter.Types, issueType)
 	}
-	for _, p := range f.priorities {
+	for _, p := range f.Priorities {
 		priority, err := domain.ParsePriority(p)
 		if err != nil {
 			return nil, err
 		}
 		filter.Priorities = append(filter.Priorities, priority)
 	}
-	if cmd.Flags().Changed("priority-max") {
-		priority, err := domain.ParsePriority(f.priorityMax)
+	if f.PriorityMax != nil {
+		priority, err := domain.ParsePriority(*f.PriorityMax)
 		if err != nil {
 			return nil, err
 		}
@@ -119,33 +123,32 @@ func (f *filterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 		return nil, err
 	}
 
-	if cmd.Flags().Changed("limit") {
-		if f.limit < 0 {
+	if f.Limit != nil {
+		if *f.Limit < 0 {
 			return nil, awberr.Usagef("--limit must not be negative")
 		}
-		limit := f.limit
+		limit := *f.Limit
 		filter.Limit = &limit
 	}
 
-	filter.Parent = f.parent
+	filter.Parent = f.Parent
 
 	sort := domain.DefaultSort
 	if opts.relevance {
 		sort = domain.DefaultSearchSort
 	}
-	if f.sort != "" {
-		if sort, err = domain.ParseSort(f.sort, opts.relevance); err != nil {
+	if f.Sort != "" {
+		if sort, err = domain.ParseSort(f.Sort, opts.relevance); err != nil {
 			return nil, err
 		}
 	}
 	filter.Sort = sort
-
 	return filter, nil
 }
 
 // buildAssignee applies the mutually exclusive assignee filters. --mine
 // resolves to the configured identity.
-func (f *filterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptions,
+func (f *FilterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptions,
 	filter *domain.Filter) error {
 	if !opts.assignee {
 		return nil
@@ -162,16 +165,16 @@ func (f *filterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptio
 	}
 
 	switch {
-	case f.mine:
+	case f.Mine:
 		identity, err := e.identity()
 		if err != nil {
 			return err
 		}
 		filter.Assignees = []string{identity}
-	case f.unassigned:
+	case f.Unassigned:
 		filter.Unassigned = true
 	default:
-		for _, a := range f.assignees {
+		for _, a := range f.Assignees {
 			assignee, err := domain.ValidateAssignee(a)
 			if err != nil {
 				return err
@@ -189,10 +192,10 @@ func (f *filterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptio
 // replaces it: an issue belongs to exactly one project, so intersecting the
 // two could only ever yield nothing, and the explicit flag is what the person
 // running the command means. The context label works the same way.
-func (f *filterFlags) buildScope(contextProject, contextLabel string, cmd *cobra.Command,
+func (f *FilterFlags) buildScope(contextProject, contextLabel string, cmd *cobra.Command,
 	filter *domain.Filter) error {
 	if cmd.Flags().Changed("project") {
-		for _, p := range f.projects {
+		for _, p := range f.Projects {
 			key, err := domain.ValidateProjectKey(p)
 			if err != nil {
 				return err
@@ -204,7 +207,7 @@ func (f *filterFlags) buildScope(contextProject, contextLabel string, cmd *cobra
 	}
 
 	if cmd.Flags().Changed("label") {
-		for _, l := range f.labels {
+		for _, l := range f.Labels {
 			label, err := domain.ValidateLabel(l)
 			if err != nil {
 				return err

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/mikaelstaldal/go-server-common/csrf"
 	"github.com/mikaelstaldal/go-server-common/httputil"
@@ -151,14 +152,26 @@ func (o serveOptions) originHost() string {
 	return o.addr
 }
 
-func newServeCommand(e *env) *cobra.Command {
-	var (
-		opts          serveOptions
-		identity      string
-		basicAuthFile string
-	)
+type serveParams struct {
+	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; empty for every interface"`
+	Port           int      `long:"port" default:"7777" optional:"true" help:"port to listen on"`
+	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
+	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
+	CORSOrigins    []string `boa:"ignore"`
+	Identity       *string  `long:"identity" help:"the single identity an unauthenticated server attributes every request to"`
+	BasicAuthFile  *string  `long:"basic-auth-file" help:"htpasswd file of username:bcrypt-hash entries"`
+	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
+}
 
-	cmd := &cobra.Command{
+func (p *serveParams) options() serveOptions {
+	return serveOptions{
+		addr: p.Addr, port: p.Port, publicURL: p.PublicURL, https: p.HTTPS,
+		corsOrigins: p.CORSOrigins, basicAuthRealm: p.BasicAuthRealm,
+	}
+}
+
+func newServeCommand(e *env) *cobra.Command {
+	return boa.CmdT[serveParams]{
 		Use:   "serve",
 		Short: "Serve the HTTP API and the bundled read-only web UI",
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
@@ -173,15 +186,21 @@ func newServeCommand(e *env) *cobra.Command {
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
 			"tells browsers to keep using TLS.",
-		Args: noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		ParamEnrich: boaParams,
+		InitFunc: func(p *serveParams, cmd *cobra.Command) error {
+			cmd.Flags().StringArrayVar(&p.CORSOrigins, "cors-origin", nil,
+				"allow this exact browser origin to call the API; repeatable")
+			return nil
+		},
+		RunFuncE: func(p *serveParams, cmd *cobra.Command, _ []string) error {
+			opts := p.options()
 			// What the flags say is checked before anything is opened, so a
 			// flag that could never work is reported as the usage error it is
 			// rather than behind an unrelated failure to find a database.
 			if err := opts.validate(); err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("identity") && cmd.Flags().Changed("basic-auth-file") {
+			if p.Identity != nil && p.BasicAuthFile != nil {
 				return awberr.Usagef("--identity and --basic-auth-file are mutually exclusive")
 			}
 
@@ -196,6 +215,10 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			defer db.Close() //nolint:errcheck // closing on the way out
 
+			basicAuthFile := ""
+			if p.BasicAuthFile != nil {
+				basicAuthFile = *p.BasicAuthFile
+			}
 			htpasswd, err := loadHtpasswd(basicAuthFile)
 			if err != nil {
 				return err
@@ -203,6 +226,10 @@ func newServeCommand(e *env) *cobra.Command {
 
 			fixedIdentity := ""
 			if htpasswd == nil {
+				identity := ""
+				if p.Identity != nil {
+					identity = *p.Identity
+				}
 				if fixedIdentity, err = resolveServerIdentity(cmd, cfg, identity); err != nil {
 					return err
 				}
@@ -216,24 +243,7 @@ func newServeCommand(e *env) *cobra.Command {
 
 			return runServer(cmd.Context(), e, opts, httpHandler)
 		},
-	}
-
-	cmd.Flags().StringVar(&opts.addr, "addr", "127.0.0.1",
-		"address to listen on; empty for every interface")
-	cmd.Flags().IntVar(&opts.port, "port", 7777, "port to listen on")
-	cmd.Flags().StringVar(&opts.publicURL, "public-url", "",
-		"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/")
-	cmd.Flags().BoolVar(&opts.https, "https", false,
-		"a reverse proxy in front terminates TLS: send Strict-Transport-Security")
-	cmd.Flags().StringArrayVar(&opts.corsOrigins, "cors-origin", nil,
-		"allow this exact browser origin to call the API; repeatable")
-	cmd.Flags().StringVar(&identity, "identity", "",
-		"the single identity an unauthenticated server attributes every request to")
-	cmd.Flags().StringVar(&basicAuthFile, "basic-auth-file", "",
-		"htpasswd file of username:bcrypt-hash entries")
-	cmd.Flags().StringVar(&opts.basicAuthRealm, "basic-auth-realm", "awb",
-		"realm presented to clients that supply no credentials")
-	return cmd
+	}.ToCobra()
 }
 
 // loadHtpasswd reads the credentials file strictly.
