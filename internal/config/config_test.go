@@ -25,7 +25,7 @@ func isolate(t *testing.T) (configDir, dataDir string) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	for _, name := range []string{
 		"AWB_DB", "AWB_ATTACHMENTS", "AWB_USER", "AWB_PASSWORD", "AWB_IDENTITY", "AWB_PROJECT",
-		"AWB_COLOR", "NO_COLOR",
+		"AWB_COLOR", "AWB_CONFIG_FILE", "NO_COLOR",
 	} {
 		t.Setenv(name, "")
 	}
@@ -469,4 +469,60 @@ func TestLocalFileCannotSetAttachments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "awb", cfg.ContextProject)
 	assert.Equal(t, filepath.Join(dataDir, "awb", "attachments"), cfg.Attachments)
+}
+
+// AWB_CONFIG_FILE moves the user configuration file, and the one at the
+// default path is then not read at all.
+func TestConfigFileEnvOverridesThePath(t *testing.T) {
+	configDir, _ := isolate(t)
+	writeUserConfig(t, configDir, "project: ignored\ncolor: always\n")
+
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere.yaml")
+	require.NoError(t, os.WriteFile(elsewhere, []byte("project: chosen\n"), 0o600))
+	t.Setenv("AWB_CONFIG_FILE", elsewhere)
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "chosen", cfg.CreateProject)
+	assert.Equal(t, config.ColorAuto, cfg.Color, "the file at the default path is not read")
+}
+
+// A bad value in the named file is still a configuration error, and the
+// message names that file rather than the default one.
+func TestConfigFileEnvErrorNamesTheNamedFile(t *testing.T) {
+	isolate(t)
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere.yaml")
+	require.NoError(t, os.WriteFile(elsewhere, []byte("color: purple\n"), 0o600))
+	t.Setenv("AWB_CONFIG_FILE", elsewhere)
+
+	_, err := config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 1, awberr.ExitCode(err))
+	assert.Contains(t, err.Error(), elsewhere)
+}
+
+// A file named by the variable must exist: pointing at one that does not is a
+// usage error rather than a silent fall back to the defaults, so a typo in the
+// path cannot go unnoticed.
+func TestConfigFileEnvMissingFileIsAUsageError(t *testing.T) {
+	isolate(t)
+	missing := filepath.Join(t.TempDir(), "nothing-here.yaml")
+	t.Setenv("AWB_CONFIG_FILE", missing)
+
+	_, err := config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 2, awberr.ExitCode(err))
+	assert.Contains(t, err.Error(), "AWB_CONFIG_FILE")
+	assert.Contains(t, err.Error(), missing)
+}
+
+// The default path carries no such obligation: nobody named it, so its absence
+// simply means no user configuration.
+func TestMissingDefaultUserFileIsLegal(t *testing.T) {
+	configDir, _ := isolate(t)
+	require.NoError(t, os.RemoveAll(filepath.Join(configDir, "awb")))
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, config.ColorAuto, cfg.Color)
 }
