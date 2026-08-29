@@ -48,7 +48,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 
 | Path | Holds |
 | --- | --- |
-| `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the `--compact` encoders. |
+| `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the permission rules, password hashing, the `--compact` encoders. |
 | `internal/storage` | The schema, the migrations, all SQL, and the attachment blob store. |
 | `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
 | `internal/backend` | The one interface every command is written against. |
@@ -72,6 +72,13 @@ Three structural rules hold the design together:
 * **The domain layer does no I/O.** Rules live there and are shared wholesale
   by both surfaces. When a rule needs to read the graph, the rule stays in
   `domain` as a function over sets and the traversal goes in `storage`.
+* **Authorization is `internal/local`'s, and only a server's.** What a caller
+  may see is one condition on a project key carried by the transaction, set in
+  one place (`Backend.authorize`) and consulted by every query; what they may
+  change is a pure function in `domain` applied inside the same
+  `BEGIN IMMEDIATE` as the write. Direct mode applies neither. A read that
+  forgets the scope does not fail, it leaks, so a new query consults the
+  transaction it runs in rather than taking the scope as a parameter.
 * **`openapi.yaml` is the source of truth for the HTTP API.** The Go server in
   `internal/api` is generated from it by ogen and the TypeScript types in
   `web/ts/api-types.ts` by openapi-typescript; neither is committed and neither
