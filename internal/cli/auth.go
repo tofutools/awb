@@ -25,16 +25,27 @@ import (
 // request rather than at startup is what makes adding the first user close the
 // door immediately, and it costs one indexed lookup.
 //
-// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
-// behind it.
+// Everything the server answers sits behind it: the API, the OpenAPI document
+// and the web UI alike. The one thing that does not is a CORS preflight, which
+// carries no credentials because the specification forbids it and no data
+// because it is a question about the request that follows; see Middleware.
 type authenticator struct {
 	db    *storage.DB
 	realm string
 }
 
 // dummyHash is what a password is compared against when the username is not
-// one the database holds, so that an unknown user costs the same time as a
-// wrong password and the response does not say which of the two it was.
+// one the database holds, so that an unknown user costs bcrypt work rather
+// than returning at once — which, with the two answers being byte-identical,
+// is what stops the response from saying which of the two it was.
+//
+// It equalises against a hash awb wrote itself, both being at bcrypt's default
+// cost. It cannot equalise against one imported at another cost: the cost is
+// part of the hash, so a wrong password for an account whose hash was written
+// by "htpasswd -Bn" at its own default is measurably cheaper than an unknown
+// username. That is a property of the imported credential rather than of this
+// comparison — the same lower cost is what makes it a weaker password — and it
+// is why the schema for one says so.
 //
 // It is derived once, from bytes nobody has, rather than being a constant: a
 // constant would be a hash in the source that some deployment might one day
@@ -77,7 +88,8 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 		}
 		if !found {
 			// Compared anyway, against a hash nothing matches, so that an
-			// unknown username takes as long as a wrong password.
+			// unknown username costs bcrypt work rather than returning at
+			// once; see dummyHash for what that does and does not equalise.
 			domain.CheckPassword(dummyHash(), password)
 			return nil
 		}
@@ -100,6 +112,18 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// A browser never puts credentials on a preflight — the CORS
+			// specification forbids it — so requiring them here would refuse
+			// every cross-origin request that needs one, and --cors-origin
+			// would mean nothing on a server that authenticates. The preflight
+			// carries no data and returns none: it is answered with headers
+			// saying what the request that follows may be, and that request is
+			// authenticated like any other.
+			if isPreflight(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			username, password, given := r.BasicAuth()
 			required, ok, err := a.check(r.Context(), username, password)
 			switch {
@@ -123,6 +147,13 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 			next.ServeHTTP(w, r.WithContext(auth.ContextWithUsername(r.Context(), username)))
 		})
 	}
+}
+
+// isPreflight recognises a CORS preflight: an OPTIONS request asking what a
+// later request may do. The header is what tells one apart from an ordinary
+// OPTIONS, and a browser always sends it.
+func isPreflight(r *http.Request) bool {
+	return r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 }
 
 // writeAuthError answers in the API's own error shape, so a refusal from in

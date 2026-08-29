@@ -592,3 +592,118 @@ func TestAnEmptyPatchIsNotAWayToReadAnAccount(t *testing.T) {
 	_, err = root.WithUser("bob").UpdateUser(ctx, "bob", backend.UserPatch{}, "")
 	require.NoError(t, err)
 }
+
+// The graph is deliberately not scoped, and this is what that means.
+//
+// A visible issue's relations and blockers may name issues the caller cannot
+// fetch, and its blocked state is computed over all of them, because readiness
+// has to be true: an issue held up by work you cannot see is still held up. A
+// name is all that is exposed.
+func TestTheGraphIsNotScopedAndReadinessIsTrue(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	blocker, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	require.NoError(t, err)
+	blocked, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Parser crashes",
+		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: blocker.ID}},
+	})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	seen, err := bob.GetIssue(ctx, blocked.ID)
+	require.NoError(t, err)
+
+	assert.True(t, seen.Blocked, "held up by work bob cannot see, and still held up")
+	assert.Equal(t, []string{blocker.ID}, seen.Blockers)
+	require.Len(t, seen.Relations, 1)
+	assert.Equal(t, blocker.ID, seen.Relations[0].Other)
+
+	// A name is all of it: the issue behind it is not there for bob.
+	_, err = bob.GetIssue(ctx, blocker.ID)
+	notFound(t, err)
+
+	// And the listing that decides what to pick up agrees with the flag.
+	ready, err := bob.ListIssues(ctx, &domain.Filter{Readiness: domain.ReadinessReady})
+	require.NoError(t, err)
+	assert.Empty(t, ready.Issues)
+
+	stuck, err := bob.ListIssues(ctx, &domain.Filter{Readiness: domain.ReadinessBlocked})
+	require.NoError(t, err)
+	require.Len(t, stuck.Issues, 1)
+	assert.Equal(t, blocked.ID, stuck.Issues[0].ID)
+
+	// Closing the invisible blocker makes bob's issue ready, with no write to
+	// it — which only works because the state is computed over the whole graph.
+	_, err = root.CloseIssue(ctx, blocker.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+	ready, err = bob.ListIssues(ctx, &domain.Filter{Readiness: domain.ReadinessReady})
+	require.NoError(t, err)
+	require.Len(t, ready.Issues, 1)
+}
+
+// The relation rules are global too: a rule answered over half a graph is not
+// the rule, so a caller cannot close a cycle through issues they cannot see.
+func TestTheRelationRulesSeeTheWholeGraph(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	// mine -> hidden -> other, all by blocked-by, with the middle one out of
+	// bob's sight.
+	other, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Far end"})
+	require.NoError(t, err)
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "web", Title: "Middle",
+		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: other.ID}},
+	})
+	require.NoError(t, err)
+	mine, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Near end",
+		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: hidden.ID}},
+	})
+	require.NoError(t, err)
+
+	// "other blocked-by mine" would close the loop through the issue bob
+	// cannot see, and is refused rather than stored.
+	_, err = root.WithUser("bob").AddRelation(ctx, other.ID,
+		backend.RelationRequest{Type: domain.RelBlockedBy, Other: mine.ID}, "")
+	require.Error(t, err)
+	assert.Equal(t, 4, awberr.ExitCode(err), "a cycle is a conflict, not a refusal of access")
+}
+
+// An issue's parent may be one the caller cannot see — the child is theirs and
+// its own relations already name it — and replacing it is changing their own
+// issue, exactly as deleting the child would.
+func TestReparentingAnIssueWhoseParentIsInvisible(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	hiddenParent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Epic"})
+	require.NoError(t, err)
+	visibleParent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Other epic"})
+	require.NoError(t, err)
+	child, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: hiddenParent.ID}},
+	})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+
+	// Without force it is the ordinary "already has a parent" conflict, which
+	// names an id bob's own issue already carries in its relations.
+	_, err = bob.AddRelation(ctx, child.ID,
+		backend.RelationRequest{Type: domain.RelHasParent, Other: visibleParent.ID}, "")
+	require.Error(t, err)
+	assert.Equal(t, 4, awberr.ExitCode(err))
+
+	updated, err := bob.AddRelation(ctx, child.ID,
+		backend.RelationRequest{Type: domain.RelHasParent, Other: visibleParent.ID, Force: true}, "")
+	require.NoError(t, err)
+	require.Len(t, updated.Relations, 1)
+	assert.Equal(t, visibleParent.ID, updated.Relations[0].Other)
+}

@@ -447,6 +447,13 @@ resolve to one. Forbidden is reserved for what a caller can see and may not
 change. Two flags stand outside the projects — one over projects, one over users
 — and neither implies the other.
 
+**The graph is not scoped, and must not be.** A visible issue's relations and
+blockers may name issues the caller cannot fetch; the derived `blocked` state,
+and the relation rules that refuse a cycle or an inverted decomposition, are
+computed over the whole graph. A rule answered over half a graph is not the
+rule, and readiness computed over half a graph is a lie that sends somebody to
+start blocked work. What that costs is a name, and a name is all it costs.
+
 **Both live in the same transaction as the write they guard.** The permissions
 are read from the user row inside the operation's own `BEGIN IMMEDIATE`, so they
 are the permissions at the moment of the write and not at the moment the request

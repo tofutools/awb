@@ -290,6 +290,12 @@ else: a project they hold no access to, and every issue in it, is simply not
 there for them — absent from every listing, search, facet and tree, and answered
 "no such project" rather than "forbidden", since it is not theirs to know about.
 
+The dependency graph is the exception, and deliberately: a visible issue's
+relations and blockers may *name* issues in projects you cannot reach, and
+whether it is blocked is computed over all of them. Readiness has to be true —
+an issue held up by work you cannot see is still held up — and a name is all
+that is exposed, since fetching one of those issues is still "no such issue".
+
 | | |
 | --- | --- |
 | `regular` in a project | Work with its issues: read, create, edit, claim, close, attach. |

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/local"
 	"github.com/tofutools/awb/internal/openapi"
@@ -254,4 +257,75 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	_, err = client.GetUser(ctx, "bob")
 	require.Error(t, err)
 	assert.Equal(t, 3, awberr.ExitCode(err))
+}
+
+// A value the operator typed and got wrong is a usage mistake whatever the
+// database holds, and is reported before anything is opened. Only having no
+// identity at all depends on the database: a server that authenticates every
+// request never attributes one to nobody.
+func TestServeChecksTheIdentityFlagBeforeAnythingElse(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	// No database at this path at all: reaching one would be a failure of its
+	// own, so exit 2 here can only be the flag.
+	t.Setenv("AWB_DB", filepath.Join(root, "nothing.db"))
+	t.Setenv("AWB_CONFIG_FILE", "")
+
+	var out, errOut bytes.Buffer
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	code := Execute(t.Context(), "test", openapi.New(raw),
+		[]string{"serve", "--identity", "Mikael"}, &out, &errOut, strings.NewReader(""))
+
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut.String(), "--identity")
+}
+
+// Resolution itself reports only that there is none; whether that is fatal is
+// the database's answer, which is why the two are separate.
+func TestResolveServerIdentity(t *testing.T) {
+	cfg := &config.Config{Identity: "mikael"}
+
+	resolved, err := resolveServerIdentity(cfg, "alice")
+	require.NoError(t, err)
+	assert.Equal(t, "alice", resolved, "the flag outranks everything below it")
+
+	resolved, err = resolveServerIdentity(cfg, "")
+	require.NoError(t, err)
+	assert.Equal(t, "mikael", resolved)
+
+	_, err = resolveServerIdentity(&config.Config{}, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--identity")
+}
+
+// A browser never puts credentials on a preflight, the CORS specification
+// forbidding it, so a server that authenticates must answer one anyway or
+// --cors-origin would mean nothing on it.
+func TestCORSPreflightPassesAuthentication(t *testing.T) {
+	opts := serveOptions{
+		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
+		corsOrigins: []string{"https://ui.example.com"},
+	}
+	h, be := newServeHandlerOn(t, opts)
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	resp, _ := get(t, h, http.MethodOptions, "/api/issues",
+		"Origin", "https://ui.example.com",
+		"Access-Control-Request-Method", "POST",
+		"Access-Control-Request-Headers", "authorization, content-type")
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, "https://ui.example.com", resp.Header.Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "true", resp.Header.Get("Access-Control-Allow-Credentials"))
+
+	// The request the preflight asked about is authenticated like any other,
+	// so the exemption opens nothing.
+	resp, _ = get(t, h, http.MethodGet, "/api/issues", "Origin", "https://ui.example.com")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	// And an OPTIONS that is not a preflight gets no exemption either.
+	resp, _ = get(t, h, http.MethodOptions, "/api/issues", "Origin", "https://ui.example.com")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }

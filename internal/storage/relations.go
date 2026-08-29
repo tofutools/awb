@@ -90,6 +90,12 @@ func (t *Tx) DeleteRelation(subject string, relType domain.RelationType, other s
 // would close a cycle.
 //
 // Each relation type is a graph of its own and is walked separately.
+//
+// This and the four walks below are deliberately unscoped, as is
+// BlockedByEdges. They answer the graph rules, and a rule answered over half a
+// graph is not the rule: a caller who cannot see part of a cycle could
+// otherwise close one. What follows is that a relation can be refused on
+// account of an edge the caller cannot see, which the API document states.
 func (t *Tx) Reaches(relType domain.RelationType, from, to string) (bool, error) {
 	var one int
 	err := t.q.QueryRowContext(t.ctx, `

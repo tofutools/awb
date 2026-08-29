@@ -181,6 +181,10 @@ func newServeCommand(e *env) *cobra.Command {
 			if err := opts.validate(); err != nil {
 				return err
 			}
+			if err := checkIdentityFlag(cmd, identity); err != nil {
+				return err
+			}
+
 			cfg, err := e.requireLocal("serve")
 			if err != nil {
 				return err
@@ -196,14 +200,19 @@ func newServeCommand(e *env) *cobra.Command {
 			// attributed to, and is therefore only required while the database
 			// holds no user. Whether it does is asked here so the demand is
 			// made at startup rather than on the first request that needs one.
-			fixedIdentity, err := resolveServerIdentity(cmd, cfg, identity)
-			if err != nil {
-				open, openErr := serverIsOpen(cmd.Context(), db)
-				if openErr != nil {
-					return openErr
+			fixedIdentity, missing := resolveServerIdentity(cfg, identity)
+			if missing != nil {
+				// Only a server that would answer an unauthenticated request
+				// needs one, so whether this is fatal is the database's answer.
+				// A server that authenticates every request never uses the
+				// value, and demanding one there would be asking the operator
+				// to name somebody who stands for nobody.
+				open, err := serverIsOpen(cmd.Context(), db)
+				if err != nil {
+					return err
 				}
 				if open {
-					return err
+					return missing
 				}
 			}
 
@@ -254,21 +263,33 @@ func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
 	return open, err
 }
 
+// checkIdentityFlag applies the assignee vocabulary to an explicit --identity.
+//
+// It is separate from resolving one, and unconditional, because the two
+// failures are different failures: a value the operator typed and got wrong is
+// a usage mistake whatever the database holds, while having no identity at all
+// only matters on a server that would answer an unauthenticated request.
+// Folding the first into the second would let "--identity Mikael" start a
+// server that quietly ignored it.
+func checkIdentityFlag(cmd *cobra.Command, flag string) error {
+	if !cmd.Flags().Changed("identity") {
+		return nil
+	}
+	if _, err := domain.ValidateAssignee(flag); err != nil {
+		return awberr.Usagef("--identity: %s", err.Error())
+	}
+	return nil
+}
+
 // resolveServerIdentity resolves the identity an unauthenticated request is
 // attributed to, from the same sources and in the same order as the CLI's own:
 // --identity, else AWB_IDENTITY, else identity in the user configuration file,
 // else the OS username folded to the assignee set.
 //
-// An explicit --identity outside that set is a usage error rather than
-// something to fold. A resolution that yields nothing at all fails a server
-// that would answer unauthenticated requests, whose every claim would
-// otherwise fail; a server that authenticates every request never uses this
-// value, and its absence is not an error there.
-func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) (string, error) {
-	if cmd.Flags().Changed("identity") {
-		if _, err := domain.ValidateAssignee(flag); err != nil {
-			return "", awberr.Usagef("--identity: %s", err.Error())
-		}
+// The error it returns says only that there is none. Whether that is fatal is
+// the caller's question, and the database's answer.
+func resolveServerIdentity(cfg *config.Config, flag string) (string, error) {
+	if flag != "" {
 		return flag, nil
 	}
 	if cfg.Identity == "" {

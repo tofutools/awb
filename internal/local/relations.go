@@ -96,6 +96,14 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 //
 // An issue has at most one parent; naming a different one fails unless force
 // is given, which replaces it.
+//
+// The parent it replaces is read unscoped, and may therefore be an issue in a
+// project the caller has no access to. That is deliberate on both counts: the
+// edge is stored on the child, which is the caller's to change — deleting the
+// child outright would remove it too — and the child's own relations already
+// name that parent, so the refusal below reveals nothing the caller cannot
+// read. Reading it scoped would instead leave an issue whose parent could
+// neither be seen nor replaced.
 func addParent(tx *storage.Tx, child, parent string, force bool) error {
 	existing, hasParent, err := tx.ParentOf(child)
 	if err != nil {

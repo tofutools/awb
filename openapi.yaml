@@ -35,6 +35,18 @@ info:
     deletes projects and holds `admin` access in every one of them, and
     `user_admin` creates, changes and deletes users. Neither implies the other.
 
+    Two things are deliberately *not* filtered, and both are about the graph
+    rather than about the data. A visible issue's `relations` and `blockers`
+    may name issues in projects the caller has no access to: the issue is
+    theirs to see and what it depends on is part of it. A name is all that is
+    exposed — fetching one of those issues is a `404` like anything else. And
+    `blocked`, with the `ready` and `blocked` listings that follow from it, is
+    computed over the whole graph, because readiness has to be true: an issue
+    held up by work you cannot see is still held up, and calling it ready would
+    send somebody to start it. The relation rules are global for the same
+    reason, so adding one can be refused on account of an edge the caller
+    cannot see.
+
     Within a major version, changes to this document are additive only.
     `info.version` tracks the API, not the binary.
   license:
@@ -1301,6 +1313,13 @@ components:
 
         Only bcrypt is accepted. htpasswd's other schemes are refused, because
         a hash the server cannot verify is a login that would never work.
+
+        The cost is whatever the hash carries, which is the operator's choice
+        and not the server's: `htpasswd -B` writes a far cheaper one by default
+        than awb does, and a cheaper hash is both a weaker password and one
+        whose verification time tells a caller that the account exists. Write
+        it with a cost of at least 10 — `htpasswd -BnC 10` — to match what awb
+        writes itself.
       minLength: 1
       maxLength: 255
       writeOnly: true
@@ -1446,17 +1465,29 @@ components:
             Derived and read-only: true when the issue is itself not closed and
             at least one issue it is `blocked-by` is not closed. A closed issue
             is therefore never blocked.
+
+            It is computed over the whole graph rather than over what the
+            caller may see, because readiness has to be true: an issue held up
+            by work in a project you have no access to is still held up.
         blockers:
           type: array
           description: |
             Derived and read-only: the not-closed issues that cause `blocked`.
             Sorted, and empty for a closed issue whatever its relations say.
+
+            An entry may name an issue in a project the caller has no access
+            to, for the reason `blocked` gives. The name is all that is
+            exposed: fetching that issue is a `404`.
           items: { type: string }
         relations:
           type: array
           description: |
             Derived and read-only: every relation the issue takes part in, at
             either end.
+
+            As with `blockers`, `other` may name an issue in a project the
+            caller has no access to: this issue is theirs to see and what it is
+            related to is part of it.
           items: { $ref: '#/components/schemas/Relation' }
         links:
           type: array
