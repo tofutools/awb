@@ -239,7 +239,9 @@ origin against this one.
 
 `--https` sends `Strict-Transport-Security`. It is opt-in rather than implied by
 an `https://` public URL, because it tells every browser that saw it to refuse
-plain HTTP to that host for a year — including any other application on it.
+plain HTTP to that host for a year — including any other application on it. It
+goes with an `https://` `--public-url`, or with none; the two contradicting each
+other is refused, a browser ignoring the header when it arrives over plain HTTP.
 
 ## Concurrency
 

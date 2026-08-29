@@ -345,12 +345,14 @@ func TestBasePathOfThePublicURL(t *testing.T) {
 // startup rather than one to discover in a UI that cannot save.
 func TestPublicURLMustBeAnOriginABrowserCanSend(t *testing.T) {
 	for _, publicURL := range []string{
-		"//example.com/awb",            // no scheme, so no origin
-		"javascript://example.com/awb", // a scheme no browser sends as an origin
-		"https:///awb",                 // no host
-		"https://user:pw@example.com/", // credentials are not part of a base URL
-		"https://example.com/awb?x=1",  // nor a query
-		"https://example.com/awb#frag", // nor a fragment
+		"//example.com/awb",             // no scheme, so no origin
+		"javascript://example.com/awb",  // a scheme no browser sends as an origin
+		"https:///awb",                  // no host
+		"https://user:pw@example.com/",  // credentials are not part of a base URL
+		"https://example.com/awb?x=1",   // nor a query
+		"https://example.com/awb#frag",  // nor a fragment
+		"https://example.com:65536/awb", // a port no connection can be made to
+		"https://example.com:0/awb",     // nor to this one
 	} {
 		_, err := parsePublicURL(publicURL)
 		assert.Error(t, err, publicURL)
@@ -365,6 +367,29 @@ func TestPublicURLMustBeAnOriginABrowserCanSend(t *testing.T) {
 		assert.NoError(t, err, publicURL)
 		assert.NotNil(t, parsed, publicURL)
 	}
+}
+
+// --https and --public-url describe one deployment, so they cannot disagree
+// about whether it is behind TLS: a browser ignores Strict-Transport-Security
+// received over plain HTTP, so the pair would leave the operator believing in a
+// protection that is not there.
+func TestHTTPSAndAnHTTPPublicURLContradictEachOther(t *testing.T) {
+	behindTLS := serveOptions{addr: "127.0.0.1", port: 7777, https: true}
+
+	contradictory := behindTLS
+	contradictory.publicURL = "http://example.com/awb/"
+	assert.Error(t, contradictory.validate())
+
+	agreeing := behindTLS
+	agreeing.publicURL = "https://example.com/awb/"
+	assert.NoError(t, agreeing.validate())
+
+	// --https on its own still says a proxy in front terminates TLS.
+	assert.NoError(t, behindTLS.validate())
+
+	// And an http public URL is fine when nothing claims otherwise.
+	plain := serveOptions{addr: "127.0.0.1", port: 7777, publicURL: "http://example.com/awb/"}
+	assert.NoError(t, plain.validate())
 }
 
 // An IPv6 listen address is bracketed in an origin, because that is the form a

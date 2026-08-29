@@ -87,6 +87,15 @@ func (o serveOptions) validate() error {
 	if _, err := basePathOf(publicURL); err != nil {
 		return err
 	}
+	// The two flags describe one deployment, so they cannot disagree about it.
+	// A browser ignores Strict-Transport-Security received over plain HTTP, so
+	// an http public URL with --https is a deployment the operator believes is
+	// protected and is not.
+	if o.https && publicURL != nil && publicURL.Scheme != "https" {
+		return awberr.Usagef(
+			"--https says a proxy terminates TLS, and --public-url %s says it does not",
+			o.publicURL)
+	}
 	return nil
 }
 
@@ -286,6 +295,15 @@ func parsePublicURL(publicURL string) (*url.URL, error) {
 	case parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "":
 		return nil, awberr.Usagef("--public-url: %s must be a base URL, with no query or fragment",
 			publicURL)
+	}
+	// url.Parse asks only that a port be digits, so a URL naming a port no TCP
+	// connection could ever be made to parses happily and yields an origin no
+	// browser can send.
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return nil, awberr.Usagef("--public-url: %s is not a port number", port)
+		}
 	}
 	return parsed, nil
 }
