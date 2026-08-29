@@ -26,7 +26,7 @@ type FilterFlags struct {
 	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this project; repeatable"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
-	Sort          string   `long:"sort" optional:"true" alts:"priority,-priority,created,-created,updated,-updated,id,-id,relevance,-relevance"`
+	Sort          string   `long:"sort" optional:"true" alts:"priority,-priority,created,-created,updated,-updated,id,-id"`
 }
 
 // filterOptions says which of the flags a particular command accepts. A flag a
@@ -57,6 +57,21 @@ func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.
 			boa.GetParamT(ctx, &f.Assignees).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Mine).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
+		}
+		return nil
+	}
+}
+
+// filterPostCreate adds search's two extra sort values after Boa has read the
+// shared struct tag. Its completion function consults this metadata when it is
+// invoked, so other listing commands retain only the common sort vocabulary.
+func filterPostCreate(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.Command) error {
+	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
+		if opts.relevance {
+			boa.GetParamT(ctx, &f.Sort).SetAlternatives([]string{
+				"priority", "-priority", "created", "-created", "updated", "-updated",
+				"id", "-id", "relevance", "-relevance",
+			})
 		}
 		return nil
 	}

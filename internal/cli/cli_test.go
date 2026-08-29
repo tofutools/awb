@@ -122,7 +122,7 @@ func TestEnumParameterCompletions(t *testing.T) {
 		{"list type", []string{"list", "--type"}, []string{"epic", "feature", "bug", "task", "chore"}},
 		{"list priority", []string{"list", "--priority"}, []string{"0", "1", "2", "3", "4"}},
 		{"list priority max", []string{"list", "--priority-max"}, []string{"0", "1", "2", "3", "4"}},
-		{"list sort", []string{"list", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
+		{"list sort", []string{"list", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id"}},
 		{"search sort", []string{"search", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
 		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
 	}

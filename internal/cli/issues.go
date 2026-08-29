@@ -204,11 +204,12 @@ func newShowCommand(e *env) *cobra.Command {
 func listing(e *env, use, short, long string, opts filterOptions,
 	fix func(*domain.Filter), withBlockers bool) *cobra.Command {
 	cmd := boa.CmdT[FilterFlags]{
-		Use:         use,
-		Short:       short,
-		Long:        long,
-		ParamEnrich: boaParams,
-		InitFuncCtx: filterInit(opts),
+		Use:               use,
+		Short:             short,
+		Long:              long,
+		ParamEnrich:       boaParams,
+		InitFuncCtx:       filterInit(opts),
+		PostCreateFuncCtx: filterPostCreate(opts),
 		RunFuncE: func(flags *FilterFlags, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, flags, opts, fix, withBlockers, nil)
 		},
@@ -270,6 +271,9 @@ func newSearchCommand(e *env) *cobra.Command {
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
 			return filterInit(opts)(ctx, &p.FilterFlags, cmd)
+		},
+		PostCreateFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
+			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
 		},
 		RunFuncE: func(p *searchParams, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, &p.FilterFlags, opts, nil, false, p.Terms)
