@@ -181,13 +181,13 @@ func (e *env) reportError(err error) {
 }
 
 type rootParams struct {
-	DB          *string `long:"db" short:"D" persistent:"true" help:"database file or http(s) URL of an awb server"`
-	Attachments *string `long:"attachments" short:"A" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
-	JSON        bool    `long:"json" short:"J" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
-	Compact     bool    `long:"compact" short:"C" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
-	NoContext   bool    `long:"no-context" short:"N" persistent:"true" optional:"true" help:"ignore the project and label of the local configuration file"`
-	Color       string  `long:"color" short:"O" persistent:"true" default:"auto" optional:"true" help:"when to colour the default output: auto, always or never"`
-	NoColor     bool    `long:"no-color" short:"X" persistent:"true" optional:"true" help:"alias for --color never"`
+	DB          *string `long:"db" persistent:"true" help:"database file or http(s) URL of an awb server"`
+	Attachments *string `long:"attachments" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
+	JSON        bool    `long:"json" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
+	Compact     bool    `long:"compact" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
+	NoContext   bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the project and label of the local configuration file"`
+	Color       string  `long:"color" persistent:"true" default:"auto" optional:"true" help:"when to colour the default output: auto, always or never"`
+	NoColor     bool    `long:"no-color" persistent:"true" optional:"true" help:"alias for --color never"`
 }
 
 func newRootCommand(e *env, version string) *cobra.Command {
@@ -201,6 +201,28 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			"for humans and nothing should parse it.",
 		Version:     version,
 		ParamEnrich: boaParams,
+		SubCmds: []*cobra.Command{
+			newInitCommand(e),
+			newAgentGuideCommand(e),
+			newProjectCommand(e),
+			newCreateCommand(e),
+			newShowCommand(e),
+			newListCommand(e),
+			newReadyCommand(e),
+			newBlockedCommand(e),
+			newSearchCommand(e),
+			newUpdateCommand(e),
+			newLabelCommand(e),
+			newClaimCommand(e),
+			newReleaseCommand(e),
+			newCloseCommand(e),
+			newReopenCommand(e),
+			newDeleteCommand(e),
+			newDepCommand(e),
+			newAttachCommand(e),
+			newDemoCommand(e),
+			newServeCommand(e),
+		},
 		PreValidateFunc: func(p *rootParams, cmd *cobra.Command, _ []string) error {
 			e.flags.DB = p.DB
 			e.flags.Attachments = p.Attachments
@@ -231,28 +253,6 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		return awberr.Usagef("%s", err.Error())
 	})
 
-	root.AddCommand(
-		newInitCommand(e),
-		newAgentGuideCommand(e),
-		newProjectCommand(e),
-		newCreateCommand(e),
-		newShowCommand(e),
-		newListCommand(e),
-		newReadyCommand(e),
-		newBlockedCommand(e),
-		newSearchCommand(e),
-		newUpdateCommand(e),
-		newLabelCommand(e),
-		newClaimCommand(e),
-		newReleaseCommand(e),
-		newCloseCommand(e),
-		newReopenCommand(e),
-		newDeleteCommand(e),
-		newDepCommand(e),
-		newAttachCommand(e),
-		newDemoCommand(e),
-		newServeCommand(e),
-	)
 	return grouping(root)
 }
 

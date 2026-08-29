@@ -1,7 +1,7 @@
 charm.land/lipgloss/v2 v2.0.6 h1:EaGKeuA8FvF+v2BT5VmZd2LoYLaMZJXA5n34th8nCIQ=
 charm.land/lipgloss/v2 v2.0.6/go.mod h1:ipDDJNSGa1hlwDtSfW1s2/xR8Vdhbut4PXh2zEKZd0Q=
-github.com/GiGurra/boa v1.0.30 h1:9zceq2uqV+vqMHQmeeHHX4hKv0qiKMbZGNf8yVTJmUQ=
-github.com/GiGurra/boa v1.0.30/go.mod h1:surNBGhsyV1UugARWs4zBJ+JFLS1ASQbCuL2LXCwQLE=
+github.com/GiGurra/boa v1.0.31 h1:OhP/G/Zb7cI7l6rDL5BxUxk50drirbYH/nviEqArpfw=
+github.com/GiGurra/boa v1.0.31/go.mod h1:surNBGhsyV1UugARWs4zBJ+JFLS1ASQbCuL2LXCwQLE=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
 github.com/aymanbagabas/go-udiff v0.4.1/go.mod h1:0L9PGwj20lrtmEMeyw4WKJ/TMyDtvAoK9bf2u/mNo3w=
 github.com/charmbracelet/colorprofile v0.4.3 h1:QPa1IWkYI+AOB+fE+mg/5/4HRMZcaXex9t5KX76i20Q=
