@@ -62,6 +62,11 @@ func (h *Handler) ListAttachments(ctx context.Context, params api.ListAttachment
 // render it there would run whatever an uploaded HTML file said. The stored
 // content type stays metadata, where nothing acts on it.
 //
+// Content-Length is the recorded size rather than one measured on the way
+// past, so a stored file that no longer matches its metadata breaks the
+// transfer instead of arriving as a plausible short one. It can be sent at all
+// only because this is the response serve does not compress; see gzipExcept.
+//
 // The reader is closed by the generated encoder once the body has been
 // written.
 func (h *Handler) GetAttachmentContent(ctx context.Context,
@@ -72,6 +77,7 @@ func (h *Handler) GetAttachmentContent(ctx context.Context,
 	}
 	return &api.GetAttachmentContentOKHeaders{
 		ContentDisposition: api.NewOptString(contentDisposition(attachment.Name)),
+		ContentLength:      api.NewOptInt(int(attachment.Size)),
 		Response:           api.GetAttachmentContentOK{Data: content},
 	}, nil
 }

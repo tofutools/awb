@@ -530,6 +530,13 @@ func isAttachmentDownload(r *http.Request) bool {
 // and about a megabyte of compressor state per download to make them no
 // smaller, and the state is per concurrent request, which is exactly where a
 // server should not be spending memory.
+//
+// That response is also the only one that states its own Content-Length, and
+// compressing it would leave that header describing a body of another length:
+// this middleware clears the header on its way in, and the generated encoder
+// sets it again on the way out. So the two belong together — putting the
+// content back through the compressor would need the header dropped in the
+// same change.
 func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 	compressed := httputil.Gzip(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

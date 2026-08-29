@@ -148,7 +148,9 @@ Content is streamed in both directions and never held in memory whole, so what
 one transfer costs the server is a copy buffer rather than the size of the
 file. It is also the one response the server does not compress: an attachment
 is opaque bytes and as likely as not already compressed, so gzipping it would
-spend time and memory to make it no smaller.
+spend time and memory to make it no smaller — and that is what leaves the
+download free to state its `Content-Length`, so a client can show progress
+instead of reading an unbounded stream to its end.
 
 ### Vocabulary
 

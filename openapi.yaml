@@ -384,6 +384,20 @@ paths:
                 `attachment`, with the stored name as its `filename`, so a
                 browser saves it under the name it was uploaded with.
               schema: { type: string }
+            Content-Length:
+              description: |
+                The attachment's `size`, so a client can show progress and size
+                its buffer instead of reading an unbounded stream to its end.
+
+                It is the recorded size rather than one measured on the way
+                past, which is what makes a truncated response detectable: a
+                stored file that no longer matches its metadata breaks the
+                transfer rather than arriving as a plausible short one.
+
+                This is the one response the server does not compress, which is
+                what leaves the header able to say anything: a compressed body
+                is a different length from the one recorded here.
+              schema: { type: integer, minimum: 0 }
           content:
             application/octet-stream:
               schema: { type: string, format: binary }

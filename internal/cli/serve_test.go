@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -761,6 +762,12 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 	assert.Equal(t, "boom\n", rec.Body.String())
+
+	// And the length it states is the length of what it sent. The two go
+	// together: compressing this response would leave the header describing a
+	// body of another length, so a Content-Encoding here would be a bug and so
+	// would a Content-Length that disagreed with the body.
+	assert.Equal(t, strconv.Itoa(len("boom\n")), rec.Header().Get("Content-Length"))
 
 	// The same client asking for the metadata beside it is compressed as
 	// before, so what was switched off is the one response and not the

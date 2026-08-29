@@ -372,6 +372,16 @@ content type the metadata records. Uploaded content comes back from the same
 origin as the UI, and a browser invited to render it there would run whatever
 an uploaded HTML file said.
 
+It is also the one response that is not compressed, and the only one that
+states its own length. Those two facts are one decision: an attachment is
+opaque bytes and as likely as not already compressed, so the compressor would
+spend time and memory per concurrent download to make it no smaller — and not
+compressing it is what leaves the length able to say anything, since a
+compressed body is a different length from the recorded one. The length sent is
+the recorded size rather than one measured on the way past, so a stored file
+that no longer matches its metadata breaks the transfer instead of arriving as
+a plausible short one.
+
 **The API is specified as if a read/write UI existed**, even though the bundled
 one only reads. That means complete write coverage, optimistic concurrency
 through entity tags and conditional requests, paging with a total count, and

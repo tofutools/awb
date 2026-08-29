@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,6 +29,9 @@ type api struct {
 	t      *testing.T
 	server *httptest.Server
 	be     *local.Backend
+	// blobs is where attachment content is stored, for the tests that look at
+	// the files rather than at the rows.
+	blobs string
 }
 
 func newAPI(t *testing.T) *api {
@@ -54,7 +58,7 @@ func newAPI(t *testing.T) *api {
 
 	server := httptest.NewServer(handler.NoStore(apiServer))
 	t.Cleanup(server.Close)
-	return &api{t: t, server: server, be: be}
+	return &api{t: t, server: server, be: be, blobs: filepath.Join(dir, "attachments")}
 }
 
 // do performs a request and returns the response with its body read.
@@ -986,6 +990,51 @@ func TestGetAttachmentContent(t *testing.T) {
 	assert.Equal(t, "<script>alert(1)</script>", payload, "the bytes exactly as uploaded")
 	assert.Equal(t, "application/octet-stream", resp.Header.Get("Content-Type"))
 	assert.Equal(t, `attachment; filename=page.html`, resp.Header.Get("Content-Disposition"))
+
+	// The length is stated, so a client can show progress rather than reading
+	// an unbounded stream to its end. It is the recorded size, and it is the
+	// length of what actually arrived.
+	assert.Equal(t, strconv.FormatInt(attachment.Size, 10),
+		resp.Header.Get("Content-Length"))
+	assert.EqualValues(t, attachment.Size, resp.ContentLength)
+	assert.Len(t, payload, int(attachment.Size))
+}
+
+// An empty attachment states a length of zero rather than omitting the header,
+// which is a different thing: omitted means "read until I close".
+func TestGetEmptyAttachmentContentStatesZero(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "empty.bin", "")
+
+	resp, payload := a.do(http.MethodGet, "/api/attachments/"+attachment.ID+"/content", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "0", resp.Header.Get("Content-Length"))
+	assert.Empty(t, payload)
+}
+
+// A stored file that no longer matches its metadata breaks the transfer rather
+// than arriving as a plausible short one, which is what stating the recorded
+// size rather than a measured one buys.
+func TestTruncatedContentBreaksTheTransfer(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	attachment := a.attach(issue.ID, "trace.txt", "the whole thing\n")
+
+	// Reach past awb and shorten the stored file, which nothing awb does can
+	// bring about: what is being pinned is what happens if something else does.
+	blob := filepath.Join(a.blobs, attachment.Sha256)
+	require.NoError(t, os.WriteFile(blob, []byte("short"), 0o600))
+
+	resp, err := a.server.Client().Get(
+		a.server.URL + "/api/attachments/" + attachment.ID + "/content")
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck // the body is being read out
+
+	assert.Equal(t, strconv.FormatInt(attachment.Size, 10), resp.Header.Get("Content-Length"),
+		"the length is what was recorded, not what is on the disk")
+	_, err = io.ReadAll(resp.Body)
+	assert.Error(t, err, "the short body is a failed read rather than a complete one")
 }
 
 // A name outside ASCII is encoded rather than dropped or mangled.
