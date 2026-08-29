@@ -45,13 +45,21 @@ function link(href: string, text: string, className = ""): HTMLAnchorElement {
 }
 
 /**
- * titleLink renders a row's title as a second link to wherever its id leads,
- * so the whole of the naming is clickable and not just the id. A project
- * without a name gets a plain span instead: an empty anchor would be a
- * keyboard focus stop with nothing in it.
+ * nameLink renders the id and the title of a row as one link, so that the
+ * title leads where the id leads instead of being the dead half of the pair.
+ *
+ * It is deliberately a single anchor around both rather than one around each:
+ * two anchors to one destination would be two tab stops and two separate
+ * announcements per row, which a long listing multiplies. A project need not
+ * have a name, and the id alone then names the link.
  */
-function titleLink(href: string, text: string): HTMLElement {
-  return text === "" ? element("span", "title") : link(href, text, "title");
+function nameLink(href: string, id: string, title: string): HTMLElement {
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.className = "name";
+  anchor.append(element("span", "id", id));
+  if (title !== "") anchor.append(element("span", "title", title));
+  return anchor;
 }
 
 function element(tag: string, className = "", text = ""): HTMLElement {
@@ -82,9 +90,7 @@ function issueBadges(issue: Issue): HTMLElement {
 
 function issueRow(issue: Issue): HTMLElement {
   const row = element("li", "issue-row");
-  const href = `#/issues/${issue.id}`;
-  row.append(link(href, issue.id, "id"));
-  row.append(titleLink(href, issue.title));
+  row.append(nameLink(`#/issues/${issue.id}`, issue.id, issue.title));
   row.append(issueBadges(issue));
   return row;
 }
@@ -221,8 +227,7 @@ async function viewProjects(): Promise<HTMLElement> {
 function projectRow(project: Project): HTMLElement {
   const row = element("li", "project-row");
   const href = `#/issues?project=${encodeURIComponent(project.key)}`;
-  row.append(link(href, project.key, "id"));
-  row.append(titleLink(href, project.name));
+  row.append(nameLink(href, project.key, project.name));
   row.append(element("span", "count", `${project.active_issues} open`));
   if (project.description !== "") {
     const description = element("div", "markdown");
@@ -350,9 +355,7 @@ async function viewTree(id: string): Promise<HTMLElement> {
 function treeNode(node: IssueTree, depth: number): HTMLElement {
   const list = element("ul", depth === 0 ? "tree" : "tree-children");
   const row = element("li", "tree-row");
-  const href = `#/issues/${node.id}`;
-  row.append(link(href, node.id, "id"));
-  row.append(titleLink(href, node.title));
+  row.append(nameLink(`#/issues/${node.id}`, node.id, node.title));
   row.append(issueBadges(node));
   list.append(row);
 
