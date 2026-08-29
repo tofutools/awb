@@ -67,12 +67,53 @@ func (o serveOptions) listenAddr() string {
 	return net.JoinHostPort(o.addr, strconv.Itoa(o.port))
 }
 
-// originHost is the host the CSRF check names when there is no --public-url. A
-// server bound to every interface has no host of its own, and loopback is the
-// one a browser on this machine reaches it by.
+// validate checks everything the flags can be wrong about on their own, so the
+// command fails on them before it opens a database or a port.
+func (o serveOptions) validate() error {
+	if o.port < 1 || o.port > 65535 {
+		return awberr.Usagef("--port: %d is not a port number", o.port)
+	}
+	// --addr used to carry the port too, so an address that looks like
+	// host:port is somebody carrying the old form forward. Refuse it rather
+	// than binding a host named "127.0.0.1:7777". An IPv6 address is full of
+	// colons and is not that mistake.
+	if strings.Contains(o.addr, ":") && net.ParseIP(o.addr) == nil {
+		return awberr.Usagef("--addr: %s is not an address; the port goes in --port", o.addr)
+	}
+	publicURL, err := parsePublicURL(o.publicURL)
+	if err != nil {
+		return err
+	}
+	if _, err := basePathOf(publicURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+// serverOrigin is the origin a browser names when it reaches this server, which
+// is what the cross-site write check compares against.
+//
+// Behind a reverse proxy the browser names the proxy, not this listener, so
+// --public-url is where it comes from when it is given.
+func (o serveOptions) serverOrigin() (string, error) {
+	origin, err := csrf.ResolveServerOrigin(o.publicURL, o.originHost(), o.port)
+	if err != nil {
+		return "", awberr.Usagef(
+			"--public-url: %s is not a full URL, like https://example.com/awb/", o.publicURL)
+	}
+	return origin, nil
+}
+
+// originHost is the host in that origin when there is no --public-url. A server
+// bound to every interface has no host of its own, and loopback is the one a
+// browser on this machine reaches it by. An IPv6 address is bracketed, because
+// an origin is a URL authority and that is the form a browser sends.
 func (o serveOptions) originHost() string {
 	if o.addr == "" {
 		return "127.0.0.1"
+	}
+	if strings.Contains(o.addr, ":") {
+		return "[" + o.addr + "]"
 	}
 	return o.addr
 }
@@ -101,23 +142,19 @@ func newServeCommand(e *env) *cobra.Command {
 			"tells browsers to keep using TLS.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := e.requireLocal("serve")
-			if err != nil {
+			// What the flags say is checked before anything is opened, so a
+			// flag that could never work is reported as the usage error it is
+			// rather than behind an unrelated failure to find a database.
+			if err := opts.validate(); err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("identity") && cmd.Flags().Changed("basic-auth-file") {
 				return awberr.Usagef("--identity and --basic-auth-file are mutually exclusive")
 			}
-			if opts.port < 1 || opts.port > 65535 {
-				return awberr.Usagef("--port: %d is not a port number", opts.port)
-			}
-			// --addr used to carry the port too, so an address that looks like
-			// host:port is somebody carrying the old form forward. Refuse it
-			// rather than binding a host named "127.0.0.1:7777". An IPv6
-			// address is full of colons and is not that mistake.
-			if strings.Contains(opts.addr, ":") && net.ParseIP(opts.addr) == nil {
-				return awberr.Usagef(
-					"--addr: %s is not an address; the port goes in --port", opts.addr)
+
+			cfg, err := e.requireLocal("serve")
+			if err != nil {
+				return err
 			}
 
 			db, err := storage.Open(cmd.Context(), cfg.DB)
@@ -218,23 +255,54 @@ func resolveServerIdentity(cmd *cobra.Command, cfg *config.Config, flag string) 
 // into every URL the UI resolves.
 var basePathChars = regexp.MustCompile(`^[A-Za-z0-9._~/-]*$`)
 
-// basePathFromPublicURL is the path component of --public-url, normalised to
-// the form <base href> wants: it starts and ends with a single "/", and is "/"
-// when no public URL is given or it names an origin with no path.
+// parsePublicURL is --public-url as the two things the server takes from it: an
+// origin a browser can name, and a base path the UI can resolve against. It
+// returns nil when the flag was not given.
+//
+// It has to be a complete http or https URL and nothing more. A scheme-relative
+// //example.com/awb would yield the origin "://example.com", which no browser
+// can ever send, so every write would be refused as cross-site; credentials, a
+// query or a fragment are not part of a base URL and mean the operator wrote
+// down something other than what this flag names. Each is refused at startup
+// rather than serving something that cannot work.
+func parsePublicURL(publicURL string) (*url.URL, error) {
+	if publicURL == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(publicURL)
+	if err != nil {
+		return nil, awberr.Usagef("--public-url: %s is not a URL", publicURL)
+	}
+	switch {
+	case parsed.Scheme != "http" && parsed.Scheme != "https":
+		return nil, awberr.Usagef(
+			"--public-url: %s must be an http or https URL, like https://example.com/awb/",
+			publicURL)
+	case parsed.Host == "":
+		return nil, awberr.Usagef(
+			"--public-url: %s names no host, and a host is what a browser sends", publicURL)
+	case parsed.User != nil:
+		return nil, awberr.Usagef("--public-url: %s must carry no credentials", publicURL)
+	case parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "":
+		return nil, awberr.Usagef("--public-url: %s must be a base URL, with no query or fragment",
+			publicURL)
+	}
+	return parsed, nil
+}
+
+// basePathOf is the path component of --public-url, normalised to the form
+// <base href> wants: it starts and ends with a single "/", and is "/" when no
+// public URL is given or it names an origin with no path.
 //
 // The reverse proxy strips that base before the request arrives — which is what
 // openapi.yaml's single "/" server URL says as well — so it never reaches the
 // router. It reaches only the shell, where it is what the UI's relative URLs
 // resolve against.
-func basePathFromPublicURL(publicURL string) (string, error) {
-	if publicURL == "" {
+func basePathOf(publicURL *url.URL) (string, error) {
+	if publicURL == nil {
 		return "/", nil
 	}
-	parsed, err := url.Parse(publicURL)
-	if err != nil {
-		return "", awberr.Usagef("--public-url: %s is not a URL", publicURL)
-	}
-	path := parsed.Path
+	path := publicURL.Path
 	if path == "" || path == "/" {
 		return "/", nil
 	}
@@ -289,7 +357,11 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 		return nil, awberr.Wrap(awberr.Runtime, err, "serve the bundled web UI")
 	}
 
-	basePath, err := basePathFromPublicURL(opts.publicURL)
+	publicURL, err := parsePublicURL(opts.publicURL)
+	if err != nil {
+		return nil, err
+	}
+	basePath, err := basePathOf(publicURL)
 	if err != nil {
 		return nil, err
 	}
@@ -327,15 +399,17 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 	// basic-authentication credentials to cross-site requests of its own accord.
 	// One carrying neither header is allowed, that being what every non-browser
 	// client sends, and the CLI is one of them.
-	//
-	// Behind a reverse proxy the browser names the proxy, not this listener, so
-	// --public-url is what the origin comes from when it is given.
-	serverOrigin, err := csrf.ResolveServerOrigin(opts.publicURL, opts.originHost(), opts.port)
+	serverOrigin, err := opts.serverOrigin()
 	if err != nil {
-		return nil, awberr.Usagef(
-			"--public-url: %s is not a full URL, like https://example.com/awb/", opts.publicURL)
+		return nil, err
 	}
 	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, opts.corsOrigins...)...)(chain)
+
+	if htpasswd != nil {
+		// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
+		// behind it.
+		chain = htpasswd.Middleware(opts.basicAuthRealm)(chain)
+	}
 
 	// Strict-Transport-Security only when a proxy terminates TLS: sent over
 	// plain HTTP it is ignored, and sent by a server reachable over plain HTTP
@@ -345,17 +419,14 @@ func buildHandler(base *local.Backend, document *openapi.Document, htpasswd *aut
 		strictTransport = hsts
 	}
 
+	// Outside the authentication, because the first response a browser sees is
+	// the challenge: headers set only on the way past it would pin the host
+	// after the password had already been typed rather than before.
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
-
-	if htpasswd != nil {
-		// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
-		// behind it.
-		chain = htpasswd.Middleware(opts.basicAuthRealm)(chain)
-	}
 
 	return http.MaxBytesHandler(chain, maxRequestBody), nil
 }

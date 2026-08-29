@@ -2,6 +2,7 @@ package cli
 
 import (
 	"compress/gzip"
+	"encoding/base64"
 	"io"
 	"io/fs"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,6 +34,11 @@ func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 
 func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 	t.Helper()
+	return newServeHandlerAuth(t, opts, nil)
+}
+
+func newServeHandlerAuth(t *testing.T, opts serveOptions, htpasswd *auth.HtpasswdFile) http.Handler {
+	t.Helper()
 	db, err := storage.Init(t.Context(), filepath.Join(t.TempDir(), "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -39,9 +46,23 @@ func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
-	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), nil, opts)
+	h, err := buildHandler(local.New(db, "mikael"), openapi.New(raw), htpasswd, opts)
 	require.NoError(t, err)
 	return h
+}
+
+// credentials is one htpasswd entry, mikael:hunter2 at the lowest bcrypt cost
+// there is, because these tests care that the file is read and not how long
+// hashing takes.
+const credentials = "mikael:$2a$04$AL546dro6bMBAm/zEI.Yzet3uZisN1MTC1Rt4ut9s5F3qfJrx27iS\n"
+
+func newHtpasswd(t *testing.T) *auth.HtpasswdFile {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "htpasswd")
+	require.NoError(t, os.WriteFile(path, []byte(credentials), 0o600))
+	file, err := loadHtpasswd(path)
+	require.NoError(t, err)
+	return file
 }
 
 // get performs a request without a body, decoding the response the way a
@@ -288,7 +309,7 @@ func TestPublicURLSetsTheBaseHref(t *testing.T) {
 	assert.Contains(t, body, `<base href="/">`)
 }
 
-func TestBasePathFromPublicURL(t *testing.T) {
+func TestBasePathOfThePublicURL(t *testing.T) {
 	for _, tc := range []struct{ publicURL, want string }{
 		{"", "/"},
 		{"https://example.com", "/"},
@@ -297,7 +318,9 @@ func TestBasePathFromPublicURL(t *testing.T) {
 		{"https://example.com/awb/", "/awb/"},
 		{"http://example.com:8080/a/b", "/a/b/"},
 	} {
-		got, err := basePathFromPublicURL(tc.publicURL)
+		parsed, err := parsePublicURL(tc.publicURL)
+		require.NoError(t, err, tc.publicURL)
+		got, err := basePathOf(parsed)
 		require.NoError(t, err, tc.publicURL)
 		assert.Equal(t, tc.want, got, tc.publicURL)
 	}
@@ -310,9 +333,48 @@ func TestBasePathFromPublicURL(t *testing.T) {
 		"https://example.com/awb\"><script>",
 		"https://example.com/a b",
 	} {
-		_, err := basePathFromPublicURL(publicURL)
+		parsed, err := parsePublicURL(publicURL)
+		require.NoError(t, err, publicURL)
+		_, err = basePathOf(parsed)
 		assert.Error(t, err, publicURL)
 	}
+}
+
+// --public-url has to be an origin a browser can actually send. Anything else
+// starts a server every browser write is refused by, which is a failure at
+// startup rather than one to discover in a UI that cannot save.
+func TestPublicURLMustBeAnOriginABrowserCanSend(t *testing.T) {
+	for _, publicURL := range []string{
+		"//example.com/awb",            // no scheme, so no origin
+		"javascript://example.com/awb", // a scheme no browser sends as an origin
+		"https:///awb",                 // no host
+		"https://user:pw@example.com/", // credentials are not part of a base URL
+		"https://example.com/awb?x=1",  // nor a query
+		"https://example.com/awb#frag", // nor a fragment
+	} {
+		_, err := parsePublicURL(publicURL)
+		assert.Error(t, err, publicURL)
+	}
+
+	for _, publicURL := range []string{
+		"http://example.com",
+		"https://example.com/awb/",
+		"https://example.com:8443/awb/",
+	} {
+		parsed, err := parsePublicURL(publicURL)
+		assert.NoError(t, err, publicURL)
+		assert.NotNil(t, parsed, publicURL)
+	}
+}
+
+// An IPv6 listen address is bracketed in an origin, because that is the form a
+// browser sends. Unbracketed, http://::1:7777 matches nothing and every write
+// from the UI is refused.
+func TestIPv6ListenerHasAnOriginABrowserSends(t *testing.T) {
+	h := newServeHandlerWith(t, serveOptions{addr: "::1", port: 7777})
+
+	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "http://[::1]:7777")
+	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 }
 
 // Behind a reverse proxy the browser names the proxy, so that — not the
@@ -344,6 +406,27 @@ func TestStrictTransportSecurity(t *testing.T) {
 	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
 	resp, _ = get(t, behindTLS, http.MethodGet, "/api/issues")
 	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+}
+
+// The challenge is the first response a browser sees, so it is the one that has
+// to carry the headers: a host pinned only on the way past authentication is
+// pinned after the password has been typed rather than before.
+func TestTheAuthenticationChallengeCarriesTheSecurityHeaders(t *testing.T) {
+	h := newServeHandlerAuth(t,
+		serveOptions{addr: "127.0.0.1", port: 7777, https: true, basicAuthRealm: "awb"},
+		newHtpasswd(t))
+
+	resp, _ := get(t, h, http.MethodGet, "/")
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("WWW-Authenticate"), `realm="awb"`)
+	assert.Equal(t, "max-age=31536000", resp.Header.Get("Strict-Transport-Security"))
+	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
+	assert.NotEmpty(t, resp.Header.Get("Content-Security-Policy"))
+
+	// And the credentials the file holds still get through.
+	resp, _ = get(t, h, http.MethodGet, "/api/identity",
+		"Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("mikael:hunter2")))
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 // The shell is served from memory rather than by the file server, so it carries

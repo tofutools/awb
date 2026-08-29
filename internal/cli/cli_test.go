@@ -702,6 +702,17 @@ func TestServeRejectsAnAddressCarryingAPort(t *testing.T) {
 	assert.Contains(t, stderr, "--port")
 }
 
+// A flag that could never work is reported as the usage error it is, rather
+// than from behind an unrelated failure to find a database.
+func TestServeChecksItsFlagsBeforeItOpensAnything(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("AWB_DB", filepath.Join(t.TempDir(), "nothing-here.db"))
+
+	_, stderr, code := h.run("serve", "--public-url", "//example.com/awb")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--public-url")
+}
+
 // A --public-url that cannot be a base is refused at startup rather than
 // serving a UI whose every relative URL is wrong.
 func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
