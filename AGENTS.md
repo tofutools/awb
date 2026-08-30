@@ -4,7 +4,7 @@
 
 Agent Work Board (awb) is an agent-first issue tracker: a single Go binary over
 SQLite, with a command line interface, an optional HTTP server and a bundled
-read-only web UI.
+web UI with read access and issue commenting.
 
 ## Project status
 

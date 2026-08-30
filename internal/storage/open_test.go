@@ -186,7 +186,7 @@ func TestSchemaFromTheFutureIsRefused(t *testing.T) {
 
 // A database left at an older schema version is brought forward when it is
 // opened, which is what an existing tracker gaining attachments, and then
-// users, looks like. The batches are replayed here by winding the version back
+// users and activity, looks like. The batches are replayed here by winding the version back
 // to 1 and dropping everything they created, so what is exercised is the
 // migrations rather than a fresh schema.
 func TestOpeningMigratesForward(t *testing.T) {
@@ -201,7 +201,7 @@ func TestOpeningMigratesForward(t *testing.T) {
 	require.NoError(t, raw.QueryRow("PRAGMA user_version").Scan(&latest))
 	require.Greater(t, latest, 1, "there is more than one batch to migrate through")
 
-	for _, table := range []string{"attachments", "project_members", "users"} {
+	for _, table := range []string{"attachments", "project_members", "users", "issue_activity"} {
 		_, err = raw.Exec("DROP TABLE " + table)
 		require.NoError(t, err, table)
 	}
@@ -221,7 +221,7 @@ func TestOpeningMigratesForward(t *testing.T) {
 	require.NoError(t, raw.QueryRow("PRAGMA user_version").Scan(&version))
 	assert.Equal(t, latest, version)
 
-	for _, table := range []string{"attachments", "project_members", "users"} {
+	for _, table := range []string{"attachments", "project_members", "users", "issue_activity"} {
 		var name string
 		require.NoError(t, raw.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,

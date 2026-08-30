@@ -59,6 +59,12 @@ type Backend interface {
 
 	Tree(ctx context.Context, ref string) (*domain.IssueTree, error)
 
+	// Activity is append-only. Comments are explicit writes; change entries are
+	// produced by the mutations above inside their own transactions.
+	AddComment(ctx context.Context, ref, body string) (*domain.Activity, error)
+	ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
+		limit, offset *int) (ActivityPage, error)
+
 	// The attachment operations. An attachment is addressed by the issue it
 	// belongs to and its name, which is the pair that identifies one; it has no
 	// identifier of its own. It is immutable once stored, so there is no update
@@ -125,6 +131,12 @@ type FacetPage struct {
 type AttachmentPage struct {
 	Attachments []domain.Attachment
 	Total       int
+}
+
+// ActivityPage is an issue timeline with its unpaged total.
+type ActivityPage struct {
+	Activity []domain.Activity
+	Total    int
 }
 
 // UserPage is a user listing with its unpaged total.

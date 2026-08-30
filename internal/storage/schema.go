@@ -20,6 +20,30 @@ var migrations = [][]string{
 	schemaV1,
 	schemaV2,
 	schemaV3,
+	schemaV4,
+}
+
+// schemaV4 adds the append-only issue activity stream. Changes are JSON text
+// because SQLite has no JSON column type; json_valid keeps the stored value a
+// valid array whatever code writes it.
+var schemaV4 = []string{
+	`CREATE TABLE issue_activity (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		issue      TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		kind       TEXT NOT NULL,
+		actor      TEXT NOT NULL DEFAULT '',
+		body       TEXT NOT NULL DEFAULT '',
+		action     TEXT NOT NULL DEFAULT '',
+		changes    TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		CHECK (kind IN ('comment', 'change')),
+		CHECK ((kind = 'comment' AND body <> '' AND action = '') OR
+		       (kind = 'change' AND body = '' AND action <> '')),
+		CHECK (json_valid(changes) AND json_type(changes) = 'array')
+	) STRICT`,
+
+	`CREATE INDEX idx_issue_activity_order
+		ON issue_activity (issue, created_at DESC, id DESC)`,
 }
 
 var schemaV1 = []string{

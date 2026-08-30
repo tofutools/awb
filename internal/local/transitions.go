@@ -30,7 +30,7 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 	}
 
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "claimed", func(tx *storage.Tx, issue *domain.Issue) error {
 		// The compare-and-set, checked inside the write lock, so two agents racing
 		// for the same issue cannot both win.
 		if req.ExpectAssignee != nil && issue.Assignee != *req.ExpectAssignee {
@@ -78,7 +78,7 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 			"no identity is configured: set \"identity\" in the configuration file or AWB_IDENTITY, or use --force")
 	}
 
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "released", func(tx *storage.Tx, issue *domain.Issue) error {
 		if !req.Force {
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
@@ -114,7 +114,7 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 		reason = &validated
 	}
 
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "closed", func(tx *storage.Tx, issue *domain.Issue) error {
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusClosed
 		if reason != nil {
@@ -133,7 +133,7 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 // is the point of the command and needs no force, the assignee there being a
 // record of who did the work rather than a claim on it.
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "reopened", func(tx *storage.Tx, issue *domain.Issue) error {
 		if issue.Status != domain.StatusClosed {
 			return nil
 		}

@@ -61,7 +61,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 
-	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		exists, err := tx.ProjectExists(issue.Project)
 		if err != nil {
 			return err
@@ -89,7 +89,10 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 
 		issue, err = tx.GetIssue(issue.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		return recordChange(tx, caller, issue.ID, "created", nil)
 	})
 	if err != nil {
 		return nil, err
@@ -192,7 +195,7 @@ func resolveFilterParent(tx *storage.Tx, filter *domain.Filter) error {
 // succeeds and changes nothing, exactly as an empty PATCH does.
 func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.IssuePatch,
 	ifMatch string) (*domain.Issue, error) {
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "updated", func(tx *storage.Tx, issue *domain.Issue) error {
 		// Checked here, inside the write transaction, so a concurrent
 		// transition cannot slip between the comparison and the write.
 		if err := checkUnchanged(issue, req); err != nil {
@@ -305,7 +308,7 @@ func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*do
 	if err != nil {
 		return nil, err
 	}
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "label_added", func(tx *storage.Tx, issue *domain.Issue) error {
 		return tx.AddLabel(issue, valid)
 	})
 }
@@ -317,7 +320,7 @@ func (b *Backend) RemoveLabel(ctx context.Context, ref, label, ifMatch string) (
 	if err != nil {
 		return nil, err
 	}
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "label_removed", func(tx *storage.Tx, issue *domain.Issue) error {
 		return tx.RemoveLabel(issue, valid)
 	})
 }
@@ -377,10 +380,10 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 // mutate is the shape every single-issue mutation shares: resolve, check the
 // precondition, apply, and re-read so the returned object carries the derived
 // fields as they are after the change.
-func (b *Backend) mutate(ctx context.Context, ref, ifMatch string,
+func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action string,
 	apply func(*storage.Tx, *domain.Issue) error) (*domain.Issue, error) {
 	var result *domain.Issue
-	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
 			return err
@@ -388,11 +391,21 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch string,
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
 			return err
 		}
+		before := *issue
+		before.Labels = slices.Clone(issue.Labels)
+		before.Relations = slices.Clone(issue.Relations)
 		if err := apply(tx, issue); err != nil {
 			return err
 		}
 		result, err = tx.GetIssue(issue.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		changes := activityChanges(&before, result)
+		if len(changes) == 0 {
+			return nil
+		}
+		return recordChange(tx, caller, issue.ID, action, changes)
 	})
 	if err != nil {
 		return nil, err

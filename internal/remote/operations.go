@@ -83,6 +83,10 @@ type identityBody struct {
 	Identity string `json:"identity"`
 }
 
+type commentBody struct {
+	Body string `json:"body"`
+}
+
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	body := issueCreateBody{
 		Project:     req.Project,
@@ -293,6 +297,33 @@ func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, erro
 		return nil, err
 	}
 	return &tree, nil
+}
+
+func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Activity, error) {
+	var activity domain.Activity
+	_, err := b.call(ctx, http.MethodPost,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/comments", nil),
+		commentBody{Body: body}, "", &activity)
+	if err != nil {
+		return nil, err
+	}
+	return &activity, nil
+}
+
+func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
+	limit, offset *int) (backend.ActivityPage, error) {
+	query := pageQuery(limit, offset)
+	if kind != "" {
+		query.Set("kind", string(kind))
+	}
+	entries := []domain.Activity{}
+	header, err := b.call(ctx, http.MethodGet,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/activity", query),
+		nil, "", &entries)
+	if err != nil {
+		return backend.ActivityPage{}, err
+	}
+	return backend.ActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
 }
 
 func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) (*domain.Project, error) {

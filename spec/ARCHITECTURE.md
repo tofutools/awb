@@ -1,7 +1,7 @@
 # Architecture
 
 `awb` is an agent-first issue tracker: one Go binary over SQLite, offering a
-command line, an HTTP API and a bundled read-only web UI.
+command line, an HTTP API and a bundled web UI.
 
 This document describes the shape of the system and the reasoning behind it. It
 is deliberately free of implementation detail: the code and its tests are
@@ -39,9 +39,28 @@ one, and its key is the issue ID prefix and is immutable. An **issue** carries a
 title, an optional Markdown description, a type, a status, a priority, a set of
 labels and an assignee.
 
-The description is the only free text on an issue. References to pull requests,
+The description is the issue's editable free text. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
 there is no link entity and no link records to keep in step with anything.
+
+### Comments and activity
+
+Every issue has an append-only activity stream. A **comment** is Markdown prose
+with an author and creation time. It is never edited or deleted independently:
+adding revision and moderation rules before they are needed would turn one
+simple operation into a second history system.
+
+The same stream holds compact, structured **change events**. A successful issue
+mutation records one event in the same `BEGIN IMMEDIATE` transaction as the
+state change; a failed or no-op mutation records none. Field changes retain
+their before and after JSON values, while actions such as attaching a
+file are named explicitly. Entries are ordered newest first by creation time
+and then by their monotonically assigned id, so the order is total even when
+several writes share one millisecond.
+
+This is a work log attached to the issue, not an immutable compliance ledger or
+full entity version store. Hard-deleting an issue deletes its activity with it,
+and there are no tombstones, retention rules or reconstruction operation.
 
 ### Attachments
 
@@ -408,12 +427,11 @@ the recorded size rather than one measured on the way past, so a stored file
 that no longer matches its metadata breaks the transfer instead of arriving as
 a plausible short one.
 
-**The API is specified as if a read/write UI existed**, even though the bundled
-one only reads. That means complete write coverage, optimistic concurrency
+**The API is specified for a read/write UI.** It has complete write coverage, optimistic concurrency
 through entity tags and conditional requests, paging with a total count, and
-endpoints for populating filter menus and for a caller's own identity. Version 1
-ships a read-only UI as a scope decision about the *UI*, not about the API, so
-making it writable later is a change to the UI alone.
+endpoints for populating filter menus and for a caller's own identity. The
+bundled UI uses that write surface for comments; the CLI remains the interface
+for changing issue state.
 
 Two decisions there are worth stating. Status transitions are endpoints rather
 than fields in a general update, and labels are added and removed individually,
@@ -524,8 +542,8 @@ somewhere; those keys are not merely overridden but unread.
 Some of these are as important as anything above, because they are what the
 design is holding *out*.
 
-**Deliberately absent:** versioning, history, merge and offline replication;
-comments; audit logs; sprints, boards, burndowns and time tracking;
+**Deliberately absent:** full entity versioning, compliance audit logs, merge
+and offline replication; sprints, boards, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; custom fields
 and workflows; bulk import.
 

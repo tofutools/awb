@@ -18,7 +18,7 @@ func (b *Backend) AddRelation(ctx context.Context, ref string, req backend.Relat
 		return nil, err
 	}
 
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "relation_added", func(tx *storage.Tx, issue *domain.Issue) error {
 		other, err := resolve(tx, req.Other)
 		if err != nil {
 			return err
@@ -164,7 +164,7 @@ func (b *Backend) RemoveRelation(ctx context.Context, ref string, relType domain
 		return nil, err
 	}
 
-	return b.mutate(ctx, ref, ifMatch, func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "relation_removed", func(tx *storage.Tx, issue *domain.Issue) error {
 		otherID, err := resolve(tx, other)
 		if err != nil {
 			return err

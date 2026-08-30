@@ -2,12 +2,13 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 1.3.0
+  version: 1.4.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
-    complete enough to drive a fully functional read/write web UI, even though
-    the UI bundled in version 1 only reads.
+    complete enough to drive a fully functional read/write web UI. The bundled
+    UI reads the whole tracker and writes issue comments; other mutations remain
+    command-line operations.
 
     The component schemas below are the domain fields in the CLI's `--json`
     structures. In remote mode the CLI adds navigation links derived from the
@@ -453,6 +454,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/IssueTree' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/{id}/comments:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+    post:
+      operationId: addComment
+      summary: Add a Markdown comment to an issue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/ActivityCreated' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/{id}/activity:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+    get:
+      operationId: listIssueActivity
+      summary: List an issue's comments and recorded changes, newest first.
+      parameters:
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/ActivityKind' }
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/ActivityList' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/ready:
@@ -1084,6 +1116,20 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Issue' }
+    ActivityCreated:
+      description: The new comment activity entry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Activity' }
+    ActivityList:
+      description: The issue's activity, newest first.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Activity' }
     Project:
       description: The project.
       headers:
@@ -1418,6 +1464,53 @@ components:
         type: { $ref: '#/components/schemas/RelationType' }
         other: { type: string, description: The issue at the other end. }
         direction: { $ref: '#/components/schemas/Direction' }
+
+    ActivityKind:
+      type: string
+      enum: [comment, change]
+
+    ActivityChange:
+      type: object
+      additionalProperties: false
+      required: [field, from, to]
+      properties:
+        field: { type: string }
+        from:
+          description: The previous JSON value.
+        to:
+          description: The new JSON value.
+
+    Activity:
+      type: object
+      additionalProperties: false
+      required: [id, issue, kind, actor, body, action, changes, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        issue: { type: string }
+        kind: { $ref: '#/components/schemas/ActivityKind' }
+        actor:
+          type: string
+          description: Empty only for a system change made without a configured local identity.
+        body:
+          type: string
+          description: Markdown for a comment; empty for a change.
+        action:
+          type: string
+          description: Stable machine-readable action for a change; empty for a comment.
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityChange' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+
+    CommentCreate:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body:
+          type: string
+          description: GitHub Flavored Markdown, stored exactly as sent. Must not be blank.
+          minLength: 1
 
     Issue:
       type: object

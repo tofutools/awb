@@ -180,7 +180,7 @@ func (p *serveParams) options() serveOptions {
 func newServeCommand(e *env) *cobra.Command {
 	return boa.CmdT[serveParams]{
 		Use:   "serve",
-		Short: "Serve the HTTP API and the bundled read-only web UI",
+		Short: "Serve the HTTP API and the bundled web UI",
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
 			"reach it: third-party user interfaces, dashboards and integrations.\n\n" +
 			"With --proxy-to, serve this binary's bundled UI without opening a local\n" +

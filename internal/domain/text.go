@@ -127,6 +127,20 @@ func ValidateDescription(s string) (string, error) {
 	return s, nil
 }
 
+// ValidateComment applies the prose gate to a Markdown comment. A comment has
+// the same byte and control-character bounds as a description, but unlike a
+// description it must contain something besides whitespace. The original
+// bytes are still returned and stored unchanged.
+func ValidateComment(s string) (string, error) {
+	if _, err := ValidateDescription(s); err != nil {
+		return "", awberr.Usagef("comment %s", strings.TrimPrefix(err.Error(), "description "))
+	}
+	if strings.TrimSpace(s) == "" {
+		return "", awberr.Usagef("comment must not be empty")
+	}
+	return s, nil
+}
+
 // ValidateProjectName applies the input rules to a project name. An empty name
 // is accepted here and means "restore the key as the name", which is what
 // --name "" and a PATCH carrying "" do; the caller substitutes the key.

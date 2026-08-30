@@ -1,5 +1,5 @@
-/* The bundled read-only UI. Deliberately plain: it is a way to look at the
-   database in a browser, not a product surface. */
+/* The bundled UI. Deliberately plain: it is a way to inspect the database and
+   comment on issues in a browser, not a broad product surface. */
 
 :root {
   --bg: #fbfbfa;
@@ -367,6 +367,68 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 
 .timestamps { display: flex; gap: 1rem; color: var(--muted); font-size: 0.8em; font-family: var(--mono); }
 .action { display: inline-block; margin-top: 1rem; }
+
+.activity-section { margin-top: 2rem; }
+.activity-filters { display: inline-flex; margin-bottom: 0.75rem; }
+.activity-filters button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-right: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.activity-filters button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.activity-filters button:last-child { border-right: 1px solid var(--line); border-radius: 0 var(--radius) var(--radius) 0; }
+.activity-filters button.active { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.comment-composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.comment-composer textarea {
+  grid-column: 1 / -1;
+  min-height: 6rem;
+  resize: vertical;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.comment-hint { color: var(--muted); font-size: 0.8em; }
+.comment-submit {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--panel);
+  font: inherit;
+  cursor: pointer;
+}
+.comment-submit:disabled { opacity: 0.55; cursor: wait; }
+.comment-error { grid-column: 1 / -1; margin: 0; color: var(--warn); }
+.activity-timeline { display: grid; gap: 0.5rem; }
+.activity-entry { padding: 0.65rem 0.75rem; border-left: 2px solid var(--line); }
+.activity-comment { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--panel); }
+.activity-header { display: flex; justify-content: space-between; gap: 1rem; margin: 0 0 0.35rem; padding: 0; border: 0; }
+.activity-actor { font-family: var(--mono); font-size: 0.85em; }
+.activity-comment-body.markdown { margin: 0; padding: 0; border: 0; background: transparent; }
+.activity-comment-body.markdown > :first-child { margin-top: 0; }
+.activity-comment-body.markdown > :last-child { margin-bottom: 0; }
+.activity-action { color: var(--muted); }
+.activity-changes { margin-top: 0.35rem; }
+.activity-changes li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; padding: 0.15rem 0; }
+.activity-field { min-width: 7rem; color: var(--muted); font-family: var(--mono); font-size: 0.8em; }
+.activity-changes code { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-arrow { color: var(--muted); }
 
 .empty { color: var(--muted); font-style: italic; }
 .error { border: 1px solid var(--warn); border-radius: var(--radius); padding: 1rem; }

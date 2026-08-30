@@ -25,6 +25,8 @@ awb release <id>                       # give it back untouched
 awb create "Title" --type bug --priority 1 --label parser
 awb create "Follow-up" --discovered-from <id> --blocked-by <id>
 awb dep add <id> --blocked-by <other>  # reads "id blocked-by other"
+awb comment add <id> --body "I reproduced this on Linux."
+awb activity <id> --compact            # comments and recorded changes
 ```
 
 **Write descriptions as Markdown:**
@@ -82,6 +84,10 @@ awb attach delete <id> trace.txt --force
 `<id> P<priority> <status> <type> "<title>" [@assignee] [#label...] [!blocked]`
 The title is a JSON string, so split on whitespace outside it. `--json` is the
 stable full representation. The default table is for humans; do not parse it.
+
+Activity compact output is one entry per line: `<id> <created_at> <kind>
+[@actor] <body-or-action>`. Comment bodies and structured changes are JSON so
+an entry never spans lines.
 
 **Exit codes:** `0` ok, `1` runtime error, `2` usage error, `3` not found,
 `4` constraint violation (a cycle, a duplicate, or an issue somebody else holds),
