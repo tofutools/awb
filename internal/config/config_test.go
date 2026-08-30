@@ -89,6 +89,30 @@ func TestDBPrecedence(t *testing.T) {
 	assert.Equal(t, "/from/flag", cfg.DB)
 }
 
+// A leading home-directory alias in a path-valued environment variable is
+// expanded here because shells do not necessarily expand one in assignments.
+func TestEnvironmentPathsExpandHomeDirectoryAlias(t *testing.T) {
+	configDir, _ := isolate(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	relocated := filepath.Join(home, "config", "awb.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(relocated), 0o700))
+	require.NoError(t, os.WriteFile(relocated, []byte("project: chosen\n"), 0o600))
+	t.Setenv("AWB_CONFIG_FILE", "~/config/awb.yaml")
+	t.Setenv("AWB_DB", "~/data/awb.db")
+	t.Setenv("AWB_ATTACHMENTS", "~/data/blobs")
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "chosen", cfg.CreateProject)
+	assert.Equal(t, filepath.Join(home, "data", "awb.db"), cfg.DB)
+	assert.Equal(t, filepath.Join(home, "data", "blobs"), cfg.Attachments)
+
+	// The default file must not take part when AWB_CONFIG_FILE is set.
+	assert.NoFileExists(t, filepath.Join(configDir, "awb", "config.yaml"))
+}
+
 // The local file cannot redirect where your issues are stored, so db there is
 // unread — not merely overridden.
 func TestLocalFileCannotSetProtectedKeys(t *testing.T) {

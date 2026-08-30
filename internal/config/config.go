@@ -191,7 +191,10 @@ func usageError(source string, err error) error {
 // way silently ignoring a malformed file would hide its contents. The default
 // path is under no such obligation, having been named by nobody.
 func loadUserFile() (*userFile, string, error) {
-	path, explicit := userFilePath()
+	path, explicit, err := userFilePath()
+	if err != nil {
+		return nil, path, err
+	}
 	var cfg userFile
 	found, err := readYAML(path, &cfg)
 	if err != nil {
@@ -207,12 +210,18 @@ func loadUserFile() (*userFile, string, error) {
 }
 
 // userFilePath is the user configuration file to read, and whether it was
-// named by AWB_CONFIG_FILE rather than derived from the XDG directories.
-func userFilePath() (string, bool) {
+// named by AWB_CONFIG_FILE rather than derived from the XDG directories. A
+// leading home-directory alias in the variable is expanded because a shell
+// does not necessarily expand one in an assignment.
+func userFilePath() (string, bool, error) {
 	if path := os.Getenv("AWB_CONFIG_FILE"); path != "" {
-		return path, true
+		expanded, err := expandHomeDirAlias(path)
+		if err != nil {
+			return path, true, usageError("AWB_CONFIG_FILE", err)
+		}
+		return expanded, true, nil
 	}
-	return filepath.Join(configHome(), "awb", "config.yaml"), false
+	return filepath.Join(configHome(), "awb", "config.yaml"), false, nil
 }
 
 // loadLocalFile performs the upward search: start at the working directory
@@ -271,7 +280,11 @@ func resolveDB(cfg *Config, flags Flags, userCfg *userFile, userPath string) err
 			return usageError("--db", err)
 		}
 	case os.Getenv("AWB_DB") != "":
-		if err := setDB(cfg, os.Getenv("AWB_DB")); err != nil {
+		value, err := expandHomeDirAlias(os.Getenv("AWB_DB"))
+		if err != nil {
+			return usageError("AWB_DB", err)
+		}
+		if err := setDB(cfg, value); err != nil {
 			return usageError("AWB_DB", err)
 		}
 	case userCfg.DB != nil:
@@ -348,7 +361,11 @@ func resolveAttachments(cfg *Config, flags Flags, userCfg *userFile, userPath st
 		}
 		cfg.Attachments = *flags.Attachments
 	case os.Getenv("AWB_ATTACHMENTS") != "":
-		cfg.Attachments = os.Getenv("AWB_ATTACHMENTS")
+		value, err := expandHomeDirAlias(os.Getenv("AWB_ATTACHMENTS"))
+		if err != nil {
+			return usageError("AWB_ATTACHMENTS", err)
+		}
+		cfg.Attachments = value
 	case userCfg.Attachments != nil:
 		if *userCfg.Attachments == "" {
 			return configError(userPath, errors.New("attachments directory must not be empty"))
@@ -358,6 +375,23 @@ func resolveAttachments(cfg *Config, flags Flags, userCfg *userFile, userPath st
 		cfg.Attachments = filepath.Join(filepath.Dir(cfg.DB), DefaultAttachmentsDirName)
 	}
 	return nil
+}
+
+// expandHomeDirAlias expands ~ and ~/ at the start of a path. It deliberately
+// does not implement shell syntax such as ~user, environment variables or
+// aliases appearing anywhere but the start.
+func expandHomeDirAlias(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
 }
 
 func resolveCredentials(cfg *Config, userCfg *userFile, userPath string) error {
