@@ -240,10 +240,12 @@ one tracker unless they explicitly point at another.
 that opens its selected database and finds the file missing fails and names the
 path, so a typo in a flag or an environment variable cannot silently produce a
 second, empty tracker — a failure mode that would otherwise be discovered days
-later. `dump` instead requires both of its named outputs to be absent and
-removes them if downloading or restoring fails. The file also carries an
-application stamp, so the same typo cannot point at somebody else's database
-and have this one's migrations applied to it.
+later. `dump` instead requires both of its named outputs to be absent unless
+`--overwrite` is explicit. An overwrite builds its replacement in staging
+paths and leaves the existing pair untouched unless that replacement completes;
+a failed download therefore does not destroy the last usable dump. The file
+also carries an application stamp, so the same typo cannot point at somebody
+else's database and have this one's migrations applied to it.
 
 Schema changes are ordered migration batches recorded in SQLite's own version
 counter, so the schema carries no bookkeeping table and the number is readable
