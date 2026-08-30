@@ -736,7 +736,11 @@ paths:
       tags: [users]
       operationId: listUsers
       summary: List users, ordered by name ascending
-      description: Requires the `user_admin` flag.
+      description: |
+        A user administrator sees every account. Other users see themselves
+        and current accounts that are or have been involved in a project they
+        can see, whether through membership, assignment or activity. Their
+        returned memberships are limited to those visible projects.
       parameters:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'

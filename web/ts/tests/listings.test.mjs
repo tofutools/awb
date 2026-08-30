@@ -5,6 +5,7 @@ import {
   emptyFacetLabel,
   filterIssues,
   filterProjects,
+  filterUsers,
   nextSortValue,
   sortIssues,
   sortProjects,
@@ -101,6 +102,22 @@ test("project filtering includes key, name and description", () => {
   ];
   assert.deepEqual(filterProjects(rows, "agent issue").map((row) => row.key), ["awb"]);
   assert.deepEqual(filterProjects(rows, "remote").map((row) => row.key), ["cli"]);
+});
+
+test("user filtering includes names, roles and visible projects", () => {
+  const rows = [
+    {
+      name: "alice", project_admin: false, user_admin: false,
+      projects: [{ project: "awb", user: "alice", access: "regular" }],
+    },
+    {
+      name: "dana", project_admin: false, user_admin: true,
+      projects: [],
+    },
+  ];
+  assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
+  assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
+  assert.equal(filterUsers(rows, "hidden-project").length, 0);
 });
 
 test("issue sorting supports UI-only columns and keeps blank assignees last", () => {

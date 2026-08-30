@@ -20,6 +20,7 @@ import {
   emptyFacetLabel,
   filterIssues,
   filterProjects,
+  filterUsers,
   nextSortValue,
   sortIssues,
   sortProjects,
@@ -98,7 +99,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "search" | "tag";
+type IconName = "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -113,6 +114,7 @@ function svgIcon(name: IconName): SVGSVGElement {
     ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
     tag: '<path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1"></circle>',
+    users: '<circle cx="9" cy="8" r="3"></circle><path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2"></path><path d="M16 5a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 4v2"></path>',
   };
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -871,6 +873,78 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   return view;
 }
 
+function userTable(users: User[]): HTMLElement {
+  const table = element("table", "listing-table user-table") as HTMLTableElement;
+  const head = document.createElement("thead");
+  const heading = document.createElement("tr");
+  for (const label of ["User", "Projects", "Roles"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    heading.append(th);
+  }
+  head.append(heading);
+  table.append(head);
+
+  const body = document.createElement("tbody");
+  for (const user of users) {
+    const row = document.createElement("tr");
+    const userCell = document.createElement("td");
+    userCell.dataset.label = "User";
+    const name = element("span", "user-name");
+    name.append(avatar(user.name), document.createTextNode(user.name));
+    userCell.append(name);
+    row.append(userCell);
+
+    const projects = document.createElement("td");
+    projects.dataset.label = "Projects";
+    const projectList = element("div", "user-projects");
+    for (const membership of user.projects) {
+      const project = link(`#/issues?project=${encodeURIComponent(membership.project)}`, membership.project,
+        "listing-badge user-project");
+      project.title = `${membership.access} access`;
+      projectList.append(project);
+    }
+    if (user.projects.length === 0) projectList.append(element("span", "muted", "—"));
+    projects.append(projectList);
+    row.append(projects);
+
+    const roles = document.createElement("td");
+    roles.dataset.label = "Roles";
+    const roleList = element("div", "user-roles");
+    if (user.project_admin) roleList.append(element("span", "listing-badge", "project admin"));
+    if (user.user_admin) roleList.append(element("span", "listing-badge", "user admin"));
+    if (!user.project_admin && !user.user_admin) roleList.append(element("span", "muted", "member"));
+    roles.append(roleList);
+    row.append(roles);
+    body.append(row);
+  }
+  table.append(body);
+  return table;
+}
+
+async function viewUsers(route: Route): Promise<HTMLElement> {
+  const page = await api.users();
+  const view = element("div");
+  view.append(element("h1", "", "Users"));
+
+  const listing = element("div", "listing");
+  const host = element("div", "listing-host");
+  const update = (query: string): number => {
+    const rows = filterUsers(page.rows, query);
+    clear(host);
+    if (rows.length === 0) {
+      host.append(element("p", "empty", query.trim() === "" ? "No users yet." : "No users match this filter."));
+    } else {
+      host.append(userTable(rows));
+    }
+    return rows.length;
+  };
+  listing.append(listingFilter(route, "Filter users…", "user", page.total, update), host);
+  view.append(listing);
+  return view;
+}
+
 async function viewIssue(id: string): Promise<HTMLElement> {
   const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
@@ -1264,6 +1338,7 @@ function chrome(): HTMLElement {
   nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
   nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
   nav.append(navLink(projectScopedHref("projects", route.query), "Projects", "projects"));
+  nav.append(navLink("#/users", "Users", "users"));
   const brand = link("#/ready", "", "brand");
   const mark = document.createElement("img");
   mark.src = "awb-mark.png";
@@ -1413,6 +1488,8 @@ async function routeView(route: Route): Promise<HTMLElement> {
       return viewProjects(route);
     case "profile":
       return viewProfile();
+    case "users":
+      return viewUsers(route);
     case "tree":
       return viewTree(route.path[1] ?? "");
     case "search":

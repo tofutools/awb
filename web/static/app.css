@@ -501,6 +501,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .project-description.markdown > :first-child { margin-top: 0; }
 .project-description.markdown > :last-child { margin-bottom: 0; }
 
+.user-table th:first-child { width: 24%; }
+.user-table th:last-child { width: 24%; }
+.user-name { display: inline-flex; gap: 0.5rem; align-items: center; font-weight: 600; }
+.user-name .avatar { width: 1.8rem; height: 1.8rem; }
+.user-projects, .user-roles { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+a.user-project:hover { color: var(--accent); text-decoration: none; }
+
 @media (max-width: 700px) {
   #app { padding-inline: 0.8rem; }
   .app-header { align-items: flex-start; gap: 0.5rem 1rem; }
@@ -572,11 +579,11 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     letter-spacing: 0.035em;
     text-transform: uppercase;
   }
-  .issue-table td:first-child, .project-table td:first-child {
+  .issue-table td:first-child, .project-table td:first-child, .user-table td:first-child {
     display: block;
     padding-bottom: 0.35rem;
   }
-  .issue-table td:first-child::before, .project-table td:first-child::before { content: none; }
+  .issue-table td:first-child::before, .project-table td:first-child::before, .user-table td:first-child::before { content: none; }
 }
 
 .close-reason { color: var(--muted); border-left: 3px solid var(--line); padding-left: 0.75rem; }

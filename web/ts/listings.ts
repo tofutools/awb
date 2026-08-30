@@ -1,6 +1,6 @@
 // Pure listing behavior shared by the DOM renderer and its Node tests.
 
-import type { Issue, Project } from "./api.js";
+import type { Issue, Project, User } from "./api.js";
 
 export type SortDirection = "asc" | "desc";
 
@@ -91,6 +91,17 @@ export function filterProjects(projects: Project[], query: string): Project[] {
     `${project.key} ${project.name} ${project.description}`,
     query,
   ));
+}
+
+/** filterUsers matches the account name, roles and visible memberships. */
+export function filterUsers(users: User[], query: string): User[] {
+  if (query.trim() === "") return users;
+  return users.filter((user) => containsEvery([
+    user.name,
+    user.project_admin ? "project administrator" : "",
+    user.user_admin ? "user administrator" : "",
+    ...user.projects.flatMap((membership) => [membership.project, membership.access]),
+  ].join(" "), query));
 }
 
 type Comparable = string | number | null;
