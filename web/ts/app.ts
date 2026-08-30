@@ -88,12 +88,31 @@ function routeHref(route: Route, query: URLSearchParams): string {
   return `#/${route.path.join("/")}${suffix === "" ? "" : `?${suffix}`}`;
 }
 
+function facetHref(route: Route, name: string, value: string): string {
+  const query = new URLSearchParams(route.query);
+  if (query.getAll(name).includes(value)) {
+    const remaining = query.getAll(name).filter((current) => current !== value);
+    query.delete(name);
+    for (const current of remaining) query.append(name, current);
+  } else {
+    query.append(name, value);
+  }
+  return routeHref(route, query);
+}
+
+function refreshFacetHrefs(route: Route): void {
+  for (const anchor of app.querySelectorAll<HTMLAnchorElement>("a[data-facet-name][data-facet-value]")) {
+    anchor.href = facetHref(route, anchor.dataset.facetName ?? "", anchor.dataset.facetValue ?? "");
+  }
+}
+
 function replaceRouteQuery(route: Route, name: string, value: string): void {
   const query = new URLSearchParams(route.query);
   if (value === "") query.delete(name);
   else query.set(name, value);
   route.query = query;
   history.replaceState(null, "", routeHref(route, query));
+  refreshFacetHrefs(route);
 }
 
 /** issueBadges renders the small status markers a listing shows. */
@@ -341,6 +360,7 @@ function listingFilter(
   const clearButton = element("button", "clear-filter", "×") as HTMLButtonElement;
   clearButton.type = "button";
   clearButton.title = "Clear filter";
+  clearButton.setAttribute("aria-label", "Clear filter");
   control.append(input, clearButton);
   const count = element("span", "filter-count");
   bar.append(control, count);
@@ -437,15 +457,14 @@ function facetBar(route: Route, projects: Project[], labels: Facet[], assignees:
     group.append(element("span", "facet-title", "projects"));
     for (const project of projects) {
       const active = route.query.getAll("project").includes(project.key);
-      const query = new URLSearchParams(route.query);
-      if (active) {
-        const remaining = query.getAll("project").filter((value) => value !== project.key);
-        query.delete("project");
-        for (const value of remaining) query.append("project", value);
-      } else {
-        query.append("project", project.key);
-      }
-      group.append(link(routeHref(route, query), project.key, active ? "facet active" : "facet"));
+      const anchor = link(
+        facetHref(route, "project", project.key),
+        project.key,
+        active ? "facet active" : "facet",
+      );
+      anchor.dataset.facetName = "project";
+      anchor.dataset.facetValue = project.key;
+      group.append(anchor);
     }
     bar.append(group);
   }
@@ -456,20 +475,14 @@ function facetBar(route: Route, projects: Project[], labels: Facet[], assignees:
     group.append(element("span", "facet-title", title));
     for (const facet of facets) {
       const active = route.query.getAll(name).includes(facet.value);
-      const query = new URLSearchParams(route.query);
-      if (active) {
-        const remaining = query.getAll(name).filter((v) => v !== facet.value);
-        query.delete(name);
-        for (const value of remaining) query.append(name, value);
-      } else {
-        query.append(name, facet.value);
-      }
       const prefix = name === "label" ? "#" : "@";
       const anchor = link(
-        routeHref(route, query),
+        facetHref(route, name, facet.value),
         `${prefix}${facet.value} ${facet.count}`,
         active ? "facet active" : "facet",
       );
+      anchor.dataset.facetName = name;
+      anchor.dataset.facetValue = facet.value;
       group.append(anchor);
     }
     return group;
