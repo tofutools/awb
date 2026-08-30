@@ -286,8 +286,8 @@ $ awb serve
 ```
 
 That serves a JSON API, the OpenAPI 3.1 document describing it at
-`/openapi.json` and `/openapi.yaml`, and a web UI for browsing projects, issues,
-search results and dependency trees and for posting issue comments.
+`/openapi.json` and `/openapi.yaml`, and a web UI for browsing and editing
+projects and issues, searching, viewing dependency trees and posting comments.
 
 That document — `openapi.yaml` in this repository — is the source of truth
 rather than a description written afterwards: the server's routing, decoding
@@ -297,8 +297,8 @@ UI is written against.
 The API mirrors the CLI one to one, and is complete enough to drive a fully
 functional read/write UI — it has optimistic concurrency through `ETag` and
 `If-Match`, paging with `X-Total-Count`, and facet endpoints for populating
-filter menus. The bundled UI currently uses that write surface for issue
-comments; other mutations remain command-line operations.
+filter menus. The bundled UI uses that write surface to edit project and issue
+fields, lifecycle state, labels, relations, attachments and comments.
 
 Pointing the CLI at a server makes every command work against it:
 

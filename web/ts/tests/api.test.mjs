@@ -114,3 +114,62 @@ test("facet filters drop the sort the row order fixes", () => {
     { label: ["parser"], status: ["open"] },
   );
 });
+
+test("issue edits use the mutation endpoints and guard the version that was read", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, init = {}) => {
+    requests.push({ input, init });
+    return new Response("{}", {
+      status: 200,
+      headers: requests.length === 1 ? { ETag: '"issue-version"' } : {},
+    });
+  };
+
+  try {
+    await api.issue("awb-a/b");
+    await api.updateIssue("awb-a/b", { title: "Changed" });
+    await api.addLabel("awb-a/b", "team/web");
+    await api.removeRelation("awb-a/b", "blocked-by", "awb-c d");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requests[0].input, "api/issues/awb-a%2Fb");
+  assert.equal(requests[1].input, "api/issues/awb-a%2Fb");
+  assert.equal(requests[1].init.method, "PATCH");
+  assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"issue-version"');
+  assert.deepEqual(JSON.parse(requests[1].init.body), { title: "Changed" });
+
+  assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels");
+  assert.equal(requests[2].init.method, "POST");
+  assert.deepEqual(JSON.parse(requests[2].init.body), { label: "team/web" });
+  assert.equal(new Headers(requests[2].init.headers).get("If-Match"), '"issue-version"');
+
+  assert.equal(requests[3].input, "api/issues/awb-a%2Fb/relations/blocked-by/awb-c%20d");
+  assert.equal(requests[3].init.method, "DELETE");
+});
+
+test("project edits patch the project resource with its ETag", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, init = {}) => {
+    requests.push({ input, init });
+    return new Response("{}", {
+      status: 200,
+      headers: requests.length === 1 ? { ETag: '"project-version"' } : {},
+    });
+  };
+
+  try {
+    await api.project("team/web");
+    await api.updateProject("team/web", { name: "Web", description: "Markdown" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requests[1].input, "api/projects/team%2Fweb");
+  assert.equal(requests[1].init.method, "PATCH");
+  assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"project-version"');
+  assert.deepEqual(JSON.parse(requests[1].init.body), { name: "Web", description: "Markdown" });
+});

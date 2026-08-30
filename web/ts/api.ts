@@ -1,6 +1,6 @@
 // The client for awb's HTTP API. The UI is a client of that API and gets no
-// privileged access to the database, which is what keeps the API honest:
-// making this UI writable later is a change to the UI alone.
+// privileged access to the database, which keeps the API honest: every edit
+// below is an ordinary request any other client could make.
 //
 // Every shape here comes from api-types.ts, which openapi-typescript generates
 // from openapi.yaml and which is never edited by hand. Nothing in this file
@@ -30,6 +30,12 @@ export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type UserPatch = components["schemas"]["UserPatch"];
+export type IssuePatch = components["schemas"]["IssuePatch"];
+export type ClaimRequest = components["schemas"]["ClaimRequest"];
+export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
+export type CloseRequest = components["schemas"]["CloseRequest"];
+export type RelationRequest = components["schemas"]["RelationRequest"];
+export type ProjectPatch = components["schemas"]["ProjectPatch"];
 
 /**
  * The query parameters of one operation, named exactly as the CLI flags are.
@@ -135,9 +141,20 @@ async function getPage<T>(path: string): Promise<Page<T>> {
   return { rows, total: header === null ? rows.length : Number(header) };
 }
 
+const etags = new Map<string, string>();
+
 async function getOne<T>(path: string): Promise<T> {
   const resp = await request(path);
+  const etag = resp.headers.get("ETag");
+  if (etag !== null) etags.set(path, etag);
   return (await resp.json()) as T;
+}
+
+function entityHeaders(path: string, headers: HeadersInit = {}): Headers {
+  const result = new Headers(headers);
+  const etag = etags.get(path);
+  if (etag !== undefined) result.set("If-Match", etag);
+  return result;
 }
 
 async function postOne<T>(path: string, body: unknown): Promise<T> {
@@ -151,9 +168,24 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
 async function patchOne<T>(path: string, body: unknown): Promise<T> {
   return getResponse<T>(await request(path, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: entityHeaders(path, { "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   }));
+}
+
+async function issueMutation<T>(id: string, suffix: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
+  const issuePath = `api/issues/${encodeURIComponent(id)}`;
+  const headers = entityHeaders(issuePath);
+  let encoded: string | undefined;
+  if (body !== undefined) {
+    headers.set("Content-Type", "application/json");
+    encoded = JSON.stringify(body);
+  }
+  return getResponse<T>(await request(`${issuePath}${suffix}`, { method, headers, body: encoded }));
+}
+
+async function deleteOne<T>(path: string): Promise<T> {
+  return getResponse<T>(await request(path, { method: "DELETE" }));
 }
 
 async function getResponse<T>(resp: Response): Promise<T> {
@@ -166,6 +198,39 @@ export const api = {
   blocked: (filters: BlockedFilters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
   search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
+  updateIssue: (id: string, patch: IssuePatch) =>
+    patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
+  claimIssue: (id: string, body: ClaimRequest = { force: false }) =>
+    issueMutation<Issue>(id, "/claim", "POST", body),
+  releaseIssue: (id: string, body: ReleaseRequest = { force: false }) =>
+    issueMutation<Issue>(id, "/release", "POST", body),
+  closeIssue: (id: string, body: CloseRequest = {}) =>
+    issueMutation<Issue>(id, "/close", "POST", body),
+  reopenIssue: (id: string) =>
+    issueMutation<Issue>(id, "/reopen", "POST"),
+  addLabel: (id: string, label: string) =>
+    issueMutation<Issue>(id, "/labels", "POST", { label }),
+  removeLabel: (id: string, label: string) =>
+    issueMutation<Issue>(id, `/labels${toQuery({ label })}`, "DELETE"),
+  addRelation: (id: string, body: RelationRequest) =>
+    issueMutation<Issue>(id, "/relations", "POST", body),
+  removeRelation: (id: string, type: Relation["type"], other: string) =>
+    issueMutation<Issue>(
+      id,
+      `/relations/${encodeURIComponent(type)}/${encodeURIComponent(other)}`,
+      "DELETE",
+    ),
+  addAttachment: async (id: string, file: File) => {
+    const query = toQuery({ name: file.name, "content-type": file.type });
+    return getResponse<Attachment>(await request(
+      `api/issues/${encodeURIComponent(id)}/attachments${query}`,
+      { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file },
+    ));
+  },
+  removeAttachment: (id: string, name: string) =>
+    deleteOne<Attachment>(
+      `api/issues/${encodeURIComponent(id)}/attachments/${encodeURIComponent(name)}`,
+    ),
   activity: (id: string, filters: ActivityFilters = {}) =>
     getPage<Activity>(`api/issues/${encodeURIComponent(id)}/activity${toQuery(filters)}`),
   addComment: (id: string, body: string) =>
@@ -173,6 +238,9 @@ export const api = {
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
   users: (filters: UserFilters = {}) => getPage<User>(`api/users${toQuery(filters)}`),
+  project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
+  updateProject: (key: string, patch: ProjectPatch) =>
+    patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),
   labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
   assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),

@@ -1,5 +1,5 @@
-/* The bundled UI. Deliberately plain: it is a way to inspect the database and
-   comment on issues in a browser, not a broad product surface. */
+/* The bundled UI. Deliberately plain: it is a way to inspect and edit the
+   database in a browser, not a broad product surface. */
 
 :root {
   --bg: #fbfbfa;
@@ -616,7 +616,15 @@ a.user-project:hover { color: var(--accent); text-decoration: none; }
 }
 .issue-view.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
 .issue-content { min-width: 0; padding: 2rem 2.25rem 0 1rem; }
-.issue-heading { padding-bottom: 1.35rem; border-bottom: 1px solid var(--line); }
+.issue-heading, .detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  padding-bottom: 1.35rem;
+  border-bottom: 1px solid var(--line);
+}
+.issue-heading-text { min-width: 0; }
 .issue-key { margin-bottom: 0.45rem; font: 600 1.05rem var(--mono); }
 .issue-heading h1 { max-width: 52rem; font-size: clamp(1.75rem, 3vw, 2.2rem); line-height: 1.2; }
 .issue-description { padding-top: 0.15rem; }
@@ -675,6 +683,86 @@ a.user-project:hover { color: var(--accent); text-decoration: none; }
 .issue-fact .listing-badge { border-radius: 4px; font-size: 0.78em; }
 .issue-fact .timestamp { font-family: inherit; font-size: inherit; }
 .sidebar-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.editable-chip { display: inline-flex; align-items: center; }
+.editable-chip .listing-badge { border-radius: 4px 0 0 4px; }
+.chip-remove {
+  align-self: stretch;
+  padding: 0 0.35rem;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip-remove:hover { color: var(--warn); }
+
+.edit-panel {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.edit-panel[hidden] { display: none; }
+.edit-panel h2 { margin: 0; color: var(--fg); }
+.edit-field { display: grid; gap: 0.3rem; min-width: 0; }
+.edit-field-label { color: var(--muted); font-size: 0.85em; font-weight: 600; }
+.edit-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; }
+.edit-panel input, .edit-panel textarea, .edit-panel select,
+.compact-editor input, .compact-editor select,
+.sidebar-editor input, .close-editor input {
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.edit-panel textarea { resize: vertical; }
+.edit-panel input:focus, .edit-panel textarea:focus, .edit-panel select:focus,
+.compact-editor input:focus, .compact-editor select:focus,
+.sidebar-editor input:focus, .close-editor input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent);
+}
+.primary-button, .secondary-button, .danger-button, .inline-button {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.primary-button { border-color: var(--accent); background: var(--accent); color: var(--panel); }
+.danger-button { border-color: var(--warn); color: var(--warn); }
+.inline-button { margin-left: auto; padding: 0.15rem 0.45rem; font-size: 0.8em; }
+.primary-button:disabled, .secondary-button:disabled, .danger-button:disabled,
+.inline-button:disabled, .chip-remove:disabled { opacity: 0.55; cursor: wait; }
+.compact-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0 1rem;
+}
+.compact-editor input:not([type="checkbox"]), .compact-editor select { flex: 1 1 10rem; }
+.check-field { display: inline-flex; gap: 0.35rem; align-items: center; color: var(--muted); font-size: 0.85em; }
+.sidebar-editor { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
+.sidebar-editor input { flex: 1 1 auto; width: 0; }
+.lifecycle-editor { margin-top: 1.5rem; padding-top: 0.25rem; border-top: 1px solid var(--line); }
+.lifecycle-editor h2 { margin-top: 0.75rem; color: var(--fg); }
+.lifecycle-actions { display: grid; gap: 0.6rem; margin-top: 0.75rem; }
+.close-editor { display: flex; gap: 0.4rem; }
+.close-editor input { flex: 1 1 auto; width: 0; }
+.edit-error { flex-basis: 100%; margin: 0.4rem 0 0; color: var(--warn); }
+.project-view { max-width: 58rem; }
+.project-detail-description { margin-top: 1.25rem; }
+.project-facts { color: var(--muted); }
 
 .relations li, .links li, .attachments li {
   display: flex;
