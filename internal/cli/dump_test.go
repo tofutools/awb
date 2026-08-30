@@ -167,7 +167,7 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	errOut, code = run("--overwrite")
+	errOut, code = run("--force")
 	require.Equal(t, 0, code, errOut)
 	db, err := storage.Open(ctx, outputDB)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 	databaseBefore, err := os.ReadFile(outputDB)
 	require.NoError(t, err)
 	server.Close()
-	errOut, code = run("--overwrite")
+	errOut, code = run("--force")
 	assert.Equal(t, 1, code, errOut)
 	databaseAfter, err := os.ReadFile(outputDB)
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func TestDumpOverwriteRefusesLocalSourceOverlap(t *testing.T) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		code := Execute(t.Context(), "test", openapi.New(raw), []string{
-			"dump", "--overwrite", "--output-db", outputDB,
+			"dump", "--force", "--output-db", outputDB,
 			"--output-attachments", outputAttachments,
 		}, &stdout, &stderr, strings.NewReader(""))
 		return stderr.String(), code
@@ -285,7 +285,12 @@ func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 
 	db := filepath.Join(root, "dump.db")
 	attachments := filepath.Join(root, "attachments")
-	errOut, code := run("dump", "--output-db", db, "--output-attachments", attachments,
+	errOut, code := run("dump", "--overwrite", "--output-db", db,
+		"--output-attachments", attachments)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "unknown flag")
+
+	errOut, code = run("dump", "--output-db", db, "--output-attachments", attachments,
 		"--include-users")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, errOut, "--include-users is not implemented")
@@ -299,7 +304,7 @@ func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	assert.Equal(t, "mine", string(contents))
 	require.NoError(t, os.WriteFile(db+"-wal", []byte("active"), 0o600))
 	errOut, code = run("dump", "--output-db", db, "--output-attachments", attachments,
-		"--overwrite")
+		"--force")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, errOut, "stop the local server first")
 	require.NoError(t, os.Remove(db+"-wal"))
@@ -308,7 +313,7 @@ func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	require.NoError(t, os.Mkdir(physical, 0o700))
 	alias := filepath.Join(root, "alias")
 	require.NoError(t, os.Symlink(physical, alias))
-	errOut, code = run("dump", "--overwrite", "--output-db", filepath.Join(physical, "dump.db"),
+	errOut, code = run("dump", "--force", "--output-db", filepath.Join(physical, "dump.db"),
 		"--output-attachments", alias)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, errOut, "must not contain one another")
