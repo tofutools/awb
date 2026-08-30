@@ -32,7 +32,7 @@ import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
-import { issueListingHref, navigationPath } from "./navigation.js";
+import { navigationPath, projectScopedHref } from "./navigation.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -1101,10 +1101,10 @@ function chrome(): HTMLElement {
     anchor.append(svgIcon(icon), document.createTextNode(label));
     return anchor;
   };
-  nav.append(navLink(issueListingHref("ready", route.query), "Ready", "ready"));
-  nav.append(navLink(issueListingHref("issues", route.query), "Issues", "issues"));
-  nav.append(navLink(issueListingHref("blocked", route.query), "Blocked", "blocked"));
-  nav.append(navLink("#/projects", "Projects", "projects"));
+  nav.append(navLink(projectScopedHref("ready", route.query), "Ready", "ready"));
+  nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
+  nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
+  nav.append(navLink(projectScopedHref("projects", route.query), "Projects", "projects"));
   const brand = link("#/ready", "", "brand");
   const mark = document.createElement("img");
   mark.src = "awb-mark.png";
