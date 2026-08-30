@@ -165,7 +165,7 @@ type serveParams struct {
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
 	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
-	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying read-only API requests to this awb server"`
+	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying API requests to this awb server"`
 }
 
 func (p *serveParams) options() serveOptions {
@@ -183,9 +183,8 @@ func newServeCommand(e *env) *cobra.Command {
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
 			"reach it: third-party user interfaces, dashboards and integrations.\n\n" +
 			"With --proxy-to, serve this binary's bundled UI without opening a local\n" +
-			"database, and proxy its read-only API requests to another awb server. This is\n" +
-			"intended for testing a locally built UI against existing data; write requests\n" +
-			"are refused.\n\n" +
+			"database, and proxy its API requests to another awb server. This is intended\n" +
+			"for testing a locally built UI against an existing installation.\n\n" +
 			"Authentication and authorization come from the database. A database that\n" +
 			"holds at least one user — see awb user — asks every request for a username\n" +
 			"and password and answers it with that user's permissions. One that holds no\n" +
@@ -217,8 +216,8 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 
 			// Proxy mode serves this binary's bundled UI without opening a local
-			// database. Its API remains read-only: the bundled UI cannot mutate
-			// data, and neither can another client through this development aid.
+			// database. Browser writes are checked against this local server's
+			// origin before they are forwarded to the remote installation.
 			if opts.proxyTo != "" {
 				target, err := parseProxyURL(opts.proxyTo)
 				if err != nil {
@@ -533,27 +532,47 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	return transferLimits(chain), nil
 }
 
-// buildProxyHandler serves this binary's bundled UI and forwards its API reads
-// to another awb server. It deliberately does not expose the upstream's write
-// API: proxy mode is a UI development aid, not a second public API endpoint.
+// buildProxyHandler serves this binary's bundled UI and forwards its API calls
+// to another awb server.
 func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOptions,
 	logger *log.Logger) (http.Handler, error) {
 	proxy := &stdhttputil.ReverseProxy{
 		Rewrite: func(request *stdhttputil.ProxyRequest) {
 			request.SetURL(target)
+			// The browser is talking to the local origin, which has already been
+			// checked below. State that equivalent request in the remote origin's
+			// terms so its own CSRF middleware can perform the same check.
+			if request.Out.Header.Get("Origin") != "" {
+				request.Out.Header.Set("Origin", target.Scheme+"://"+target.Host)
+			}
+			if request.Out.Header.Get("Referer") != "" {
+				request.Out.Header.Set("Referer", target.String()+"/")
+			}
+		},
+		ModifyResponse: func(response *http.Response) error {
+			// These policies belong to the origin that sent them. Applying the
+			// remote server's policy to the local proxy can duplicate or conflict
+			// with the local UI's headers, and upstream CORS must not make a local
+			// credentialed endpoint cross-origin readable.
+			for _, header := range []string{
+				"Access-Control-Allow-Credentials",
+				"Access-Control-Allow-Headers",
+				"Access-Control-Allow-Methods",
+				"Access-Control-Allow-Origin",
+				"Access-Control-Expose-Headers",
+				"Content-Security-Policy",
+				"Referrer-Policy",
+				"Strict-Transport-Security",
+				"X-Content-Type-Options",
+				"X-Frame-Options",
+			} {
+				response.Header.Del(header)
+			}
+			return nil
 		},
 		ErrorLog: logger,
 	}
-	readOnlyAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "the UI proxy only permits read-only API requests", http.StatusMethodNotAllowed)
-			return
-		}
-		proxy.ServeHTTP(w, r)
-	})
-
-	root, err := buildRoutes(recovery.Middleware(readOnlyAPI), document, opts)
+	root, err := buildRoutes(recovery.Middleware(proxy), document, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -566,11 +585,16 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 	if opts.https {
 		strictTransport = hsts
 	}
-	chain := httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
+	serverOrigin, err := opts.serverOrigin()
+	if err != nil {
+		return nil, err
+	}
+	chain := csrf.MiddlewareOrigins(serverOrigin)(root)
+	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
-	})(root)
+	})(chain)
 	return transferLimits(chain), nil
 }
 

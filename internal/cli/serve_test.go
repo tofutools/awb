@@ -175,6 +175,8 @@ func TestUIProxyServesLocalUIAndForwardsAPIReads(t *testing.T) {
 		assert.Equal(t, upstreamHost, r.Host)
 		assert.Equal(t, "Basic dGVzdDpzZWNyZXQ=", r.Header.Get("Authorization"))
 		w.Header().Set("X-Total-Count", "7")
+		w.Header().Set("Access-Control-Allow-Origin", "https://elsewhere.example")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
 		_, _ = io.WriteString(w, `[{"key":"awb"}]`)
 	}))
 	defer upstream.Close()
@@ -189,6 +191,9 @@ func TestUIProxyServesLocalUIAndForwardsAPIReads(t *testing.T) {
 		"Authorization", "Basic dGVzdDpzZWNyZXQ=")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "7", resp.Header.Get("X-Total-Count"))
+	assert.Empty(t, resp.Header.Get("Access-Control-Allow-Origin"))
+	assert.NotEqual(t, "default-src 'none'", resp.Header.Get("Content-Security-Policy"))
+	assert.Len(t, resp.Header.Values("Content-Security-Policy"), 1)
 	assert.JSONEq(t, `[{"key":"awb"}]`, body)
 }
 
@@ -204,19 +209,34 @@ func TestUIProxyForwardsAuthenticationChallenge(t *testing.T) {
 	assert.Equal(t, `Basic realm="remote awb"`, resp.Header.Get("WWW-Authenticate"))
 }
 
-func TestUIProxyRefusesWrites(t *testing.T) {
+func TestUIProxyForwardsBrowserWritesAfterCheckingTheirOrigin(t *testing.T) {
 	requests := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	var upstreamURL string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/awb/api/issues", r.URL.Path)
+		assert.Equal(t, upstreamURL, r.Header.Get("Origin"))
+		assert.Equal(t, upstreamURL+"/awb/", r.Header.Get("Referer"))
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{}`, string(body))
+		w.WriteHeader(http.StatusCreated)
 	}))
 	defer upstream.Close()
+	upstreamURL = upstream.URL
 
-	h := newProxyServeHandler(t, upstream.URL)
-	resp, body := send(t, h, http.MethodPost, "/api/issues", `{}`)
-	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
-	assert.Equal(t, "GET, HEAD", resp.Header.Get("Allow"))
-	assert.Contains(t, body, "only permits read-only API requests")
-	assert.Zero(t, requests)
+	h := newProxyServeHandler(t, upstream.URL+"/awb")
+	resp, _ := send(t, h, http.MethodPost, "/api/issues", `{}`,
+		"Origin", "http://127.0.0.1:7777",
+		"Referer", "http://127.0.0.1:7777/#/issues")
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.Equal(t, 1, requests)
+
+	resp, _ = send(t, h, http.MethodPost, "/api/issues", `{}`,
+		"Origin", "https://elsewhere.example")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, 1, requests)
 }
 
 // Every embedded asset is reachable at the path it is embedded under.
