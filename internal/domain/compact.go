@@ -89,11 +89,11 @@ func CompactActivityLine(a *Activity) string {
 	} else {
 		b.WriteByte(' ')
 		b.WriteString(a.Action)
-		if len(a.Changes) > 0 {
-			encoded, _ := json.Marshal(a.Changes)
-			b.WriteByte(' ')
-			b.Write(encoded)
-		}
+	}
+	if len(a.Changes) > 0 {
+		encoded, _ := json.Marshal(a.Changes)
+		b.WriteByte(' ')
+		b.Write(encoded)
 	}
 	return b.String()
 }

@@ -1,12 +1,26 @@
 package domain_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tofutools/awb/internal/domain"
 )
+
+func TestCompactCloseReasonIncludesItsTransition(t *testing.T) {
+	activity := domain.Activity{
+		ID: 8, CreatedAt: "2026-08-30T15:00:00Z", Kind: domain.ActivityKindComment,
+		Actor: "mikael", Action: "closed", Body: "verified",
+		Changes: []domain.ActivityChange{{
+			Field: "status", From: json.RawMessage(`"open"`), To: json.RawMessage(`"closed"`),
+		}},
+	}
+	assert.Equal(t,
+		`8 2026-08-30T15:00:00Z comment @mikael closed "verified" [{"field":"status","from":"open","to":"closed"}]`,
+		domain.CompactActivityLine(&activity))
+}
 
 // The canonical compact line, for the issue the JSON shape documents.
 func TestCompactLineSpecExample(t *testing.T) {

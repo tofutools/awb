@@ -23,9 +23,13 @@ func TestCommentAndActivityCommands(t *testing.T) {
 	require.Len(t, comments, 2)
 	assert.Equal(t, "from stdin\n", comments[0].Body)
 
+	reason := "verified"
+	assert.Empty(t, h.mustRun("close", id, "--reason", reason))
+
 	lines := strings.Split(strings.TrimSpace(h.mustRun("activity", id, "--compact")), "\n")
-	assert.Len(t, lines, 3, "creation and two comments")
-	assert.Contains(t, lines[0], `comment @mikael "from stdin\n"`)
+	assert.Len(t, lines, 4, "creation, two comments and the reasoned close")
+	assert.Contains(t, lines[0], `comment @mikael closed "verified" [{"field":"status"`)
+	assert.Contains(t, lines[1], `comment @mikael "from stdin\n"`)
 }
 
 func TestCommentRequiresExactlyOneBodySource(t *testing.T) {

@@ -854,18 +854,18 @@ function activityEntry(entry: Activity): HTMLElement {
     row.append(body);
   } else {
     row.append(element("div", "activity-action", activityAction(entry.action)));
-    if (entry.changes.length > 0) {
-      const changes = element("ul", "activity-changes");
-      for (const change of entry.changes) {
-        const item = element("li");
-        item.append(element("span", "activity-field", change.field));
-        item.append(element("code", "", displayActivityValue(change.from)));
-        item.append(element("span", "activity-arrow", "→"));
-        item.append(element("code", "", displayActivityValue(change.to)));
-        changes.append(item);
-      }
-      row.append(changes);
+  }
+  if (entry.changes.length > 0) {
+    const changes = element("ul", "activity-changes");
+    for (const change of entry.changes) {
+      const item = element("li");
+      item.append(element("span", "activity-field", change.field));
+      item.append(element("code", "", displayActivityValue(change.from)));
+      item.append(element("span", "activity-arrow", "→"));
+      item.append(element("code", "", displayActivityValue(change.to)));
+      changes.append(item);
     }
+    row.append(changes);
   }
   return row;
 }
