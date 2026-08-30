@@ -15,6 +15,7 @@ import {
   type Project,
 } from "./api.js";
 import {
+  emptyFacetLabel,
   filterIssues,
   filterProjects,
   nextSortValue,
@@ -478,13 +479,25 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   return filters;
 }
 
-/** facetBar renders the project, label and assignee menus a UI narrows with. */
-function facetBar(route: Route, projects: Project[], labels: Facet[], assignees: Facet[]): HTMLElement {
+/**
+ * facetBar renders every applicable filter group even when it has no values,
+ * so an empty database still makes the available filtering features visible.
+ * A null group is not applicable to that listing and remains absent.
+ */
+function facetBar(
+  route: Route,
+  projects: Project[],
+  labels: Facet[] | null,
+  assignees: Facet[] | null,
+): HTMLElement {
   const bar = element("div", "facets");
 
-  if (projects.length > 0) {
-    const group = element("div", "facet-group projects");
-    group.append(element("span", "facet-title", "projects"));
+  const projectGroup = element("div", "facet-group projects");
+  projectGroup.append(element("span", "facet-title", "projects"));
+  const projectEmpty = emptyFacetLabel(projects);
+  if (projectEmpty !== null) {
+    projectGroup.append(element("span", "facet-empty", projectEmpty));
+  } else {
     for (const project of projects) {
       const active = route.query.getAll("project").includes(project.key);
       const anchor = link(
@@ -494,15 +507,20 @@ function facetBar(route: Route, projects: Project[], labels: Facet[], assignees:
       );
       anchor.dataset.facetName = "project";
       anchor.dataset.facetValue = project.key;
-      group.append(anchor);
+      projectGroup.append(anchor);
     }
-    bar.append(group);
   }
+  bar.append(projectGroup);
 
-  const build = (name: string, title: string, facets: Facet[]): HTMLElement | null => {
-    if (facets.length === 0) return null;
+  const build = (name: string, title: string, facets: Facet[] | null): HTMLElement | null => {
+    if (facets === null) return null;
     const group = element("div", "facet-group");
     group.append(element("span", "facet-title", title));
+    const empty = emptyFacetLabel(facets);
+    if (empty !== null) {
+      group.append(element("span", "facet-empty", empty));
+      return group;
+    }
     for (const facet of facets) {
       const active = route.query.getAll(name).includes(facet.value);
       const prefix = name === "label" ? "#" : "@";
@@ -550,7 +568,7 @@ async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): 
     page.total,
     emptyFor(kind),
     kind,
-    facetBar(route, projects.rows, labels.rows, assignees.rows),
+    facetBar(route, projects.rows, labels.rows, kind === "ready" ? null : assignees.rows),
   ));
   return view;
 }
@@ -844,7 +862,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     page.total,
     `Nothing matches ${terms.join(" ")}.`,
     "search",
-    facetBar(route, projects.rows, [], []),
+    facetBar(route, projects.rows, null, null),
   ));
   return view;
 }

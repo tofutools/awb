@@ -10,6 +10,11 @@ export interface SortState {
   explicit: boolean;
 }
 
+/** Empty applicable facet groups advertise themselves; null means omitted. */
+export function emptyFacetLabel(values: readonly unknown[] | null): string | null {
+  return values !== null && values.length === 0 ? "none" : null;
+}
+
 /** withClosedIssues returns a route query widened to all statuses or narrowed
  * back to the default non-closed set, without disturbing the listing's other
  * filters and presentation choices. */
