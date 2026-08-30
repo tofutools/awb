@@ -29,7 +29,9 @@ info:
     project they hold no access to, and every issue in it, is answered `404`
     rather than `403`, and is absent from every listing, search, facet and
     tree, unpaged totals included. `403` is for something they can see and may
-    not do. A database holding no user at all is a server without
+    not do. The user directory is the narrow exception: it includes current
+    accounts that participated in visible projects, but not their memberships
+    in any other project. A database holding no user at all is a server without
     authentication, exactly as version 1 was, and applies none of this.
 
     Two flags stand outside the projects: `project_admin` creates, changes and
@@ -1719,7 +1721,9 @@ components:
           type: array
           description: |
             Derived and read-only: the projects this user has access to, by key
-            ascending. Membership is changed by its own endpoints.
+            ascending. In the scoped user directory, only memberships visible
+            to the caller are included. Membership is changed by its own
+            endpoints.
           items: { $ref: '#/components/schemas/Membership' }
 
     Facet:
