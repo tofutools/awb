@@ -107,9 +107,9 @@ type Config struct {
 	// one fail asking for it to be set.
 	Identity string
 
-	// CreateProject is the default project for awb create, resolved through the
-	// full precedence chain.
-	CreateProject string
+	// DefaultProject is the default project for creation and issue listings,
+	// resolved through the full precedence chain.
+	DefaultProject string
 
 	// ContextProject and ContextLabel are the directory's own scope. They are
 	// empty when --no-context was given or no local file was found.
@@ -159,7 +159,7 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	if err := resolveContext(cfg, flags, localCfg, localPath); err != nil {
 		return nil, err
 	}
-	if err := resolveCreateProject(cfg, userCfg, userPath); err != nil {
+	if err := resolveDefaultProject(cfg, userCfg, userPath); err != nil {
 		return nil, err
 	}
 	if err := resolveColor(cfg, flags, userCfg, userPath); err != nil {
@@ -461,8 +461,8 @@ func FoldOSUsername() string {
 
 // resolveContext reads the directory's own scope. --no-context ignores the
 // project and label of the local configuration file for this invocation,
-// restoring the view of the whole database — but it does not stop the file
-// from being read, so a malformed one still fails the command.
+// falling through to any user-level project default — but it does not stop the
+// file from being read, so a malformed one still fails the command.
 func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath string) error {
 	if flags.NoContext {
 		return nil
@@ -482,9 +482,9 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 	return nil
 }
 
-// resolveCreateProject applies the precedence chain for awb create's default
-// project: --project, else AWB_PROJECT, else project in the local
-// configuration file, else project in the user configuration file.
+// resolveDefaultProject applies the project precedence chain: --project, else
+// AWB_PROJECT, else project in the local configuration file, else project in
+// the user configuration file.
 //
 // --project is a per-command flag rather than a global one, so it is applied
 // by the command itself; what is resolved here is everything below it.
@@ -493,25 +493,25 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 // directory's own project, so awb create run in a directory scoped to another
 // project puts the issue where the variable says. The variable is a deliberate
 // override and wins as one.
-func resolveCreateProject(cfg *Config, userCfg *userFile, userPath string) error {
+func resolveDefaultProject(cfg *Config, userCfg *userFile, userPath string) error {
 	if value := os.Getenv("AWB_PROJECT"); value != "" {
 		if _, err := domain.ValidateProjectKey(value); err != nil {
 			return usageError("AWB_PROJECT", err)
 		}
-		cfg.CreateProject = value
+		cfg.DefaultProject = value
 		return nil
 	}
 	// --no-context removes the local file from this chain but not the rest, which
 	// is what ContextProject already being empty expresses.
 	if cfg.ContextProject != "" {
-		cfg.CreateProject = cfg.ContextProject
+		cfg.DefaultProject = cfg.ContextProject
 		return nil
 	}
 	if userCfg.Project != nil {
 		if _, err := domain.ValidateProjectKey(*userCfg.Project); err != nil {
 			return configError(userPath, err)
 		}
-		cfg.CreateProject = *userCfg.Project
+		cfg.DefaultProject = *userCfg.Project
 	}
 	return nil
 }

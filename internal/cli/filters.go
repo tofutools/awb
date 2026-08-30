@@ -27,6 +27,7 @@ type FilterFlags struct {
 	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
 	Unassigned    bool     `long:"unassigned" optional:"true" help:"select unassigned issues"`
 	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this project; repeatable"`
+	AllProjects   bool     `long:"all-projects" optional:"true" help:"ignore the configured default project"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
 	Sort          string   `long:"sort" optional:"true" alts:"priority,-priority,created,-created,updated,-updated,id,-id"`
@@ -184,7 +185,7 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 	if err := f.buildAssignee(e, cmd, opts, filter); err != nil {
 		return nil, err
 	}
-	if err := f.buildScope(cfg.ContextProject, cfg.ContextLabel, cmd, filter); err != nil {
+	if err := f.buildScope(cfg.DefaultProject, cfg.ContextLabel, cmd, filter); err != nil {
 		return nil, err
 	}
 
@@ -250,15 +251,18 @@ func (f *FilterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptio
 	return nil
 }
 
-// buildScope applies --project and --label, and the directory context they
-// default to.
+// buildScope applies --project and --label, and their configured defaults.
 //
-// The context project is a default for --project, and an explicit --project
-// replaces it: an issue belongs to exactly one project, so intersecting the
-// two could only ever yield nothing, and the explicit flag is what the person
-// running the command means. The context label works the same way.
-func (f *FilterFlags) buildScope(contextProject, contextLabel string, cmd *cobra.Command,
+// An explicit --project replaces the default: an issue belongs to exactly one
+// project, so intersecting the two could only ever yield nothing, and the
+// explicit flag is what the person running the command means. --all-projects
+// removes only the project default. The context label works the same way as an
+// explicit --label.
+func (f *FilterFlags) buildScope(defaultProject, contextLabel string, cmd *cobra.Command,
 	filter *domain.Filter) error {
+	if f.AllProjects && cmd.Flags().Changed("project") {
+		return awberr.Usagef("--project and --all-projects are mutually exclusive")
+	}
 	if cmd.Flags().Changed("project") {
 		for _, p := range f.Projects {
 			key, err := domain.ValidateProjectKey(p)
@@ -267,8 +271,8 @@ func (f *FilterFlags) buildScope(contextProject, contextLabel string, cmd *cobra
 			}
 			filter.Projects = append(filter.Projects, key)
 		}
-	} else if contextProject != "" {
-		filter.Projects = []string{contextProject}
+	} else if !f.AllProjects && defaultProject != "" {
+		filter.Projects = []string{defaultProject}
 	}
 
 	if cmd.Flags().Changed("label") {

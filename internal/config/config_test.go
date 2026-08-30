@@ -315,28 +315,28 @@ func TestPathsAreNotURLs(t *testing.T) {
 	assert.Equal(t, "/tmp/a file?with#odd chars.db", cfg.DB)
 }
 
-// project in the user file, and AWB_PROJECT, are the creation default and
-// nothing else: they never act as an implicit --project filter.
-func TestCreateProjectVersusContextProject(t *testing.T) {
+// The project resolved from any configuration source is the default used by
+// both creation and issue listings. ContextProject separately records whether
+// that default came from the directory, so --no-context can remove it.
+func TestDefaultProjectVersusContextProject(t *testing.T) {
 	configDir, _ := isolate(t)
 	writeUserConfig(t, configDir, "project: fromuser\n")
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "fromuser", cfg.CreateProject)
-	assert.Empty(t, cfg.ContextProject, "it never filters")
+	assert.Equal(t, "fromuser", cfg.DefaultProject)
+	assert.Empty(t, cfg.ContextProject, "it did not come from directory context")
 
 	// The local file's project is both the creation default and the filter.
 	dir := workdir(t, ".awb.yaml", "project: fromdir\n")
 	cfg, err = config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromdir", cfg.CreateProject)
+	assert.Equal(t, "fromdir", cfg.DefaultProject)
 	assert.Equal(t, "fromdir", cfg.ContextProject)
 }
 
-// The documented wart: an exported AWB_PROJECT outranks the directory's own
-// project for create, while the same directory's listings still filter where
-// the file says.
+// An exported AWB_PROJECT outranks the directory's own project, while the
+// directory label remains independently in effect.
 func TestEnvProjectOutranksTheDirectory(t *testing.T) {
 	isolate(t)
 	t.Setenv("AWB_PROJECT", "fromenv")
@@ -344,8 +344,8 @@ func TestEnvProjectOutranksTheDirectory(t *testing.T) {
 
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromenv", cfg.CreateProject, "the variable is a deliberate override")
-	assert.Equal(t, "fromdir", cfg.ContextProject, "listings still filter where the file says")
+	assert.Equal(t, "fromenv", cfg.DefaultProject, "the variable is a deliberate override")
+	assert.Equal(t, "fromdir", cfg.ContextProject, "the directory source remains recorded")
 	assert.Equal(t, "frontend", cfg.ContextLabel)
 }
 
@@ -358,7 +358,7 @@ func TestNoContextLeavesTheUserFileCreationDefault(t *testing.T) {
 
 	cfg, err := config.Load(config.Flags{NoContext: true}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromuser", cfg.CreateProject)
+	assert.Equal(t, "fromuser", cfg.DefaultProject)
 	assert.Empty(t, cfg.ContextProject)
 }
 
@@ -507,7 +507,7 @@ func TestConfigFileEnvOverridesThePath(t *testing.T) {
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "chosen", cfg.CreateProject)
+	assert.Equal(t, "chosen", cfg.DefaultProject)
 	assert.Equal(t, config.ColorAuto, cfg.Color, "the file at the default path is not read")
 }
 
