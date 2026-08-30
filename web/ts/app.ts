@@ -827,7 +827,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   toggle.setAttribute("aria-controls", aside.id);
   const drawToggle = (): void => {
     const collapsed = view.classList.contains("sidebar-collapsed");
-    toggle.replaceChildren(svgIcon("info"), document.createTextNode("Details"));
+    toggle.replaceChildren(svgIcon("info"));
     toggle.title = collapsed ? "Show issue details" : "Hide issue details";
     toggle.setAttribute("aria-label", toggle.title);
     toggle.setAttribute("aria-expanded", String(!collapsed));

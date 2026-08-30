@@ -465,10 +465,11 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   top: 2rem;
   right: 1rem;
   display: inline-flex;
-  gap: 0.35rem;
+  justify-content: center;
   align-items: center;
+  width: 2rem;
   height: 2rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
