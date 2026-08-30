@@ -245,7 +245,7 @@ func newDemoCommand(e *env) *cobra.Command {
 				return err
 			}
 			if e.json {
-				return e.writeJSON(project)
+				return e.writeProjectJSON(project)
 			}
 			// demo is one of the exceptions to "mutating commands print nothing on
 			// success", for the reason the deleting commands are: a command that

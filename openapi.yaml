@@ -9,10 +9,10 @@ info:
     complete enough to drive a fully functional read/write web UI, even though
     the UI bundled in version 1 only reads.
 
-    The component schemas below *are* the CLI's `--json` structures. There is no
-    second, HTTP-only response representation of anything the CLI also returns:
-    if the shapes ever diverge, the JSON output is what changed and both must be
-    corrected together.
+    The component schemas below are the domain fields in the CLI's `--json`
+    structures. In remote mode the CLI adds navigation links derived from the
+    configured server URL; those are presentation metadata rather than fields
+    returned by the API.
 
     This document is the source of truth rather than a description written
     afterwards: awb's HTTP server and the types the bundled UI is written

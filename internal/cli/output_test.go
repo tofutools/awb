@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -125,6 +126,59 @@ func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
 	assert.Contains(t, projects,
 		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
 		"the web UI represents a project as its filtered issue listing")
+}
+
+// JSON cannot carry an OSC 8 sequence, so it names the same web destinations
+// explicitly. Both fields are part of the CLI shape even in direct mode; an
+// empty value says that the local database has no associated web address.
+func TestJSONIncludesWebLinks(t *testing.T) {
+	issue := domain.Issue{ID: "demo-eeec94", Project: "demo", Title: "Release"}
+	issues := renderRemote(config.ColorNever, false, func(e *env) {
+		e.json = true
+		require.NoError(t, e.printIssues([]domain.Issue{issue}, false))
+	})
+	var issueList []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(issues), &issueList))
+	require.Len(t, issueList, 1)
+	assert.Equal(t, "https://example.com/awb/#/issues/demo-eeec94", issueList[0]["issue_link"])
+	assert.Equal(t, "https://example.com/awb/#/issues?project=demo", issueList[0]["project_link"])
+
+	projects := renderRemote(config.ColorNever, false, func(e *env) {
+		e.json = true
+		require.NoError(t, e.printProjects([]domain.Project{{Key: "demo", Name: "Demo"}}))
+	})
+	var projectList []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(projects), &projectList))
+	require.Len(t, projectList, 1)
+	assert.Equal(t, "https://example.com/awb/#/issues?project=demo", projectList[0]["project_link"])
+
+	local := render(0, func(e *env) {
+		e.json = true
+		require.NoError(t, e.printIssue(&issue))
+	})
+	var localIssue map[string]any
+	require.NoError(t, json.Unmarshal([]byte(local), &localIssue))
+	assert.Equal(t, "", localIssue["issue_link"])
+	assert.Equal(t, "", localIssue["project_link"])
+}
+
+func TestRemoteDetailIdentifiersAreClickable(t *testing.T) {
+	issue := domain.Issue{
+		ID: "demo-eeec94", Project: "demo", Title: "Release", Status: domain.StatusOpen,
+		Blockers:  []string{"demo-bff7dc"},
+		Relations: []domain.Relation{{Type: domain.RelRelated, Other: "demo-bbd9d3"}},
+	}
+	out := renderRemote(config.ColorAlways, true, func(e *env) { e.printIssueDetail(&issue) })
+	for _, destination := range []string{
+		"#/issues/demo-eeec94", "#/issues?project=demo", "#/issues/demo-bff7dc", "#/issues/demo-bbd9d3",
+	} {
+		assert.Contains(t, out, "https://example.com/awb/"+destination)
+	}
+
+	project := renderRemote(config.ColorAlways, true, func(e *env) {
+		e.printProjectDetail(&domain.Project{Key: "demo", Name: "Demo"})
+	})
+	assert.Contains(t, project, "https://example.com/awb/#/issues?project=demo")
 }
 
 // A local database has no associated web address, redirected output is not an
