@@ -136,8 +136,16 @@ func newProjectShowCommand(e *env) *cobra.Command {
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
-	return command("list", "List projects with counts of issues that are not closed", "",
-		func(cmd *cobra.Command, _ []string) error {
+	return boa.CmdT[InteractiveFlags]{
+		Use:         "list",
+		Short:       "List projects with counts of issues that are not closed",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
+			out, err := e.interactively(p.Interactive)
+			if err != nil {
+				return err
+			}
+
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
@@ -146,8 +154,12 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if out != nil {
+				return e.pickProject(cmd.Context(), be, out, page.Projects)
+			}
 			return e.printProjects(page.Projects)
-		})
+		},
+	}.ToCobra()
 }
 
 type projectDeleteParams struct {

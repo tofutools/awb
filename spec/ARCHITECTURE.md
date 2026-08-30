@@ -14,7 +14,9 @@ Three assumptions drive everything else.
 **Agents are the primary caller.** Every operation is one non-interactive
 command with a stable, parseable output and a meaningful exit code. Output modes
 exist that minimise context consumption, because context is the scarce resource
-for the tool's main user.
+for the tool's main user. The one interactive affordance is a human's, is asked
+for explicitly, and needs a terminal on both standard input and standard output;
+it therefore cannot appear in front of an agent by accident.
 
 **The vocabulary must fit in a few lines of instruction.** A fixed set of types,
 statuses, priorities and relation types, none of it configurable. Everything a
@@ -359,6 +361,16 @@ the web UI read, so no surface can disagree with another about what a
 description says. What a given terminal makes of any of it is the terminal's
 own business, which is why nothing there is the only way to reach anything: the
 links a description holds are still listed as plain text beside it.
+
+The list commands take `--interactive`, which is the same listing on the
+alternate screen: the reader moves through it and the entry they choose is
+printed exactly as the matching `show` command would print it, the listing
+itself leaving no trace on the terminal. It is drawn by the same code that
+prints one, laid out once for the window rather than once per keystroke, so
+nothing shifts sideways while it is scrolled. It refuses without a terminal on
+both standard input and standard output, and refuses alongside `--json` and
+`--compact`, because a caller who asked for a screen to scroll asked for
+something those cannot give.
 
 In remote mode, issue and project identifiers in the human output link to the
 bundled web UI. The stable JSON form carries the same destinations as explicit

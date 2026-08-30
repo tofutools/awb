@@ -198,20 +198,31 @@ func newShowCommand(e *env) *cobra.Command {
 		})
 }
 
+// listingParams is a listing's filters, with the flag that says to show them
+// on the full screen rather than print them.
+type listingParams struct {
+	InteractiveFlags
+	FilterFlags
+}
+
 // listing builds the three list-like commands without search terms, which
 // differ only in the filters
 // they accept and the ones they fix for themselves.
 func listing(e *env, use, short, long string, opts filterOptions,
 	fix func(*domain.Filter), withBlockers bool) *cobra.Command {
-	cmd := boa.CmdT[FilterFlags]{
-		Use:               use,
-		Short:             short,
-		Long:              long,
-		ParamEnrich:       boaParams,
-		InitFuncCtx:       filterInit(e, opts, fix),
-		PostCreateFuncCtx: filterPostCreate(opts),
-		RunFuncE: func(flags *FilterFlags, cmd *cobra.Command, _ []string) error {
-			return runListing(e, cmd, flags, opts, fix, withBlockers, nil)
+	cmd := boa.CmdT[listingParams]{
+		Use:         use,
+		Short:       short,
+		Long:        long,
+		ParamEnrich: boaParams,
+		InitFuncCtx: func(ctx *boa.HookContext, p *listingParams, cmd *cobra.Command) error {
+			return filterInit(e, opts, fix)(ctx, &p.FilterFlags, cmd)
+		},
+		PostCreateFuncCtx: func(ctx *boa.HookContext, p *listingParams, cmd *cobra.Command) error {
+			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
+		},
+		RunFuncE: func(p *listingParams, cmd *cobra.Command, _ []string) error {
+			return runListing(e, cmd, &p.FilterFlags, p.Interactive, opts, fix, withBlockers, nil)
 		},
 	}.ToCobra()
 	return cmd
@@ -251,6 +262,7 @@ func newBlockedCommand(e *env) *cobra.Command {
 }
 
 type searchParams struct {
+	InteractiveFlags
 	FilterFlags
 	Terms []string `positional:"true" required:"true"`
 }
@@ -276,13 +288,21 @@ func newSearchCommand(e *env) *cobra.Command {
 			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
 		},
 		RunFuncE: func(p *searchParams, cmd *cobra.Command, _ []string) error {
-			return runListing(e, cmd, &p.FilterFlags, opts, nil, false, p.Terms)
+			return runListing(e, cmd, &p.FilterFlags, p.Interactive, opts, nil, false, p.Terms)
 		},
 	}.ToCobra()
 }
 
-func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, opts filterOptions,
-	fix func(*domain.Filter), withBlockers bool, terms []string) error {
+func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, interactive bool,
+	opts filterOptions, fix func(*domain.Filter), withBlockers bool, terms []string) error {
+	// Whether the listing can be shown at all is settled before it is asked
+	// for, so a refusal costs nothing and says only what is wrong with the
+	// invocation.
+	out, err := e.interactively(interactive)
+	if err != nil {
+		return err
+	}
+
 	filter, err := flags.build(e, cmd, opts)
 	if err != nil {
 		return err
@@ -305,6 +325,9 @@ func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, opts filterOptio
 	page, err := be.ListIssues(cmd.Context(), filter)
 	if err != nil {
 		return err
+	}
+	if out != nil {
+		return e.pickIssue(cmd.Context(), be, out, page.Issues, withBlockers)
 	}
 	return e.printIssues(page.Issues, withBlockers)
 }

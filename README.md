@@ -22,7 +22,8 @@ awb-77e0b2 P2 open task "Add fuzz tests for parser"
 
 * **Every command is non-interactive** and has a meaningful exit code, so an
   agent can act on failure instead of parsing prose. Destructive commands take
-  a confirmation flag rather than prompting.
+  a confirmation flag rather than prompting. The one interactive thing there is,
+  `-i` on the list commands, refuses to run without a terminal.
 * **`--compact` is one line per issue**, designed to cost as little context as
   possible. `--json` is the stable full representation. The default table is for
   humans and nothing should parse it.
