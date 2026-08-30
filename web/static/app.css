@@ -120,7 +120,39 @@ nav a.active::after {
 }
 .search input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
 
-.identity { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--fg); font-size: 0.9em; }
+.account-menu { display: inline-flex; align-items: stretch; }
+.identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.identity:hover .identity-name { color: var(--accent); }
+.identity:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 999px; }
+.account-popover {
+  position: fixed;
+  inset: auto;
+  min-width: 10rem;
+  margin: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 25%);
+  color: var(--fg);
+}
+.account-menu-item { display: block; padding: 0.45rem 0.6rem; border-radius: 4px; color: var(--fg); }
+.account-menu-item:hover, .account-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  text-decoration: none;
+}
 .avatar {
   display: inline-flex;
   width: 2rem;
@@ -140,6 +172,60 @@ main { padding-top: 1.5rem; }
 h1 { font-size: 1.5rem; margin: 0 0 0.25rem; letter-spacing: -0.02em; }
 h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; color: var(--muted); font-weight: 600; }
 .lede { color: var(--muted); margin: 0 0 1.25rem; }
+
+.profile-view { max-width: 64rem; }
+.profile-heading { display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; }
+.profile-heading .lede { margin: 0; }
+.avatar.profile-avatar { width: 3.25rem; height: 3.25rem; flex-basis: 3.25rem; font-size: 1.1rem; }
+.profile-card {
+  margin-bottom: 1rem;
+  padding: 0.25rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.profile-card h2 { margin-top: 0.75rem; }
+.profile-roles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.profile-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }
+.profile-facts dt { color: var(--muted); }
+.profile-facts dd { margin: 0; overflow-wrap: anywhere; }
+.profile-projects { display: grid; gap: 0.4rem; }
+.profile-project {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.profile-project:last-child { border-bottom: 0; }
+.profile-project-name { font-family: var(--mono); }
+.profile-project-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-password-form { display: grid; grid-template-columns: minmax(0, 22rem); gap: 0.4rem; }
+.profile-password-form label { color: var(--muted); font-size: 0.85em; }
+.profile-password-form input {
+  margin-bottom: 0.35rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.profile-password-form input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+.profile-submit {
+  justify-self: start;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--panel);
+  font: inherit;
+  cursor: pointer;
+}
+.profile-submit:disabled { opacity: 0.55; cursor: wait; }
+.profile-form-message { min-height: 1.5em; margin: 0.25rem 0 0; color: var(--accent); }
+.profile-form-message.form-error { color: var(--warn); }
 
 ul { list-style: none; margin: 0; padding: 0; }
 
@@ -745,4 +831,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .activity-changes li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); justify-content: start; gap: 0.15rem 0.4rem; }
   .activity-field { grid-column: 1 / -1; min-width: 0; }
   .activity-changes code { max-width: none; overflow: visible; text-overflow: clip; white-space: normal; }
+  .profile-project { grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.75rem; }
+  .profile-project-title { grid-column: 1 / -1; grid-row: 2; color: var(--muted); }
 }

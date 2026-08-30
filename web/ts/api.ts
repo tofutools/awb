@@ -28,6 +28,8 @@ export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];
+export type User = components["schemas"]["User"];
+export type UserPatch = components["schemas"]["UserPatch"];
 
 /**
  * The query parameters of one operation, named exactly as the CLI flags are.
@@ -144,6 +146,14 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
   }));
 }
 
+async function patchOne<T>(path: string, body: unknown): Promise<T> {
+  return getResponse<T>(await request(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
 async function getResponse<T>(resp: Response): Promise<T> {
   return (await resp.json()) as T;
 }
@@ -163,6 +173,9 @@ export const api = {
   labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
   assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
+  user: (name: string) => getOne<User>(`api/users/${encodeURIComponent(name)}`),
+  updateUser: (name: string, patch: UserPatch) =>
+    patchOne<User>(`api/users/${encodeURIComponent(name)}`, patch),
 };
 
 export { toQuery };
