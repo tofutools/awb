@@ -195,6 +195,77 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 	assert.Equal(t, secondBytes, secondBytesAfter)
 }
 
+func TestDumpOverwriteRefusesLocalSourceOverlap(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source")
+	sourceDB := filepath.Join(sourceDir, "awb.db")
+	sourceAttachments := filepath.Join(sourceDir, "attachments")
+	db, err := storage.Init(t.Context(), sourceDB)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.NoError(t, storage.NewBlobs(sourceAttachments).Create())
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	t.Setenv("AWB_DB", sourceDB)
+	t.Setenv("AWB_ATTACHMENTS", sourceAttachments)
+	t.Setenv("AWB_IDENTITY", "mikael")
+	t.Setenv("AWB_CONFIG_FILE", "")
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	run := func(outputDB, outputAttachments string) (string, int) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		code := Execute(t.Context(), "test", openapi.New(raw), []string{
+			"dump", "--overwrite", "--output-db", outputDB,
+			"--output-attachments", outputAttachments,
+		}, &stdout, &stderr, strings.NewReader(""))
+		return stderr.String(), code
+	}
+
+	for _, tt := range []struct {
+		name        string
+		attachments string
+	}{
+		{name: "source attachment directory", attachments: sourceAttachments},
+		{name: "ancestor of source database", attachments: sourceDir},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			errOut, code := run(filepath.Join(root, tt.name+".db"), tt.attachments)
+			assert.Equal(t, 2, code)
+			assert.Contains(t, errOut, "must not overlap the local database or attachment directory")
+			_, err := os.Stat(sourceDB)
+			assert.NoError(t, err)
+			info, err := os.Stat(sourceAttachments)
+			require.NoError(t, err)
+			assert.True(t, info.IsDir())
+		})
+	}
+}
+
+func TestPublishDumpRechecksSQLiteSidecars(t *testing.T) {
+	root := t.TempDir()
+	stagedDB := filepath.Join(root, "staged.db")
+	stagedAttachments := filepath.Join(root, "staged-attachments")
+	outputDB := filepath.Join(root, "output.db")
+	outputAttachments := filepath.Join(root, "output-attachments")
+	require.NoError(t, os.WriteFile(stagedDB, []byte("new"), 0o600))
+	require.NoError(t, os.Mkdir(stagedAttachments, 0o700))
+	require.NoError(t, os.WriteFile(outputDB, []byte("old"), 0o600))
+	require.NoError(t, os.Mkdir(outputAttachments, 0o700))
+	// This models a server opening the destination after overwrite staging began.
+	require.NoError(t, os.WriteFile(outputDB+"-wal", []byte("active"), 0o600))
+
+	err := publishDump(stagedDB, stagedAttachments, outputDB, outputAttachments)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stop the local server first")
+	contents, err := os.ReadFile(outputDB)
+	require.NoError(t, err)
+	assert.Equal(t, "old", string(contents))
+	_, err = os.Stat(stagedDB)
+	assert.NoError(t, err, "publication stopped before moving the completed replacement")
+}
+
 func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
@@ -232,6 +303,17 @@ func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, errOut, "stop the local server first")
 	require.NoError(t, os.Remove(db+"-wal"))
+
+	physical := filepath.Join(root, "physical")
+	require.NoError(t, os.Mkdir(physical, 0o700))
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Symlink(physical, alias))
+	errOut, code = run("dump", "--overwrite", "--output-db", filepath.Join(physical, "dump.db"),
+		"--output-attachments", alias)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "must not contain one another")
+	_, err = os.Stat(filepath.Join(physical, "dump.db"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
 
 	nestedDB := filepath.Join(root, "nested.db")
 	errOut, code = run("dump", "--output-db", nestedDB,

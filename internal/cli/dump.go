@@ -48,8 +48,16 @@ func newDumpCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if p.Overwrite && !cfg.Remote() && sameExistingFile(cfg.DB, p.OutputDB) {
-				return awberr.Usagef("--overwrite cannot replace the local database being dumped")
+			if p.Overwrite && !cfg.Remote() {
+				conflict, err := localSourceOutputConflict(cfg.DB, cfg.Attachments,
+					p.OutputDB, p.OutputAttachments)
+				if err != nil {
+					return err
+				}
+				if conflict {
+					return awberr.Usagef(
+						"--overwrite outputs must not overlap the local database or attachment directory being dumped")
+				}
 			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
@@ -87,13 +95,8 @@ func overwriteDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	if err := validateOverwriteTarget(outputAttachments, true); err != nil {
 		return err
 	}
-	for _, sidecar := range []string{outputDB + "-wal", outputDB + "-shm"} {
-		if _, err := os.Lstat(sidecar); err == nil {
-			return awberr.Runtimef(
-				"cannot overwrite %s while %s exists: stop the local server first", outputDB, sidecar)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return awberr.Wrap(awberr.Runtime, err, "inspect %s", sidecar)
-		}
+	if err := ensureDatabaseNotActive(outputDB); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(outputDB), 0o755); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "create directory for %s", outputDB)
@@ -245,6 +248,19 @@ func (d *displacedOutput) discard() {
 }
 
 func publishDump(stagedDB, stagedAttachments, outputDB, outputAttachments string) error {
+	// The download may have taken a long time. Repeat every destination check at
+	// the publication boundary, most importantly the SQLite sidecars: a local
+	// server may have opened the old dump while staging was in progress.
+	if err := validateOverwriteTarget(outputDB, false); err != nil {
+		return err
+	}
+	if err := validateOverwriteTarget(outputAttachments, true); err != nil {
+		return err
+	}
+	if err := ensureDatabaseNotActive(outputDB); err != nil {
+		return err
+	}
+
 	oldDB, err := displaceOutput(outputDB)
 	if err != nil {
 		return err
@@ -315,10 +331,38 @@ func validateOverwriteTarget(path string, wantDirectory bool) error {
 	return nil
 }
 
+func ensureDatabaseNotActive(path string) error {
+	for _, sidecar := range []string{path + "-wal", path + "-shm"} {
+		if _, err := os.Lstat(sidecar); err == nil {
+			return awberr.Runtimef(
+				"cannot overwrite %s while %s exists: stop the local server first", path, sidecar)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return awberr.Wrap(awberr.Runtime, err, "inspect %s", sidecar)
+		}
+	}
+	return nil
+}
+
 func sameExistingFile(a, b string) bool {
 	aInfo, aErr := os.Stat(a)
 	bInfo, bErr := os.Stat(b)
 	return aErr == nil && bErr == nil && os.SameFile(aInfo, bInfo)
+}
+
+func localSourceOutputConflict(sourceDB, sourceAttachments, outputDB,
+	outputAttachments string) (bool, error) {
+	for _, source := range []string{sourceDB, sourceAttachments} {
+		for _, output := range []string{outputDB, outputAttachments} {
+			overlap, err := pathsOverlap(source, output)
+			if err != nil {
+				return false, err
+			}
+			if overlap || sameExistingFile(source, output) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project, error) {
@@ -461,11 +505,11 @@ func dumpAttachments(cmd *cobra.Command, source backend.Backend, issues []domain
 }
 
 func pathsOverlap(a, b string) (bool, error) {
-	absA, err := filepath.Abs(a)
+	absA, err := physicalPath(a)
 	if err != nil {
 		return false, awberr.Wrap(awberr.Runtime, err, "resolve output path %s", a)
 	}
-	absB, err := filepath.Abs(b)
+	absB, err := physicalPath(b)
 	if err != nil {
 		return false, awberr.Wrap(awberr.Runtime, err, "resolve output path %s", b)
 	}
@@ -485,4 +529,34 @@ func pathsOverlap(a, b string) (bool, error) {
 		return false, awberr.Wrap(awberr.Runtime, err, "compare output paths")
 	}
 	return aContainsB || bContainsA, nil
+}
+
+// physicalPath resolves every symlink in the existing part of path. The output
+// itself need not exist yet, so components are peeled off until EvalSymlinks
+// reaches an existing ancestor and are then joined back onto its physical path.
+func physicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	current := abs
+	tail := []string{}
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(current))
+		current = parent
+	}
 }
