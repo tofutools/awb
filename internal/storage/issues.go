@@ -326,10 +326,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	return nil
 }
 
-// touchIssue moves updated_at for a change that is not to a column of the
-// issues table — a label being added or removed, which counts as a change to
-// the issue.
-func (t *Tx) touchIssue(issue *domain.Issue) error {
+// TouchIssue moves updated_at for issue activity that is not a change to a
+// column of the issues table: a label being added or removed, or a comment
+// being posted.
+func (t *Tx) TouchIssue(issue *domain.Issue) error {
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx,
 		`UPDATE issues SET updated_at = ? WHERE id = ?`, updated, issue.ID)
@@ -355,7 +355,7 @@ func (t *Tx) AddLabel(issue *domain.Issue, label string) error {
 	if n == 0 {
 		return nil
 	}
-	return t.touchIssue(issue)
+	return t.TouchIssue(issue)
 }
 
 // RemoveLabel removes a label from an issue. Removing one it does not carry
@@ -373,7 +373,7 @@ func (t *Tx) RemoveLabel(issue *domain.Issue, label string) error {
 	if n == 0 {
 		return nil
 	}
-	return t.touchIssue(issue)
+	return t.TouchIssue(issue)
 }
 
 // DeleteIssue removes an issue and, by cascade, its labels and every relation

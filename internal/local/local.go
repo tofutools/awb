@@ -121,8 +121,8 @@ func checkIfMatch(ifMatch, updatedAt, what string) error {
 // its being strictly increasing per row, so the tag identifies a version
 // rather than an instant. It is a strong tag, because If-Match is compared
 // strongly and a weak validator would never match, and it therefore says
-// exactly what it guards: the entity's own stored fields, which are what a
-// form edits.
+// exactly what it guards: the entity's own stored fields and, for an issue,
+// comments posted since a form read it.
 func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 
 // authorize resolves who is acting and restricts the transaction to what they
