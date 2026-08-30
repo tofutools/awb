@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -231,7 +232,7 @@ func (p *picker) View() tea.View {
 func (p *picker) resize(width, height int) {
 	p.t.width = max(width, minimumWidth)
 	p.height = height
-	p.fitted = p.t.fit(cloneCols(p.cols))
+	p.fitted = fill(p.t.fit(cloneCols(p.cols)))
 	p.scroll()
 }
 
@@ -293,6 +294,40 @@ func (p *picker) render() string {
 
 func (p *picker) helpLine() string {
 	return fmt.Sprintf(" %d/%d   ↑/↓ move   enter show   q quit", p.cursor+1, p.rows)
+}
+
+// fill pads every cell out to the width of the widest in its column, so that
+// what a column is worth is decided by the whole listing rather than by the
+// rows that happen to be on the screen.
+//
+// A table is laid out to the content it is given, and the picker gives it one
+// window of rows at a time. Fitting alone is not enough, because fitting only
+// cuts what is too wide and leaves everything else at its own length: without
+// this the box is as wide as the longest title currently visible, and it grows
+// and shrinks under the reader as they scroll past a long one.
+func fill(cols []col) []col {
+	for i := range cols {
+		width := lipgloss.Width(cols[i].header)
+		for _, cell := range cols[i].cells {
+			width = max(width, lipgloss.Width(cell))
+		}
+		for j, cell := range cols[i].cells {
+			cols[i].cells[j] = padCell(cell, width, cols[i].right)
+		}
+	}
+	return cols
+}
+
+// padCell fills a cell out to a width, on whichever side leaves what it says
+// where its column wants it. The width is what the terminal shows and not what
+// the string holds, because a cell may carry the escapes that make an
+// identifier clickable.
+func padCell(cell string, width int, right bool) string {
+	fill := strings.Repeat(" ", max(0, width-lipgloss.Width(cell)))
+	if right {
+		return fill + cell
+	}
+	return cell + fill
 }
 
 // cloneCols copies the cells, because fit cuts them where they stand and the

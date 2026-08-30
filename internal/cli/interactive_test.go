@@ -23,13 +23,17 @@ import (
 
 // many is a listing longer than any window a test gives it, so what the picker
 // scrolls is visible.
+//
+// Every row's title is a different length, and no window holds every length,
+// so a layout decided by the visible rows rather than by the whole listing
+// shows up as a box that changes width.
 func many(n int) []domain.Issue {
 	issues := make([]domain.Issue, n)
 	for i := range issues {
 		issues[i] = domain.Issue{
 			ID:       "demo-" + string(rune('a'+i%26)) + string(rune('a'+i/26)),
 			Priority: i % (domain.MaxPriority + 1), Status: domain.StatusOpen,
-			Type: "task", Title: "Issue number " + strings.Repeat("x", i%7),
+			Type: "task", Title: "Issue " + strings.Repeat("x", i),
 		}
 	}
 	return issues
@@ -163,14 +167,29 @@ func TestPickerShowsTheWindowAndNothingElse(t *testing.T) {
 
 // The columns are laid out once for the window and not once for the rows in
 // it, so nothing shifts sideways as the reader scrolls.
+//
+// A table is laid out to the content it is given and the picker gives it one
+// window at a time, so every cell is padded to its column: without that the
+// box was as wide as the longest title currently on the screen and grew and
+// shrank under the reader.
 func TestPickerColumnsHoldStillWhileItScrolls(t *testing.T) {
-	p := newPicker(t, many(40), config.ColorAuto, 100, 12)
-	first := lines(p.render())[0]
-
-	for range 39 {
-		p, _ = press(t, p, key(tea.KeyDown, ""))
-		assert.Equal(t, first, lines(p.render())[0],
-			"the box is the same width at row %d", p.cursor)
+	for _, width := range []int{60, 100, 200} {
+		p := newPicker(t, many(40), config.ColorAuto, width, 12)
+		want := lines(p.render())
+		for range 39 {
+			p, _ = press(t, p, key(tea.KeyDown, ""))
+			got := lines(p.render())
+			assert.Equal(t, want[0], got[0],
+				"width %d: the box is the same at row %d", width, p.cursor)
+			assert.Equal(t, want[1], got[1],
+				"width %d: so are the headings at row %d", width, p.cursor)
+			// Every line of the box, the line of help under it aside.
+			for i, line := range got[:len(got)-1] {
+				assert.Equal(t, lipgloss.Width(want[0]), lipgloss.Width(line),
+					"width %d: every line is the same width at row %d, line %d",
+					width, p.cursor, i)
+			}
+		}
 	}
 }
 
