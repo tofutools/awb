@@ -328,6 +328,53 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .sort-arrow { margin-left: 0.3rem; font-size: 0.7em; }
 .sort-hint { opacity: 0; }
 .sort-button:hover .sort-hint, .sort-button:focus-visible .sort-hint { opacity: 0.65; }
+.column-heading { display: flex; align-items: stretch; }
+.column-heading .sort-button { min-width: 0; flex: 1 1 auto; width: auto; }
+.updated-display-control { display: inline-flex; align-items: center; }
+.updated-display-button {
+  display: inline-flex;
+  gap: 0.15rem;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.updated-display-button:hover, .updated-display-button:focus-visible { color: var(--fg); }
+.updated-display-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.updated-display-button .icon { width: 0.85rem; height: 0.85rem; stroke-width: 1.5; }
+.updated-display-chevron { font-size: 0.55rem; }
+.updated-display-popover {
+  position: fixed;
+  inset: auto;
+  width: min(19rem, calc(100vw - 1rem));
+  margin: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 25%);
+  color: var(--fg);
+  font: 0.82rem/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.updated-display-title { display: block; padding: 0.15rem 0.35rem 0.4rem; color: var(--muted); }
+.updated-display-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.35rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.updated-display-option:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.updated-display-option input { margin: 0; accent-color: var(--accent); }
+.updated-display-option code { color: var(--muted); font: 0.85em var(--mono); }
+.mobile-updated-display { display: none; }
 
 .issue-table th:first-child { width: 42%; }
 .issue-table th:nth-child(2) { width: 11%; }
@@ -388,6 +435,20 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     gap: 0.35rem;
     color: var(--muted);
     font-size: 0.78em;
+  }
+  .mobile-updated-display {
+    display: inline-flex;
+    gap: 0.35rem;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.78em;
+  }
+  .mobile-updated-display .updated-display-button {
+    min-width: 2rem;
+    height: 1.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
   }
   .mobile-sort-control select {
     max-width: 9.5rem;
