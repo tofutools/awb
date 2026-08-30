@@ -685,6 +685,36 @@ func TestAssigneeSortingPagesByTheVisibleAssigneeList(t *testing.T) {
 	assert.Equal(t, []string{"zoe", "mikael"}, issues[1].Assignees)
 }
 
+func TestBlockerSortingPagesByTheVisibleBlockers(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	firstBlocker := add("first blocker")
+	lastBlocker := add("last blocker")
+	if firstBlocker > lastBlocker {
+		firstBlocker, lastBlocker = lastBlocker, firstBlocker
+	}
+	closed := add("closed subject")
+	open := add("open subject")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(closed, domain.RelBlockedBy, firstBlocker); err != nil {
+			return err
+		}
+		return tx.InsertRelation(open, domain.RelBlockedBy, lastBlocker)
+	}))
+	closeIssue(t, db, closed)
+
+	limit := 1
+	issues, _, err := listWith(t, db, &domain.Filter{
+		IncludeClosed: true,
+		Limit:         &limit,
+		Sort:          domain.Sort{Key: domain.SortBlockers},
+	})
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, open, issues[0].ID,
+		"a closed subject's historical blocker is not part of its visible sort value")
+}
+
 // Two invocations against unchanged data must agree, so every order is total.
 func TestListOrderIsTotal(t *testing.T) {
 	db := newDB(t)

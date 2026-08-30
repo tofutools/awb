@@ -118,6 +118,7 @@ func orderBy(sort domain.Sort) string {
 		  FROM (SELECT r.other
 		          FROM relations r
 		         WHERE r.subject = i.id AND r.type = 'blocked-by'
+		           AND i.status <> 'closed'
 		           AND EXISTS (SELECT 1 FROM issues b
 		                        WHERE b.id = r.other AND b.status <> 'closed')
 		         ORDER BY r.other)
