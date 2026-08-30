@@ -74,7 +74,8 @@ nav a.active::after {
   /* The tab remains the full header height, but its contents sit near the
      underline instead of floating midway between the rule and the top. */
   nav a { align-items: flex-end; padding-top: 1rem; padding-bottom: 0.15rem; }
-  .brand { align-self: flex-end; margin-bottom: 0.15rem; }
+  .brand { align-self: flex-end; }
+  .search, .identity { align-self: flex-end; margin-bottom: 0.15rem; }
 }
 
 .icon {
