@@ -31,7 +31,7 @@ import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
-import { issueSidebarCollapsed, rememberIssueSidebar } from "./sidebar.js";
+import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -750,7 +750,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
   const view = element("div", "issue-view");
-  view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(localStorage));
+  view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
   const content = element("div", "issue-content");
   const heading = element("div", "issue-heading");
   heading.append(element("div", "issue-key", issue.id));
@@ -833,7 +833,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   };
   toggle.addEventListener("click", () => {
     const collapsed = view.classList.toggle("sidebar-collapsed");
-    rememberIssueSidebar(localStorage, collapsed);
+    rememberIssueSidebar(issueSidebarStorage(window), collapsed);
     drawToggle();
   });
   const facts = element("dl", "issue-facts");

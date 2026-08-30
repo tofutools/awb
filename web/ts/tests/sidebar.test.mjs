@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { issueSidebarCollapsed, rememberIssueSidebar } from "../../static/sidebar.js";
+import {
+  issueSidebarCollapsed,
+  issueSidebarStorage,
+  rememberIssueSidebar,
+} from "../../static/sidebar.js";
 
 test("the issue sidebar is open until the browser remembers it closed", () => {
   const values = new Map();
@@ -18,11 +22,12 @@ test("the issue sidebar is open until the browser remembers it closed", () => {
 });
 
 test("unavailable browser storage leaves the sidebar usable and open by default", () => {
-  const storage = {
-    getItem: () => { throw new Error("unavailable"); },
-    setItem: () => { throw new Error("unavailable"); },
+  const host = {
+    get localStorage() { throw new Error("unavailable"); },
   };
+  const storage = issueSidebarStorage(host);
 
+  assert.equal(storage, null);
   assert.equal(issueSidebarCollapsed(storage), false);
   assert.doesNotThrow(() => rememberIssueSidebar(storage, true));
 });

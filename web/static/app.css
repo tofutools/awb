@@ -659,12 +659,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     background: transparent;
   }
   .issue-sidebar-toggle, .sidebar-collapsed .issue-sidebar-toggle {
-    top: min(50%, 40vh);
+    top: 1.5rem;
     right: 0;
-    transform: translateY(-50%);
+    transform: none;
     border-right: 1px solid var(--line);
     border-radius: var(--radius);
   }
+  .issue-heading { padding-right: 2.5rem; }
   .issue-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; }
 }
 
