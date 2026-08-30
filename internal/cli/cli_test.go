@@ -588,6 +588,9 @@ func TestAgentGuide(t *testing.T) {
 
 	guide := h.mustRun("agent-guide")
 	assert.Contains(t, guide, "awb ready --compact")
+	assert.Contains(t, guide, "Quoted `\\n` sequences")
+	assert.Contains(t, guide, "awb project update <key> --description-file project.md")
+	assert.Contains(t, guide, "`--json` selects an output format")
 	assert.Contains(t, guide, "Exit codes")
 	assert.Contains(t, guide, "awb --help")
 	assert.Contains(t, guide, "awb <group> <command> --help")
