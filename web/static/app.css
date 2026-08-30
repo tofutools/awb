@@ -506,7 +506,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .app-header { align-items: flex-start; gap: 0.5rem 1rem; }
   .app-header .search { order: 4; margin-left: 0; width: 100%; }
   .app-header .search input { width: 100%; }
-  .identity { margin-left: auto; }
+  .account-menu { margin-left: auto; }
   .identity-name { display: none; }
   nav { order: 3; width: 100%; padding-bottom: 0.5rem; overflow-x: auto; overflow-y: hidden; }
   nav a { flex: 1 1 auto; justify-content: center; padding: 0.4rem 0.25rem; font-size: 0.8rem; }
