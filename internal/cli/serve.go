@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	stdhttputil "net/http/httputil"
 	"net/url"
 	"os/signal"
 	"regexp"
@@ -85,6 +86,7 @@ type serveOptions struct {
 	https          bool
 	corsOrigins    []string
 	basicAuthRealm string
+	proxyTo        string
 }
 
 // listenAddr is the host:port to bind. An empty --addr means every interface.
@@ -97,6 +99,9 @@ func (o serveOptions) listenAddr() string {
 func (o serveOptions) validate() error {
 	if o.port < 1 || o.port > 65535 {
 		return awberr.Usagef("--port: %d is not a port number", o.port)
+	}
+	if _, err := parseProxyURL(o.proxyTo); err != nil {
+		return err
 	}
 	// --addr used to carry the port too, so an address that looks like
 	// host:port is somebody carrying the old form forward. Refuse it rather
@@ -160,12 +165,14 @@ type serveParams struct {
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
 	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
+	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying read-only API requests to this awb server"`
 }
 
 func (p *serveParams) options() serveOptions {
 	return serveOptions{
 		addr: p.Addr, port: p.Port, publicURL: p.PublicURL, https: p.HTTPS,
 		corsOrigins: p.CORSOrigins, basicAuthRealm: p.BasicAuthRealm,
+		proxyTo: p.ProxyTo,
 	}
 }
 
@@ -175,6 +182,10 @@ func newServeCommand(e *env) *cobra.Command {
 		Short: "Serve the HTTP API and the bundled read-only web UI",
 		Long: "Serve the local database over HTTP, so that things other than the CLI can\n" +
 			"reach it: third-party user interfaces, dashboards and integrations.\n\n" +
+			"With --proxy-to, serve this binary's bundled UI without opening a local\n" +
+			"database, and proxy its read-only API requests to another awb server. This is\n" +
+			"intended for testing a locally built UI against existing data; write requests\n" +
+			"are refused.\n\n" +
 			"Authentication and authorization come from the database. A database that\n" +
 			"holds at least one user — see awb user — asks every request for a username\n" +
 			"and password and answers it with that user's permissions. One that holds no\n" +
@@ -195,8 +206,30 @@ func newServeCommand(e *env) *cobra.Command {
 			if err := opts.validate(); err != nil {
 				return err
 			}
+			if opts.proxyTo != "" && p.Identity != nil {
+				return awberr.Usagef("--identity cannot be used with --proxy-to")
+			}
+			if opts.proxyTo != "" && len(opts.corsOrigins) > 0 {
+				return awberr.Usagef("--cors-origin cannot be used with --proxy-to")
+			}
 			if err := checkIdentityFlag(p.Identity); err != nil {
 				return err
+			}
+
+			// Proxy mode serves this binary's bundled UI without opening a local
+			// database. Its API remains read-only: the bundled UI cannot mutate
+			// data, and neither can another client through this development aid.
+			if opts.proxyTo != "" {
+				target, err := parseProxyURL(opts.proxyTo)
+				if err != nil {
+					return err
+				}
+				logger := log.New(e.stderr, "", log.LstdFlags)
+				httpHandler, err := buildProxyHandler(target, e.openAPI, opts, logger)
+				if err != nil {
+					return err
+				}
+				return runServer(cmd.Context(), logger, opts, httpHandler)
 			}
 
 			cfg, err := e.requireLocal("serve")
@@ -348,6 +381,38 @@ func parsePublicURL(publicURL string) (*url.URL, error) {
 	return parsed, nil
 }
 
+// parseProxyURL validates the remote awb server whose API the local UI calls.
+// It follows the same URL shape as --db in remote mode: an HTTP(S) origin with
+// an optional base path, and no credentials or request-specific components.
+func parseProxyURL(proxyTo string) (*url.URL, error) {
+	if proxyTo == "" {
+		return nil, nil
+	}
+	parsed, err := url.Parse(proxyTo)
+	if err != nil {
+		return nil, awberr.Usagef("--proxy-to: %s is not a URL", proxyTo)
+	}
+	switch {
+	case parsed.Scheme != "http" && parsed.Scheme != "https":
+		return nil, awberr.Usagef("--proxy-to: %s must be an http or https URL", proxyTo)
+	case parsed.Host == "":
+		return nil, awberr.Usagef("--proxy-to: %s names no host", proxyTo)
+	case parsed.User != nil:
+		return nil, awberr.Usagef("--proxy-to: %s must carry no credentials", proxyTo)
+	case parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "":
+		return nil, awberr.Usagef(
+			"--proxy-to: %s must be a base URL, with no query or fragment", proxyTo)
+	}
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return nil, awberr.Usagef("--proxy-to: %s is not a port number", port)
+		}
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
+	return parsed, nil
+}
+
 // basePathOf is the path component of --public-url, normalised to the form
 // <base href> wants: it starts and ends with a single "/", and is "/" when no
 // public URL is given or it names an origin with no path.
@@ -409,28 +474,6 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 		return nil, awberr.Wrap(awberr.Runtime, err, "build the API server")
 	}
 
-	staticFS, err := web.StaticFS()
-	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
-	}
-	uiHandler, err := httputil.StaticHandler(staticFS)
-	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "serve the bundled web UI")
-	}
-
-	publicURL, err := parsePublicURL(opts.publicURL)
-	if err != nil {
-		return nil, err
-	}
-	basePath, err := basePathOf(publicURL)
-	if err != nil {
-		return nil, err
-	}
-	shell, err := web.Shell(basePath)
-	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
-	}
-
 	// Compression is applied per route rather than once around everything,
 	// because StaticHandler already gzips what it serves and wrapping it again
 	// would encode the body twice. A browser decodes one layer and is left with
@@ -440,13 +483,10 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 		return recovery.Middleware(gzipExcept(isAttachmentDownload, handler.NoStore(h)))
 	}
 
-	// Everything under /api/ is the JSON API and /openapi.json and /openapi.yaml
-	// are the document; every other path belongs to the web UI.
-	root := http.NewServeMux()
-	root.Handle("/api/", withAPI(apiServer))
-	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
-	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
-	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS, shell)))
+	root, err := buildRoutes(withAPI(apiServer), document, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	csp, err := contentSecurityPolicy()
 	if err != nil {
@@ -491,6 +531,81 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	})(chain)
 
 	return transferLimits(chain), nil
+}
+
+// buildProxyHandler serves this binary's bundled UI and forwards its API reads
+// to another awb server. It deliberately does not expose the upstream's write
+// API: proxy mode is a UI development aid, not a second public API endpoint.
+func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOptions,
+	logger *log.Logger) (http.Handler, error) {
+	proxy := &stdhttputil.ReverseProxy{
+		Rewrite: func(request *stdhttputil.ProxyRequest) {
+			request.SetURL(target)
+		},
+		ErrorLog: logger,
+	}
+	readOnlyAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "the UI proxy only permits read-only API requests", http.StatusMethodNotAllowed)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	})
+
+	root, err := buildRoutes(recovery.Middleware(readOnlyAPI), document, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	csp, err := contentSecurityPolicy()
+	if err != nil {
+		return nil, err
+	}
+	strictTransport := ""
+	if opts.https {
+		strictTransport = hsts
+	}
+	chain := httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
+		CSP:            csp,
+		ReferrerPolicy: "same-origin",
+		HSTS:           strictTransport,
+	})(root)
+	return transferLimits(chain), nil
+}
+
+// buildRoutes puts an API implementation beside the bundled UI and the local
+// OpenAPI document. Both normal serve mode and UI proxy mode use this exact
+// route tree, so a static asset or shell change cannot work in only one mode.
+func buildRoutes(apiHandler http.Handler, document *openapi.Document,
+	opts serveOptions) (http.Handler, error) {
+	staticFS, err := web.StaticFS()
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
+	}
+	uiHandler, err := httputil.StaticHandler(staticFS)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "serve the bundled web UI")
+	}
+	publicURL, err := parsePublicURL(opts.publicURL)
+	if err != nil {
+		return nil, err
+	}
+	basePath, err := basePathOf(publicURL)
+	if err != nil {
+		return nil, err
+	}
+	shell, err := web.Shell(basePath)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
+	}
+
+	root := http.NewServeMux()
+	root.Handle("/api/", apiHandler)
+	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
+	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
+	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS, shell)))
+	return root, nil
 }
 
 // transferLimits caps how much of a request body the server will read, and
