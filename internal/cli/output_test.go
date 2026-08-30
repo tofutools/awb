@@ -127,6 +127,28 @@ func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
 		"the web UI represents a project as its filtered issue listing")
 }
 
+func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
+	out := renderRemote(config.ColorAlways, true, func(e *env) {
+		require.NoError(t, e.printStatus(&statusReport{
+			Connection: statusConnection{
+				Mode: "remote", Server: "https://example.com/awb",
+				UI: "https://example.com/awb/#/projects",
+			},
+			Configuration: statusConfiguration{Color: config.ColorAlways},
+			Projects:      []statusProject{{Key: "demo", Name: "Demo", Open: 2, Total: 2}},
+		}))
+	})
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/projects\x07https://example.com/awb/#/projects",
+		"the visible full UI URL opens the project index")
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
+		"the project key opens its filtered issue listing")
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07Demo",
+		"the project name opens the same listing")
+}
+
 // A local database has no associated web address, redirected output is not an
 // interactive terminal, and --color never promises no terminal escapes. None
 // of those cases acquires an OSC 8 sequence.

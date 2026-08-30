@@ -123,6 +123,7 @@ func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
 			Mode        string `json:"mode"`
 			Database    string `json:"database"`
 			Server      string `json:"server"`
+			UI          string `json:"ui"`
 			Attachments string `json:"attachments"`
 		} `json:"connection"`
 		Configuration struct {
@@ -146,6 +147,7 @@ func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
 	assert.Equal(t, "local", report.Connection.Mode)
 	assert.Equal(t, filepath.Join(h.root(), "awb.db"), report.Connection.Database)
 	assert.Empty(t, report.Connection.Server)
+	assert.Empty(t, report.Connection.UI)
 	assert.Equal(t, filepath.Join(h.root(), "attachments"), report.Connection.Attachments)
 	assert.Equal(t, "mikael", report.Configuration.Identity)
 	assert.Equal(t, "mikael", report.Configuration.ConfiguredIdentity)

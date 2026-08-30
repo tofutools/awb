@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"text/tabwriter"
@@ -16,6 +17,7 @@ type statusConnection struct {
 	Mode        string `json:"mode"`
 	Database    string `json:"database"`
 	Server      string `json:"server"`
+	UI          string `json:"ui"`
 	Attachments string `json:"attachments"`
 }
 
@@ -115,6 +117,7 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 	if cfg.Remote() {
 		report.Connection.Mode = "remote"
 		report.Connection.Server = cfg.DB
+		report.Connection.UI = cfg.RemoteURL.String() + "/#/projects"
 		report.Connection.Database = ""
 	}
 
@@ -161,12 +164,14 @@ func configuredEnvironment() []statusEnvironment {
 
 func (e *env) printStatus(report *statusReport) error {
 	w := tabwriter.NewWriter(e.stdout, 0, 4, 2, ' ', 0)
+	t := e.theme()
 	_, _ = fmt.Fprintf(w, "Connection\n  Mode:\t%s\n", report.Connection.Mode)
 	if report.Connection.Mode == "remote" {
-		_, _ = fmt.Fprintf(w, "  Server:\t%s\n", report.Connection.Server)
+		_, _ = fmt.Fprintf(w, "  Server:\t%s\n  Web UI:\t%s\n", report.Connection.Server,
+			e.entityLink(t, report.Connection.UI, "/projects"))
 	} else {
-		_, _ = fmt.Fprintf(w, "  SQLite database:\t%s\n  Attachments:\t%s\n",
-			report.Connection.Database, report.Connection.Attachments)
+		_, _ = fmt.Fprintf(w, "  SQLite database:\t%s\n  Attachments:\t%s\n  Web UI:\t%s\n",
+			report.Connection.Database, report.Connection.Attachments, "(not available in local mode)")
 	}
 
 	c := report.Configuration
@@ -196,7 +201,9 @@ func (e *env) printStatus(report *statusReport) error {
 	} else {
 		_, _ = fmt.Fprintln(w, "  KEY\tNAME\tOPEN\tIN PROGRESS\tCLOSED\tTOTAL")
 		for _, project := range report.Projects {
-			_, _ = fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%d\t%d\n", project.Key, project.Name,
+			route := "/issues?" + url.Values{"project": []string{project.Key}}.Encode()
+			_, _ = fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%d\t%d\n",
+				e.entityLink(t, project.Key, route), e.entityLink(t, project.Name, route),
 				project.Open, project.InProgress, project.Closed, project.Total)
 		}
 	}
@@ -208,9 +215,9 @@ func (e *env) printStatus(report *statusReport) error {
 // whitespace are quoted with Go/JSON string syntax.
 func (e *env) printCompactStatus(report *statusReport) error {
 	q := strconv.Quote
-	_, _ = fmt.Fprintf(e.stdout, "connection mode=%s database=%s server=%s attachments=%s\n",
+	_, _ = fmt.Fprintf(e.stdout, "connection mode=%s database=%s server=%s ui=%s attachments=%s\n",
 		report.Connection.Mode, q(report.Connection.Database), q(report.Connection.Server),
-		q(report.Connection.Attachments))
+		q(report.Connection.UI), q(report.Connection.Attachments))
 	c := report.Configuration
 	_, _ = fmt.Fprintf(e.stdout,
 		"configuration identity=%s configured_identity=%s user=%s password_set=%t default_project=%s "+
