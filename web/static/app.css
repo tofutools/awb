@@ -75,7 +75,8 @@ nav a.active::after {
      underline instead of floating midway between the rule and the top. */
   nav a { align-items: flex-end; padding-top: 1rem; padding-bottom: 0.15rem; }
   .brand { align-self: flex-end; }
-  .search, .identity { align-self: flex-end; margin-bottom: 0.15rem; }
+  .identity { align-self: flex-end; margin-bottom: 0.15rem; }
+  .search { align-self: flex-end; margin-bottom: -0.25rem; }
   main > :not(.issue-view) { margin-inline: 1rem; }
 }
 
