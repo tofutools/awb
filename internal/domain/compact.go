@@ -80,6 +80,10 @@ func CompactActivityLine(a *Activity) string {
 		b.WriteString(a.Actor)
 	}
 	if a.Kind == ActivityKindComment {
+		if a.Action != "" {
+			b.WriteByte(' ')
+			b.WriteString(a.Action)
+		}
 		b.WriteByte(' ')
 		b.WriteString(jsonString(a.Body))
 	} else {

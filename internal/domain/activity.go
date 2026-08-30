@@ -21,7 +21,9 @@ type ActivityChange struct {
 }
 
 // Activity is one append-only entry in an issue's timeline. Comment entries
-// carry Body; change entries carry Action and zero or more Changes.
+// carry Body. An ordinary comment has no Action; a close-reason comment has
+// Action "closed", intrinsically tying its prose to that transition. Change
+// entries carry Action and zero or more Changes.
 type Activity struct {
 	ID        int64            `json:"id"`
 	Issue     string           `json:"issue"`

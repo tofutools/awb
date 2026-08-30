@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -15,6 +16,7 @@ type Snapshot struct {
 	Projects    []domain.Project
 	Issues      []domain.Issue
 	Attachments []domain.Attachment
+	Activity    []domain.Activity
 }
 
 // RestoreSnapshot writes an API snapshot into a freshly initialized database,
@@ -49,9 +51,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 		for i := range snapshot.Issues {
 			issue := &snapshot.Issues[i]
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issues (`+issueColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-				issue.Status, issue.Priority, issue.Assignee, issue.CloseReason,
+				issue.Status, issue.Priority, issue.Assignee,
 				issue.CreatedAt, issue.UpdatedAt); err != nil {
 				return restoreError(err, "issue %s", issue.ID)
 			}
@@ -102,6 +104,20 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				VALUES (?, ?, ?, ?, ?, ?)`,
 				a.Issue, a.Name, a.ContentType, a.Size, a.Sha256, a.CreatedAt); err != nil {
 				return restoreError(err, "attachment %q of %s", a.Name, a.Issue)
+			}
+		}
+
+		for i := range snapshot.Activity {
+			a := &snapshot.Activity[i]
+			changes, err := json.Marshal(a.Changes)
+			if err != nil {
+				return restoreError(err, "activity %d", a.ID)
+			}
+			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issue_activity (`+activityColumns+`)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				a.ID, a.Issue, a.Kind, a.Actor, a.Body, a.Action,
+				string(changes), a.CreatedAt); err != nil {
+				return restoreError(err, "activity %d of %s", a.ID, a.Issue)
 			}
 		}
 

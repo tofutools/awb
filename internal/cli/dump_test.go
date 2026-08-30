@@ -105,6 +105,14 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, wantIssues, gotIssues)
 
+	for _, issue := range wantIssues.Issues {
+		wantActivity, activityErr := source.ListActivity(ctx, issue.ID, "", nil, nil)
+		require.NoError(t, activityErr)
+		gotActivity, activityErr := restored.ListActivity(ctx, issue.ID, "", nil, nil)
+		require.NoError(t, activityErr)
+		assert.Equal(t, wantActivity, gotActivity, issue.ID)
+	}
+
 	gotAttachment, content, err := restored.OpenAttachment(ctx, attachment.Issue, attachment.Name)
 	require.NoError(t, err)
 	defer content.Close() //nolint:errcheck

@@ -21,6 +21,7 @@ var migrations = [][]string{
 	schemaV2,
 	schemaV3,
 	schemaV4,
+	schemaV5,
 }
 
 // schemaV4 adds the append-only issue activity stream. Changes are JSON text
@@ -44,6 +45,150 @@ var schemaV4 = []string{
 
 	`CREATE INDEX idx_issue_activity_order
 		ON issue_activity (issue, created_at DESC, id DESC)`,
+}
+
+// schemaV5 moves the current close reason into the activity stream and removes
+// its issue column. Existing databases cannot name the historical actor, so a
+// migrated reason deliberately carries the empty/system actor and the issue's
+// last-update timestamp rather than inventing either value.
+//
+// SQLite cannot drop close_reason directly because schemaV1's CHECK constraint
+// names it. The table and its foreign-key dependants are therefore rebuilt in
+// one migration transaction. Rowids are preserved and the external-content
+// full-text index is rebuilt before the transaction commits.
+var schemaV5 = []string{
+	`CREATE TEMP TABLE migration_v5_close_reasons AS
+		SELECT id AS issue, close_reason AS body, updated_at AS created_at
+		  FROM issues WHERE close_reason <> ''`,
+	`CREATE TEMP TABLE migration_v5_labels AS SELECT issue, label FROM issue_labels`,
+	`CREATE TEMP TABLE migration_v5_relations AS SELECT subject, type, other FROM relations`,
+	`CREATE TEMP TABLE migration_v5_attachments AS
+		SELECT issue, name, content_type, size, sha256, created_at FROM attachments`,
+	`CREATE TEMP TABLE migration_v5_activity AS
+		SELECT id, issue, kind, actor, body, action, changes, created_at FROM issue_activity`,
+
+	`DROP TABLE issue_labels`,
+	`DROP TABLE relations`,
+	`DROP TABLE attachments`,
+	`DROP TABLE issue_activity`,
+	`DROP TRIGGER issues_fts_ai`,
+	`DROP TRIGGER issues_fts_ad`,
+	`DROP TRIGGER issues_fts_au`,
+
+	`CREATE TABLE issues_new (
+		id          TEXT PRIMARY KEY,
+		project     TEXT NOT NULL REFERENCES projects(key) ON DELETE RESTRICT,
+		title       TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		type        TEXT NOT NULL,
+		status      TEXT NOT NULL,
+		priority    INTEGER NOT NULL,
+		assignee    TEXT NOT NULL DEFAULT '',
+		created_at  TEXT NOT NULL,
+		updated_at  TEXT NOT NULL,
+		CHECK (type IN ('epic', 'feature', 'bug', 'task', 'chore')),
+		CHECK (status IN ('open', 'in_progress', 'closed')),
+		CHECK (priority BETWEEN 0 AND 4),
+		CHECK (
+			(status = 'open'        AND assignee =  '') OR
+			(status = 'in_progress' AND assignee <> '') OR
+			(status = 'closed')
+		)
+	) STRICT`,
+	`INSERT INTO issues_new (rowid, id, project, title, description, type, status,
+		priority, assignee, created_at, updated_at)
+		SELECT rowid, id, project, title, description, type, status, priority,
+		       assignee, created_at, updated_at FROM issues`,
+	`DROP TABLE issues`,
+	`ALTER TABLE issues_new RENAME TO issues`,
+
+	`CREATE INDEX idx_issues_project ON issues (project)`,
+	`CREATE INDEX idx_issues_status ON issues (status)`,
+	`CREATE INDEX idx_issues_assignee ON issues (assignee)`,
+	`CREATE INDEX idx_issues_order ON issues (priority, created_at, id)`,
+
+	`CREATE TRIGGER issues_fts_ai AFTER INSERT ON issues BEGIN
+		INSERT INTO issues_fts (rowid, title, description)
+		VALUES (new.rowid, new.title, new.description);
+	END`,
+	`CREATE TRIGGER issues_fts_ad AFTER DELETE ON issues BEGIN
+		INSERT INTO issues_fts (issues_fts, rowid, title, description)
+		VALUES ('delete', old.rowid, old.title, old.description);
+	END`,
+	`CREATE TRIGGER issues_fts_au AFTER UPDATE ON issues BEGIN
+		INSERT INTO issues_fts (issues_fts, rowid, title, description)
+		VALUES ('delete', old.rowid, old.title, old.description);
+		INSERT INTO issues_fts (rowid, title, description)
+		VALUES (new.rowid, new.title, new.description);
+	END`,
+	`INSERT INTO issues_fts (issues_fts) VALUES ('rebuild')`,
+
+	`CREATE TABLE issue_labels (
+		issue TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		label TEXT NOT NULL,
+		PRIMARY KEY (issue, label)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO issue_labels SELECT issue, label FROM migration_v5_labels`,
+	`CREATE INDEX idx_issue_labels_label ON issue_labels (label)`,
+
+	`CREATE TABLE relations (
+		subject TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		type    TEXT NOT NULL,
+		other   TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		PRIMARY KEY (subject, type, other),
+		CHECK (type IN ('blocked-by', 'has-parent', 'discovered-from', 'related')),
+		CHECK (subject <> other)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO relations SELECT subject, type, other FROM migration_v5_relations`,
+	`CREATE INDEX idx_relations_other ON relations (type, other)`,
+	`CREATE UNIQUE INDEX idx_relations_one_parent
+		ON relations (subject) WHERE type = 'has-parent'`,
+
+	`CREATE TABLE attachments (
+		issue        TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		name         TEXT NOT NULL,
+		content_type TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		sha256       TEXT NOT NULL,
+		created_at   TEXT NOT NULL,
+		PRIMARY KEY (issue, name),
+		CHECK (name <> ''),
+		CHECK (content_type <> ''),
+		CHECK (size >= 0),
+		CHECK (length(sha256) = 64)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO attachments
+		SELECT issue, name, content_type, size, sha256, created_at FROM migration_v5_attachments`,
+	`CREATE INDEX idx_attachments_order ON attachments (issue, created_at, name)`,
+	`CREATE INDEX idx_attachments_sha256 ON attachments (sha256)`,
+
+	`CREATE TABLE issue_activity (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		issue      TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		kind       TEXT NOT NULL,
+		actor      TEXT NOT NULL DEFAULT '',
+		body       TEXT NOT NULL DEFAULT '',
+		action     TEXT NOT NULL DEFAULT '',
+		changes    TEXT NOT NULL DEFAULT '[]',
+		created_at TEXT NOT NULL,
+		CHECK (kind IN ('comment', 'change')),
+		CHECK ((kind = 'comment' AND body <> '' AND action IN ('', 'closed')) OR
+		       (kind = 'change' AND body = '' AND action <> '')),
+		CHECK (json_valid(changes) AND json_type(changes) = 'array')
+	) STRICT`,
+	`INSERT INTO issue_activity (id, issue, kind, actor, body, action, changes, created_at)
+		SELECT id, issue, kind, actor, body, action, changes, created_at FROM migration_v5_activity`,
+	`INSERT INTO issue_activity (issue, kind, actor, body, action, changes, created_at)
+		SELECT issue, 'comment', '', body, 'closed', '[]', created_at
+		  FROM migration_v5_close_reasons`,
+	`CREATE INDEX idx_issue_activity_order
+		ON issue_activity (issue, created_at DESC, id DESC)`,
+
+	`DROP TABLE migration_v5_close_reasons`,
+	`DROP TABLE migration_v5_labels`,
+	`DROP TABLE migration_v5_relations`,
+	`DROP TABLE migration_v5_attachments`,
+	`DROP TABLE migration_v5_activity`,
 }
 
 var schemaV1 = []string{

@@ -414,9 +414,8 @@ func newClaimCommand(e *env) *cobra.Command {
 		Short: "Atomically set the assignee and status to in_progress",
 		Long: "Claim an issue.\n\n" +
 			"Claiming one you already hold succeeds. It fails if the issue is assigned\n" +
-			"to somebody else, blocked, or closed; --force overrides all three, and a\n" +
-			"forced claim on a closed issue clears the close reason along with the\n" +
-			"status.",
+			"to somebody else, blocked, or closed; --force overrides all three. A close\n" +
+			"reason remains in the issue's activity history.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *claimParams, cmd *cobra.Command, _ []string) error {
 			assignee := ""
@@ -500,9 +499,9 @@ func newCloseCommand(e *env) *cobra.Command {
 		Use:   "close",
 		Short: "Set the status to closed",
 		Long: "Close an issue.\n\n" +
-			"Closing a closed issue succeeds; omitting --reason leaves the recorded\n" +
-			"reason alone and --reason \"\" clears it. The assignee is left alone, since\n" +
-			"it records who did the work.",
+			"A non-empty --reason is recorded as a typed comment on the closing\n" +
+			"transition. Closing a closed issue succeeds and changes nothing. The\n" +
+			"assignee is left alone, since it records who did the work.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *closeParams, cmd *cobra.Command, _ []string) error {
 			req := backend.CloseRequest{Reason: p.Reason}
@@ -522,8 +521,9 @@ func newCloseCommand(e *env) *cobra.Command {
 
 func newReopenCommand(e *env) *cobra.Command {
 	return idCommand("reopen",
-		"Set the status to open, clearing the close reason and the assignee",
+		"Set the status to open and clear the assignee",
 		"Reopen a closed issue, returning it to the pool awb ready draws from.\n\n"+
+			"Its historical close-reason comment remains in the activity stream.\n\n"+
 			"It acts only on a closed issue: on one that is not closed it succeeds and\n"+
 			"changes nothing, whatever its assignee, so it can never take a claim away\n"+
 			"from somebody who is working.", func(cmd *cobra.Command, id string) error {

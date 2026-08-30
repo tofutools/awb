@@ -82,7 +82,6 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)
 	add("assignee", before.Assignee, after.Assignee)
-	add("close_reason", before.CloseReason, after.CloseReason)
 	if !slices.Equal(before.Labels, after.Labels) {
 		add("labels", before.Labels, after.Labels)
 	}
@@ -106,5 +105,13 @@ func recordChange(tx *storage.Tx, caller domain.Caller, issue, action string,
 	return tx.InsertActivity(&domain.Activity{
 		Issue: issue, Kind: domain.ActivityKindChange, Actor: caller.Name,
 		Action: action, Changes: changes,
+	})
+}
+
+func recordCloseReason(tx *storage.Tx, caller domain.Caller, issue, body string,
+	changes []domain.ActivityChange) error {
+	return tx.InsertActivity(&domain.Activity{
+		Issue: issue, Kind: domain.ActivityKindComment, Actor: caller.Name,
+		Body: body, Action: "closed", Changes: changes,
 	})
 }

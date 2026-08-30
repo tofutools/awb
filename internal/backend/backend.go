@@ -251,10 +251,9 @@ type IssuePatch struct {
 	// comparison happens inside the same transaction as the write. Checking
 	// them beforehand would leave a window in which a concurrent transition
 	// could make a stale value pass.
-	ExpectLabels      *[]string
-	ExpectStatus      *domain.Status
-	ExpectAssignee    *string
-	ExpectCloseReason *string
+	ExpectLabels   *[]string
+	ExpectStatus   *domain.Status
+	ExpectAssignee *string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.
@@ -297,8 +296,8 @@ type ReleaseRequest struct {
 
 // CloseRequest is the body of awb close and POST /api/issues/{id}/close.
 type CloseRequest struct {
-	// Reason is nil when --reason was not given, which leaves any recorded reason
-	// alone; a pointer to "" clears it.
+	// A non-empty Reason is recorded as a typed comment on the closing
+	// transition. Nil and a pointer to "" both record no reason comment.
 	Reason *string
 }
 

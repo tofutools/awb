@@ -51,7 +51,6 @@ func TestCreateIssueDefaults(t *testing.T) {
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 2, issue.Priority)
 	assert.Empty(t, issue.Assignee)
-	assert.Empty(t, issue.CloseReason)
 	assert.True(t, issue.Ready())
 }
 
@@ -191,7 +190,8 @@ func TestClaimRefusesBlockedAndClosed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusInProgress, forced.Status)
 
-	// A forced claim on a closed issue clears the close reason with the status.
+	// A forced claim on a closed issue leaves its historical close-reason
+	// comment in the activity stream.
 	done := create(t, b, ctx, "done")
 	reason := "fixed"
 	_, err = b.CloseIssue(ctx, done.ID, backend.CloseRequest{Reason: &reason}, "")
@@ -203,7 +203,11 @@ func TestClaimRefusesBlockedAndClosed(t *testing.T) {
 	reclaimed, err := b.Claim(ctx, done.ID, backend.ClaimRequest{Assignee: "claude-1", Force: true}, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusInProgress, reclaimed.Status)
-	assert.Empty(t, reclaimed.CloseReason, "a non-closed issue never carries one")
+	activity, err := b.ListActivity(ctx, done.ID, domain.ActivityKindComment, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, activity.Activity, 1)
+	assert.Equal(t, "closed", activity.Activity[0].Action)
+	assert.Equal(t, reason, activity.Activity[0].Body)
 }
 
 func TestRelease(t *testing.T) {
@@ -240,27 +244,43 @@ func TestCloseAndReopen(t *testing.T) {
 	closed, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{Reason: &reason}, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusClosed, closed.Status)
-	assert.Equal(t, reason, closed.CloseReason)
 	assert.Equal(t, "mikael", closed.Assignee, "the assignee records who did the work")
 
-	// Closing a closed issue succeeds; omitting the reason leaves it alone.
+	activity, err := b.ListActivity(ctx, issue.ID, "", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, activity.Activity, 2, "creation and closing are both recorded")
+	closeReason := activity.Activity[0]
+	assert.Equal(t, domain.ActivityKindComment, closeReason.Kind)
+	assert.Equal(t, "closed", closeReason.Action)
+	assert.Equal(t, reason, closeReason.Body)
+	require.Len(t, closeReason.Changes, 1)
+	assert.Equal(t, "status", closeReason.Changes[0].Field)
+
+	// Closing a closed issue is a no-op, so a reason can never become detached
+	// from a real close transition.
 	again, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
-	assert.Equal(t, reason, again.CloseReason)
+	assert.Equal(t, closed.UpdatedAt, again.UpdatedAt)
 
-	// An empty reason clears it.
-	empty := ""
-	cleared, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{Reason: &empty}, "")
+	detached := "not attached"
+	unchanged, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{Reason: &detached}, "")
 	require.NoError(t, err)
-	assert.Empty(t, cleared.CloseReason)
+	assert.Equal(t, closed.UpdatedAt, unchanged.UpdatedAt)
+	activity, err = b.ListActivity(ctx, issue.ID, "", nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, activity.Activity, 2)
 
-	// Reopening returns it to the pool ready draws from.
+	// Reopening returns it to the pool while retaining the close reason in the
+	// immutable history.
 	reopened, err := b.Reopen(ctx, issue.ID, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusOpen, reopened.Status)
 	assert.Empty(t, reopened.Assignee)
-	assert.Empty(t, reopened.CloseReason)
 	assert.True(t, reopened.Ready())
+	comments, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindComment, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, comments.Activity, 1)
+	assert.Equal(t, reason, comments.Activity[0].Body)
 }
 
 // Reopen acts only on a closed issue, so it can never take a claim away from

@@ -15,7 +15,7 @@ import (
 // not follow a Go field rename.
 //
 // Every field turns on presence or absence, and null is neither: a description
-// or a close reason is cleared with "" and left alone by omission.
+// is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
 	Project     string         `json:"project"`
@@ -43,10 +43,9 @@ type issuePatchBody struct {
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
 	// the only place the comparison means anything.
-	Labels      *[]string      `json:"labels,omitempty"`
-	Status      *domain.Status `json:"status,omitempty"`
-	Assignee    *string        `json:"assignee,omitempty"`
-	CloseReason *string        `json:"close_reason,omitempty"`
+	Labels   *[]string      `json:"labels,omitempty"`
+	Status   *domain.Status `json:"status,omitempty"`
+	Assignee *string        `json:"assignee,omitempty"`
 }
 
 type claimBody struct {
@@ -220,10 +219,9 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Type:        req.Type,
 		Priority:    req.Priority,
 
-		Labels:      req.ExpectLabels,
-		Status:      req.ExpectStatus,
-		Assignee:    req.ExpectAssignee,
-		CloseReason: req.ExpectCloseReason,
+		Labels:   req.ExpectLabels,
+		Status:   req.ExpectStatus,
+		Assignee: req.ExpectAssignee,
 	}
 	return b.issueCall(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(ref), body, ifMatch)
 }

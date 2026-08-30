@@ -806,8 +806,13 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 		if strings.Contains(issue.Description, "## ") && strings.Contains(issue.Description, "**") {
 			structured++
 		}
-		if issue.CloseReason != "" {
-			closeReasons++
+		var comments []domain.Activity
+		require.NoError(t, json.Unmarshal(
+			[]byte(h.mustRun("comment", "list", issue.ID, "--json")), &comments))
+		for _, comment := range comments {
+			if comment.Action == "closed" {
+				closeReasons++
+			}
 		}
 		if len(issue.Blockers) > 1 {
 			severalBlockers++

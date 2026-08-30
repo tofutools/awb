@@ -135,7 +135,9 @@ $ awb comment list awb-5c1d84 --json
 
 A comment records the current identity and is stored byte-for-byte as sent. A
 successful mutation records its change in the same transaction; a failed or
-no-op mutation records nothing. This is a work log rather than immutable
+no-op mutation records nothing. A non-empty `awb close --reason` is a typed
+comment with action `closed`, recorded atomically with that transition; it
+remains in the timeline if the issue is reopened. This is a work log rather than immutable
 compliance history: hard-deleting an issue deletes its activity too.
 
 ### Attachments

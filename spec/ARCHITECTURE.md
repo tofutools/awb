@@ -58,6 +58,12 @@ file are named explicitly. Entries are ordered newest first by creation time
 and then by their monotonically assigned id, so the order is total even when
 several writes share one millisecond.
 
+A non-empty close reason is represented by one comment entry whose stable
+action is `closed` and whose field changes include the status transition. It is
+therefore both prose and an unambiguous part of the close operation, without a
+second mutable field on the issue. Reopening leaves that historical entry in
+the stream, and attempting to close an already closed issue records nothing.
+
 This is a work log attached to the issue, not an immutable compliance ledger or
 full entity version store. Hard-deleting an issue deletes its activity with it,
 and there are no tombstones, retention rules or reconstruction operation.

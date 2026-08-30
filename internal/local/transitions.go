@@ -30,7 +30,7 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 	}
 
-	return b.mutate(ctx, ref, ifMatch, "claimed", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "claimed", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		// The compare-and-set, checked inside the write lock, so two agents racing
 		// for the same issue cannot both win.
 		if req.ExpectAssignee != nil && issue.Assignee != *req.ExpectAssignee {
@@ -53,9 +53,6 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		fields := storage.Fields(issue)
 		fields.Assignee = assignee
 		fields.Status = domain.StatusInProgress
-		// A forced claim on a closed issue clears the close reason along with the
-		// status, since a non-closed issue never carries one.
-		fields.CloseReason = ""
 		return tx.UpdateIssue(issue, fields)
 	})
 }
@@ -78,7 +75,7 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 			"no identity is configured: set \"identity\" in the configuration file or AWB_IDENTITY, or use --force")
 	}
 
-	return b.mutate(ctx, ref, ifMatch, "released", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "released", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		if !req.Force {
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
@@ -91,41 +88,34 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 		fields := storage.Fields(issue)
 		fields.Assignee = ""
 		fields.Status = domain.StatusOpen
-		// As on claim, a forced release of a closed issue clears the reason too: a
-		// non-closed issue never carries one.
-		fields.CloseReason = ""
 		return tx.UpdateIssue(issue, fields)
 	})
 }
 
-// CloseIssue sets status to closed and, when a reason is given, records it.
-//
-// Closing a closed issue succeeds; omitting the reason leaves the recorded one
-// alone and an empty reason clears it. The assignee is left alone, since it
-// records who did the work. Closing never inspects related issues.
+// CloseIssue sets status to closed and records a non-empty reason as a typed
+// comment on that same transition. Closing a closed issue succeeds and changes
+// nothing, so a reason can never become detached from the act of closing. The
+// assignee is left alone, since it records who did the work.
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
-	var reason *string
+	reason := ""
 	if req.Reason != nil {
 		validated, err := domain.ValidateCloseReason(*req.Reason)
 		if err != nil {
 			return nil, err
 		}
-		reason = &validated
+		reason = validated
 	}
 
-	return b.mutate(ctx, ref, ifMatch, "closed", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "closed", reason, func(tx *storage.Tx, issue *domain.Issue) error {
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusClosed
-		if reason != nil {
-			fields.CloseReason = *reason
-		}
 		return tx.UpdateIssue(issue, fields)
 	})
 }
 
-// Reopen sets status to open, clears the close reason and clears the assignee,
-// so the issue returns to the pool awb ready draws from.
+// Reopen sets status to open and clears the assignee, so the issue returns to
+// the pool awb ready draws from. Its close-reason comment remains in history.
 //
 // It acts only on a closed issue: on an issue that is not closed it succeeds
 // and changes nothing, whatever its assignee, so it can never take a claim
@@ -133,14 +123,13 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 // is the point of the command and needs no force, the assignee there being a
 // record of who did the work rather than a claim on it.
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
-	return b.mutate(ctx, ref, ifMatch, "reopened", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "reopened", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		if issue.Status != domain.StatusClosed {
 			return nil
 		}
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusOpen
 		fields.Assignee = ""
-		fields.CloseReason = ""
 		return tx.UpdateIssue(issue, fields)
 	})
 }

@@ -203,7 +203,7 @@ func resolveFilterParent(tx *storage.Tx, filter *domain.Filter) error {
 // succeeds and changes nothing, exactly as an empty PATCH does.
 func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.IssuePatch,
 	ifMatch string) (*domain.Issue, error) {
-	return b.mutate(ctx, ref, ifMatch, "updated", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "updated", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		// Checked here, inside the write transaction, so a concurrent
 		// transition cannot slip between the comparison and the write.
 		if err := checkUnchanged(issue, req); err != nil {
@@ -255,9 +255,6 @@ func checkUnchanged(issue *domain.Issue, req backend.IssuePatch) error {
 	}
 	if req.ExpectAssignee != nil && *req.ExpectAssignee != issue.Assignee {
 		return awberr.Usagef("assignee cannot be changed here: use claim or release")
-	}
-	if req.ExpectCloseReason != nil && *req.ExpectCloseReason != issue.CloseReason {
-		return awberr.Usagef("close_reason cannot be changed here: use close")
 	}
 	if req.ExpectLabels != nil {
 		// Compared as the sorted form, which is what a client read.
@@ -326,7 +323,7 @@ func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*do
 	if err != nil {
 		return nil, err
 	}
-	return b.mutate(ctx, ref, ifMatch, "label_added", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "label_added", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		return tx.AddLabel(issue, valid)
 	})
 }
@@ -338,7 +335,7 @@ func (b *Backend) RemoveLabel(ctx context.Context, ref, label, ifMatch string) (
 	if err != nil {
 		return nil, err
 	}
-	return b.mutate(ctx, ref, ifMatch, "label_removed", func(tx *storage.Tx, issue *domain.Issue) error {
+	return b.mutate(ctx, ref, ifMatch, "label_removed", "", func(tx *storage.Tx, issue *domain.Issue) error {
 		return tx.RemoveLabel(issue, valid)
 	})
 }
@@ -398,7 +395,7 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 // mutate is the shape every single-issue mutation shares: resolve, check the
 // precondition, apply, and re-read so the returned object carries the derived
 // fields as they are after the change.
-func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action string,
+func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody string,
 	apply func(*storage.Tx, *domain.Issue) error) (*domain.Issue, error) {
 	var result *domain.Issue
 	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
@@ -422,6 +419,9 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action string,
 		changes := activityChanges(&before, result)
 		if len(changes) == 0 {
 			return nil
+		}
+		if activityBody != "" {
+			return recordCloseReason(tx, caller, issue.ID, activityBody, changes)
 		}
 		return recordChange(tx, caller, issue.ID, action, changes)
 	})

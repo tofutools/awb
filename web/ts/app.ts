@@ -719,10 +719,6 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   meta.append(issueBadges(issue));
   view.append(meta);
 
-  if (issue.close_reason !== "") {
-    view.append(element("p", "close-reason", `Closed: ${issue.close_reason}`));
-  }
-
   if (issue.description !== "") {
     const body = element("div", "markdown");
     body.innerHTML = renderMarkdown(issue.description);
@@ -852,6 +848,7 @@ function activityEntry(entry: Activity): HTMLElement {
   header.append(time);
   row.append(header);
   if (entry.kind === "comment") {
+    if (entry.action !== "") row.append(element("div", "activity-action", activityAction(entry.action)));
     const body = element("div", "activity-comment-body markdown");
     body.innerHTML = renderMarkdown(entry.body);
     row.append(body);

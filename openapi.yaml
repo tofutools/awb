@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 1.4.0
+  version: 2.0.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -212,11 +212,11 @@ paths:
     post:
       tags: [issues]
       operationId: reopenIssue
-      summary: Set the status to open, clearing the close reason and the assignee
+      summary: Set the status to open and clear the assignee
       description: |
         Acts only on a closed issue: on one that is not closed it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
-        working.
+        working. Historical close-reason comments remain in the activity stream.
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
@@ -1493,10 +1493,15 @@ components:
           description: Empty only for a system change made without a configured local identity.
         body:
           type: string
-          description: Markdown for a comment; empty for a change.
+          description: |
+            Markdown for a comment; empty for a change. A comment whose
+            `action` is `closed` is the reason attached atomically to that
+            closing transition.
         action:
           type: string
-          description: Stable machine-readable action for a change; empty for a comment.
+          description: |
+            Stable machine-readable action for a change. Empty for an ordinary
+            comment; `closed` for a close-reason comment.
         changes:
           type: array
           items: { $ref: '#/components/schemas/ActivityChange' }
@@ -1526,7 +1531,7 @@ components:
       additionalProperties: false
       required:
         [id, project, title, description, type, status, priority, labels,
-         assignee, close_reason, created_at, updated_at, blocked, blockers,
+         assignee, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
@@ -1555,11 +1560,6 @@ components:
         assignee:
           type: string
           description: Empty means unassigned.
-        close_reason:
-          type: string
-          description: |
-            Empty unless the issue is closed: a non-closed issue never carries
-            one.
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at:
           allOf: [$ref: '#/components/schemas/Timestamp']
@@ -1746,7 +1746,7 @@ components:
       description: |
         Applied in one transaction, so the issue, its labels and its relations
         are created in a single call. Nothing beyond these fields is recognised:
-        `id`, `status`, `close_reason`, the timestamps and the derived fields
+        `id`, `status`, the timestamps and the derived fields
         are rejected rather than ignored — `status` follows from `assignee` and
         the rest are the server's to assign.
 
@@ -1789,7 +1789,7 @@ components:
       description: |
         Takes only what `awb update` can change.
 
-        `labels`, `status`, `assignee` and `close_reason` may appear but may not
+        `labels`, `status` and `assignee` may appear but may not
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
@@ -1816,7 +1816,6 @@ components:
           items: { $ref: '#/components/schemas/Label' }
         status: { $ref: '#/components/schemas/Status' }
         assignee: { type: string }
-        close_reason: { type: string }
         id: { type: string }
         project: { $ref: '#/components/schemas/ProjectKey' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -1867,7 +1866,9 @@ components:
           type: string
           maxLength: 500
           description: |
-            Absent leaves any recorded reason alone; `""` clears it.
+            A non-empty reason becomes a typed Markdown comment whose `action`
+            is `closed`, in the same transaction as the transition. Empty or
+            absent records no reason comment.
 
     LabelRequest:
       type: object

@@ -51,7 +51,6 @@ type Issue struct {
 	Priority    int          `json:"priority"`
 	Labels      []string     `json:"labels"`
 	Assignee    string       `json:"assignee"`
-	CloseReason string       `json:"close_reason"`
 	CreatedAt   string       `json:"created_at"`
 	UpdatedAt   string       `json:"updated_at"`
 	Blocked     bool         `json:"blocked"`
