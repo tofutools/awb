@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { initialFor, relativeTime } from "../../static/presentation.js";
+import { activityValue, initialFor, relativeTime } from "../../static/presentation.js";
 
 test("identity initials tolerate handles, whitespace and the system actor", () => {
   assert.equal(initialFor("mikael"), "M");
@@ -15,4 +15,15 @@ test("timestamps use concise relative language", () => {
   assert.equal(relativeTime("2026-08-30T10:00:00.000Z", now), "2 hours ago");
   assert.equal(relativeTime("2026-08-29T12:00:00.000Z", now), "yesterday");
   assert.equal(relativeTime("not-a-date", now), "not-a-date");
+});
+
+test("activity values keep primitives exact and summarize structural snapshots", () => {
+  assert.equal(activityValue("in_progress"), "in_progress");
+  assert.equal(activityValue(null), "(none)");
+  assert.equal(activityValue(["frontend", "release"]), "frontend, release");
+  assert.equal(activityValue([
+    { type: "blocked-by", other: "awb-one", direction: "out" },
+    { type: "related", other: "awb-two", direction: "in" },
+  ]), "2 relations");
+  assert.equal(activityValue({ name: "trace.txt", size: 42 }), "trace.txt");
 });

@@ -360,7 +360,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .identity { margin-left: auto; }
   .identity-name, .identity > .icon { display: none; }
   nav { order: 3; width: 100%; overflow-x: auto; }
-  nav a { flex: 1 0 auto; justify-content: center; }
+  nav a { flex: 1 1 auto; justify-content: center; padding-inline: 0.25rem; font-size: 0.8rem; }
+  nav a .icon { width: 1rem; height: 1rem; }
   nav a.active::after { bottom: -0.5rem; }
   .listing-tools { flex-wrap: wrap; }
   .listing-filter { flex: 1 1 12rem; }

@@ -29,7 +29,7 @@ import {
 } from "./listings.js";
 import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
-import { initialFor, relativeTime } from "./presentation.js";
+import { activityValue, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -942,9 +942,9 @@ function activityEntry(entry: Activity): HTMLElement {
     for (const change of entry.changes) {
       const item = element("li");
       item.append(element("span", "activity-field", change.field));
-      item.append(element("code", "", displayActivityValue(change.from)));
+      item.append(element("code", "", activityValue(change.from)));
       item.append(element("span", "activity-arrow", "→"));
-      item.append(element("code", "", displayActivityValue(change.to)));
+      item.append(element("code", "", activityValue(change.to)));
       changes.append(item);
     }
     card.append(changes);
@@ -955,11 +955,6 @@ function activityEntry(entry: Activity): HTMLElement {
 
 function activityAction(action: string): string {
   return action.replaceAll("_", " ");
-}
-
-function displayActivityValue(value: unknown): string {
-  if (typeof value === "string") return value === "" ? "(empty)" : value;
-  return JSON.stringify(value);
 }
 
 /**
