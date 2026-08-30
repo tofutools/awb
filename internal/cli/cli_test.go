@@ -351,6 +351,33 @@ func TestDirectoryContext(t *testing.T) {
 	assert.Contains(t, h.mustRun("list", "--compact", "--no-context"), elsewhere)
 }
 
+// A project from the user configuration or AWB_PROJECT is the default filter,
+// just like a project from directory context. An explicit project replaces it,
+// and --all-projects removes it without giving up the other filters.
+func TestConfiguredDefaultProjectFiltersListings(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "create", "web")
+	awb := h.create("in awb", "--project", "awb")
+	web := h.create("in web", "--project", "web")
+
+	userConfig := filepath.Join(h.root(), "config.yaml")
+	require.NoError(t, os.WriteFile(userConfig, []byte("project: awb\n"), 0o600))
+	t.Setenv("AWB_CONFIG_FILE", userConfig)
+
+	assert.Contains(t, h.mustRun("list", "--compact"), awb)
+	assert.NotContains(t, h.mustRun("list", "--compact"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--project", "web"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--all-projects"), web)
+
+	t.Setenv("AWB_PROJECT", "web")
+	assert.NotContains(t, h.mustRun("list", "--compact"), awb)
+	assert.Contains(t, h.mustRun("list", "--compact"), web)
+
+	_, stderr, code := h.run("list", "--project", "awb", "--all-projects")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--project and --all-projects are mutually exclusive")
+}
+
 // A subdirectory is reached by the upward search.
 func TestDirectoryContextFromASubdirectory(t *testing.T) {
 	h := newHarness(t)

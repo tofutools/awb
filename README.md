@@ -239,7 +239,7 @@ attachments: /files/awb/attachments     # defaults to "attachments" beside the d
 user: you                               # the account to log in as, remote mode only
 password: hunter2
 identity: you                           # default assignee, --mine, claim --as
-project: awb                            # default project for create
+project: awb                            # default project for create and issue listings
 color: auto
 ```
 
@@ -250,8 +250,9 @@ somewhere else; a path it names must exist, so that a typo cannot quietly leave
 you with the defaults. A leading `~` in `AWB_CONFIG_FILE`, `AWB_DB` or
 `AWB_ATTACHMENTS` means the current user's home directory. The database lives at
 `$XDG_DATA_HOME/awb/awb.db` unless told otherwise, and one database spans
-everything you work on. Attachment
-content lives in `attachments` beside it, and `awb init` creates both.
+everything you work on. Attachment content lives in `attachments` beside it,
+and `awb init` creates both. Pass `--all-projects` to an issue listing command
+to ignore the configured project for that invocation.
 
 ## Server and API
 
