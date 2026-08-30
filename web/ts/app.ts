@@ -142,7 +142,7 @@ interface IssueColumn extends SortChoice {
 }
 
 const issueSortKeys = [
-  "id", "project", "priority", "status", "assignee", "updated", "type", "blockers", "relevance",
+  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers", "relevance",
 ] as const;
 
 function textCell(className: string, text: string): HTMLElement {
@@ -275,6 +275,7 @@ function mobileSortControl(
   route: Route,
   columns: SortChoice[],
   defaultLabel: string,
+  extraOptions: SortChoice[] = [],
 ): HTMLElement {
   const label = element("label", "mobile-sort-control", "Sort");
   const select = document.createElement("select");
@@ -291,6 +292,12 @@ function mobileSortControl(
       option.textContent = `${column.label} ${arrow}`;
       select.append(option);
     }
+  }
+  for (const extra of extraOptions) {
+    const option = document.createElement("option");
+    option.value = extra.key;
+    option.textContent = extra.label;
+    select.append(option);
   }
 
   const value = route.query.get("sort") ?? "";
@@ -403,6 +410,7 @@ function issueList(
   const defaultDirection: SortDirection = kind === "search" ? "desc" : "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
+  const mobileColumns = [...columns, { key: "created", label: "Created" }];
 
   const update = (query: string): number => {
     const rows = sortIssues(filterIssues(issues, query), state);
@@ -421,7 +429,12 @@ function issueList(
     "issue",
     total,
     update,
-    mobileSortControl(route, columns, kind === "search" ? "Best match" : "Natural order"),
+    mobileSortControl(
+      route,
+      mobileColumns,
+      kind === "search" ? "Best match" : "Natural order",
+      kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
+    ),
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -543,10 +556,9 @@ function emptyFor(kind: string): string {
   return "No issues.";
 }
 
-const projectSortKeys = ["key", "name", "active", "updated"] as const;
+const projectSortKeys = ["key", "active", "updated"] as const;
 const projectColumns: SortChoice[] = [
-  { key: "key", label: "Key" },
-  { key: "name", label: "Project" },
+  { key: "key", label: "Project" },
   { key: "active", label: "Open" },
   { key: "updated", label: "Updated" },
 ];
@@ -597,20 +609,15 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
     const row = document.createElement("tr");
     const href = `#/issues?project=${encodeURIComponent(project.key)}`;
 
-    const key = document.createElement("td");
-    key.dataset.label = "Key";
-    key.append(link(href, project.key, "id"));
-    row.append(key);
-
-    const name = document.createElement("td");
-    name.dataset.label = "Project";
-    name.append(link(href, project.name, "project-name"));
+    const projectCell = document.createElement("td");
+    projectCell.dataset.label = "Project";
+    projectCell.append(nameLink(href, project.key, project.name));
     if (project.description !== "") {
       const description = element("div", "project-description markdown");
       description.innerHTML = renderMarkdown(project.description);
-      name.append(description);
+      projectCell.append(description);
     }
-    row.append(name);
+    row.append(projectCell);
 
     const active = document.createElement("td");
     active.dataset.label = "Open";

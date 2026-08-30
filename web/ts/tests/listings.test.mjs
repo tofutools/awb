@@ -110,6 +110,21 @@ test("priority sorting retains the API's oldest-first tie break", () => {
   );
 });
 
+test("created sorting preserves supported API URL orderings", () => {
+  const rows = [
+    issue({ id: "awb-new", created_at: "2026-02-01T00:00:00.000Z" }),
+    issue({ id: "awb-old", created_at: "2026-01-01T00:00:00.000Z" }),
+  ];
+  assert.deepEqual(
+    sortIssues(rows, { key: "created", direction: "asc", explicit: true }).map((row) => row.id),
+    ["awb-old", "awb-new"],
+  );
+  assert.deepEqual(
+    sortIssues(rows, { key: "created", direction: "desc", explicit: true }).map((row) => row.id),
+    ["awb-new", "awb-old"],
+  );
+});
+
 test("project sorting handles numeric open counts", () => {
   const rows = [
     project({ key: "few", active_issues: 2 }),

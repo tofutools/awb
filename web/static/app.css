@@ -251,9 +251,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .timestamp, .blocker-list { color: var(--muted); font: 0.74em var(--mono); }
 .muted { color: var(--muted); }
 
-.project-table th:first-child { width: 13%; }
-.project-table th:nth-child(2) { width: auto; }
-.project-table th:nth-child(3) { width: 10%; }
+.project-table th:first-child { width: auto; }
+.project-table th:nth-child(2) { width: 10%; }
 .project-table th:last-child { width: 14%; }
 .project-name { color: var(--fg); font-weight: 600; }
 .open-count { font-weight: 600; }
@@ -321,12 +320,11 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     letter-spacing: 0.035em;
     text-transform: uppercase;
   }
-  .issue-table td:first-child, .project-table td:nth-child(2) {
+  .issue-table td:first-child, .project-table td:first-child {
     display: block;
     padding-bottom: 0.35rem;
   }
-  .issue-table td:first-child::before, .project-table td:nth-child(2)::before { content: none; }
-  .project-table td:first-child { padding-top: 0; }
+  .issue-table td:first-child::before, .project-table td:first-child::before { content: none; }
 }
 
 .meta { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: baseline; margin-bottom: 1rem; }

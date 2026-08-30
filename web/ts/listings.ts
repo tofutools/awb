@@ -102,6 +102,7 @@ export function sortIssues(issues: Issue[], state: SortState): Issue[] {
       case "priority": return issue.priority;
       case "status": return issue.status;
       case "assignee": return issue.assignee;
+      case "created": return issue.created_at;
       case "updated": return issue.updated_at;
       case "type": return issue.type;
       case "blockers": return issue.blockers.join(" ");
