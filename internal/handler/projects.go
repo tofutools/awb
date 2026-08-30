@@ -16,7 +16,7 @@ import (
 // an issue's.
 func projectResponse(project *domain.Project) *api.ProjectHeaders {
 	return &api.ProjectHeaders{
-		ETag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(project.UpdatedAt)),
 		Response: toProject(project),
 	}
 }
@@ -44,7 +44,7 @@ func (h *Handler) CreateProject(ctx context.Context, req *api.ProjectCreate) (
 		return nil, err
 	}
 	return &api.ProjectCreatedHeaders{
-		ETag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(project.UpdatedAt)),
 		Location: api.NewOptString("/api/projects/" + project.Key),
 		Response: toProject(project),
 	}, nil

@@ -1063,7 +1063,7 @@ components:
     Issue:
       description: The issue.
       headers:
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Issue' }
@@ -1071,7 +1071,7 @@ components:
       description: The new issue.
       headers:
         Location: { $ref: '#/components/headers/Location' }
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Issue' }
@@ -1087,7 +1087,7 @@ components:
     Project:
       description: The project.
       headers:
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
@@ -1095,7 +1095,7 @@ components:
       description: The new project.
       headers:
         Location: { $ref: '#/components/headers/Location' }
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
@@ -1141,7 +1141,7 @@ components:
     User:
       description: The user.
       headers:
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/User' }
@@ -1149,7 +1149,7 @@ components:
       description: The new user.
       headers:
         Location: { $ref: '#/components/headers/Location' }
-        ETag: { $ref: '#/components/headers/ETag' }
+        Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/User' }

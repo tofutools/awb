@@ -15,7 +15,7 @@ import (
 // exactly as a new relation does not invalidate an issue's.
 func userResponse(user *domain.User) *api.UserHeaders {
 	return &api.UserHeaders{
-		ETag:     api.NewOptString(local.ETag(user.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(user.UpdatedAt)),
 		Response: toUser(user),
 	}
 }
@@ -45,7 +45,7 @@ func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate) (
 		return nil, err
 	}
 	return &api.UserCreatedHeaders{
-		ETag:     api.NewOptString(local.ETag(user.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(user.UpdatedAt)),
 		Location: api.NewOptString("/api/users/" + user.Name),
 		Response: toUser(user),
 	}, nil

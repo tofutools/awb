@@ -15,7 +15,7 @@ import (
 // repeating the GET.
 func issueResponse(issue *domain.Issue) *api.IssueHeaders {
 	return &api.IssueHeaders{
-		ETag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
 		Response: toIssue(issue),
 	}
 }
@@ -53,7 +53,7 @@ func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 	// The two creating operations answer 201 with the new object and a Location
 	// header naming it.
 	return &api.IssueCreatedHeaders{
-		ETag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
+		Etag:     api.NewOptString(local.ETag(issue.UpdatedAt)),
 		Location: api.NewOptString("/api/issues/" + issue.ID),
 		Response: toIssue(issue),
 	}, nil
