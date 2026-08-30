@@ -32,6 +32,7 @@ import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
+import { issueListingHref } from "./navigation.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -1094,14 +1095,15 @@ function searchBox(): HTMLElement {
 function chrome(): HTMLElement {
   const header = element("header", "app-header");
   const nav = element("nav");
+  const route = parseRoute();
   const navLink = (href: string, label: string, icon: IconName): HTMLAnchorElement => {
     const anchor = link(href, "");
     anchor.append(svgIcon(icon), document.createTextNode(label));
     return anchor;
   };
-  nav.append(navLink("#/ready", "Ready", "ready"));
-  nav.append(navLink("#/issues", "Issues", "issues"));
-  nav.append(navLink("#/blocked", "Blocked", "blocked"));
+  nav.append(navLink(issueListingHref("ready", route.query), "Ready", "ready"));
+  nav.append(navLink(issueListingHref("issues", route.query), "Issues", "issues"));
+  nav.append(navLink(issueListingHref("blocked", route.query), "Blocked", "blocked"));
   nav.append(navLink("#/projects", "Projects", "projects"));
   const brand = link("#/ready", "", "brand");
   const mark = document.createElement("img");
