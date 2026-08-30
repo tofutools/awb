@@ -682,6 +682,17 @@ a.user-project:hover { color: var(--accent); text-decoration: none; }
 .issue-fact dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .issue-fact .listing-badge { border-radius: 4px; font-size: 0.78em; }
 .issue-fact .timestamp { font-family: inherit; font-size: inherit; }
+.sidebar-select {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+}
+.sidebar-select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+.sidebar-select:disabled { opacity: 0.55; cursor: wait; }
 .sidebar-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .editable-chip { display: inline-flex; align-items: center; }
 .editable-chip .listing-badge { border-radius: 4px 0 0 4px; }

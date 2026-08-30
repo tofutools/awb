@@ -260,7 +260,7 @@ function mutationError(host: HTMLElement, error: unknown): void {
 
 async function mutate(
   host: HTMLElement,
-  controls: Iterable<HTMLButtonElement>,
+  controls: Iterable<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>,
   operation: () => Promise<unknown>,
 ): Promise<void> {
   for (const control of controls) control.disabled = true;
@@ -1350,10 +1350,22 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
 
   add("ID", element("span", "id", issue.id));
-  add("Project", link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project));
-  add("Type", badge("type", issue.type));
+  add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
+  const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
+  type.className = "sidebar-select";
+  type.setAttribute("aria-label", "Edit type");
+  type.addEventListener("change", () => {
+    void mutate(aside, [type], () => api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
+  });
+  add("Type", type);
   add("Status", badge(`status status-${issue.status}`, issue.status));
-  add("Priority", badge(`priority p${issue.priority}`, `P${issue.priority}`));
+  const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
+  priority.className = `sidebar-select priority p${issue.priority}`;
+  priority.setAttribute("aria-label", "Edit priority");
+  priority.addEventListener("change", () => {
+    void mutate(aside, [priority], () => api.updateIssue(issue.id, { priority: Number(priority.value) }));
+  });
+  add("Priority", priority);
   if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
 
   const labels = element("span", "sidebar-labels");
