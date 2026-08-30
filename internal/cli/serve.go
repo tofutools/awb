@@ -59,6 +59,7 @@ const (
 	idleTimeout       = time.Minute
 	shutdownTimeout   = 10 * time.Second
 	maxRequestBody    = 1 << 20
+	proxyRequestLimit = 30 * time.Second
 )
 
 // maxAttachmentBody is the transport cap on an upload, and sits above the
@@ -572,7 +573,8 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 		},
 		ErrorLog: logger,
 	}
-	root, err := buildRoutes(recovery.Middleware(proxy), document, opts)
+	boundedProxy := proxyDeadlines(proxy, proxyRequestLimit, contentTimeout)
+	root, err := buildRoutes(recovery.Middleware(boundedProxy), document, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -596,6 +598,22 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 		HSTS:           strictTransport,
 	})(chain)
 	return transferLimits(chain), nil
+}
+
+// proxyDeadlines bounds time spent waiting on the remote server. The listener's
+// read and write deadlines govern only the browser-facing connection; without a
+// context deadline an upstream that accepts a connection and then stalls can
+// retain the proxy's goroutine and socket indefinitely.
+func proxyDeadlines(next http.Handler, requestLimit, attachmentLimit time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := requestLimit
+		if isAttachmentUpload(r) || isAttachmentDownload(r) {
+			limit = attachmentLimit
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), limit)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // buildRoutes puts an API implementation beside the bundled UI and the local

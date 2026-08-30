@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	stdhttputil "net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -237,6 +238,25 @@ func TestUIProxyForwardsBrowserWritesAfterCheckingTheirOrigin(t *testing.T) {
 		"Origin", "https://elsewhere.example")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	assert.Equal(t, 1, requests)
+}
+
+func TestUIProxyCancelsAStalledUpstream(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	target, err := url.Parse(upstream.URL)
+	require.NoError(t, err)
+	proxy := &stdhttputil.ReverseProxy{
+		Rewrite:  func(request *stdhttputil.ProxyRequest) { request.SetURL(target) },
+		ErrorLog: log.New(io.Discard, "", 0),
+	}
+
+	started := time.Now()
+	resp, _ := get(t, proxyDeadlines(proxy, 20*time.Millisecond, time.Second),
+		http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+	assert.Less(t, time.Since(started), time.Second)
 }
 
 // Every embedded asset is reachable at the path it is embedded under.
