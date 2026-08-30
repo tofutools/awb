@@ -118,6 +118,83 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	assert.Empty(t, users.Users)
 }
 
+func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
+	handler, source := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	_, err := source.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	first, err := source.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "First"})
+	require.NoError(t, err)
+	_, err = source.AddAttachment(ctx, first.ID, backend.AttachmentCreate{
+		Name: "first.txt", Content: strings.NewReader("first"),
+	})
+	require.NoError(t, err)
+
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_IDENTITY", "mikael")
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_CONFIG_FILE"} {
+		t.Setenv(name, "")
+	}
+	outputDB := filepath.Join(root, "copy", "awb.db")
+	outputAttachments := filepath.Join(root, "copy", "attachments")
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	run := func(extra ...string) (string, int) {
+		t.Helper()
+		args := []string{"dump", "--output-db", outputDB,
+			"--output-attachments", outputAttachments}
+		args = append(args, extra...)
+		var stdout, stderr bytes.Buffer
+		code := Execute(ctx, "test", openapi.New(raw), args,
+			&stdout, &stderr, strings.NewReader(""))
+		return stderr.String(), code
+	}
+
+	errOut, code := run()
+	require.Equal(t, 0, code, errOut)
+	second, err := source.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Second"})
+	require.NoError(t, err)
+	secondAttachment, err := source.AddAttachment(ctx, second.ID, backend.AttachmentCreate{
+		Name: "second.txt", Content: strings.NewReader("second"),
+	})
+	require.NoError(t, err)
+
+	errOut, code = run("--overwrite")
+	require.Equal(t, 0, code, errOut)
+	db, err := storage.Open(ctx, outputDB)
+	require.NoError(t, err)
+	restored := local.New(db, storage.NewBlobs(outputAttachments), "local")
+	page, err := restored.ListIssues(ctx, &domain.Filter{IncludeClosed: true})
+	require.NoError(t, err)
+	assert.Equal(t, 2, page.Total)
+	require.NoError(t, restored.Close())
+	secondBytes, err := os.ReadFile(filepath.Join(outputAttachments, secondAttachment.Sha256))
+	require.NoError(t, err)
+	assert.Equal(t, "second", string(secondBytes))
+
+	// Once the server is unavailable, staging fails. The successfully published
+	// pair remains byte-for-byte unchanged rather than being removed first.
+	databaseBefore, err := os.ReadFile(outputDB)
+	require.NoError(t, err)
+	server.Close()
+	errOut, code = run("--overwrite")
+	assert.Equal(t, 1, code, errOut)
+	databaseAfter, err := os.ReadFile(outputDB)
+	require.NoError(t, err)
+	assert.Equal(t, databaseBefore, databaseAfter)
+	secondBytesAfter, err := os.ReadFile(filepath.Join(outputAttachments, secondAttachment.Sha256))
+	require.NoError(t, err)
+	assert.Equal(t, secondBytes, secondBytesAfter)
+}
+
 func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
@@ -149,6 +226,12 @@ func TestDumpRefusesExistingOutputsAndUnimplementedUsers(t *testing.T) {
 	contents, err := os.ReadFile(db)
 	require.NoError(t, err)
 	assert.Equal(t, "mine", string(contents))
+	require.NoError(t, os.WriteFile(db+"-wal", []byte("active"), 0o600))
+	errOut, code = run("dump", "--output-db", db, "--output-attachments", attachments,
+		"--overwrite")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, errOut, "stop the local server first")
+	require.NoError(t, os.Remove(db+"-wal"))
 
 	nestedDB := filepath.Join(root, "nested.db")
 	errOut, code = run("dump", "--output-db", nestedDB,

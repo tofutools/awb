@@ -20,6 +20,7 @@ const dumpPageSize = 100
 type dumpParams struct {
 	OutputDB          string `long:"output-db" required:"true" help:"new SQLite database to create"`
 	OutputAttachments string `long:"output-attachments" required:"true" help:"new attachment content directory to create"`
+	Overwrite         bool   `long:"overwrite" optional:"true" help:"replace existing outputs after the new dump completes"`
 	IncludeUsers      bool   `long:"include-users" optional:"true" help:"include users and credentials (not yet implemented)"`
 }
 
@@ -33,7 +34,9 @@ func newDumpCommand(e *env) *cobra.Command {
 			"stored issue state are preserved, so the result can be served by this version\n" +
 			"of awb for local testing. Against a server, dump uses only the existing read\n" +
 			"API and requires no server upgrade.\n\n" +
-			"Both output paths must be absent. A failed dump removes the outputs it created.\n" +
+			"Both output paths must be absent unless --overwrite is given. An overwrite\n" +
+			"keeps the existing outputs until the replacement has downloaded successfully.\n" +
+			"A failed dump removes only the new outputs it created.\n" +
 			"Users, credentials and project memberships are not included; the resulting\n" +
 			"server is therefore unauthenticated.",
 		ParamEnrich: boaParams,
@@ -41,16 +44,24 @@ func newDumpCommand(e *env) *cobra.Command {
 			if p.IncludeUsers {
 				return awberr.Usagef("--include-users is not implemented")
 			}
+			cfg, err := e.config()
+			if err != nil {
+				return err
+			}
+			if p.Overwrite && !cfg.Remote() && sameExistingFile(cfg.DB, p.OutputDB) {
+				return awberr.Usagef("--overwrite cannot replace the local database being dumped")
+			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return dump(cmd, be, p.OutputDB, p.OutputAttachments)
+			return dump(cmd, be, p.OutputDB, p.OutputAttachments, p.Overwrite)
 		},
 	}.ToCobra()
 }
 
-func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachments string) (err error) {
+func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachments string,
+	overwrite bool) error {
 	overlap, overlapErr := pathsOverlap(outputDB, outputAttachments)
 	if overlapErr != nil {
 		return overlapErr
@@ -58,6 +69,62 @@ func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachment
 	if overlap {
 		return awberr.Usagef("--output-db and --output-attachments must not contain one another")
 	}
+	if overwrite {
+		return overwriteDump(cmd, source, outputDB, outputAttachments)
+	}
+	return createDump(cmd, source, outputDB, outputAttachments)
+}
+
+// overwriteDump builds the complete replacement beside each destination before
+// moving either existing output. A failed download therefore leaves the last
+// usable dump untouched. publishDump moves the old pair aside while it swaps in
+// the new pair, so a publication failure can put both old outputs back.
+func overwriteDump(cmd *cobra.Command, source backend.Backend, outputDB,
+	outputAttachments string) error {
+	if err := validateOverwriteTarget(outputDB, false); err != nil {
+		return err
+	}
+	if err := validateOverwriteTarget(outputAttachments, true); err != nil {
+		return err
+	}
+	for _, sidecar := range []string{outputDB + "-wal", outputDB + "-shm"} {
+		if _, err := os.Lstat(sidecar); err == nil {
+			return awberr.Runtimef(
+				"cannot overwrite %s while %s exists: stop the local server first", outputDB, sidecar)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return awberr.Wrap(awberr.Runtime, err, "inspect %s", sidecar)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(outputDB), 0o755); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "create directory for %s", outputDB)
+	}
+	if err := os.MkdirAll(filepath.Dir(outputAttachments), 0o755); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "create directory for %s", outputAttachments)
+	}
+
+	dbStageDir, err := os.MkdirTemp(filepath.Dir(outputDB), ".awb-dump-db-*")
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "create staging directory for %s", outputDB)
+	}
+	defer os.RemoveAll(dbStageDir) //nolint:errcheck // an unreachable staging directory is harmless
+	attachmentsStageDir, err := os.MkdirTemp(
+		filepath.Dir(outputAttachments), ".awb-dump-attachments-*")
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err,
+			"create staging directory for %s", outputAttachments)
+	}
+	defer os.RemoveAll(attachmentsStageDir) //nolint:errcheck // as above
+
+	stagedDB := filepath.Join(dbStageDir, "awb.db")
+	stagedAttachments := filepath.Join(attachmentsStageDir, "attachments")
+	if err := createDump(cmd, source, stagedDB, stagedAttachments); err != nil {
+		return err
+	}
+	return publishDump(stagedDB, stagedAttachments, outputDB, outputAttachments)
+}
+
+func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
+	outputAttachments string) (err error) {
 	if err := requireAbsent(outputDB); err != nil {
 		return err
 	}
@@ -133,6 +200,93 @@ func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachment
 	return nil
 }
 
+type displacedOutput struct {
+	original string
+	backup   string
+	dir      string
+}
+
+func displaceOutput(path string) (*displacedOutput, error) {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "inspect output %s", path)
+	}
+
+	backupDir, err := os.MkdirTemp(filepath.Dir(path), "."+filepath.Base(path)+".awb-old-*")
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "prepare replacement of %s", path)
+	}
+	backup := filepath.Join(backupDir, "output")
+	if err := os.Rename(path, backup); err != nil {
+		_ = os.Remove(backupDir)
+		return nil, awberr.Wrap(awberr.Runtime, err, "move existing output %s aside", path)
+	}
+	return &displacedOutput{original: path, backup: backup, dir: backupDir}, nil
+}
+
+func (d *displacedOutput) restore() error {
+	if d == nil {
+		return nil
+	}
+	if err := os.RemoveAll(d.original); err != nil {
+		return err
+	}
+	if err := os.Rename(d.backup, d.original); err != nil {
+		return err
+	}
+	return os.Remove(d.dir)
+}
+
+func (d *displacedOutput) discard() {
+	if d != nil {
+		_ = os.RemoveAll(d.dir)
+	}
+}
+
+func publishDump(stagedDB, stagedAttachments, outputDB, outputAttachments string) error {
+	oldDB, err := displaceOutput(outputDB)
+	if err != nil {
+		return err
+	}
+	oldAttachments, err := displaceOutput(outputAttachments)
+	if err != nil {
+		return publishRollback(err, oldDB)
+	}
+
+	if err := os.Rename(stagedDB, outputDB); err != nil {
+		return publishRollback(
+			awberr.Wrap(awberr.Runtime, err, "publish dump database %s", outputDB),
+			oldAttachments, oldDB)
+	}
+	if err := os.Rename(stagedAttachments, outputAttachments); err != nil {
+		publishErr := awberr.Wrap(awberr.Runtime, err,
+			"publish dump attachment directory %s", outputAttachments)
+		if removeErr := os.Remove(outputDB); removeErr != nil {
+			publishErr = awberr.Wrap(awberr.Runtime, errors.Join(publishErr, removeErr),
+				"roll back dump publication")
+		}
+		return publishRollback(publishErr, oldAttachments, oldDB)
+	}
+
+	oldAttachments.discard()
+	oldDB.discard()
+	return nil
+}
+
+func publishRollback(cause error, outputs ...*displacedOutput) error {
+	errs := []error{cause}
+	for _, output := range outputs {
+		if err := output.restore(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) == 1 {
+		return cause
+	}
+	return awberr.Wrap(awberr.Runtime, errors.Join(errs...), "roll back dump publication")
+}
+
 func requireAbsent(path string) error {
 	_, err := os.Lstat(path)
 	if err == nil {
@@ -142,6 +296,29 @@ func requireAbsent(path string) error {
 		return awberr.Wrap(awberr.Runtime, err, "inspect output %s", path)
 	}
 	return nil
+}
+
+func validateOverwriteTarget(path string, wantDirectory bool) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "inspect output %s", path)
+	}
+	if wantDirectory && !info.IsDir() {
+		return awberr.Usagef("cannot overwrite %s: attachment output is not a directory", path)
+	}
+	if !wantDirectory && !info.Mode().IsRegular() {
+		return awberr.Usagef("cannot overwrite %s: database output is not a regular file", path)
+	}
+	return nil
+}
+
+func sameExistingFile(a, b string) bool {
+	aInfo, aErr := os.Stat(a)
+	bInfo, bErr := os.Stat(b)
+	return aErr == nil && bErr == nil && os.SameFile(aInfo, bInfo)
 }
 
 func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project, error) {
