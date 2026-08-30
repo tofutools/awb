@@ -3,7 +3,9 @@
 [![CI](https://github.com/tofutools/awb/actions/workflows/ci.yml/badge.svg)](https://github.com/tofutools/awb/actions/workflows/ci.yml)
 
 `awb` is an agent-first issue tracker: a single Go binary backed by SQLite, with
-a command line interface for coding agents, humans and scripts.
+a command line interface for coding agents, humans and scripts. It is a
+deliberately smaller, agent-first alternative to Jira, Linear and GitHub Issues;
+different projects can use different trackers.
 
 It takes the dependency-aware "what can I work on now" model seriously and
 leaves nearly everything else out. There is no permission model, no configurable
@@ -106,6 +108,7 @@ whatever is under the key is meant.
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
+| `awb agent-guide install-skills [--harness NAME]` | Install that guide as a skill for agent harnesses. |
 
 `awb <command> --help` has the detail. Exit codes are `0` success, `1` runtime
 error, `2` usage error, `3` not found, `4` constraint violation, `5` forbidden.
@@ -174,6 +177,25 @@ An issue ID is `<project>-<hash>`, and any unambiguous prefix — or a bare hash
 works wherever an ID does.
 
 ## Teaching an agent
+
+There are two independent ways to teach agents about awb. Installing the skill
+does not read or change `AGENTS.md`, `CLAUDE.md` or any other project file.
+
+Install the bundled `awb` skill into every supported agent harness's user
+skill directory:
+
+```console
+$ awb agent-guide install-skills
+```
+
+The command is idempotent and refreshes the installed copy after an awb
+upgrade. To target only particular harnesses, repeat `--harness` with any of
+`claude`, `codex`, `opencode` and `copilot`; `all` is the default. The native
+user roots are `~/.claude/skills`, `~/.agents/skills` and
+`${CODEX_HOME:-~/.codex}/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`,
+and `${COPILOT_HOME:-~/.copilot}/skills`, respectively.
+
+Alternatively, keep the compact guide in a checked-in agent instruction file:
 
 ```console
 $ awb agent-guide --write AGENTS.md

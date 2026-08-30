@@ -129,8 +129,8 @@ type env struct {
 	// client are generated from — and only the package there can embed it.
 	openAPI *openapi.Document
 
-	// cfg and be are resolved lazily, because init and agent-guide need different
-	// amounts of it and --help needs none.
+	// cfg and be are resolved lazily, because init and agent-guide do not use a
+	// backend and --help needs none.
 	cfg *config.Config
 	be  backend.Backend
 }
