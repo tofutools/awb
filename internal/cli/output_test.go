@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -47,6 +48,20 @@ func render(width int, print func(*env)) string {
 	return buf.String()
 }
 
+func renderRemote(mode config.ColorMode, boxed bool, print func(*env)) string {
+	var buf bytes.Buffer
+	base, err := url.Parse("https://example.com/awb")
+	if err != nil {
+		panic(err)
+	}
+	e := &env{
+		stdout: &errWriter{w: &buf}, boxed: boxed, width: 140,
+		cfg: &config.Config{Color: mode, RemoteURL: base},
+	}
+	print(e)
+	return buf.String()
+}
+
 func lines(s string) []string {
 	return strings.Split(strings.TrimRight(s, "\n"), "\n")
 }
@@ -86,6 +101,52 @@ func TestListingFitsTheWindow(t *testing.T) {
 			assert.Contains(t, lines(out)[1], header, "width %d keeps %s", width, header)
 		}
 		assert.Contains(t, out, "demo-eeec94", "width %d keeps the ids whole", width)
+	}
+}
+
+// The server URL used by remote mode is also the base of the bundled web UI,
+// so identifiers in an interactive listing can lead straight to the entity
+// they name. OSC 8 changes no visible width and terminals that do not implement
+// it still show the identifier itself.
+func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
+	issues := renderRemote(config.ColorAlways, true, func(e *env) {
+		e.printIssueTable(sample()[2:], true)
+	})
+	assert.Contains(t, issues,
+		"\x1b]8;;https://example.com/awb/#/issues/demo-bff7dc\x07demo-bff7dc")
+	assert.Contains(t, issues,
+		"\x1b]8;;https://example.com/awb/#/issues/demo-bbd9d3\x07demo-bbd9d3",
+		"blocker IDs lead to their issues too")
+	assert.Contains(t, issues, "\x1b]8;;\x07", "each hyperlink is closed")
+
+	projects := renderRemote(config.ColorAlways, true, func(e *env) {
+		require.NoError(t, e.printProjects([]domain.Project{{Key: "demo", Name: "Demo"}}))
+	})
+	assert.Contains(t, projects,
+		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
+		"the web UI represents a project as its filtered issue listing")
+}
+
+// A local database has no associated web address, redirected output is not an
+// interactive terminal, and --color never promises no terminal escapes. None
+// of those cases acquires an OSC 8 sequence.
+func TestListingHyperlinksNeedARemoteInteractiveColouredTerminal(t *testing.T) {
+	local := renderRemote(config.ColorAlways, true, func(e *env) {
+		e.cfg.RemoteURL = nil
+		e.printIssueTable(sample()[:1], false)
+	})
+	redirected := renderRemote(config.ColorAlways, false, func(e *env) {
+		e.printIssueTable(sample()[:1], false)
+	})
+	plain := renderRemote(config.ColorNever, true, func(e *env) {
+		e.printIssueTable(sample()[:1], false)
+	})
+
+	for name, out := range map[string]string{
+		"local": local, "redirected": redirected, "colour disabled": plain,
+	} {
+		assert.NotContains(t, out, "\x1b]8;", name)
+		assert.Contains(t, out, "demo-eeec94", name)
 	}
 }
 

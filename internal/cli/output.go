@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -410,7 +411,7 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 
 	cols := []col{
 		{header: "ID", paint: always(t.id),
-			cells: cells(func(i *domain.Issue) string { return i.ID })},
+			cells: cells(func(i *domain.Issue) string { return e.issueLink(t, i.ID) })},
 		{header: "P", paint: func(row int) lipgloss.Style {
 			return t.priority[clampPriority(issues[row].Priority)]
 		},
@@ -429,10 +430,40 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 	if withBlockers {
 		// awb blocked exists to show this column, so it is never given up.
 		cols = append(cols, col{header: "BLOCKED BY", floor: blockersFloor, paint: always(t.blocked),
-			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Blockers, ",") })})
+			cells: cells(func(i *domain.Issue) string { return e.issueLinks(t, i.Blockers, ",") })})
 	}
 
 	e.writeListing(t, cols)
+}
+
+// entityLink makes an identifier open the bundled web UI when this invocation
+// is talking to an awb server. A local database has no web address to name, and
+// a pipe is not an interactive terminal, so both keep the identifier as plain
+// text. Hyperlinks follow the same escape-sequence switch as the rest of the
+// human output: --color never means no terminal escapes at all.
+func (e *env) entityLink(t *theme, text, route string) string {
+	if !t.boxed || !t.color || e.cfg == nil || e.cfg.RemoteURL == nil {
+		return text
+	}
+	destination := e.cfg.RemoteURL.String() + "/#" + route
+	return lipgloss.NewStyle().Hyperlink(safeURL(destination)).Render(text)
+}
+
+func (e *env) issueLink(t *theme, id string) string {
+	return e.entityLink(t, id, "/issues/"+url.PathEscape(id))
+}
+
+func (e *env) issueLinks(t *theme, ids []string, separator string) string {
+	linked := make([]string, len(ids))
+	for i, id := range ids {
+		linked[i] = e.issueLink(t, id)
+	}
+	return strings.Join(linked, separator)
+}
+
+func (e *env) projectLink(t *theme, key string) string {
+	query := url.Values{"project": []string{key}}.Encode()
+	return e.entityLink(t, key, "/issues?"+query)
 }
 
 // listTitle gives a title whichever width treatment the layout can offer. With
@@ -627,7 +658,7 @@ func (e *env) printProjects(projects []domain.Project) error {
 		counts := make([]string, len(projects))
 		names := make([]string, len(projects))
 		for i := range projects {
-			keys[i] = projects[i].Key
+			keys[i] = e.projectLink(t, projects[i].Key)
 			counts[i] = strconv.Itoa(projects[i].ActiveIssues)
 			names[i] = projects[i].Name
 		}
