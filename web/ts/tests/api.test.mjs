@@ -131,6 +131,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
     await api.updateIssue("awb-a/b", { title: "Changed" });
     await api.addLabel("awb-a/b", "team/web");
     await api.removeRelation("awb-a/b", "blocked-by", "awb-c d");
+    await api.releaseIssue("awb-a/b", { assignee: "operator", force: true });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -148,6 +149,11 @@ test("issue edits use the mutation endpoints and guard the version that was read
 
   assert.equal(requests[3].input, "api/issues/awb-a%2Fb/relations/blocked-by/awb-c%20d");
   assert.equal(requests[3].init.method, "DELETE");
+
+  assert.equal(requests[4].input, "api/issues/awb-a%2Fb/release");
+  assert.equal(requests[4].init.method, "POST");
+  assert.deepEqual(JSON.parse(requests[4].init.body), { assignee: "operator", force: true });
+  assert.equal(new Headers(requests[4].init.headers).get("If-Match"), '"issue-version"');
 });
 
 test("project edits patch the project resource with its ETag", async () => {

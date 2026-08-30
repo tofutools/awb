@@ -768,6 +768,7 @@ a.user-project:hover { color: var(--accent); text-decoration: none; }
 .lifecycle-editor { margin-top: 1.5rem; padding-top: 0.25rem; border-top: 1px solid var(--line); }
 .lifecycle-editor h2 { margin-top: 0.75rem; color: var(--fg); }
 .lifecycle-actions { display: grid; gap: 0.6rem; margin-top: 0.75rem; }
+.release-editor { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
 .close-editor { display: flex; gap: 0.4rem; }
 .close-editor input { flex: 1 1 auto; width: 0; }
 .edit-error { flex-basis: 100%; margin: 0.4rem 0 0; color: var(--warn); }

@@ -1437,11 +1437,22 @@ function lifecycleEditor(issue: Issue): HTMLElement {
 
   const actions = element("div", "lifecycle-actions");
   if (issue.status === "in_progress") {
-    const release = button("Release");
-    release.addEventListener("click", () => {
-      void mutate(section, [release], () => api.releaseIssue(issue.id, { assignee: identity, force: false }));
+    const releaseForm = element("form", "release-editor") as HTMLFormElement;
+    const releaseForceLabel = element("label", "check-field");
+    const releaseForce = document.createElement("input");
+    releaseForce.type = "checkbox";
+    releaseForceLabel.append(releaseForce, document.createTextNode("Force release"));
+    const release = element("button", "secondary-button", "Release") as HTMLButtonElement;
+    release.type = "submit";
+    releaseForm.append(releaseForceLabel, release);
+    releaseForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void mutate(section, [release], () => api.releaseIssue(issue.id, {
+        assignee: identity,
+        force: releaseForce.checked,
+      }));
     });
-    actions.append(release);
+    actions.append(releaseForm);
   }
   if (issue.status === "closed") {
     const reopen = button("Reopen");
