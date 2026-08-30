@@ -105,7 +105,7 @@ func TestEnvironmentPathsExpandHomeDirectoryAlias(t *testing.T) {
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "chosen", cfg.CreateProject)
+	assert.Equal(t, "chosen", cfg.DefaultProject)
 	assert.Equal(t, filepath.Join(home, "data", "awb.db"), cfg.DB)
 	assert.Equal(t, filepath.Join(home, "data", "blobs"), cfg.Attachments)
 
