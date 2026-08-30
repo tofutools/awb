@@ -499,6 +499,8 @@ func TestAgentGuide(t *testing.T) {
 	guide := h.mustRun("agent-guide")
 	assert.Contains(t, guide, "awb ready --compact")
 	assert.Contains(t, guide, "Exit codes")
+	assert.Contains(t, guide, "awb --help")
+	assert.Contains(t, guide, "awb <group> <command> --help")
 
 	path := filepath.Join(h.dir, "AGENTS.md")
 	require.NoError(t, os.WriteFile(path, []byte("# Project\n\nText.\n"), 0o600))
