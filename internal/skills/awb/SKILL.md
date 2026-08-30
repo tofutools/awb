@@ -27,6 +27,27 @@ awb create "Follow-up" --discovered-from <id> --blocked-by <id>
 awb dep add <id> --blocked-by <other>  # reads "id blocked-by other"
 ```
 
+**Write descriptions as Markdown:**
+
+```
+awb create "Title" --description-file description.md
+awb update <id> --description "A short **Markdown** description."
+awb update <id> --description-file description.md
+awb project create <key> --description-file project.md
+awb project update <key> --description-file project.md
+awb update <id> --description-file - <<'EOF'
+First paragraph.
+
+Second paragraph.
+EOF
+```
+
+Issue and project descriptions are stored exactly as received. For multiline
+text, prefer `--description-file` with a file or stdin. Quoted `\n` sequences
+are not converted to line breaks by the CLI or most shells; they are stored
+literally. `--json` selects an output format and is not an issue or project
+input format.
+
 **Look things up:**
 
 ```
