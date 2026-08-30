@@ -460,12 +460,12 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
 .issue-sidebar-toggle {
-  position: absolute;
+  position: fixed;
   z-index: 1;
-  top: min(50%, 40vh);
-  right: 21rem;
-  width: 1.75rem;
-  height: 2.5rem;
+  top: 50%;
+  right: calc(21rem + max(1.5rem, 50vw - 48rem));
+  width: 1.25rem;
+  height: 3rem;
   padding: 0;
   transform: translateY(-50%);
   border: 1px solid var(--line);
@@ -473,15 +473,18 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   border-radius: var(--radius) 0 0 var(--radius);
   background: var(--panel);
   color: var(--fg);
-  font: 1.1rem/1 sans-serif;
   cursor: pointer;
 }
+.issue-sidebar-toggle .icon { width: 0.8rem; height: 0.8rem; stroke-width: 1.5; }
 .issue-sidebar-toggle:hover { color: var(--accent); }
 .sidebar-collapsed .issue-sidebar { display: none; }
 .sidebar-collapsed .issue-sidebar-toggle {
   right: 0;
-  border-right: 1px solid var(--line);
-  border-radius: var(--radius);
+  width: 1.25rem;
+  height: 3rem;
+  transform: translateY(-50%);
+  border-right: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
 }
 .issue-facts { margin: 0; }
 .issue-fact {
@@ -658,14 +661,19 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     border-left: 0;
     background: transparent;
   }
-  .issue-sidebar-toggle, .sidebar-collapsed .issue-sidebar-toggle {
-    top: 1.5rem;
+  .issue-sidebar-toggle {
     right: 0;
-    transform: none;
-    border-right: 1px solid var(--line);
-    border-radius: var(--radius);
+    transform: translateY(-50%);
+    border-right: 0;
+    border-radius: var(--radius) 0 0 var(--radius);
   }
-  .issue-heading { padding-right: 2.5rem; }
+  .sidebar-collapsed .issue-sidebar-toggle {
+    width: 1.25rem;
+    transform: translateY(-50%);
+    border-right: 0;
+    border-radius: var(--radius) 0 0 var(--radius);
+  }
+  .issue-content, .sidebar-collapsed .issue-content { padding-right: 1.5rem; }
   .issue-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; }
 }
 
