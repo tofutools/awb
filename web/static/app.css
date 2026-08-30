@@ -176,6 +176,22 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .clear-filter:hover { color: var(--fg); }
 .filter-count, .natural-order { color: var(--muted); font-size: 0.8em; }
+.listing-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+.include-closed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.include-closed-control input { accent-color: var(--accent); }
 .mobile-sort-control { display: none; }
 .natural-order {
   float: right;
@@ -280,7 +296,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    margin-left: auto;
     color: var(--muted);
     font-size: 0.78em;
   }

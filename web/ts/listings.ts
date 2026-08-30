@@ -10,6 +10,16 @@ export interface SortState {
   explicit: boolean;
 }
 
+/** withClosedIssues returns a route query widened to all statuses or narrowed
+ * back to the default non-closed set, without disturbing the listing's other
+ * filters and presentation choices. */
+export function withClosedIssues(query: URLSearchParams, include: boolean): URLSearchParams {
+  const next = new URLSearchParams(query);
+  if (include) next.set("include-closed", "true");
+  else next.delete("include-closed");
+  return next;
+}
+
 /** sortState reads a signed sort key and falls back to the view's natural order. */
 export function sortState(
   value: string | null,

@@ -21,6 +21,7 @@ import {
   sortIssues,
   sortProjects,
   sortState,
+  withClosedIssues,
   type SortDirection,
   type SortState,
 } from "./listings.js";
@@ -396,6 +397,19 @@ function listingFilter(
   return bar;
 }
 
+/** includeClosedControl widens an issue listing without losing its filters. */
+function includeClosedControl(route: Route): HTMLElement {
+  const label = element("label", "include-closed-control");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = route.query.get("include-closed") === "true";
+  input.addEventListener("change", () => {
+    location.hash = routeHref(route, withClosedIssues(route.query, input.checked)).slice(1);
+  });
+  label.append(input, document.createTextNode("Show closed"));
+  return label;
+}
+
 function issueList(
   route: Route,
   issues: Issue[],
@@ -411,6 +425,14 @@ function issueList(
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
   const mobileColumns = [...columns, { key: "created", label: "Created" }];
+  const listingActions = element("div", "listing-actions");
+  if (kind === "issues" || kind === "search") listingActions.append(includeClosedControl(route));
+  listingActions.append(mobileSortControl(
+    route,
+    mobileColumns,
+    kind === "search" ? "Best match" : "Natural order",
+    kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
+  ));
 
   const update = (query: string): number => {
     const rows = sortIssues(filterIssues(issues, query), state);
@@ -429,12 +451,7 @@ function issueList(
     "issue",
     total,
     update,
-    mobileSortControl(
-      route,
-      mobileColumns,
-      kind === "search" ? "Best match" : "Natural order",
-      kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
-    ),
+    listingActions,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -547,7 +564,7 @@ function titleFor(kind: string): string {
 function ledeFor(kind: string): string {
   if (kind === "ready") return "Open, unblocked and unassigned — what to pick up next.";
   if (kind === "blocked") return "Not closed, and waiting on something that is not closed.";
-  return "Every issue that is not closed.";
+  return "Open and in-progress issues. Show closed to list every issue.";
 }
 
 function emptyFor(kind: string): string {
