@@ -126,7 +126,7 @@ func TestEnumParameterCompletions(t *testing.T) {
 		{"search sort", []string{"search", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
 		{"project access", []string{"project", "grant", "--access"}, []string{"regular", "admin"}},
 		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
-		{"install skills harness", []string{"install-skills", "--harness"}, []string{"all", "claude", "codex", "opencode", "copilot"}},
+		{"install skills harness", []string{"agent-guide", "install-skills", "--harness"}, []string{"all", "claude", "codex", "opencode", "copilot"}},
 	}
 
 	for _, tt := range tests {
@@ -552,7 +552,7 @@ func TestInstallSkillsCommand(t *testing.T) {
 	agents := filepath.Join(h.dir, "AGENTS.md")
 	require.NoError(t, os.WriteFile(agents, []byte("project instructions\n"), 0o600))
 
-	out := h.mustRun("install-skills", "--harness", "claude")
+	out := h.mustRun("agent-guide", "install-skills", "--harness", "claude")
 	path := filepath.Join(home, ".claude", "skills", "awb")
 	assert.Contains(t, out, "Installed awb skill for claude at "+path)
 	definition, err := os.ReadFile(filepath.Join(path, "SKILL.md"))
@@ -564,7 +564,7 @@ func TestInstallSkillsCommand(t *testing.T) {
 	assert.Equal(t, "project instructions\n", string(projectInstructions),
 		"install-skills is independent of the agent-guide --write mechanism")
 
-	_, _, code := h.run("install-skills", "--harness", "unknown")
+	_, _, code := h.run("agent-guide", "install-skills", "--harness", "unknown")
 	assert.Equal(t, 2, code)
 }
 

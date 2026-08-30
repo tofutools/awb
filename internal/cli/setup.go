@@ -55,13 +55,14 @@ type agentGuideParams struct {
 }
 
 func newAgentGuideCommand(e *env) *cobra.Command {
-	return boa.CmdT[agentGuideParams]{
+	cmd := boa.CmdT[agentGuideParams]{
 		Use:   "agent-guide",
-		Short: "Print a compact usage block for agents",
+		Short: "Teach agents how to use awb",
 		Long: "Print a short block teaching an agent the whole of awb's vocabulary.\n\n" +
 			"--write instead writes it into a file, typically AGENTS.md or CLAUDE.md,\n" +
 			"delimited by marker lines so that a second run replaces the block rather\n" +
-			"than appending a duplicate.",
+			"than appending a duplicate. The install-skills subcommand installs the same\n" +
+			"guide as a user-scoped agent skill instead.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *agentGuideParams, _ *cobra.Command, _ []string) error {
 			if p.Write == nil {
@@ -71,6 +72,8 @@ func newAgentGuideCommand(e *env) *cobra.Command {
 			return writeGuideBlock(*p.Write, AgentGuide)
 		},
 	}.ToCobra()
+	cmd.AddCommand(newInstallSkillsCommand(e))
+	return cmd
 }
 
 type installSkillsParams struct {

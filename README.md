@@ -106,7 +106,7 @@ whatever is under the key is meant.
 | `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
-| `awb install-skills [--harness NAME]` | Install the bundled awb skill for agent harnesses. |
+| `awb agent-guide install-skills [--harness NAME]` | Install that guide as a skill for agent harnesses. |
 
 `awb <command> --help` has the detail. Exit codes are `0` success, `1` runtime
 error, `2` usage error, `3` not found, `4` constraint violation, `5` forbidden.
@@ -183,7 +183,7 @@ Install the bundled `awb` skill into every supported agent harness's user
 skill directory:
 
 ```console
-$ awb install-skills
+$ awb agent-guide install-skills
 ```
 
 The command is idempotent and refreshes the installed copy after an awb
