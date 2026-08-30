@@ -78,9 +78,14 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 				return err
 			}
 		}
+		counterparts := relationSnapshots{}
+		captureCounterpart := counterparts.capture(tx)
 		for _, rel := range relations {
 			other, err := resolve(tx, rel.Other)
 			if err != nil {
+				return err
+			}
+			if err := captureCounterpart(other); err != nil {
 				return err
 			}
 			if err := addRelation(tx, issue.ID, rel.Type, other, false); err != nil {
@@ -90,6 +95,9 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 
 		issue, err = tx.GetIssue(issue.ID)
 		if err != nil {
+			return err
+		}
+		if err := counterparts.record(tx, caller, "relation_added"); err != nil {
 			return err
 		}
 		return recordChange(tx, caller, issue.ID, "created", nil)
@@ -271,7 +279,7 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 		deleted backend.DeletedIssue
 		digests []string
 	)
-	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
 			return err
@@ -291,8 +299,18 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 		// which for an issue includes the relations and the attachments that went
 		// with it.
 		deleted.Issue = *issue
+		counterparts := relationSnapshots{}
+		captureCounterpart := counterparts.capture(tx)
+		for _, relation := range issue.Relations {
+			if err := captureCounterpart(relation.Other); err != nil {
+				return err
+			}
+		}
 		deleted.RelationsRemoved, err = tx.DeleteIssue(issue.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		return counterparts.record(tx, caller, "relation_removed")
 	})
 	if err != nil {
 		return nil, err

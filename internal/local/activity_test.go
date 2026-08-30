@@ -138,3 +138,26 @@ func TestRelationActivityIsRecordedOnEveryChangedEndpoint(t *testing.T) {
 	assert.Equal(t, "relation_removed", childActivity.Activity[0].Action)
 	assert.Equal(t, "relation_removed", secondActivity.Activity[0].Action)
 }
+
+func TestCreateAndDeleteRecordRelationActivityOnSurvivingEndpoints(t *testing.T) {
+	b, ctx := newBackend(t)
+	parent := create(t, b, ctx, "parent")
+
+	child, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
+	})
+	require.NoError(t, err)
+	parentActivity, err := b.ListActivity(ctx, parent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "relation_added", parentActivity.Activity[0].Action)
+	assert.Contains(t, string(parentActivity.Activity[0].Changes[0].To), child.ID)
+
+	_, err = b.DeleteIssue(ctx, child.ID, "")
+	require.NoError(t, err)
+	parentActivity, err = b.ListActivity(ctx, parent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "relation_removed", parentActivity.Activity[0].Action)
+	assert.Contains(t, string(parentActivity.Activity[0].Changes[0].From), child.ID)
+	assert.NotContains(t, string(parentActivity.Activity[0].Changes[0].To), child.ID)
+}

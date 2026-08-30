@@ -212,18 +212,8 @@ func (b *Backend) mutateRelation(ctx context.Context, ref, ifMatch, action strin
 			return err
 		}
 
-		before := map[string][]domain.Relation{}
-		capture := func(id string) error {
-			if _, ok := before[id]; ok {
-				return nil
-			}
-			relations, err := tx.IssueRelations(id)
-			if err != nil {
-				return err
-			}
-			before[id] = relations
-			return nil
-		}
+		before := relationSnapshots{}
+		capture := before.capture(tx)
 		if err := capture(issue.ID); err != nil {
 			return err
 		}
@@ -235,30 +225,54 @@ func (b *Backend) mutateRelation(ctx context.Context, ref, ifMatch, action strin
 			return err
 		}
 
-		ids := make([]string, 0, len(before))
-		for id := range before {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
-			after, err := tx.IssueRelations(id)
-			if err != nil {
-				return err
-			}
-			if slices.Equal(before[id], after) {
-				continue
-			}
-			changes := []domain.ActivityChange{{
-				Field: "relations", From: activityJSON(before[id]), To: activityJSON(after),
-			}}
-			if err := recordChange(tx, caller, id, action, changes); err != nil {
-				return err
-			}
-		}
-		return nil
+		return before.record(tx, caller, action)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+type relationSnapshots map[string][]domain.Relation
+
+// capture returns a callback that remembers an endpoint's relation view once,
+// before the mutation starts changing graph rows.
+func (s relationSnapshots) capture(tx *storage.Tx) func(string) error {
+	return func(id string) error {
+		if _, ok := s[id]; ok {
+			return nil
+		}
+		relations, err := tx.IssueRelations(id)
+		if err != nil {
+			return err
+		}
+		s[id] = relations
+		return nil
+	}
+}
+
+// record compares every captured endpoint with the graph after the mutation
+// and appends one activity row for each issue whose visible relations changed.
+func (s relationSnapshots) record(tx *storage.Tx, caller domain.Caller, action string) error {
+	ids := make([]string, 0, len(s))
+	for id := range s {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		after, err := tx.IssueRelations(id)
+		if err != nil {
+			return err
+		}
+		if slices.Equal(s[id], after) {
+			continue
+		}
+		changes := []domain.ActivityChange{{
+			Field: "relations", From: activityJSON(s[id]), To: activityJSON(after),
+		}}
+		if err := recordChange(tx, caller, id, action, changes); err != nil {
+			return err
+		}
+	}
+	return nil
 }
