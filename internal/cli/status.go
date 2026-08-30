@@ -105,7 +105,7 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 		Connection: statusConnection{Mode: "local", Database: cfg.DB, Attachments: cfg.Attachments},
 		Configuration: statusConfiguration{
 			Identity: identity, ConfiguredIdentity: cfg.Identity, User: cfg.User,
-			PasswordSet: cfg.Password != "", DefaultProject: cfg.DefaultProject,
+			PasswordSet: cfg.PasswordSet, DefaultProject: cfg.DefaultProject,
 			ContextProject: cfg.ContextProject, ContextLabel: cfg.ContextLabel,
 			UserFile: cfg.UserFilePath, LocalFile: cfg.LocalFilePath, Color: cfg.Color,
 		},

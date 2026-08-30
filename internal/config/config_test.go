@@ -409,6 +409,15 @@ func TestAWBPasswordMayStandAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "mikael", cfg.User)
 	assert.Equal(t, "hunter2", cfg.Password)
+	assert.True(t, cfg.PasswordSet)
+
+	// Empty is still an explicit credential: servers may accept a username
+	// with an empty password, and diagnostics must not call that unset.
+	t.Setenv("AWB_PASSWORD", "")
+	cfg, err = config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Password)
+	assert.True(t, cfg.PasswordSet)
 }
 
 // A file with neither key is legal and simply gives an empty context.

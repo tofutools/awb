@@ -101,6 +101,9 @@ type Config struct {
 	// in remote mode. They are ignored when DB is a path.
 	User     string
 	Password string
+	// PasswordSet distinguishes an explicitly configured empty password from
+	// no password setting. The empty value is valid for a server account.
+	PasswordSet bool
 
 	// Identity is the default assignee: what --mine resolves to and what claim
 	// uses without --as. It may be empty, in which case the commands that need
@@ -422,8 +425,10 @@ func resolveCredentials(cfg *Config, userCfg *userFile, userPath string) error {
 
 	if value, set := os.LookupEnv("AWB_PASSWORD"); set {
 		cfg.Password = value
+		cfg.PasswordSet = true
 	} else if userCfg.Password != nil {
 		cfg.Password = *userCfg.Password
+		cfg.PasswordSet = true
 	}
 	return nil
 }
