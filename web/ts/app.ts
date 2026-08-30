@@ -29,6 +29,7 @@ import {
 } from "./listings.js";
 import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
+import { configureSearchBox } from "./search.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -973,9 +974,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
 function searchBox(): HTMLElement {
   const form = element("form", "search") as HTMLFormElement;
   const input = document.createElement("input");
-  input.type = "search";
-  input.name = "q";
-  input.placeholder = "Search…";
+  configureSearchBox(form, input);
   input.value = parseRoute().query.getAll("q").join(" ");
   form.append(input);
 
