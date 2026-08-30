@@ -27,6 +27,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
+import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -816,9 +817,16 @@ function commentComposer(issueID: string): HTMLElement {
   textarea.name = "body";
   textarea.placeholder = "Write a comment…";
   textarea.required = true;
-  const hint = element("span", "comment-hint", "Comments use Markdown.");
+  textarea.setAttribute("aria-label", "Comment");
+  textarea.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+  const hint = element("span", "comment-hint", "Comments use Markdown. Ctrl/⌘+Enter to submit.");
   const button = element("button", "comment-submit", "Add comment") as HTMLButtonElement;
   button.type = "submit";
+  textarea.addEventListener("keydown", (event) => {
+    if (!commentSubmitShortcut(event)) return;
+    event.preventDefault();
+    if (!button.disabled) form.requestSubmit(button);
+  });
   form.append(textarea, hint, button);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
