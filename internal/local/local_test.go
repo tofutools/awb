@@ -140,21 +140,19 @@ func TestClaim(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusInProgress, claimed.Status)
 	assert.Equal(t, "claude-1", claimed.Assignee)
+	assert.Equal(t, []string{"claude-1"}, claimed.Assignees)
 
 	// Claiming an issue you already hold succeeds and changes nothing.
 	again, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-1"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, claimed.UpdatedAt, again.UpdatedAt)
 
-	// Somebody else's claim is refused.
-	_, err = b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2"}, "")
-	require.Error(t, err)
-	assert.Equal(t, 4, exitOf(err))
-
-	// --force takes it.
-	forced, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2", Force: true}, "")
+	// Somebody else joins without replacing the first assignee. The compatibility
+	// projection remains the first entry.
+	joined, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2"}, "")
 	require.NoError(t, err)
-	assert.Equal(t, "claude-2", forced.Assignee)
+	assert.Equal(t, "claude-1", joined.Assignee)
+	assert.Equal(t, []string{"claude-1", "claude-2"}, joined.Assignees)
 }
 
 // The compare-and-set: two agents racing for the same issue cannot both win.
@@ -234,6 +232,24 @@ func TestRelease(t *testing.T) {
 	forced, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Force: true}, "")
 	require.NoError(t, err)
 	assert.Empty(t, forced.Assignee)
+}
+
+func TestReleaseOneOfSeveralAssignees(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"mikael", "claude-1"}
+	})
+
+	released, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusInProgress, released.Status)
+	assert.Equal(t, "claude-1", released.Assignee)
+	assert.Equal(t, []string{"claude-1"}, released.Assignees)
+
+	released, err = b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "claude-1"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusOpen, released.Status)
+	assert.Empty(t, released.Assignees)
 }
 
 func TestCloseAndReopen(t *testing.T) {

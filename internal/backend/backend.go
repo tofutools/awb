@@ -215,7 +215,10 @@ type IssueCreate struct {
 	// sets status to in_progress, so a new issue is never open and assigned at
 	// once.
 	Assignee string
-	Labels   []string
+	// Assignees permits an atomic create-and-claim by several people. Assignee
+	// is the version 1 spelling for a single entry; callers give only one form.
+	Assignees []string
+	Labels    []string
 	// Relations are read with the new issue as the subject, exactly as awb
 	// create's relation flags are. At most one may be has-parent.
 	Relations []NewRelation
@@ -251,9 +254,10 @@ type IssuePatch struct {
 	// comparison happens inside the same transaction as the write. Checking
 	// them beforehand would leave a window in which a concurrent transition
 	// could make a stale value pass.
-	ExpectLabels   *[]string
-	ExpectStatus   *domain.Status
-	ExpectAssignee *string
+	ExpectLabels    *[]string
+	ExpectStatus    *domain.Status
+	ExpectAssignee  *string
+	ExpectAssignees *[]string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.

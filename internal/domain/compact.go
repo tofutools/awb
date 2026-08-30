@@ -38,9 +38,13 @@ func CompactLine(issue *Issue, withBlockers bool) string {
 	b.WriteByte(' ')
 	b.WriteString(jsonString(issue.Title))
 
-	if issue.Assignee != "" {
+	assignees := issue.Assignees
+	if len(assignees) == 0 && issue.Assignee != "" {
+		assignees = []string{issue.Assignee}
+	}
+	for _, assignee := range assignees {
 		b.WriteString(" @")
-		b.WriteString(issue.Assignee)
+		b.WriteString(assignee)
 	}
 	for _, label := range issue.Labels {
 		b.WriteString(" #")

@@ -42,15 +42,18 @@ type Relation struct {
 // read-only; they cannot be written through update or PATCH. An attachment is
 // added and removed by its own operations, exactly as a relation is.
 type Issue struct {
-	ID          string       `json:"id"`
-	Project     string       `json:"project"`
-	Title       string       `json:"title"`
-	Description string       `json:"description"`
-	Type        Type         `json:"type"`
-	Status      Status       `json:"status"`
-	Priority    int          `json:"priority"`
-	Labels      []string     `json:"labels"`
-	Assignee    string       `json:"assignee"`
+	ID          string   `json:"id"`
+	Project     string   `json:"project"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Type        Type     `json:"type"`
+	Status      Status   `json:"status"`
+	Priority    int      `json:"priority"`
+	Labels      []string `json:"labels"`
+	Assignee    string   `json:"assignee"`
+	// Assignees is the complete ordered set. Assignee remains the first entry
+	// for compatibility with version 1 JSON clients.
+	Assignees   []string     `json:"assignees"`
 	CreatedAt   string       `json:"created_at"`
 	UpdatedAt   string       `json:"updated_at"`
 	Blocked     bool         `json:"blocked"`
@@ -124,6 +127,9 @@ func (i *Issue) Normalize() {
 	slices.Sort(i.Blockers)
 	SortRelations(i.Relations)
 	SortAttachments(i.Attachments)
+	if i.Assignees == nil {
+		i.Assignees = []string{}
+	}
 	if i.Labels == nil {
 		i.Labels = []string{}
 	}

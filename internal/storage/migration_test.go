@@ -104,14 +104,15 @@ func TestV5MigratesCloseReasonsWithoutLosingData(t *testing.T) {
 	assert.Equal(t, t1, createdAt)
 
 	for query, want := range map[string]int{
-		`SELECT count(*) FROM issues`:                                                    2,
-		`SELECT count(*) FROM issue_labels WHERE issue = 'awb-closed01'`:                 1,
-		`SELECT count(*) FROM relations WHERE subject = 'awb-open0001'`:                  1,
-		`SELECT count(*) FROM attachments WHERE issue = 'awb-closed01'`:                  1,
-		`SELECT count(*) FROM issue_activity WHERE issue = 'awb-closed01'`:               2,
-		`SELECT count(*) FROM issue_activity WHERE id = 7 AND body = 'existing comment'`: 1,
-		`SELECT count(*) FROM users WHERE name = 'alice'`:                                1,
-		`SELECT count(*) FROM project_members WHERE user = 'alice'`:                      1,
+		`SELECT count(*) FROM issues`:                                                               2,
+		`SELECT count(*) FROM issue_labels WHERE issue = 'awb-closed01'`:                            1,
+		`SELECT count(*) FROM relations WHERE subject = 'awb-open0001'`:                             1,
+		`SELECT count(*) FROM attachments WHERE issue = 'awb-closed01'`:                             1,
+		`SELECT count(*) FROM issue_activity WHERE issue = 'awb-closed01'`:                          2,
+		`SELECT count(*) FROM issue_activity WHERE id = 7 AND body = 'existing comment'`:            1,
+		`SELECT count(*) FROM issue_assignees WHERE issue = 'awb-closed01' AND assignee = 'mikael'`: 1,
+		`SELECT count(*) FROM users WHERE name = 'alice'`:                                           1,
+		`SELECT count(*) FROM project_members WHERE user = 'alice'`:                                 1,
 	} {
 		var got int
 		require.NoError(t, db.SQL().QueryRowContext(t.Context(), query).Scan(&got), query)

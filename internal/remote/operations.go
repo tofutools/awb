@@ -24,6 +24,7 @@ type issueCreateBody struct {
 	Type        domain.Type    `json:"type,omitempty"`
 	Priority    *int           `json:"priority,omitempty"`
 	Assignee    string         `json:"assignee,omitempty"`
+	Assignees   []string       `json:"assignees,omitempty"`
 	Labels      []string       `json:"labels,omitempty"`
 	Relations   []relationBody `json:"relations,omitempty"`
 }
@@ -43,9 +44,10 @@ type issuePatchBody struct {
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
 	// the only place the comparison means anything.
-	Labels   *[]string      `json:"labels,omitempty"`
-	Status   *domain.Status `json:"status,omitempty"`
-	Assignee *string        `json:"assignee,omitempty"`
+	Labels    *[]string      `json:"labels,omitempty"`
+	Status    *domain.Status `json:"status,omitempty"`
+	Assignee  *string        `json:"assignee,omitempty"`
+	Assignees *[]string      `json:"assignees,omitempty"`
 }
 
 type claimBody struct {
@@ -94,6 +96,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		Type:        req.Type,
 		Priority:    req.Priority,
 		Assignee:    req.Assignee,
+		Assignees:   req.Assignees,
 		Labels:      req.Labels,
 	}
 	for _, rel := range req.Relations {
@@ -219,9 +222,10 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Type:        req.Type,
 		Priority:    req.Priority,
 
-		Labels:   req.ExpectLabels,
-		Status:   req.ExpectStatus,
-		Assignee: req.ExpectAssignee,
+		Labels:    req.ExpectLabels,
+		Status:    req.ExpectStatus,
+		Assignee:  req.ExpectAssignee,
+		Assignees: req.ExpectAssignees,
 	}
 	return b.issueCall(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(ref), body, ifMatch)
 }

@@ -60,8 +60,10 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	}
 	if f.Unassigned {
 		c.add("i.assignee = ''")
-	} else {
-		c.addIn("i.assignee", anyArgs(f.Assignees))
+	} else if len(f.Assignees) > 0 {
+		c.add(`i.id IN (SELECT issue FROM issue_assignees
+		                 WHERE assignee IN (`+placeholders(len(f.Assignees))+`))`,
+			anyArgs(f.Assignees)...)
 	}
 	// The derived blocked state: an issue is blocked when it is itself not closed
 	// and at least one issue it is blocked-by is not closed. Expressing it here
@@ -245,13 +247,13 @@ func (t *Tx) LabelFacets(f *domain.Filter) ([]domain.Facet, error) {
 // assignee: unassigned is a filter, not a value.
 func (t *Tx) AssigneeFacets(f *domain.Filter) ([]domain.Facet, error) {
 	c := t.facetSelection(f)
-	c.add("i.assignee <> ''")
 	return t.scanFacets(`
-		SELECT i.assignee, count(*)
-		  FROM issues i
+		SELECT a.assignee, count(*)
+		  FROM issue_assignees a
+		  JOIN issues i ON i.id = a.issue
 		 WHERE `+c.where()+`
-		 GROUP BY i.assignee
-		 ORDER BY i.assignee ASC`, c.args)
+		 GROUP BY a.assignee
+		 ORDER BY a.assignee ASC`, c.args)
 }
 
 // facetSelection is the selection shared by the two facet queries, including

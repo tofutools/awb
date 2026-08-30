@@ -72,6 +72,14 @@ func TestCompactLineOptionalFieldsAndOrder(t *testing.T) {
 	})
 }
 
+func TestCompactLineIncludesEveryAssignee(t *testing.T) {
+	issue := domain.Issue{ID: "awb-a1", Title: "Pair", Type: domain.TypeTask,
+		Status: domain.StatusInProgress, Priority: 2, Assignee: "alice",
+		Assignees: []string{"alice", "bob"}}
+	assert.Equal(t, `awb-a1 P2 in_progress task "Pair" @alice @bob`,
+		domain.CompactLine(&issue, false))
+}
+
 // The title is the only field that may contain literal spaces after decoding,
 // and it is encoded as a JSON string so a line stays parseable by splitting on
 // whitespace outside it.

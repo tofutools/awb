@@ -58,6 +58,17 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				return restoreError(err, "issue %s", issue.ID)
 			}
 			issueIDs[issue.ID] = struct{}{}
+			assignees := issue.Assignees
+			if len(assignees) == 0 && issue.Assignee != "" {
+				assignees = []string{issue.Assignee}
+			}
+			for position, assignee := range assignees {
+				if _, err := tx.q.ExecContext(ctx,
+					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+					issue.ID, assignee, position); err != nil {
+					return restoreError(err, "assignee %q of %s", assignee, issue.ID)
+				}
+			}
 
 			for _, label := range issue.Labels {
 				if _, err := tx.q.ExecContext(ctx,

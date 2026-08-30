@@ -29,6 +29,7 @@ func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 		Type:        domain.Type(req.Type.Or("")),
 		Priority:    optPriority(req.Priority),
 		Assignee:    string(req.Assignee.Or("")),
+		Assignees:   fromAssignees(req.Assignees),
 		Labels:      fromLabels(req.Labels),
 	}
 	parents := 0
@@ -87,6 +88,10 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 
 		ExpectStatus:   optStatus(req.Status),
 		ExpectAssignee: optString(req.Assignee),
+	}
+	if req.Assignees != nil {
+		assignees := fromAssignees(req.Assignees)
+		patch.ExpectAssignees = &assignees
 	}
 	// A labels array that is absent is nil; one the caller sent is not, even
 	// when it is empty, and is then compared against what is stored.

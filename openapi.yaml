@@ -161,11 +161,13 @@ paths:
     post:
       tags: [issues]
       operationId: claimIssue
-      summary: Atomically set the assignee and status to in_progress
+      summary: Atomically add an assignee and set status to in_progress
       description: |
         A compare-and-set. `expect_assignee`, when present, makes the claim
         proceed only if the current assignee is exactly that value, so two
-        agents racing for the same issue cannot both win.
+        agents racing on the compatibility projection can detect the change.
+        Without that precondition, claim adds the named assignee and preserves
+        everyone already assigned.
       requestBody:
         content:
           application/json:
@@ -181,7 +183,7 @@ paths:
     post:
       tags: [issues]
       operationId: releaseIssue
-      summary: Clear the assignee and set the status back to open
+      summary: Remove an assignee; open the issue when none remain
       requestBody:
         content:
           application/json:
@@ -213,7 +215,7 @@ paths:
     post:
       tags: [issues]
       operationId: reopenIssue
-      summary: Set the status to open and clear the assignee
+      summary: Set the status to open and clear every assignee
       description: |
         Acts only on a closed issue: on one that is not closed it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
@@ -1535,7 +1537,7 @@ components:
       additionalProperties: false
       required:
         [id, project, title, description, type, status, priority, labels,
-         assignee, created_at, updated_at, blocked, blockers,
+         assignee, assignees, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
@@ -1563,7 +1565,13 @@ components:
           items: { $ref: '#/components/schemas/Label' }
         assignee:
           type: string
-          description: Empty means unassigned.
+          description: |
+            Compatibility projection for version 1 clients: the first
+            assignee, or empty when unassigned. New clients use `assignees`.
+        assignees:
+          type: array
+          description: The complete assignment set, in claim order.
+          items: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at:
           allOf: [$ref: '#/components/schemas/Timestamp']
@@ -1772,6 +1780,12 @@ components:
           description: |
             A non-empty assignee sets `status` to `in_progress`, making creation
             an atomic create-and-claim.
+        assignees:
+          type: array
+          description: |
+            Assign all of these people atomically at creation. Mutually
+            exclusive with the singular compatibility field `assignee`.
+          items: { $ref: '#/components/schemas/Assignee' }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1793,7 +1807,7 @@ components:
       description: |
         Takes only what `awb update` can change.
 
-        `labels`, `status` and `assignee` may appear but may not
+        `labels`, `status`, `assignee` and `assignees` may appear but may not
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
@@ -1820,6 +1834,9 @@ components:
           items: { $ref: '#/components/schemas/Label' }
         status: { $ref: '#/components/schemas/Status' }
         assignee: { type: string }
+        assignees:
+          type: array
+          items: { $ref: '#/components/schemas/Assignee' }
         id: { type: string }
         project: { $ref: '#/components/schemas/ProjectKey' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -1837,8 +1854,9 @@ components:
         assignee:
           allOf: [$ref: '#/components/schemas/Assignee']
           description: |
-            Who takes the issue. May be omitted, in which case the request's
-            identity is used.
+            Who joins the issue. May be omitted, in which case the request's
+            identity is used. Claiming is idempotent and does not remove any
+            existing assignee.
         expect_assignee:
           type: string
           description: |
@@ -1848,7 +1866,7 @@ components:
         force:
           type: boolean
           default: false
-          description: Override a held, blocked or closed issue.
+          description: Override a blocked or closed issue.
 
     ReleaseRequest:
       type: object
@@ -1857,9 +1875,8 @@ components:
         assignee:
           allOf: [$ref: '#/components/schemas/Assignee']
           description: |
-            The caller's identity, and what the "assigned to someone else"
-            refusal compares against. May be omitted when `force` is true, that
-            refusal being the only thing it serves.
+            The assignee to remove. May be omitted when `force` is true;
+            forced release removes every assignee.
         force: { type: boolean, default: false }
 
     CloseRequest:

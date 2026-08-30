@@ -476,7 +476,7 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 		{header: "TITLE", floor: titleFloor,
 			cells: cells(func(i *domain.Issue) string { return t.listTitle(i.Title) })},
 		{header: "ASSIGNEE", expendable: true, paint: always(t.assignee),
-			cells: cells(func(i *domain.Issue) string { return i.Assignee })},
+			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Assignees, ",") })},
 		{header: "LABELS", floor: labelsFloor, expendable: true, paint: always(t.label),
 			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Labels, ",") })},
 	}
@@ -617,7 +617,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
-	e.field(t, "Assignee", t.apply(t.assignee, issue.Assignee))
+	e.field(t, "Assignees", t.apply(t.assignee, strings.Join(issue.Assignees, ", ")))
 	e.field(t, "Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
 	e.field(t, "Created", issue.CreatedAt)
 	e.field(t, "Updated", issue.UpdatedAt)

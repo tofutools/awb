@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -13,7 +14,7 @@ import (
 // Keeping them out of update is what stops in_progress and an assignee from
 // drifting apart and stops a claim being taken silently.
 
-// Claim atomically sets the assignee and status to in_progress.
+// Claim atomically adds an assignee and sets status to in_progress.
 //
 // Claiming an issue you already hold succeeds; if it is already in_progress
 // nothing changes. It fails with a conflict if the issue is assigned to
@@ -39,9 +40,6 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 
 		if !req.Force {
-			if issue.Assignee != "" && issue.Assignee != assignee {
-				return awberr.Conflictf("%s is already held by %s", issue.ID, issue.Assignee)
-			}
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
 			}
@@ -51,13 +49,19 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 
 		fields := storage.Fields(issue)
-		fields.Assignee = assignee
+		if !slices.Contains(fields.Assignees, assignee) {
+			fields.Assignees = append(fields.Assignees, assignee)
+		}
+		if fields.Assignee == "" {
+			fields.Assignee = assignee
+		}
 		fields.Status = domain.StatusInProgress
 		return tx.UpdateIssue(issue, fields)
 	})
 }
 
-// Release clears the assignee and sets status back to open.
+// Release removes the caller from the assignees. The issue returns to open
+// only when no assignees remain; --force clears every assignee.
 //
 // Releasing an issue that is already open and unassigned succeeds and changes
 // nothing. It fails on a closed issue, or on one assigned to someone else,
@@ -80,14 +84,25 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
 			}
-			if issue.Assignee != "" && issue.Assignee != req.Assignee {
-				return awberr.Conflictf("%s is held by %s, not by you", issue.ID, issue.Assignee)
+			if len(issue.Assignees) > 0 && !slices.Contains(issue.Assignees, req.Assignee) {
+				return awberr.Conflictf("%s is held by %v, not by you", issue.ID, issue.Assignees)
 			}
 		}
 
 		fields := storage.Fields(issue)
-		fields.Assignee = ""
-		fields.Status = domain.StatusOpen
+		if req.Force {
+			fields.Assignees = nil
+		} else {
+			fields.Assignees = slices.DeleteFunc(fields.Assignees,
+				func(a string) bool { return a == req.Assignee })
+		}
+		if len(fields.Assignees) == 0 {
+			fields.Assignee = ""
+			fields.Status = domain.StatusOpen
+		} else {
+			fields.Assignee = fields.Assignees[0]
+			fields.Status = domain.StatusInProgress
+		}
 		return tx.UpdateIssue(issue, fields)
 	})
 }
@@ -130,6 +145,7 @@ func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issu
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusOpen
 		fields.Assignee = ""
+		fields.Assignees = nil
 		return tx.UpdateIssue(issue, fields)
 	})
 }

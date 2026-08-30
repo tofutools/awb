@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
@@ -130,6 +131,9 @@ func (t *Tx) hydrate(issues []*domain.Issue) error {
 		ids = append(ids, issue.ID)
 	}
 
+	if err := t.loadAssignees(ids, byID); err != nil {
+		return err
+	}
 	if err := t.loadLabels(ids, byID); err != nil {
 		return err
 	}
@@ -148,6 +152,23 @@ func (t *Tx) hydrate(issues []*domain.Issue) error {
 		issue.Normalize()
 	}
 	return nil
+}
+
+func (t *Tx) loadAssignees(ids []string, byID map[string]*domain.Issue) error {
+	rows, err := t.q.QueryContext(t.ctx, `SELECT issue, assignee FROM issue_assignees
+		WHERE issue IN (`+placeholders(len(ids))+`) ORDER BY issue, position`, anyArgs(ids)...)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read issue assignees")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var issue, assignee string
+		if err := rows.Scan(&issue, &assignee); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "read issue assignees")
+		}
+		byID[issue].Assignees = append(byID[issue].Assignees, assignee)
+	}
+	return rows.Err()
 }
 
 func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
@@ -261,6 +282,18 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 			issue.Status, issue.Priority, issue.Assignee,
 			issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
+			assignees := issue.Assignees
+			if len(assignees) == 0 && issue.Assignee != "" {
+				assignees = []string{issue.Assignee}
+			}
+			for position, assignee := range assignees {
+				if _, err := t.q.ExecContext(t.ctx,
+					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+					issue.ID, assignee, position); err != nil {
+					return awberr.Wrap(awberr.Runtime, err, "assign issue %s", issue.ID)
+				}
+			}
+			issue.Assignees = slices.Clone(assignees)
 			return nil
 		}
 		if isUniqueViolation(err) && attempt < maxAttempts-1 {
@@ -283,13 +316,14 @@ type IssueFields struct {
 	Status      domain.Status
 	Priority    int
 	Assignee    string
+	Assignees   []string
 }
 
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignee: i.Assignee,
+		Priority: i.Priority, Assignee: i.Assignee, Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -297,7 +331,11 @@ func Fields(i *domain.Issue) IssueFields {
 // when something actually changed. A write that changes nothing leaves the
 // timestamp alone.
 func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
-	if Fields(issue) == fields {
+	before := Fields(issue)
+	if before.Title == fields.Title && before.Description == fields.Description &&
+		before.Type == fields.Type && before.Status == fields.Status &&
+		before.Priority == fields.Priority && before.Assignee == fields.Assignee &&
+		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
@@ -315,6 +353,16 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		}
 		return awberr.Wrap(awberr.Runtime, err, "update issue %s", issue.ID)
 	}
+	if _, err := t.q.ExecContext(t.ctx, `DELETE FROM issue_assignees WHERE issue = ?`, issue.ID); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "update assignees for %s", issue.ID)
+	}
+	for position, assignee := range fields.Assignees {
+		if _, err := t.q.ExecContext(t.ctx,
+			`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+			issue.ID, assignee, position); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "update assignees for %s", issue.ID)
+		}
+	}
 
 	issue.Title = fields.Title
 	issue.Description = fields.Description
@@ -322,6 +370,7 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
 	issue.Assignee = fields.Assignee
+	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil
 }

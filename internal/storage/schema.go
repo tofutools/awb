@@ -22,6 +22,27 @@ var migrations = [][]string{
 	schemaV3,
 	schemaV4,
 	schemaV5,
+	schemaV6,
+}
+
+// schemaV6 makes assignment a one-to-many relation. The scalar issues.assignee
+// remains the first assignee as a compatibility projection for version 1 JSON
+// clients and preserves the released status/assignee CHECK constraint. New
+// code treats issue_assignees as authoritative and keeps the projection in
+// step in the same transaction as every transition.
+var schemaV6 = []string{
+	`CREATE TABLE issue_assignees (
+		issue    TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
+		assignee TEXT NOT NULL,
+		position INTEGER NOT NULL,
+		PRIMARY KEY (issue, assignee),
+		UNIQUE (issue, position),
+		CHECK (assignee <> ''),
+		CHECK (position >= 0)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO issue_assignees (issue, assignee, position)
+		SELECT id, assignee, 0 FROM issues WHERE assignee <> ''`,
+	`CREATE INDEX idx_issue_assignees_assignee ON issue_assignees (assignee, issue)`,
 }
 
 // schemaV4 adds the append-only issue activity stream. Changes are JSON text

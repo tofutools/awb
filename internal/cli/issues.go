@@ -71,7 +71,7 @@ type createParams struct {
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
-	Assignee       string   `long:"assignee" optional:"true" help:"create and claim in one step"`
+	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
 	Project        string   `long:"project" optional:"true" help:"the project to create the issue in"`
 	HasParent      string   `long:"has-parent" optional:"true" help:"the new issue is part of decomposing this one"`
 	BlockedBy      []string `long:"blocked-by" collection:"array" optional:"true" help:"the new issue cannot start until this one is closed; repeatable"`
@@ -86,9 +86,8 @@ func newCreateCommand(e *env) *cobra.Command {
 		Long: "Create an issue and print its ID.\n\n" +
 			"The relation flags read \"the new issue — relation — the named issue\",\n" +
 			"the single convention of the whole tool.\n\n" +
-			"Creating with an assignee is an atomic create-and-claim: --assignee also\n" +
-			"sets the status to in_progress, so a new issue is never open and assigned\n" +
-			"at once.",
+			"Creating with one or more assignees is an atomic create-and-claim:\n" +
+			"--assignee is repeatable and also sets the status to in_progress.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *createParams, cmd *cobra.Command) error {
 			if err := describe("issue")(ctx, &p.DescriptionFlags, cmd); err != nil {
@@ -115,10 +114,10 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 
 			req := backend.IssueCreate{
-				Project:  target,
-				Title:    p.Title,
-				Assignee: p.Assignee,
-				Type:     domain.Type(p.Type),
+				Project:   target,
+				Title:     p.Title,
+				Assignees: p.Assignees,
+				Type:      domain.Type(p.Type),
 			}
 			if !cmd.Flags().Changed("type") {
 				req.Type = ""
@@ -405,16 +404,16 @@ func labelCommand(use, short string, run func(*cobra.Command, string, string) er
 type claimParams struct {
 	ID    string  `positional:"true" required:"true"`
 	As    *string `long:"as" help:"claim for this name instead of your identity"`
-	Force bool    `long:"force" optional:"true" help:"override a held, blocked or closed issue"`
+	Force bool    `long:"force" optional:"true" help:"override a blocked or closed issue"`
 }
 
 func newClaimCommand(e *env) *cobra.Command {
 	return boa.CmdT[claimParams]{
 		Use:   "claim",
-		Short: "Atomically set the assignee and status to in_progress",
+		Short: "Atomically join the assignees and set status to in_progress",
 		Long: "Claim an issue.\n\n" +
-			"Claiming one you already hold succeeds. It fails if the issue is assigned\n" +
-			"to somebody else, blocked, or closed; --force overrides all three. A close\n" +
+			"Claiming one you already hold succeeds, and another claimant joins without\n" +
+			"replacing anyone. It fails if blocked or closed; --force overrides both. A close\n" +
 			"reason remains in the issue's activity history.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *claimParams, cmd *cobra.Command, _ []string) error {
@@ -453,13 +452,14 @@ type forceParams struct {
 func newReleaseCommand(e *env) *cobra.Command {
 	return boa.CmdT[forceParams]{
 		Use:   "release",
-		Short: "Clear the assignee and set the status back to open",
+		Short: "Leave the assignees, reopening the issue when the last one leaves",
 		Long: "Release an issue.\n\n" +
-			"Releasing one that is already open and unassigned succeeds. It fails on a\n" +
-			"closed issue, or on one assigned to somebody else, unless --force.",
+			"Releasing removes your identity and leaves any other assignees working. It\n" +
+			"fails on a closed issue, or when you are not assigned, unless --force; a\n" +
+			"forced release removes every assignee.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *forceParams, _ *cobra.Command) error {
-			boa.GetParamT(ctx, &p.Force).SetDescription("release a closed issue, or somebody else's")
+			boa.GetParamT(ctx, &p.Force).SetDescription("remove every assignee, including from a closed issue")
 			return nil
 		},
 		RunFuncE: func(p *forceParams, cmd *cobra.Command, _ []string) error {

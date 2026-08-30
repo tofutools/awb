@@ -275,9 +275,9 @@ function issueBadges(issue: Issue): HTMLElement {
   row.append(element("span", `priority p${issue.priority}`, `P${issue.priority}`));
   row.append(element("span", `status status-${issue.status}`, issue.status));
   if (issue.blocked) row.append(element("span", "blocked", "blocked"));
-  if (issue.assignee !== "") {
-    const assignee = element("span", "assignee", `@${issue.assignee}`);
-    if (issue.assignee === identity) assignee.classList.add("mine");
+  for (const name of issue.assignees) {
+    const assignee = element("span", "assignee", `@${name}`);
+    if (name === identity) assignee.classList.add("mine");
     row.append(assignee);
   }
   for (const label of issue.labels) row.append(element("span", "label", `#${label}`));
@@ -352,10 +352,15 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
 
   const assignee: IssueColumn = {
     key: "assignee",
-    label: "Assignee",
-    render: (row) => row.assignee === ""
-      ? textCell("muted", "—")
-      : badge(row.assignee === identity ? "assignee mine" : "assignee", `@${row.assignee}`),
+    label: "Assignees",
+    render: (row) => {
+      if (row.assignees.length === 0) return textCell("muted", "—");
+      const cell = element("span", "badges");
+      for (const name of row.assignees) {
+        cell.append(badge(name === identity ? "assignee mine" : "assignee", `@${name}`));
+      }
+      return cell;
+    },
   };
   if (kind === "blocked") {
     return [
@@ -977,7 +982,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   if (issue.labels.length === 0) labels.append(text("—"));
   for (const label of issue.labels) labels.append(badge("label", label));
   add("Labels", labels);
-  add("Assignee", text(issue.assignee === "" ? "" : `@${issue.assignee}`));
+  add("Assignees", text(issue.assignees.map((name) => `@${name}`).join(", ")));
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
   aside.append(facts);
