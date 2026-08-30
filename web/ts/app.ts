@@ -95,7 +95,7 @@ function svgIcon(name: IconName): SVGSVGElement {
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
-    ready: '<rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="m8 12 3 3 5-6"></path>',
+    ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
     tag: '<path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1"></circle>',
   };
@@ -1082,7 +1082,13 @@ function chrome(): HTMLElement {
   nav.append(navLink("#/issues", "Issues", "issues"));
   nav.append(navLink("#/blocked", "Blocked", "blocked"));
   nav.append(navLink("#/projects", "Projects", "projects"));
-  header.append(link("#/ready", "Agent Work Board", "brand"));
+  const brand = link("#/ready", "", "brand");
+  const mark = document.createElement("img");
+  mark.src = "awb-mark.png";
+  mark.alt = "";
+  mark.className = "brand-mark";
+  brand.append(mark, document.createTextNode("Agent Work Board"));
+  header.append(brand);
   header.append(nav);
   header.append(searchBox());
   if (identity !== "") {

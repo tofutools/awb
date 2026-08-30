@@ -48,7 +48,17 @@ a:hover { text-decoration: underline; }
   border-bottom: 1px solid var(--line);
 }
 
-.brand { color: var(--fg); font-size: 1.12rem; font-weight: 700; letter-spacing: -0.025em; white-space: nowrap; }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--fg);
+  font-size: 1.12rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+.brand-mark { width: 1.5rem; height: 1.5rem; }
 .brand:hover { text-decoration: none; }
 nav { display: flex; gap: 0.35rem; }
 nav a {
