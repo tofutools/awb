@@ -85,7 +85,7 @@ ul { list-style: none; margin: 0; padding: 0; }
   margin-bottom: 0.4rem;
 }
 
-.id { font-family: var(--mono); font-size: 0.85em; }
+.id { font-family: var(--mono); font-size: 0.85em; white-space: nowrap; }
 
 /* The id and the title of a row are one link, so the anchor is what the row
    lays out and the two spans lay out inside it. Only the id keeps the accent:
@@ -230,8 +230,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-table th:first-child { width: 42%; }
 .issue-table th:nth-child(2) { width: 11%; }
 .issue-table th:nth-child(n+3) { width: 11.75%; }
-.issue-table.blocked th:first-child { width: 40%; }
-.issue-table.blocked th:last-child { width: 20%; }
+.issue-table.listing-blocked th:first-child { width: 40%; }
+.issue-table.listing-blocked th:last-child { width: 20%; }
 .issue-name-cell { display: block; min-width: 0; }
 .issue-name-cell a.name { display: inline-flex; max-width: 100%; }
 .row-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.12rem; }

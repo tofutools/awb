@@ -254,7 +254,7 @@ function issueTable(
   defaultDirection: SortDirection,
 ): HTMLElement {
   const columns = issueColumns(kind);
-  const table = element("table", `listing-table issue-table ${kind}`) as HTMLTableElement;
+  const table = element("table", `listing-table issue-table listing-${kind}`) as HTMLTableElement;
   const head = document.createElement("thead");
   const heading = document.createElement("tr");
   for (const column of columns) {
