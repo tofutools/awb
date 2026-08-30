@@ -284,7 +284,7 @@ func newUserListCommand(e *env) *cobra.Command {
 		Short:       "List users, with their flags and the projects they have access to",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
-			pick, err := e.interactively(p.Interactive)
+			out, err := e.interactively(p.Interactive)
 			if err != nil {
 				return err
 			}
@@ -297,8 +297,8 @@ func newUserListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if pick {
-				return e.pickUser(cmd.Context(), be, page.Users)
+			if out != nil {
+				return e.pickUser(cmd.Context(), be, out, page.Users)
 			}
 			return e.printUsers(page.Users)
 		},

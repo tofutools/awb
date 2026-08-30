@@ -36,25 +36,31 @@ type InteractiveFlags struct {
 	Interactive bool `long:"interactive" short:"i" optional:"true" help:"scroll the listing and show the entry chosen; needs a terminal"`
 }
 
-// interactively reports whether this invocation is to show its listing on the
-// full screen, and refuses when it cannot be.
+// interactively returns the terminal to show this invocation's listing on, and
+// nil when it is not to show one at all.
 //
 // Asking for it where it cannot happen is a usage error rather than a silent
 // fall back to a printed listing: a caller who asked for a screen to scroll
 // asked for something this invocation has no way to give. --json and --compact
 // are what a script and an agent read, and neither is a screen either.
-func (e *env) interactively(on bool) (bool, error) {
+//
+// It returns the terminal itself and not merely permission to draw on one,
+// because a file descriptor is what raw mode is set on and the window size is
+// read from: the one place that decides there is a terminal is the one that
+// hands it over.
+func (e *env) interactively(on bool) (term.File, error) {
 	if !on {
-		return false, nil
+		return nil, nil
 	}
 	if e.json || e.compact {
-		return false, awberr.Usagef("--interactive, --json and --compact are mutually exclusive")
+		return nil, awberr.Usagef("--interactive, --json and --compact are mutually exclusive")
 	}
-	if !e.boxed || !isTerminal(e.stdin) {
-		return false, awberr.Usagef(
+	out, ok := e.stdout.w.(term.File)
+	if !ok || !term.IsTerminal(out.Fd()) || !isTerminal(e.stdin) {
+		return nil, awberr.Usagef(
 			"--interactive needs a terminal on both standard input and standard output")
 	}
-	return true, nil
+	return out, nil
 }
 
 // isTerminal reports whether a reader is a terminal, by the same rule window
@@ -64,18 +70,40 @@ func isTerminal(r io.Reader) bool {
 	return ok && term.IsTerminal(f.Fd())
 }
 
+// screen is the terminal the picker draws on, keeping the first write it
+// fails.
+//
+// Bubble Tea throws away the errors its renderer's writes return, and it wants
+// the file rather than the errWriter around stdout, because a plain writer is
+// nothing it can put in raw mode or ask the size of. So the file is what it is
+// given, wrapped in the same rule the rest of the output follows: a failure to
+// write is a runtime failure and does not pass as success. Everything else a
+// terminal is asked for reaches the file untouched.
+type screen struct {
+	term.File
+	err error
+}
+
+func (s *screen) Write(p []byte) (int, error) {
+	n, err := s.File.Write(p)
+	if err != nil && s.err == nil {
+		s.err = err
+	}
+	return n, err
+}
+
 // pickIssue scrolls an issue listing and prints the issue chosen.
 //
 // A row carries only what a listing shows, so the issue is read again: what
 // show prints is the whole of it, relations and derived state included, which
 // is the point of choosing one.
-func (e *env) pickIssue(ctx context.Context, be backend.Backend, issues []domain.Issue,
-	withBlockers bool) error {
+func (e *env) pickIssue(ctx context.Context, be backend.Backend, out term.File,
+	issues []domain.Issue, withBlockers bool) error {
 	if len(issues) == 0 {
 		return nil
 	}
 	t := e.theme()
-	row, err := e.pick(ctx, t, e.issueCols(t, issues, withBlockers), len(issues))
+	row, err := e.pick(ctx, out, t, e.issueCols(t, issues, withBlockers), len(issues))
 	if err != nil || row == noSelection {
 		return err
 	}
@@ -87,13 +115,13 @@ func (e *env) pickIssue(ctx context.Context, be backend.Backend, issues []domain
 }
 
 // pickProject scrolls a project listing and prints the project chosen.
-func (e *env) pickProject(ctx context.Context, be backend.Backend,
+func (e *env) pickProject(ctx context.Context, be backend.Backend, out term.File,
 	projects []domain.Project) error {
 	if len(projects) == 0 {
 		return nil
 	}
 	t := e.theme()
-	row, err := e.pick(ctx, t, e.projectCols(t, projects), len(projects))
+	row, err := e.pick(ctx, out, t, e.projectCols(t, projects), len(projects))
 	if err != nil || row == noSelection {
 		return err
 	}
@@ -105,12 +133,13 @@ func (e *env) pickProject(ctx context.Context, be backend.Backend,
 }
 
 // pickUser scrolls a user listing and prints the user chosen.
-func (e *env) pickUser(ctx context.Context, be backend.Backend, users []domain.User) error {
+func (e *env) pickUser(ctx context.Context, be backend.Backend, out term.File,
+	users []domain.User) error {
 	if len(users) == 0 {
 		return nil
 	}
 	t := e.theme()
-	row, err := e.pick(ctx, t, userCols(t, users), len(users))
+	row, err := e.pick(ctx, out, t, userCols(t, users), len(users))
 	if err != nil || row == noSelection {
 		return err
 	}
@@ -128,9 +157,15 @@ func (e *env) pickUser(ctx context.Context, be backend.Backend, users []domain.U
 // listing occupies the window while it is being read and is gone when it has
 // been, so what remains on the terminal afterwards is what the show command
 // printed and nothing else.
-func (e *env) pick(ctx context.Context, t *theme, cols []col, rows int) (int, error) {
-	return runPicker(&picker{t: t, cols: cols, rows: rows, chosen: noSelection},
-		tea.WithContext(ctx), tea.WithInput(e.stdin), tea.WithOutput(e.stdout.w))
+func (e *env) pick(ctx context.Context, out term.File, t *theme, cols []col,
+	rows int) (int, error) {
+	drawn := &screen{File: out}
+	row, err := runPicker(&picker{t: t, cols: cols, rows: rows, chosen: noSelection},
+		tea.WithContext(ctx), tea.WithInput(e.stdin), tea.WithOutput(drawn))
+	if err == nil && drawn.err != nil {
+		err = awberr.Wrap(awberr.Runtime, drawn.err, "draw the listing")
+	}
+	return row, err
 }
 
 // runPicker is the program itself, apart from what it is attached to, so that

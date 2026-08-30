@@ -298,7 +298,7 @@ func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, interactive bool
 	// Whether the listing can be shown at all is settled before it is asked
 	// for, so a refusal costs nothing and says only what is wrong with the
 	// invocation.
-	pick, err := e.interactively(interactive)
+	out, err := e.interactively(interactive)
 	if err != nil {
 		return err
 	}
@@ -326,8 +326,8 @@ func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, interactive bool
 	if err != nil {
 		return err
 	}
-	if pick {
-		return e.pickIssue(cmd.Context(), be, page.Issues, withBlockers)
+	if out != nil {
+		return e.pickIssue(cmd.Context(), be, out, page.Issues, withBlockers)
 	}
 	return e.printIssues(page.Issues, withBlockers)
 }

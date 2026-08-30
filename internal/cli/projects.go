@@ -141,7 +141,7 @@ func newProjectListCommand(e *env) *cobra.Command {
 		Short:       "List projects with counts of issues that are not closed",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
-			pick, err := e.interactively(p.Interactive)
+			out, err := e.interactively(p.Interactive)
 			if err != nil {
 				return err
 			}
@@ -154,8 +154,8 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if pick {
-				return e.pickProject(cmd.Context(), be, page.Projects)
+			if out != nil {
+				return e.pickProject(cmd.Context(), be, out, page.Projects)
 			}
 			return e.printProjects(page.Projects)
 		},

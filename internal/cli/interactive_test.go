@@ -1,14 +1,18 @@
 package cli
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -225,4 +229,42 @@ func TestPickerRunsAsAProgram(t *testing.T) {
 	drawn := screen.String()
 	assert.Contains(t, drawn, issues[0].ID, "the listing was drawn")
 	assert.Contains(t, drawn, "enter show", "under the line of help")
+}
+
+// brokenScreen is a terminal that will not take output, which is what a closed
+// pipe or a full disk looks like from here. It embeds a real file so that
+// everything about it other than writing still answers.
+type brokenScreen struct {
+	term.File
+}
+
+func (b *brokenScreen) Write([]byte) (int, error) {
+	return 0, errors.New("no room on the device")
+}
+
+// A picker that could not draw is a runtime failure like any other write that
+// did not happen, and must not leave a successful command behind. Bubble Tea
+// throws away the errors its renderer's writes return, so the terminal it is
+// handed keeps them instead.
+func TestPickerReportsATerminalItCannotDrawOn(t *testing.T) {
+	e := &env{stdout: &errWriter{w: &strings.Builder{}}, stdin: strings.NewReader("q"),
+		boxed: true, width: 100, cfg: &config.Config{Color: config.ColorAlways}}
+	theme := e.theme()
+
+	row, err := e.pick(t.Context(), &brokenScreen{File: os.Stdout}, theme,
+		e.issueCols(theme, many(30), false), 30)
+	assert.Equal(t, noSelection, row)
+	require.Error(t, err, "a terminal that could not be drawn on is not a success")
+	assert.Equal(t, awberr.Runtime, awberr.KindOf(err))
+}
+
+// The terminal keeps the first failure and not the last, so what is reported
+// is what went wrong rather than whatever followed from it.
+func TestScreenKeepsTheFirstFailure(t *testing.T) {
+	s := &screen{File: &brokenScreen{File: os.Stdout}}
+	_, first := s.Write([]byte("one"))
+	_, second := s.Write([]byte("two"))
+	require.Error(t, first)
+	require.Error(t, second)
+	assert.Same(t, first, s.err)
 }
