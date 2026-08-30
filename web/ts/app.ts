@@ -33,6 +33,13 @@ import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import { navigationPath, projectScopedHref } from "./navigation.js";
+import {
+  formatUpdated,
+  readUpdatedDisplay,
+  rememberUpdatedDisplay,
+  updatedStorage,
+  type UpdatedDisplay,
+} from "./updated.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -44,6 +51,8 @@ const app = document.getElementById("app") as HTMLElement;
 
 /** identity is the caller the server attributes requests to. */
 let identity = "";
+let updatedDisplay: UpdatedDisplay | null = null;
+let updatedControlID = 0;
 
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
@@ -87,7 +96,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "blocked" | "change" | "info" | "issues" | "projects" | "ready" | "search" | "tag";
+type IconName = "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "search" | "tag";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -95,6 +104,7 @@ function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
+    clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
     info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
@@ -121,6 +131,106 @@ function timeElement(timestamp: string): HTMLTimeElement {
   time.dateTime = timestamp;
   time.title = timestamp;
   return time;
+}
+
+function currentUpdatedDisplay(): UpdatedDisplay {
+  if (updatedDisplay === null) updatedDisplay = readUpdatedDisplay(updatedStorage(window));
+  return updatedDisplay;
+}
+
+function updatedTimeElement(timestamp: string): HTMLTimeElement {
+  const time = element("time", "timestamp", formatUpdated(timestamp, currentUpdatedDisplay())) as HTMLTimeElement;
+  time.dateTime = timestamp;
+  time.title = timestamp;
+  time.dataset.updatedTimestamp = timestamp;
+  return time;
+}
+
+function refreshUpdatedPresentation(): void {
+  for (const time of app.querySelectorAll<HTMLTimeElement>("time[data-updated-timestamp]")) {
+    time.textContent = formatUpdated(time.dataset.updatedTimestamp ?? "", currentUpdatedDisplay());
+  }
+  for (const input of app.querySelectorAll<HTMLInputElement>("input[data-updated-display]")) {
+    input.checked = input.dataset.updatedDisplay === currentUpdatedDisplay();
+  }
+  const label = updatedDisplayLabel(currentUpdatedDisplay());
+  for (const button of app.querySelectorAll<HTMLButtonElement>("button[data-updated-display-button]")) {
+    button.title = `Display Updated as ${label}`;
+  }
+}
+
+function updatedDisplayLabel(display: UpdatedDisplay): string {
+  if (display === "relative") return "time since change";
+  if (display === "datetime") return "date and time";
+  return "date";
+}
+
+function updatedDisplayControl(): HTMLElement {
+  const id = `updated-display-${updatedControlID++}`;
+  const control = element("span", "updated-display-control");
+  const button = element("button", "updated-display-button") as HTMLButtonElement;
+  button.type = "button";
+  button.dataset.updatedDisplayButton = "";
+  button.setAttribute("aria-controls", id);
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-label", "Choose how Updated is displayed");
+  button.title = `Display Updated as ${updatedDisplayLabel(currentUpdatedDisplay())}`;
+  button.append(svgIcon("clock"), element("span", "updated-display-chevron", "▾"));
+
+  const popover = element("div", "updated-display-popover");
+  popover.id = id;
+  popover.setAttribute("popover", "auto");
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", "Updated display format");
+  popover.append(element("strong", "updated-display-title", "Show as"));
+  const choices: readonly [UpdatedDisplay, string, string][] = [
+    ["relative", "Time since change", "2h 18m ago"],
+    ["date", "Date", "2026-08-30"],
+    ["datetime", "Date & time", "2026-08-30 16:42"],
+  ];
+  for (const [value, label, example] of choices) {
+    const option = element("label", "updated-display-option");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = id;
+    input.value = value;
+    input.dataset.updatedDisplay = value;
+    input.checked = value === currentUpdatedDisplay();
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      updatedDisplay = value;
+      rememberUpdatedDisplay(updatedStorage(window), value);
+      refreshUpdatedPresentation();
+      popover.hidePopover();
+    });
+    option.append(input, element("span", "", label), element("code", "", example));
+    popover.append(option);
+  }
+  button.addEventListener("click", () => {
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    popover.showPopover();
+    const anchor = button.getBoundingClientRect();
+    const bounds = popover.getBoundingClientRect();
+    const gap = 6;
+    popover.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+    const below = anchor.bottom + gap;
+    popover.style.top = `${below + bounds.height <= innerHeight - 8 ? below : Math.max(8, anchor.top - bounds.height - gap)}px`;
+  });
+  popover.addEventListener("toggle", () => {
+    button.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+  });
+  control.append(button, popover);
+  return control;
+}
+
+function mobileUpdatedDisplayControl(): HTMLElement {
+  const control = element("span", "mobile-updated-display");
+  control.append(document.createTextNode("Updated"), updatedDisplayControl());
+  return control;
 }
 
 function clear(node: HTMLElement): void {
@@ -223,12 +333,7 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   const updated: IssueColumn = {
     key: "updated",
     label: "Updated",
-    render: (row) => {
-      const time = element("time", "timestamp", row.updated_at.slice(0, 10));
-      time.setAttribute("datetime", row.updated_at);
-      time.title = row.updated_at;
-      return time;
-    },
+    render: (row) => updatedTimeElement(row.updated_at),
   };
 
   if (kind === "ready") {
@@ -372,7 +477,10 @@ function issueTable(
     const th = document.createElement("th");
     th.scope = "col";
     if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
-    th.append(sortButton(route, column, state, defaultKey, defaultDirection));
+    const controls = element("div", "column-heading");
+    controls.append(sortButton(route, column, state, defaultKey, defaultDirection));
+    if (column.key === "updated") controls.append(updatedDisplayControl());
+    th.append(controls);
     heading.append(th);
   }
   head.append(heading);
@@ -477,6 +585,9 @@ function issueList(
     kind === "search" ? "Best match" : "Natural order",
     kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
   ));
+  if (columns.some((column) => column.key === "updated")) {
+    listingActions.append(mobileUpdatedDisplayControl());
+  }
 
   const update = (query: string): number => {
     const rows = sortIssues(filterIssues(issues, query), state);
@@ -677,7 +788,10 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
     const th = document.createElement("th");
     th.scope = "col";
     if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
-    th.append(projectSortButton(route, column.key, column.label, state));
+    const controls = element("div", "column-heading");
+    controls.append(projectSortButton(route, column.key, column.label, state));
+    if (column.key === "updated") controls.append(updatedDisplayControl());
+    th.append(controls);
     heading.append(th);
   }
   head.append(heading);
@@ -705,10 +819,7 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
 
     const updated = document.createElement("td");
     updated.dataset.label = "Updated";
-    const time = element("time", "timestamp", project.updated_at.slice(0, 10));
-    time.setAttribute("datetime", project.updated_at);
-    time.title = project.updated_at;
-    updated.append(time);
+    updated.append(updatedTimeElement(project.updated_at));
     row.append(updated);
     body.append(row);
   }
@@ -729,6 +840,11 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
   const state = sortState(route.query.get("sort"), projectSortKeys, "key");
+  const listingActions = element("div", "listing-actions");
+  listingActions.append(
+    mobileSortControl(route, projectColumns, "Natural order"),
+    mobileUpdatedDisplayControl(),
+  );
   const update = (query: string): number => {
     const rows = sortProjects(filterProjects(page.rows, query), state);
     clear(host);
@@ -742,7 +858,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     "project",
     page.total,
     update,
-    mobileSortControl(route, projectColumns, "Natural order"),
+    listingActions,
   ), host);
   view.append(listing);
   return view;
