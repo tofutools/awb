@@ -42,16 +42,15 @@ a:hover { text-decoration: underline; }
 .app-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem 2rem;
-  min-height: 5.25rem;
-  padding: 0.9rem 0;
+  padding: 0.75rem 0;
   border-bottom: 1px solid var(--line);
 }
 
 .brand { color: var(--fg); font-size: 1.12rem; font-weight: 700; letter-spacing: -0.025em; white-space: nowrap; }
 .brand:hover { text-decoration: none; }
-nav { align-self: stretch; display: flex; gap: 0.35rem; }
+nav { display: flex; gap: 0.35rem; }
 nav a {
   position: relative;
   display: inline-flex;
@@ -64,19 +63,13 @@ nav a:hover { color: var(--fg); text-decoration: none; }
 nav a.active { color: var(--accent); font-weight: 600; }
 nav a.active::after {
   position: absolute;
-  inset: auto 0 -0.95rem;
+  inset: auto 0 calc(-0.75rem - 1px);
   height: 3px;
   background: var(--accent);
   content: "";
 }
 
 @media (min-width: 701px) {
-  /* The tab remains the full header height, but its contents sit near the
-     underline instead of floating midway between the rule and the top. */
-  nav a { align-items: flex-end; padding-top: 1rem; padding-bottom: 0.15rem; }
-  .brand { align-self: flex-end; }
-  .identity { align-self: flex-end; margin-bottom: 0.15rem; }
-  .search { align-self: flex-end; margin-bottom: -0.25rem; }
   main > :not(.issue-view) { margin-inline: 1rem; }
 }
 
