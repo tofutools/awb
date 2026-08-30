@@ -31,6 +31,7 @@ import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
+import { issueSidebarCollapsed, rememberIssueSidebar } from "./sidebar.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -749,6 +750,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
   const view = element("div", "issue-view");
+  view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(localStorage));
   const content = element("div", "issue-content");
   const heading = element("div", "issue-heading");
   heading.append(element("div", "issue-key", issue.id));
@@ -810,13 +812,30 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 
   content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
   content.append(activitySection(issue.id, activity.rows));
-  view.append(content, issueSidebar(issue));
+  const [sidebar, sidebarToggle] = issueSidebar(issue, view);
+  view.append(content, sidebar, sidebarToggle);
   return view;
 }
 
-function issueSidebar(issue: Issue): HTMLElement {
+function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButtonElement] {
   const aside = element("aside", "issue-sidebar");
+  aside.id = "issue-details";
   aside.setAttribute("aria-label", "Issue details");
+  const toggle = element("button", "issue-sidebar-toggle") as HTMLButtonElement;
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", aside.id);
+  const drawToggle = (): void => {
+    const collapsed = view.classList.contains("sidebar-collapsed");
+    toggle.textContent = collapsed ? "‹" : "›";
+    toggle.title = collapsed ? "Show issue details" : "Hide issue details";
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+  };
+  toggle.addEventListener("click", () => {
+    const collapsed = view.classList.toggle("sidebar-collapsed");
+    rememberIssueSidebar(localStorage, collapsed);
+    drawToggle();
+  });
   const facts = element("dl", "issue-facts");
 
   const add = (label: string, value: Node): void => {
@@ -844,7 +863,8 @@ function issueSidebar(issue: Issue): HTMLElement {
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
   aside.append(facts);
-  return aside;
+  drawToggle();
+  return [aside, toggle];
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {

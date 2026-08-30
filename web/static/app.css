@@ -435,11 +435,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .close-reason { color: var(--muted); border-left: 3px solid var(--line); padding-left: 0.75rem; }
 
 .issue-view {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 21rem;
   align-items: stretch;
   margin-top: -1.5rem;
 }
+.issue-view.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
 .issue-content { min-width: 0; padding: 2rem 2.25rem 0 1rem; }
 .issue-heading { padding-bottom: 1.35rem; border-bottom: 1px solid var(--line); }
 .issue-key { margin-bottom: 0.45rem; font: 600 1.05rem var(--mono); }
@@ -451,10 +453,35 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-description-body.markdown > :last-child { margin-bottom: 0; }
 
 .issue-sidebar {
+  position: relative;
   min-width: 0;
   padding: 1.75rem 1.5rem;
   border-left: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+.issue-sidebar-toggle {
+  position: absolute;
+  z-index: 1;
+  top: min(50%, 40vh);
+  right: 21rem;
+  width: 1.75rem;
+  height: 2.5rem;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--panel);
+  color: var(--fg);
+  font: 1.1rem/1 sans-serif;
+  cursor: pointer;
+}
+.issue-sidebar-toggle:hover { color: var(--accent); }
+.sidebar-collapsed .issue-sidebar { display: none; }
+.sidebar-collapsed .issue-sidebar-toggle {
+  right: 0;
+  border-right: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 .issue-facts { margin: 0; }
 .issue-fact {
@@ -622,7 +649,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .markdown img { max-width: 100%; }
 
 @media (max-width: 920px) {
-  .issue-view { grid-template-columns: minmax(0, 1fr); }
+  .issue-view, .issue-view.sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
   .issue-content { padding: 1.5rem 0 0; }
   .issue-sidebar {
     margin-top: 2rem;
@@ -630,6 +657,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     border-top: 1px solid var(--line);
     border-left: 0;
     background: transparent;
+  }
+  .issue-sidebar-toggle, .sidebar-collapsed .issue-sidebar-toggle {
+    top: min(50%, 40vh);
+    right: 0;
+    transform: translateY(-50%);
+    border-right: 1px solid var(--line);
+    border-radius: var(--radius);
   }
   .issue-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; }
 }
