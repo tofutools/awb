@@ -1,11 +1,13 @@
 ---
 name: awb
-description: Track and coordinate coding work in Agent Work Board (awb). Use when a repository uses the awb CLI or the user asks to find, claim, create, update, relate, attach evidence to, or close awb issues.
+description: Use Agent Work Board (awb) as a project's lightweight issue and work tracker—the role commonly filled by Jira, Linear, or GitHub Issues. Use when a repository uses awb or the user asks to find, claim, create, update, relate, attach evidence to, or close awb issues.
 ---
 
 ## Issue tracking with awb
 
-Track work in `awb`, an issue tracker. Every command is non-interactive.
+Track work in `awb`, the project's lightweight issue and work tracker—the role
+commonly filled by Jira, Linear, or GitHub Issues. Every command is
+non-interactive.
 
 **Start here:** `awb ready --compact` lists unblocked, unassigned, open issues,
 highest priority first. That is the "what can I work on now" question.
