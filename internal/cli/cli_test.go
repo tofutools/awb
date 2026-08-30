@@ -105,6 +105,67 @@ func (h *harness) create(args ...string) string {
 	return strings.TrimSpace(h.mustRun(append([]string{"create"}, args...)...))
 }
 
+func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("AWB_PASSWORD", "hunter2")
+
+	h.create("Open")
+	inProgress := h.create("In progress")
+	h.mustRun("claim", inProgress)
+	closed := h.create("Closed")
+	h.mustRun("close", closed, "--reason", "done")
+
+	stdout := h.mustRun("status", "--json")
+	assert.NotContains(t, stdout, "hunter2")
+
+	var report struct {
+		Connection struct {
+			Mode        string `json:"mode"`
+			Database    string `json:"database"`
+			Server      string `json:"server"`
+			Attachments string `json:"attachments"`
+		} `json:"connection"`
+		Configuration struct {
+			Identity           string `json:"identity"`
+			ConfiguredIdentity string `json:"configured_identity"`
+			PasswordSet        bool   `json:"password_set"`
+		} `json:"configuration"`
+		Environment []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"environment"`
+		Projects []struct {
+			Key        string `json:"key"`
+			Open       int    `json:"open"`
+			InProgress int    `json:"in_progress"`
+			Closed     int    `json:"closed"`
+			Total      int    `json:"total"`
+		} `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &report))
+	assert.Equal(t, "local", report.Connection.Mode)
+	assert.Equal(t, filepath.Join(h.root(), "awb.db"), report.Connection.Database)
+	assert.Empty(t, report.Connection.Server)
+	assert.Equal(t, filepath.Join(h.root(), "attachments"), report.Connection.Attachments)
+	assert.Equal(t, "mikael", report.Configuration.Identity)
+	assert.Equal(t, "mikael", report.Configuration.ConfiguredIdentity)
+	assert.True(t, report.Configuration.PasswordSet)
+
+	password := ""
+	for _, variable := range report.Environment {
+		if variable.Name == "AWB_PASSWORD" {
+			password = variable.Value
+		}
+	}
+	assert.Equal(t, "<redacted>", password)
+	require.Len(t, report.Projects, 1)
+	assert.Equal(t, "awb", report.Projects[0].Key)
+	assert.Equal(t, 1, report.Projects[0].Open)
+	assert.Equal(t, 1, report.Projects[0].InProgress)
+	assert.Equal(t, 1, report.Projects[0].Closed)
+	assert.Equal(t, 3, report.Projects[0].Total)
+}
+
 // Enum-like parameters advertise their complete vocabulary to Boa, which
 // validates their values and supplies these alternatives to shell completion.
 func TestEnumParameterCompletions(t *testing.T) {

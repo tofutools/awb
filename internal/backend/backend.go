@@ -28,6 +28,10 @@ type Backend interface {
 	// caller's own identity locally, and the server's answer to GET /api/identity
 	// remotely.
 	Identity(ctx context.Context) (string, error)
+	// AuthenticatedIdentity is who the data source sees as the caller. It is the
+	// same as Identity in direct mode; against a server it is the server's
+	// answer, which may differ from the client's configured default identity.
+	AuthenticatedIdentity(ctx context.Context) (string, error)
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)

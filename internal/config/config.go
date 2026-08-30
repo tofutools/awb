@@ -118,6 +118,11 @@ type Config struct {
 
 	Color ColorMode
 
+	// UserFilePath is the user configuration file that was read. It is empty
+	// when the default file does not exist. LocalFilePath has the same meaning
+	// for directory context below.
+	UserFilePath string
+
 	// LocalFilePath is the local configuration file that was used, for error
 	// messages. It is empty when none was found.
 	LocalFilePath string
@@ -132,7 +137,7 @@ func (c *Config) Remote() bool { return c.RemoteURL != nil }
 // workingDir is the directory the command was run in; it is resolved through
 // symlinks before the upward search begins.
 func Load(flags Flags, workingDir string) (*Config, error) {
-	userCfg, userPath, err := loadUserFile()
+	userCfg, userPath, userFound, err := loadUserFile()
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +148,9 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	}
 
 	cfg := &Config{LocalFilePath: localPath}
+	if userFound {
+		cfg.UserFilePath = userPath
+	}
 
 	if err := resolveDB(cfg, flags, userCfg, userPath); err != nil {
 		return nil, err
@@ -190,23 +198,23 @@ func usageError(source string, err error) error {
 // silently falling back to the defaults would hide a typo in the path the same
 // way silently ignoring a malformed file would hide its contents. The default
 // path is under no such obligation, having been named by nobody.
-func loadUserFile() (*userFile, string, error) {
+func loadUserFile() (*userFile, string, bool, error) {
 	path, explicit, err := userFilePath()
 	if err != nil {
-		return nil, path, err
+		return nil, path, false, err
 	}
 	var cfg userFile
 	found, err := readYAML(path, &cfg)
 	if err != nil {
-		return nil, path, err
+		return nil, path, false, err
 	}
 	if !found {
 		if explicit {
-			return nil, path, usageError("AWB_CONFIG_FILE", fmt.Errorf("%s: no such file", path))
+			return nil, path, false, usageError("AWB_CONFIG_FILE", fmt.Errorf("%s: no such file", path))
 		}
-		return &userFile{}, path, nil
+		return &userFile{}, path, false, nil
 	}
-	return &cfg, path, nil
+	return &cfg, path, true, nil
 }
 
 // userFilePath is the user configuration file to read, and whether it was
