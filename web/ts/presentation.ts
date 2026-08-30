@@ -53,6 +53,22 @@ export function activityValue(value: unknown): string {
   return "changed";
 }
 
+/** activityValues extracts a one-item array delta when possible. This makes a
+ * relation or label audit entry name what changed rather than only comparing
+ * the sizes of the before and after snapshots. */
+export function activityValues(from: unknown, to: unknown): readonly [string, string] {
+  if (Array.isArray(from) && Array.isArray(to)) {
+    const before = new Map(from.map((item) => [JSON.stringify(item), item]));
+    const after = new Map(to.map((item) => [JSON.stringify(item), item]));
+    const removed = [...before].filter(([key]) => !after.has(key)).map(([, item]) => item);
+    const added = [...after].filter(([key]) => !before.has(key)).map(([, item]) => item);
+    if (removed.length <= 1 && added.length <= 1 && removed.length + added.length > 0) {
+      return [activityValue(removed[0]), activityValue(added[0])];
+    }
+  }
+  return [activityValue(from), activityValue(to)];
+}
+
 function isRelation(value: unknown): value is { type: string; other: string } {
   if (value === null || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;

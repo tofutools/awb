@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { activityValue, initialFor, relativeTime } from "../../static/presentation.js";
+import { activityValue, activityValues, initialFor, relativeTime } from "../../static/presentation.js";
 
 test("identity initials tolerate handles, whitespace and the system actor", () => {
   assert.equal(initialFor("mikael"), "M");
@@ -26,4 +26,11 @@ test("activity values keep primitives exact and summarize structural snapshots",
     { type: "related", other: "awb-two", direction: "in" },
   ]), "2 relations");
   assert.equal(activityValue({ name: "trace.txt", size: 42 }), "trace.txt");
+});
+
+test("one-item activity deltas name the changed value", () => {
+  const relation = { type: "blocked-by", other: "awb-one", direction: "out" };
+  assert.deepEqual(activityValues([], [relation]), ["(none)", "blocked-by awb-one"]);
+  assert.deepEqual(activityValues(["frontend"], ["frontend", "release"]), ["(none)", "release"]);
+  assert.deepEqual(activityValues("open", "in_progress"), ["open", "in_progress"]);
 });
