@@ -14,6 +14,16 @@ import {
   type IssueTree,
   type Project,
 } from "./api.js";
+import {
+  filterIssues,
+  filterProjects,
+  nextSortValue,
+  sortIssues,
+  sortProjects,
+  sortState,
+  type SortDirection,
+  type SortState,
+} from "./listings.js";
 import { renderMarkdown } from "./markdown.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -73,6 +83,38 @@ function clear(node: HTMLElement): void {
   node.replaceChildren();
 }
 
+function routeHref(route: Route, query: URLSearchParams): string {
+  const suffix = query.toString();
+  return `#/${route.path.join("/")}${suffix === "" ? "" : `?${suffix}`}`;
+}
+
+function facetHref(route: Route, name: string, value: string): string {
+  const query = new URLSearchParams(route.query);
+  if (query.getAll(name).includes(value)) {
+    const remaining = query.getAll(name).filter((current) => current !== value);
+    query.delete(name);
+    for (const current of remaining) query.append(name, current);
+  } else {
+    query.append(name, value);
+  }
+  return routeHref(route, query);
+}
+
+function refreshFacetHrefs(route: Route): void {
+  for (const anchor of app.querySelectorAll<HTMLAnchorElement>("a[data-facet-name][data-facet-value]")) {
+    anchor.href = facetHref(route, anchor.dataset.facetName ?? "", anchor.dataset.facetValue ?? "");
+  }
+}
+
+function replaceRouteQuery(route: Route, name: string, value: string): void {
+  const query = new URLSearchParams(route.query);
+  if (value === "") query.delete(name);
+  else query.set(name, value);
+  route.query = query;
+  history.replaceState(null, "", routeHref(route, query));
+  refreshFacetHrefs(route);
+}
+
 /** issueBadges renders the small status markers a listing shows. */
 function issueBadges(issue: Issue): HTMLElement {
   const row = element("span", "badges");
@@ -88,31 +130,319 @@ function issueBadges(issue: Issue): HTMLElement {
   return row;
 }
 
-function issueRow(issue: Issue): HTMLElement {
-  const row = element("li", "issue-row");
-  row.append(nameLink(`#/issues/${issue.id}`, issue.id, issue.title));
-  row.append(issueBadges(issue));
-  return row;
+type ListingKind = "issues" | "ready" | "blocked" | "search";
+
+interface SortChoice {
+  key: string;
+  label: string;
 }
 
-function issueList(issues: Issue[], total: number, emptyMessage: string): HTMLElement {
-  if (issues.length === 0) return element("p", "empty", emptyMessage);
+interface IssueColumn extends SortChoice {
+  render: (issue: Issue) => HTMLElement;
+}
 
-  const section = element("div");
-  const list = element("ul", "issues");
-  for (const issue of issues) list.append(issueRow(issue));
-  section.append(list);
+const issueSortKeys = [
+  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers", "relevance",
+] as const;
 
-  if (total !== issues.length) {
-    section.append(element("p", "count", `Showing ${issues.length} of ${total}.`));
-  } else {
-    section.append(element("p", "count", `${total} issue${total === 1 ? "" : "s"}.`));
+function textCell(className: string, text: string): HTMLElement {
+  return element("span", className, text);
+}
+
+function issueNameCell(issue: Issue): HTMLElement {
+  const cell = element("span", "issue-name-cell");
+  cell.append(nameLink(`#/issues/${issue.id}`, issue.id, issue.title));
+  if (issue.labels.length > 0) {
+    const labels = element("span", "row-labels");
+    for (const label of issue.labels) labels.append(element("span", "row-label", `#${label}`));
+    cell.append(labels);
   }
+  return cell;
+}
+
+function badge(className: string, text: string): HTMLElement {
+  return element("span", `listing-badge ${className}`, text);
+}
+
+function issueColumns(kind: ListingKind): IssueColumn[] {
+  const issue: IssueColumn = { key: "id", label: "Issue", render: issueNameCell };
+  const project: IssueColumn = {
+    key: "project",
+    label: "Project",
+    render: (row) => textCell("id", row.project),
+  };
+  const priority: IssueColumn = {
+    key: "priority",
+    label: "Priority",
+    render: (row) => badge(`priority p${row.priority}`, `P${row.priority}`),
+  };
+  const updated: IssueColumn = {
+    key: "updated",
+    label: "Updated",
+    render: (row) => {
+      const time = element("time", "timestamp", row.updated_at.slice(0, 10));
+      time.setAttribute("datetime", row.updated_at);
+      time.title = row.updated_at;
+      return time;
+    },
+  };
+
+  if (kind === "ready") {
+    return [
+      issue,
+      project,
+      {
+        key: "type",
+        label: "Type",
+        render: (row) => badge("type", row.type),
+      },
+      priority,
+      updated,
+    ];
+  }
+
+  const assignee: IssueColumn = {
+    key: "assignee",
+    label: "Assignee",
+    render: (row) => row.assignee === ""
+      ? textCell("muted", "—")
+      : badge(row.assignee === identity ? "assignee mine" : "assignee", `@${row.assignee}`),
+  };
+  if (kind === "blocked") {
+    return [
+      issue,
+      project,
+      priority,
+      assignee,
+      {
+        key: "blockers",
+        label: "Blocked by",
+        render: (row) => textCell("blocker-list", row.blockers.join(", ")),
+      },
+    ];
+  }
+
+  return [
+    issue,
+    project,
+    priority,
+    {
+      key: "status",
+      label: "Status",
+      render: (row) => badge(`status status-${row.status}`, row.status),
+    },
+    assignee,
+    updated,
+  ];
+}
+
+function sortButton(
+  route: Route,
+  column: IssueColumn,
+  state: SortState,
+  defaultKey: string,
+  defaultDirection: SortDirection,
+): HTMLElement {
+  const button = element("button", "sort-button", column.label) as HTMLButtonElement;
+  button.type = "button";
+  const active = state.key === column.key;
+  const arrow = element(
+    "span",
+    active ? "sort-arrow" : "sort-arrow sort-hint",
+    active ? (state.direction === "asc" ? "▲" : "▼") : "↕",
+  );
+  arrow.setAttribute("aria-hidden", "true");
+  if (active) {
+    button.classList.add("active");
+  }
+  button.append(arrow);
+  button.title = active
+    ? `Sorted by ${column.label}, ${state.direction === "asc" ? "ascending" : "descending"}`
+    : `Sort by ${column.label}`;
+  button.addEventListener("click", () => {
+    const query = new URLSearchParams(route.query);
+    const next = nextSortValue(
+      query.get("sort"), column.key, issueSortKeys, defaultKey, defaultDirection,
+    );
+    if (next === null) query.delete("sort");
+    else query.set("sort", next);
+    location.hash = routeHref(route, query).slice(1);
+  });
+  return button;
+}
+
+function mobileSortControl(
+  route: Route,
+  columns: SortChoice[],
+  defaultLabel: string,
+  extraOptions: SortChoice[] = [],
+): HTMLElement {
+  const label = element("label", "mobile-sort-control", "Sort");
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Sort listing");
+
+  const natural = document.createElement("option");
+  natural.value = "";
+  natural.textContent = defaultLabel;
+  select.append(natural);
+  for (const column of columns) {
+    for (const [prefix, arrow] of [["", "▲"], ["-", "▼"]]) {
+      const option = document.createElement("option");
+      option.value = `${prefix}${column.key}`;
+      option.textContent = `${column.label} ${arrow}`;
+      select.append(option);
+    }
+  }
+  for (const extra of extraOptions) {
+    const option = document.createElement("option");
+    option.value = extra.key;
+    option.textContent = extra.label;
+    select.append(option);
+  }
+
+  const value = route.query.get("sort") ?? "";
+  select.value = [...select.options].some((option) => option.value === value) ? value : "";
+  select.addEventListener("change", () => {
+    const query = new URLSearchParams(route.query);
+    if (select.value === "") query.delete("sort");
+    else query.set("sort", select.value);
+    location.hash = routeHref(route, query).slice(1);
+  });
+  label.append(select);
+  return label;
+}
+
+function issueTable(
+  route: Route,
+  issues: Issue[],
+  kind: ListingKind,
+  state: SortState,
+  defaultKey: string,
+  defaultDirection: SortDirection,
+): HTMLElement {
+  const columns = issueColumns(kind);
+  const table = element("table", `listing-table issue-table listing-${kind}`) as HTMLTableElement;
+  const head = document.createElement("thead");
+  const heading = document.createElement("tr");
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
+    th.append(sortButton(route, column, state, defaultKey, defaultDirection));
+    heading.append(th);
+  }
+  head.append(heading);
+  table.append(head);
+
+  const body = document.createElement("tbody");
+  for (const issue of issues) {
+    const row = document.createElement("tr");
+    for (const column of columns) {
+      const td = document.createElement("td");
+      td.dataset.label = column.label;
+      td.append(column.render(issue));
+      row.append(td);
+    }
+    body.append(row);
+  }
+  table.append(body);
+  return table;
+}
+
+function listingFilter(
+  route: Route,
+  placeholder: string,
+  noun: string,
+  total: number,
+  update: (query: string) => number,
+  trailingControl: HTMLElement | null = null,
+): HTMLElement {
+  const bar = element("div", "listing-tools");
+  const control = element("div", "listing-filter");
+  const input = document.createElement("input");
+  input.type = "search";
+  input.placeholder = placeholder;
+  input.setAttribute("aria-label", placeholder);
+  input.value = route.query.get("filter") ?? "";
+  const clearButton = element("button", "clear-filter", "×") as HTMLButtonElement;
+  clearButton.type = "button";
+  clearButton.title = "Clear filter";
+  clearButton.setAttribute("aria-label", "Clear filter");
+  control.append(input, clearButton);
+  const count = element("span", "filter-count");
+  bar.append(control, count);
+  if (trailingControl !== null) bar.append(trailingControl);
+
+  const refresh = (): void => {
+    const visible = update(input.value);
+    count.textContent = input.value.trim() === ""
+      ? `${total} ${noun}${total === 1 ? "" : "s"}`
+      : `${visible} of ${total}`;
+    clearButton.hidden = input.value === "";
+    replaceRouteQuery(route, "filter", input.value);
+  };
+  input.addEventListener("input", refresh);
+  clearButton.addEventListener("click", () => {
+    input.value = "";
+    refresh();
+    input.focus();
+  });
+
+  const visible = update(input.value);
+  count.textContent = input.value.trim() === ""
+    ? `${total} ${noun}${total === 1 ? "" : "s"}`
+    : `${visible} of ${total}`;
+  clearButton.hidden = input.value === "";
+  return bar;
+}
+
+function issueList(
+  route: Route,
+  issues: Issue[],
+  total: number,
+  emptyMessage: string,
+  kind: ListingKind,
+  facets: HTMLElement | null,
+): HTMLElement {
+  const section = element("div", "listing");
+  const tableHost = element("div", "listing-host");
+  const defaultKey = kind === "search" ? "relevance" : "priority";
+  const defaultDirection: SortDirection = kind === "search" ? "desc" : "asc";
+  const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
+  const columns = issueColumns(kind);
+  const mobileColumns = [...columns, { key: "created", label: "Created" }];
+
+  const update = (query: string): number => {
+    const rows = sortIssues(filterIssues(issues, query), state);
+    clear(tableHost);
+    if (rows.length === 0) {
+      tableHost.append(element("p", "empty", query.trim() === "" ? emptyMessage : "No issues match this filter."));
+    } else {
+      tableHost.append(issueTable(route, rows, kind, state, defaultKey, defaultDirection));
+    }
+    return rows.length;
+  };
+
+  section.append(listingFilter(
+    route,
+    `Filter ${kind === "search" ? "results" : kind}…`,
+    "issue",
+    total,
+    update,
+    mobileSortControl(
+      route,
+      mobileColumns,
+      kind === "search" ? "Best match" : "Natural order",
+      kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
+    ),
+  ));
+  if (facets !== null) section.append(facets);
+  section.append(tableHost);
   return section;
 }
 
 /** filtersFrom reads the filter parameters a listing route carries. */
-function filtersFrom(query: URLSearchParams): Filters {
+function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   const filters: Filters = {};
   const project = query.getAll("project");
   if (project.length > 0) filters.project = project;
@@ -121,17 +451,36 @@ function filtersFrom(query: URLSearchParams): Filters {
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
-  // A sort is passed through as it arrives: the server publishes the orderings
-  // it accepts and answers 400 for anything else, so the URL is not checked
-  // twice.
+  // The UI adds presentation-only orderings for columns such as project and
+  // assignee. Pass through only the issue API's vocabulary; the complete,
+  // unpaged response is ordered locally for the other visible columns.
   const sort = query.get("sort");
-  if (sort !== null) filters.sort = sort as Filters["sort"];
+  const apiSorts = ["priority", "created", "updated", "id", "-priority", "-created", "-updated", "-id"];
+  if (allowRelevance) apiSorts.push("relevance", "-relevance");
+  if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
   return filters;
 }
 
-/** facetBar renders the label and assignee menus a UI narrows with. */
-function facetBar(route: Route, labels: Facet[], assignees: Facet[]): HTMLElement {
+/** facetBar renders the project, label and assignee menus a UI narrows with. */
+function facetBar(route: Route, projects: Project[], labels: Facet[], assignees: Facet[]): HTMLElement {
   const bar = element("div", "facets");
+
+  if (projects.length > 0) {
+    const group = element("div", "facet-group projects");
+    group.append(element("span", "facet-title", "projects"));
+    for (const project of projects) {
+      const active = route.query.getAll("project").includes(project.key);
+      const anchor = link(
+        facetHref(route, "project", project.key),
+        project.key,
+        active ? "facet active" : "facet",
+      );
+      anchor.dataset.facetName = "project";
+      anchor.dataset.facetValue = project.key;
+      group.append(anchor);
+    }
+    bar.append(group);
+  }
 
   const build = (name: string, title: string, facets: Facet[]): HTMLElement | null => {
     if (facets.length === 0) return null;
@@ -139,20 +488,14 @@ function facetBar(route: Route, labels: Facet[], assignees: Facet[]): HTMLElemen
     group.append(element("span", "facet-title", title));
     for (const facet of facets) {
       const active = route.query.getAll(name).includes(facet.value);
-      const query = new URLSearchParams(route.query);
-      if (active) {
-        const remaining = query.getAll(name).filter((v) => v !== facet.value);
-        query.delete(name);
-        for (const value of remaining) query.append(name, value);
-      } else {
-        query.append(name, facet.value);
-      }
       const prefix = name === "label" ? "#" : "@";
       const anchor = link(
-        `#/${route.path.join("/")}?${query.toString()}`,
+        facetHref(route, name, facet.value),
         `${prefix}${facet.value} ${facet.count}`,
         active ? "facet active" : "facet",
       );
+      anchor.dataset.facetName = name;
+      anchor.dataset.facetValue = facet.value;
       group.append(anchor);
     }
     return group;
@@ -170,12 +513,13 @@ async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): 
 
   // Each listing is asked with the filters it accepts. Ready lists only
   // unassigned issues, so there is no assignee menu to offer there either.
-  const [page, labels, assignees] = await Promise.all([
+  const [page, projects, labels, assignees] = await Promise.all([
     kind === "ready"
       ? api.ready(readyFilters(filters))
       : kind === "blocked"
         ? api.blocked(blockedFilters(filters))
         : api.issues(filters),
+    api.projects(),
     api.labels(kind === "ready" ? {} : facetFilters(filters)),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
   ]);
@@ -183,8 +527,14 @@ async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): 
   const view = element("div");
   view.append(element("h1", "", titleFor(kind)));
   view.append(element("p", "lede", ledeFor(kind)));
-  view.append(facetBar(route, labels.rows, assignees.rows));
-  view.append(issueList(page.rows, page.total, emptyFor(kind)));
+  view.append(issueList(
+    route,
+    page.rows,
+    page.total,
+    emptyFor(kind),
+    kind,
+    facetBar(route, projects.rows, labels.rows, assignees.rows),
+  ));
   return view;
 }
 
@@ -206,7 +556,88 @@ function emptyFor(kind: string): string {
   return "No issues.";
 }
 
-async function viewProjects(): Promise<HTMLElement> {
+const projectSortKeys = ["key", "active", "updated"] as const;
+const projectColumns: SortChoice[] = [
+  { key: "key", label: "Project" },
+  { key: "active", label: "Open" },
+  { key: "updated", label: "Updated" },
+];
+
+function projectSortButton(route: Route, key: string, label: string, state: SortState): HTMLElement {
+  const button = element("button", "sort-button", label) as HTMLButtonElement;
+  button.type = "button";
+  const active = state.key === key;
+  const arrow = element(
+    "span",
+    active ? "sort-arrow" : "sort-arrow sort-hint",
+    active ? (state.direction === "asc" ? "▲" : "▼") : "↕",
+  );
+  arrow.setAttribute("aria-hidden", "true");
+  if (active) {
+    button.classList.add("active");
+  }
+  button.append(arrow);
+  button.title = active
+    ? `Sorted by ${label}, ${state.direction === "asc" ? "ascending" : "descending"}`
+    : `Sort by ${label}`;
+  button.addEventListener("click", () => {
+    const query = new URLSearchParams(route.query);
+    const next = nextSortValue(query.get("sort"), key, projectSortKeys, "key");
+    if (next === null) query.delete("sort");
+    else query.set("sort", next);
+    location.hash = routeHref(route, query).slice(1);
+  });
+  return button;
+}
+
+function projectTable(route: Route, projects: Project[], state: SortState): HTMLElement {
+  const table = element("table", "listing-table project-table") as HTMLTableElement;
+  const head = document.createElement("thead");
+  const heading = document.createElement("tr");
+  for (const column of projectColumns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
+    th.append(projectSortButton(route, column.key, column.label, state));
+    heading.append(th);
+  }
+  head.append(heading);
+  table.append(head);
+
+  const body = document.createElement("tbody");
+  for (const project of projects) {
+    const row = document.createElement("tr");
+    const href = `#/issues?project=${encodeURIComponent(project.key)}`;
+
+    const projectCell = document.createElement("td");
+    projectCell.dataset.label = "Project";
+    projectCell.append(nameLink(href, project.key, project.name));
+    if (project.description !== "") {
+      const description = element("div", "project-description markdown");
+      description.innerHTML = renderMarkdown(project.description);
+      projectCell.append(description);
+    }
+    row.append(projectCell);
+
+    const active = document.createElement("td");
+    active.dataset.label = "Open";
+    active.append(element("span", "open-count", String(project.active_issues)));
+    row.append(active);
+
+    const updated = document.createElement("td");
+    updated.dataset.label = "Updated";
+    const time = element("time", "timestamp", project.updated_at.slice(0, 10));
+    time.setAttribute("datetime", project.updated_at);
+    time.title = project.updated_at;
+    updated.append(time);
+    row.append(updated);
+    body.append(row);
+  }
+  table.append(body);
+  return table;
+}
+
+async function viewProjects(route: Route): Promise<HTMLElement> {
   const page = await api.projects();
 
   const view = element("div");
@@ -216,25 +647,26 @@ async function viewProjects(): Promise<HTMLElement> {
     return view;
   }
 
-  const list = element("ul", "projects");
-  for (const project of page.rows) {
-    list.append(projectRow(project));
-  }
-  view.append(list);
+  const listing = element("div", "listing");
+  const host = element("div", "listing-host");
+  const state = sortState(route.query.get("sort"), projectSortKeys, "key");
+  const update = (query: string): number => {
+    const rows = sortProjects(filterProjects(page.rows, query), state);
+    clear(host);
+    if (rows.length === 0) host.append(element("p", "empty", "No projects match this filter."));
+    else host.append(projectTable(route, rows, state));
+    return rows.length;
+  };
+  listing.append(listingFilter(
+    route,
+    "Filter projects…",
+    "project",
+    page.total,
+    update,
+    mobileSortControl(route, projectColumns, "Natural order"),
+  ), host);
+  view.append(listing);
   return view;
-}
-
-function projectRow(project: Project): HTMLElement {
-  const row = element("li", "project-row");
-  const href = `#/issues?project=${encodeURIComponent(project.key)}`;
-  row.append(nameLink(href, project.key, project.name));
-  row.append(element("span", "count", `${project.active_issues} open`));
-  if (project.description !== "") {
-    const description = element("div", "markdown");
-    description.innerHTML = renderMarkdown(project.description);
-    row.append(description);
-  }
-  return row;
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
@@ -381,8 +813,22 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     return view;
   }
 
-  const page = await api.search({ ...filtersFrom(route.query), q: terms });
-  view.append(issueList(page.rows, page.total, `Nothing matches ${terms.join(" ")}.`));
+  const [page, projects] = await Promise.all([
+    api.search({ ...filtersFrom(route.query, true), q: terms }),
+    api.projects(),
+  ]);
+  const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
+    ? element("span", "natural-order", "Best match")
+    : null;
+  if (bestMatch !== null) view.append(bestMatch);
+  view.append(issueList(
+    route,
+    page.rows,
+    page.total,
+    `Nothing matches ${terms.join(" ")}.`,
+    "search",
+    facetBar(route, projects.rows, [], []),
+  ));
   return view;
 }
 
@@ -454,7 +900,7 @@ async function routeView(route: Route): Promise<HTMLElement> {
     case "blocked":
       return viewListing(route, "blocked");
     case "projects":
-      return viewProjects();
+      return viewProjects(route);
     case "tree":
       return viewTree(route.path[1] ?? "");
     case "search":
