@@ -8,6 +8,7 @@ import {
   sortIssues,
   sortProjects,
   sortState,
+  withClosedIssues,
 } from "../../static/listings.js";
 
 function issue(overrides = {}) {
@@ -53,6 +54,20 @@ test("sort state accepts known signed keys and otherwise uses the natural order"
   assert.deepEqual(sortState("unknown", allowed, "key"), {
     key: "key", direction: "asc", explicit: false,
   });
+});
+
+test("showing closed issues preserves the rest of the listing route", () => {
+  const query = new URLSearchParams("project=awb&label=frontend&sort=-updated");
+  assert.equal(
+    withClosedIssues(query, true).toString(),
+    "project=awb&label=frontend&sort=-updated&include-closed=true",
+  );
+  assert.equal(query.has("include-closed"), false, "the current route is not mutated");
+});
+
+test("hiding closed issues restores the default status set", () => {
+  const query = new URLSearchParams("project=awb&include-closed=true&filter=docs");
+  assert.equal(withClosedIssues(query, false).toString(), "project=awb&filter=docs");
 });
 
 test("sort headers cycle ascending, descending, then natural order", () => {
