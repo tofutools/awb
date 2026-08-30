@@ -1,0 +1,285 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"slices"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/term"
+
+	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
+)
+
+// The interactive listing.
+//
+// -i draws the listing a command would have printed on the full screen, lets
+// the reader move through it, and prints the entry they choose exactly as the
+// matching show command would. It is the one interactive thing awb does, and
+// the only one that needs a terminal: it draws on standard output and reads
+// keys from standard input, so it refuses without one on both rather than
+// falling back to something else. Everything an agent or a script reads is
+// unchanged, because neither has a terminal to run it in.
+
+// InteractiveFlags is -i, which the three list commands offer.
+//
+// It is declared before the filters so that -i belongs to the picker on every
+// command that has one, rather than to --include-closed on the listings that
+// take that.
+type InteractiveFlags struct {
+	Interactive bool `long:"interactive" short:"i" optional:"true" help:"scroll the listing and show the entry chosen; needs a terminal"`
+}
+
+// interactively reports whether this invocation is to show its listing on the
+// full screen, and refuses when it cannot be.
+//
+// Asking for it where it cannot happen is a usage error rather than a silent
+// fall back to a printed listing: a caller who asked for a screen to scroll
+// asked for something this invocation has no way to give. --json and --compact
+// are what a script and an agent read, and neither is a screen either.
+func (e *env) interactively(on bool) (bool, error) {
+	if !on {
+		return false, nil
+	}
+	if e.json || e.compact {
+		return false, awberr.Usagef("--interactive, --json and --compact are mutually exclusive")
+	}
+	if !e.boxed || !isTerminal(e.stdin) {
+		return false, awberr.Usagef(
+			"--interactive needs a terminal on both standard input and standard output")
+	}
+	return true, nil
+}
+
+// isTerminal reports whether a reader is a terminal, by the same rule window
+// applies to a writer.
+func isTerminal(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	return ok && term.IsTerminal(f.Fd())
+}
+
+// pickIssue scrolls an issue listing and prints the issue chosen.
+//
+// A row carries only what a listing shows, so the issue is read again: what
+// show prints is the whole of it, relations and derived state included, which
+// is the point of choosing one.
+func (e *env) pickIssue(ctx context.Context, be backend.Backend, issues []domain.Issue,
+	withBlockers bool) error {
+	if len(issues) == 0 {
+		return nil
+	}
+	t := e.theme()
+	row, err := e.pick(ctx, t, e.issueCols(t, issues, withBlockers), len(issues))
+	if err != nil || row == noSelection {
+		return err
+	}
+	issue, err := be.GetIssue(ctx, issues[row].ID)
+	if err != nil {
+		return err
+	}
+	return e.printIssue(issue)
+}
+
+// pickProject scrolls a project listing and prints the project chosen.
+func (e *env) pickProject(ctx context.Context, be backend.Backend,
+	projects []domain.Project) error {
+	if len(projects) == 0 {
+		return nil
+	}
+	t := e.theme()
+	row, err := e.pick(ctx, t, e.projectCols(t, projects), len(projects))
+	if err != nil || row == noSelection {
+		return err
+	}
+	project, err := be.GetProject(ctx, projects[row].Key)
+	if err != nil {
+		return err
+	}
+	return e.printProject(project)
+}
+
+// pickUser scrolls a user listing and prints the user chosen.
+func (e *env) pickUser(ctx context.Context, be backend.Backend, users []domain.User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	t := e.theme()
+	row, err := e.pick(ctx, t, userCols(t, users), len(users))
+	if err != nil || row == noSelection {
+		return err
+	}
+	user, err := be.GetUser(ctx, users[row].Name)
+	if err != nil {
+		return err
+	}
+	return e.printUser(user)
+}
+
+// pick shows a listing on the full screen and returns the row the reader
+// chose, or noSelection when they left without choosing one.
+//
+// The alternate screen is what makes choosing and showing one thing: the
+// listing occupies the window while it is being read and is gone when it has
+// been, so what remains on the terminal afterwards is what the show command
+// printed and nothing else.
+func (e *env) pick(ctx context.Context, t *theme, cols []col, rows int) (int, error) {
+	return runPicker(&picker{t: t, cols: cols, rows: rows, chosen: noSelection},
+		tea.WithContext(ctx), tea.WithInput(e.stdin), tea.WithOutput(e.stdout.w))
+}
+
+// runPicker is the program itself, apart from what it is attached to, so that
+// a test can attach it to something other than a terminal.
+func runPicker(p *picker, opts ...tea.ProgramOption) (int, error) {
+	final, err := tea.NewProgram(p, opts...).Run()
+	if err != nil {
+		// Being interrupted is how somebody leaves without choosing, not a
+		// failure to report.
+		if errors.Is(err, tea.ErrInterrupted) || errors.Is(err, tea.ErrProgramKilled) {
+			return noSelection, nil
+		}
+		return noSelection, awberr.Wrap(awberr.Runtime, err, "show the listing")
+	}
+	return final.(*picker).chosen, nil
+}
+
+// pickerChrome is what the rows share the window with: the box's top and
+// bottom borders, the headings and the rule under them, and the line of help
+// beneath it all.
+const pickerChrome = 5
+
+// picker is the listing on the full screen: the whole of it in cols, the part
+// of it the window has room for, and where in it the reader is.
+type picker struct {
+	t    *theme
+	cols []col
+	rows int
+
+	// fitted is cols laid out to the window, which is done once per window and
+	// not once per keystroke: fitting the visible rows alone would let a column
+	// change width, or be given up altogether, as the reader scrolled past a
+	// long one.
+	fitted []col
+
+	cursor int
+	top    int
+	height int
+
+	// chosen is the row the reader settled on, and noSelection until they do.
+	chosen int
+}
+
+func (p *picker) Init() tea.Cmd { return nil }
+
+func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		p.resize(msg.Width, msg.Height)
+	case tea.KeyPressMsg:
+		return p, p.key(msg.String())
+	}
+	return p, nil
+}
+
+func (p *picker) View() tea.View {
+	v := tea.NewView(p.render())
+	v.AltScreen = true
+	return v
+}
+
+// resize lays the listing out again for a window of this size.
+func (p *picker) resize(width, height int) {
+	p.t.width = max(width, minimumWidth)
+	p.height = height
+	p.fitted = p.t.fit(cloneCols(p.cols))
+	p.scroll()
+}
+
+// key applies one keystroke. Both the arrow keys and their vi equivalents move
+// the cursor, because a listing is read by whoever is at the terminal.
+func (p *picker) key(key string) tea.Cmd {
+	switch key {
+	case "up", "k", "ctrl+p":
+		p.move(-1)
+	case "down", "j", "ctrl+n":
+		p.move(1)
+	case "pgup", "ctrl+b":
+		p.move(-p.visible())
+	case "pgdown", "ctrl+f", " ":
+		p.move(p.visible())
+	case "home", "g":
+		p.move(-p.rows)
+	case "end", "G":
+		p.move(p.rows)
+	case "enter":
+		p.chosen = p.cursor
+		return tea.Quit
+	case "q", "esc", "ctrl+c":
+		return tea.Quit
+	}
+	return nil
+}
+
+// move takes the cursor as far as it can go in the direction asked for, and
+// brings the window with it.
+func (p *picker) move(by int) {
+	p.cursor = max(0, min(p.cursor+by, p.rows-1))
+	p.scroll()
+}
+
+// visible is how many rows the window has room for, and never fewer than one:
+// a window too short for the box still shows the row the reader is on.
+func (p *picker) visible() int {
+	return max(1, p.height-pickerChrome)
+}
+
+// scroll moves the window the least it can to hold the cursor.
+func (p *picker) scroll() {
+	visible := p.visible()
+	p.top = max(0, min(p.top, p.rows-visible))
+	p.top = min(p.top, p.cursor)
+	p.top = max(p.top, p.cursor-visible+1)
+}
+
+func (p *picker) render() string {
+	if p.fitted == nil {
+		// Nothing has said how big the window is yet.
+		return ""
+	}
+	end := min(p.top+p.visible(), p.rows)
+	listing := p.t.renderListing(rowWindow(p.fitted, p.top, end), p.cursor-p.top)
+	return listing + "\n" + p.t.apply(p.t.dim, p.helpLine())
+}
+
+func (p *picker) helpLine() string {
+	return fmt.Sprintf(" %d/%d   ↑/↓ move   enter show   q quit", p.cursor+1, p.rows)
+}
+
+// cloneCols copies the cells, because fit cuts them where they stand and the
+// picker lays the same listing out again every time the window changes size.
+func cloneCols(cols []col) []col {
+	out := slices.Clone(cols)
+	for i := range out {
+		out[i].cells = slices.Clone(cols[i].cells)
+	}
+	return out
+}
+
+// rowWindow is the columns cut down to the rows the window is showing. The
+// cells are shared rather than copied, since nothing writes to them once they
+// are fitted, and each colour follows the row it came from.
+func rowWindow(cols []col, from, to int) []col {
+	out := slices.Clone(cols)
+	for i := range out {
+		out[i].cells = cols[i].cells[from:to]
+		if paint := cols[i].paint; paint != nil {
+			out[i].paint = func(row int) lipgloss.Style { return paint(row + from) }
+		}
+	}
+	return out
+}

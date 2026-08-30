@@ -3,6 +3,7 @@ module github.com/tofutools/awb
 go 1.26.6
 
 require (
+	charm.land/bubbletea/v2 v2.0.8
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/GiGurra/boa v1.0.31
 	github.com/charmbracelet/x/ansi v0.11.8

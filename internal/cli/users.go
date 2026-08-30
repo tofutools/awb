@@ -279,8 +279,16 @@ func newUserShowCommand(e *env) *cobra.Command {
 }
 
 func newUserListCommand(e *env) *cobra.Command {
-	return command("list", "List users, with their flags and the projects they have access to", "",
-		func(cmd *cobra.Command, _ []string) error {
+	return boa.CmdT[InteractiveFlags]{
+		Use:         "list",
+		Short:       "List users, with their flags and the projects they have access to",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
+			pick, err := e.interactively(p.Interactive)
+			if err != nil {
+				return err
+			}
+
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
@@ -289,8 +297,12 @@ func newUserListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if pick {
+				return e.pickUser(cmd.Context(), be, page.Users)
+			}
 			return e.printUsers(page.Users)
-		})
+		},
+	}.ToCobra()
 }
 
 type userDeleteParams struct {
