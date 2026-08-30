@@ -85,7 +85,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "blocked" | "change" | "chevron" | "issues" | "projects" | "ready" | "search" | "tag";
+type IconName = "blocked" | "change" | "issues" | "projects" | "ready" | "search" | "tag";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -93,7 +93,6 @@ function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
-    chevron: '<path d="m8 10 4 4 4-4"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
     ready: '<rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="m8 12 3 3 5-6"></path>',
@@ -398,6 +397,7 @@ function listingFilter(
   total: number,
   update: (query: string) => number,
   trailingControl: HTMLElement | null = null,
+  adjacentControl: HTMLElement | null = null,
 ): HTMLElement {
   const bar = element("div", "listing-tools");
   const control = element("div", "listing-filter");
@@ -413,6 +413,7 @@ function listingFilter(
   control.append(input, clearButton);
   const count = element("span", "filter-count");
   bar.append(control, count);
+  if (adjacentControl !== null) bar.append(adjacentControl);
   if (trailingControl !== null) bar.append(trailingControl);
 
   const refresh = (): void => {
@@ -467,7 +468,6 @@ function issueList(
   const columns = issueColumns(kind);
   const mobileColumns = [...columns, { key: "created", label: "Created" }];
   const listingActions = element("div", "listing-actions");
-  if (kind === "issues" || kind === "search") listingActions.append(includeClosedControl(route));
   listingActions.append(mobileSortControl(
     route,
     mobileColumns,
@@ -493,6 +493,7 @@ function issueList(
     total,
     update,
     listingActions,
+    kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -1086,7 +1087,7 @@ function chrome(): HTMLElement {
   header.append(searchBox());
   if (identity !== "") {
     const account = element("span", "identity");
-    account.append(avatar(identity), element("span", "identity-name", `@${identity}`), svgIcon("chevron"));
+    account.append(avatar(identity), element("span", "identity-name", `@${identity}`));
     header.append(account);
   }
   return header;
