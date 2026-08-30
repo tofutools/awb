@@ -94,3 +94,47 @@ func TestAttachmentActivityNamesWhatChanged(t *testing.T) {
 	assert.Equal(t, "attachment", page.Activity[0].Changes[0].Field)
 	assert.Contains(t, string(page.Activity[0].Changes[0].To), `"name":"evidence.txt"`)
 }
+
+func TestRelationActivityIsRecordedOnEveryChangedEndpoint(t *testing.T) {
+	b, ctx := newBackend(t)
+	child := create(t, b, ctx, "child")
+	firstParent := create(t, b, ctx, "first parent")
+	secondParent := create(t, b, ctx, "second parent")
+
+	_, err := b.AddRelation(ctx, child.ID, backend.RelationRequest{
+		Type: domain.RelHasParent, Other: firstParent.ID,
+	}, "")
+	require.NoError(t, err)
+
+	childActivity, err := b.ListActivity(ctx, child.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	firstActivity, err := b.ListActivity(ctx, firstParent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "relation_added", childActivity.Activity[0].Action)
+	assert.Equal(t, "relation_added", firstActivity.Activity[0].Action)
+
+	_, err = b.AddRelation(ctx, child.ID, backend.RelationRequest{
+		Type: domain.RelHasParent, Other: secondParent.ID, Force: true,
+	}, "")
+	require.NoError(t, err)
+
+	firstActivity, err = b.ListActivity(ctx, firstParent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	secondActivity, err := b.ListActivity(ctx, secondParent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "relation_added", firstActivity.Activity[0].Action,
+		"the replaced parent records losing the child")
+	assert.Equal(t, "relation_added", secondActivity.Activity[0].Action,
+		"the new parent records gaining the child")
+	assert.Contains(t, string(firstActivity.Activity[0].Changes[0].From), child.ID)
+	assert.NotContains(t, string(firstActivity.Activity[0].Changes[0].To), child.ID)
+
+	_, err = b.RemoveRelation(ctx, child.ID, domain.RelHasParent, secondParent.ID, "")
+	require.NoError(t, err)
+	childActivity, err = b.ListActivity(ctx, child.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	secondActivity, err = b.ListActivity(ctx, secondParent.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "relation_removed", childActivity.Activity[0].Action)
+	assert.Equal(t, "relation_removed", secondActivity.Activity[0].Action)
+}

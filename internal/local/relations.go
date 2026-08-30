@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"slices"
+	"sort"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -18,13 +20,28 @@ func (b *Backend) AddRelation(ctx context.Context, ref string, req backend.Relat
 		return nil, err
 	}
 
-	return b.mutate(ctx, ref, ifMatch, "relation_added", func(tx *storage.Tx, issue *domain.Issue) error {
-		other, err := resolve(tx, req.Other)
-		if err != nil {
-			return err
-		}
-		return addRelation(tx, issue.ID, relType, other, req.Force)
-	})
+	return b.mutateRelation(ctx, ref, ifMatch, "relation_added",
+		func(tx *storage.Tx, issue *domain.Issue, capture func(string) error) error {
+			other, err := resolve(tx, req.Other)
+			if err != nil {
+				return err
+			}
+			if err := capture(other); err != nil {
+				return err
+			}
+			if relType == domain.RelHasParent {
+				existing, hasParent, err := tx.ParentOf(issue.ID)
+				if err != nil {
+					return err
+				}
+				if hasParent {
+					if err := capture(existing); err != nil {
+						return err
+					}
+				}
+			}
+			return addRelation(tx, issue.ID, relType, other, req.Force)
+		})
 }
 
 // addRelation validates and stores one edge. It is shared with issue creation,
@@ -164,14 +181,84 @@ func (b *Backend) RemoveRelation(ctx context.Context, ref string, relType domain
 		return nil, err
 	}
 
-	return b.mutate(ctx, ref, ifMatch, "relation_removed", func(tx *storage.Tx, issue *domain.Issue) error {
-		otherID, err := resolve(tx, other)
+	return b.mutateRelation(ctx, ref, ifMatch, "relation_removed",
+		func(tx *storage.Tx, issue *domain.Issue, capture func(string) error) error {
+			otherID, err := resolve(tx, other)
+			if err != nil {
+				return err
+			}
+			if err := capture(otherID); err != nil {
+				return err
+			}
+			// Removal works in either order for a symmetric relation, because both ends
+			// canonicalise to the same stored edge.
+			subject, counterpart := domain.CanonicalRelation(parsed, issue.ID, otherID)
+			return tx.DeleteRelation(subject, parsed, counterpart)
+		})
+}
+
+// mutateRelation records the graph change on every endpoint whose issue view
+// changed. Relation rows are stored once but displayed from both ends, so a
+// one-sided activity event would leave the counterpart's timeline incomplete.
+func (b *Backend) mutateRelation(ctx context.Context, ref, ifMatch, action string,
+	apply func(*storage.Tx, *domain.Issue, func(string) error) error) (*domain.Issue, error) {
+	var result *domain.Issue
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		issue, err := load(tx, ref)
 		if err != nil {
 			return err
 		}
-		// Removal works in either order for a symmetric relation, because both ends
-		// canonicalise to the same stored edge.
-		subject, counterpart := domain.CanonicalRelation(parsed, issue.ID, otherID)
-		return tx.DeleteRelation(subject, parsed, counterpart)
+		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
+			return err
+		}
+
+		before := map[string][]domain.Relation{}
+		capture := func(id string) error {
+			if _, ok := before[id]; ok {
+				return nil
+			}
+			relations, err := tx.IssueRelations(id)
+			if err != nil {
+				return err
+			}
+			before[id] = relations
+			return nil
+		}
+		if err := capture(issue.ID); err != nil {
+			return err
+		}
+		if err := apply(tx, issue, capture); err != nil {
+			return err
+		}
+		result, err = tx.GetIssue(issue.ID)
+		if err != nil {
+			return err
+		}
+
+		ids := make([]string, 0, len(before))
+		for id := range before {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			after, err := tx.IssueRelations(id)
+			if err != nil {
+				return err
+			}
+			if slices.Equal(before[id], after) {
+				continue
+			}
+			changes := []domain.ActivityChange{{
+				Field: "relations", From: activityJSON(before[id]), To: activityJSON(after),
+			}}
+			if err := recordChange(tx, caller, id, action, changes); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

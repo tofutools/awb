@@ -39,6 +39,41 @@ func (t *Tx) ParentOf(id string) (string, bool, error) {
 	return parent, true, nil
 }
 
+// IssueRelations returns every relation visible from one endpoint. It is
+// deliberately unscoped, like the graph-rule queries below: relation writes
+// change both endpoints, and their activity rows must be recorded together
+// even when an old parent is outside the caller's visibility scope.
+//
+// Callers must not return this snapshot to a user. It exists only to compare
+// the graph immediately before and after a write in the same transaction.
+func (t *Tx) IssueRelations(id string) ([]domain.Relation, error) {
+	rows, err := t.q.QueryContext(t.ctx, `
+		SELECT type, other, 'out' AS direction
+		  FROM relations WHERE subject = ?
+		UNION ALL
+		SELECT type, subject,
+		       CASE WHEN type = 'related' THEN 'out' ELSE 'in' END AS direction
+		  FROM relations WHERE other = ?`, id, id)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read relations for %s", id)
+	}
+	defer rows.Close()
+
+	relations := []domain.Relation{}
+	for rows.Next() {
+		var relation domain.Relation
+		if err := rows.Scan(&relation.Type, &relation.Other, &relation.Direction); err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "read relations for %s", id)
+		}
+		relations = append(relations, relation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read relations for %s", id)
+	}
+	domain.SortRelations(relations)
+	return relations, nil
+}
+
 // InsertRelation stores an edge. Adding one that already exists succeeds and
 // changes nothing; adding or removing a relation does not change either
 // endpoint's updated_at.
