@@ -7,3 +7,8 @@ export function issueListingHref(listing: IssueListing, current: URLSearchParams
   const suffix = query.toString();
   return `#/${listing}${suffix === "" ? "" : `?${suffix}`}`;
 }
+
+/** Active navigation follows the destination path, regardless of its filters. */
+export function navigationPath(href: string): string {
+  return href.replace(/^#\//, "").split("?", 1)[0];
+}

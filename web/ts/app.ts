@@ -32,7 +32,7 @@ import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
-import { issueListingHref } from "./navigation.js";
+import { issueListingHref, navigationPath } from "./navigation.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -1170,7 +1170,7 @@ async function routeView(route: Route): Promise<HTMLElement> {
 function markActiveNav(route: Route): void {
   const current = route.path[0] ?? "ready";
   for (const anchor of app.querySelectorAll("nav a")) {
-    const target = anchor.getAttribute("href")?.replace("#/", "") ?? "";
+    const target = navigationPath(anchor.getAttribute("href") ?? "");
     anchor.classList.toggle("active", target === current);
   }
 }
