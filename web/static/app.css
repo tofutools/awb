@@ -176,6 +176,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .clear-filter:hover { color: var(--fg); }
 .filter-count, .natural-order { color: var(--muted); font-size: 0.8em; }
+.mobile-sort-control { display: none; }
 .natural-order {
   float: right;
   margin-top: 0.35rem;
@@ -276,6 +277,23 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .listing-tools { flex-wrap: wrap; }
   .listing-filter { flex: 1 1 12rem; }
   .listing-filter input { width: 100%; }
+  .mobile-sort-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.78em;
+  }
+  .mobile-sort-control select {
+    max-width: 9.5rem;
+    padding: 0.28rem 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--fg);
+    font: inherit;
+  }
   .facet-title { width: 100%; min-width: 0; }
 
   .listing-table, .listing-table tbody, .listing-table tr, .listing-table td { display: block; width: 100%; }

@@ -113,9 +113,12 @@ function issueBadges(issue: Issue): HTMLElement {
 
 type ListingKind = "issues" | "ready" | "blocked" | "search";
 
-interface IssueColumn {
+interface SortChoice {
   key: string;
   label: string;
+}
+
+interface IssueColumn extends SortChoice {
   render: (issue: Issue) => HTMLElement;
 }
 
@@ -224,12 +227,16 @@ function sortButton(
   const button = element("button", "sort-button", column.label) as HTMLButtonElement;
   button.type = "button";
   const active = state.key === column.key;
+  const arrow = element(
+    "span",
+    active ? "sort-arrow" : "sort-arrow sort-hint",
+    active ? (state.direction === "asc" ? "▲" : "▼") : "↕",
+  );
+  arrow.setAttribute("aria-hidden", "true");
   if (active) {
     button.classList.add("active");
-    button.append(element("span", "sort-arrow", state.direction === "asc" ? "▲" : "▼"));
-  } else {
-    button.append(element("span", "sort-arrow sort-hint", "↕"));
   }
+  button.append(arrow);
   button.title = active
     ? `Sorted by ${column.label}, ${state.direction === "asc" ? "ascending" : "descending"}`
     : `Sort by ${column.label}`;
@@ -243,6 +250,40 @@ function sortButton(
     location.hash = routeHref(route, query).slice(1);
   });
   return button;
+}
+
+function mobileSortControl(
+  route: Route,
+  columns: SortChoice[],
+  defaultLabel: string,
+): HTMLElement {
+  const label = element("label", "mobile-sort-control", "Sort");
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Sort listing");
+
+  const natural = document.createElement("option");
+  natural.value = "";
+  natural.textContent = defaultLabel;
+  select.append(natural);
+  for (const column of columns) {
+    for (const [prefix, arrow] of [["", "▲"], ["-", "▼"]]) {
+      const option = document.createElement("option");
+      option.value = `${prefix}${column.key}`;
+      option.textContent = `${column.label} ${arrow}`;
+      select.append(option);
+    }
+  }
+
+  const value = route.query.get("sort") ?? "";
+  select.value = [...select.options].some((option) => option.value === value) ? value : "";
+  select.addEventListener("change", () => {
+    const query = new URLSearchParams(route.query);
+    if (select.value === "") query.delete("sort");
+    else query.set("sort", select.value);
+    location.hash = routeHref(route, query).slice(1);
+  });
+  label.append(select);
+  return label;
 }
 
 function issueTable(
@@ -288,6 +329,7 @@ function listingFilter(
   noun: string,
   total: number,
   update: (query: string) => number,
+  trailingControl: HTMLElement | null = null,
 ): HTMLElement {
   const bar = element("div", "listing-tools");
   const control = element("div", "listing-filter");
@@ -302,6 +344,7 @@ function listingFilter(
   control.append(input, clearButton);
   const count = element("span", "filter-count");
   bar.append(control, count);
+  if (trailingControl !== null) bar.append(trailingControl);
 
   const refresh = (): void => {
     const visible = update(input.value);
@@ -339,6 +382,7 @@ function issueList(
   const defaultKey = kind === "search" ? "relevance" : "priority";
   const defaultDirection: SortDirection = kind === "search" ? "desc" : "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
+  const columns = issueColumns(kind);
 
   const update = (query: string): number => {
     const rows = sortIssues(filterIssues(issues, query), state);
@@ -351,14 +395,21 @@ function issueList(
     return rows.length;
   };
 
-  section.append(listingFilter(route, `Filter ${kind === "search" ? "results" : kind}…`, "issue", total, update));
+  section.append(listingFilter(
+    route,
+    `Filter ${kind === "search" ? "results" : kind}…`,
+    "issue",
+    total,
+    update,
+    mobileSortControl(route, columns, kind === "search" ? "Best match" : "Natural order"),
+  ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
   return section;
 }
 
 /** filtersFrom reads the filter parameters a listing route carries. */
-function filtersFrom(query: URLSearchParams): Filters {
+function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   const filters: Filters = {};
   const project = query.getAll("project");
   if (project.length > 0) filters.project = project;
@@ -371,10 +422,8 @@ function filtersFrom(query: URLSearchParams): Filters {
   // assignee. Pass through only the issue API's vocabulary; the complete,
   // unpaged response is ordered locally for the other visible columns.
   const sort = query.get("sort");
-  const apiSorts = [
-    "priority", "created", "updated", "id", "relevance",
-    "-priority", "-created", "-updated", "-id", "-relevance",
-  ];
+  const apiSorts = ["priority", "created", "updated", "id", "-priority", "-created", "-updated", "-id"];
+  if (allowRelevance) apiSorts.push("relevance", "-relevance");
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
   return filters;
 }
@@ -482,16 +531,30 @@ function emptyFor(kind: string): string {
 }
 
 const projectSortKeys = ["key", "name", "active", "updated"] as const;
+const projectColumns: SortChoice[] = [
+  { key: "key", label: "Key" },
+  { key: "name", label: "Project" },
+  { key: "active", label: "Open" },
+  { key: "updated", label: "Updated" },
+];
 
 function projectSortButton(route: Route, key: string, label: string, state: SortState): HTMLElement {
   const button = element("button", "sort-button", label) as HTMLButtonElement;
   button.type = "button";
-  if (state.key === key) {
+  const active = state.key === key;
+  const arrow = element(
+    "span",
+    active ? "sort-arrow" : "sort-arrow sort-hint",
+    active ? (state.direction === "asc" ? "▲" : "▼") : "↕",
+  );
+  arrow.setAttribute("aria-hidden", "true");
+  if (active) {
     button.classList.add("active");
-    button.append(element("span", "sort-arrow", state.direction === "asc" ? "▲" : "▼"));
-  } else {
-    button.append(element("span", "sort-arrow sort-hint", "↕"));
   }
+  button.append(arrow);
+  button.title = active
+    ? `Sorted by ${label}, ${state.direction === "asc" ? "ascending" : "descending"}`
+    : `Sort by ${label}`;
   button.addEventListener("click", () => {
     const query = new URLSearchParams(route.query);
     const next = nextSortValue(query.get("sort"), key, projectSortKeys, "key");
@@ -503,16 +566,10 @@ function projectSortButton(route: Route, key: string, label: string, state: Sort
 }
 
 function projectTable(route: Route, projects: Project[], state: SortState): HTMLElement {
-  const columns = [
-    { key: "key", label: "Key" },
-    { key: "name", label: "Project" },
-    { key: "active", label: "Open" },
-    { key: "updated", label: "Updated" },
-  ];
   const table = element("table", "listing-table project-table") as HTMLTableElement;
   const head = document.createElement("thead");
   const heading = document.createElement("tr");
-  for (const column of columns) {
+  for (const column of projectColumns) {
     const th = document.createElement("th");
     th.scope = "col";
     if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
@@ -580,7 +637,14 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     else host.append(projectTable(route, rows, state));
     return rows.length;
   };
-  listing.append(listingFilter(route, "Filter projects…", "project", page.total, update), host);
+  listing.append(listingFilter(
+    route,
+    "Filter projects…",
+    "project",
+    page.total,
+    update,
+    mobileSortControl(route, projectColumns, "Natural order"),
+  ), host);
   view.append(listing);
   return view;
 }
@@ -730,7 +794,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
   }
 
   const [page, projects] = await Promise.all([
-    api.search({ ...filtersFrom(route.query), q: terms }),
+    api.search({ ...filtersFrom(route.query, true), q: terms }),
     api.projects(),
   ]);
   const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
