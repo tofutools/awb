@@ -29,7 +29,10 @@ import {
 } from "./listings.js";
 import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
+import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
+import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
+import { navigationPath, projectScopedHref } from "./navigation.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
 interface Route {
@@ -82,6 +85,42 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   if (className !== "") node.className = className;
   if (text !== "") node.textContent = text;
   return node;
+}
+
+type IconName = "blocked" | "change" | "info" | "issues" | "projects" | "ready" | "search" | "tag";
+
+/** svgIcon keeps the small, decorative interface icons in the document rather
+ * than adding another asset pipeline or network request. */
+function svgIcon(name: IconName): SVGSVGElement {
+  const paths: Record<IconName, string> = {
+    blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
+    change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
+    info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
+    issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
+    projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
+    ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
+    search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
+    tag: '<path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1"></circle>',
+  };
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("icon");
+  svg.innerHTML = paths[name];
+  return svg;
+}
+
+function avatar(name: string, className = ""): HTMLElement {
+  const marker = element("span", `avatar${className === "" ? "" : ` ${className}`}`, initialFor(name));
+  marker.setAttribute("aria-hidden", "true");
+  return marker;
+}
+
+function timeElement(timestamp: string): HTMLTimeElement {
+  const time = element("time", "timestamp", relativeTime(timestamp)) as HTMLTimeElement;
+  time.dateTime = timestamp;
+  time.title = timestamp;
+  return time;
 }
 
 function clear(node: HTMLElement): void {
@@ -361,6 +400,7 @@ function listingFilter(
   total: number,
   update: (query: string) => number,
   trailingControl: HTMLElement | null = null,
+  adjacentControl: HTMLElement | null = null,
 ): HTMLElement {
   const bar = element("div", "listing-tools");
   const control = element("div", "listing-filter");
@@ -376,6 +416,7 @@ function listingFilter(
   control.append(input, clearButton);
   const count = element("span", "filter-count");
   bar.append(control, count);
+  if (adjacentControl !== null) bar.append(adjacentControl);
   if (trailingControl !== null) bar.append(trailingControl);
 
   const refresh = (): void => {
@@ -430,7 +471,6 @@ function issueList(
   const columns = issueColumns(kind);
   const mobileColumns = [...columns, { key: "created", label: "Created" }];
   const listingActions = element("div", "listing-actions");
-  if (kind === "issues" || kind === "search") listingActions.append(includeClosedControl(route));
   listingActions.append(mobileSortControl(
     route,
     mobileColumns,
@@ -456,6 +496,7 @@ function issueList(
     total,
     update,
     listingActions,
+    kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -708,28 +749,32 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-	const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
+  const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
-  const view = element("div", "issue");
-  view.append(element("h1", "", issue.title));
+  const view = element("div", "issue-view");
+  view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
+  const content = element("div", "issue-content");
+  const heading = element("div", "issue-heading");
+  heading.append(element("div", "issue-key", issue.id));
+  heading.append(element("h1", "", issue.title));
+  content.append(heading);
 
-  const meta = element("div", "meta");
-  meta.append(element("span", "id", issue.id));
-  meta.append(link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project, "project"));
-  meta.append(element("span", "type", issue.type));
-  meta.append(issueBadges(issue));
-  view.append(meta);
+  const description = element("section", "issue-description");
+  description.append(element("h2", "", "Description"));
 
   if (issue.description !== "") {
-    const body = element("div", "markdown");
+    const body = element("div", "issue-description-body markdown");
     body.innerHTML = renderMarkdown(issue.description);
-    view.append(body);
+    description.append(body);
+  } else {
+    description.append(element("p", "empty", "No description."));
   }
+  content.append(description);
 
   // The derived links array is rendered explicitly as well as inside the
   // prose, so the authoritative list is always visible.
   if (issue.links.length > 0) {
-    view.append(element("h2", "", "Links"));
+    content.append(element("h2", "", "Links"));
     const list = element("ul", "links");
     for (const item of issue.links) {
       const row = element("li");
@@ -740,18 +785,18 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       if (item.text !== "") row.append(element("span", "url", item.url));
       list.append(row);
     }
-    view.append(list);
+    content.append(list);
   }
 
   if (issue.attachments.length > 0) {
-    view.append(element("h2", "", "Attachments"));
+    content.append(element("h2", "", "Attachments"));
     const list = element("ul", "attachments");
     for (const attachment of issue.attachments) list.append(attachmentRow(attachment));
-    view.append(list);
+    content.append(list);
   }
 
   if (issue.relations.length > 0) {
-    view.append(element("h2", "", "Relations"));
+    content.append(element("h2", "", "Relations"));
     const list = element("ul", "relations");
     for (const relation of issue.relations) {
       // Every relation reads "subject — type — other", whichever end is
@@ -764,17 +809,64 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       row.append(link(`#/issues/${other}`, other, "id"));
       list.append(row);
     }
-    view.append(list);
+    content.append(list);
   }
 
-  const footer = element("p", "timestamps");
-  footer.append(element("span", "", `created ${issue.created_at}`));
-  footer.append(element("span", "", `updated ${issue.updated_at}`));
-  view.append(footer);
+  content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
+  content.append(activitySection(issue.id, activity.rows));
+  const [sidebar, sidebarToggle] = issueSidebar(issue, view);
+  view.append(content, sidebar, sidebarToggle);
+  return view;
+}
 
-	view.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
-	view.append(activitySection(issue.id, activity.rows));
-	return view;
+function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButtonElement] {
+  const aside = element("aside", "issue-sidebar");
+  aside.id = "issue-details";
+  aside.setAttribute("aria-label", "Issue details");
+  const toggle = element("button", "issue-sidebar-toggle") as HTMLButtonElement;
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", aside.id);
+  const drawToggle = (): void => {
+    const collapsed = view.classList.contains("sidebar-collapsed");
+    toggle.replaceChildren(svgIcon("info"));
+    toggle.title = collapsed ? "Show issue details" : "Hide issue details";
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+  };
+  toggle.addEventListener("click", () => {
+    const collapsed = view.classList.toggle("sidebar-collapsed");
+    rememberIssueSidebar(issueSidebarStorage(window), collapsed);
+    drawToggle();
+  });
+  const facts = element("dl", "issue-facts");
+
+  const add = (label: string, value: Node): void => {
+    const row = element("div", "issue-fact");
+    row.append(element("dt", "", label));
+    const detail = element("dd");
+    detail.append(value);
+    row.append(detail);
+    facts.append(row);
+  };
+  const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
+
+  add("ID", element("span", "id", issue.id));
+  add("Project", link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project));
+  add("Type", badge("type", issue.type));
+  add("Status", badge(`status status-${issue.status}`, issue.status));
+  add("Priority", badge(`priority p${issue.priority}`, `P${issue.priority}`));
+  if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
+
+  const labels = element("span", "sidebar-labels");
+  if (issue.labels.length === 0) labels.append(text("—"));
+  for (const label of issue.labels) labels.append(badge("label", label));
+  add("Labels", labels);
+  add("Assignee", text(issue.assignee === "" ? "" : `@${issue.assignee}`));
+  add("Created", timeElement(issue.created_at));
+  add("Updated", timeElement(issue.updated_at));
+  aside.append(facts);
+  drawToggle();
+  return [aside, toggle];
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {
@@ -796,9 +888,14 @@ function activitySection(issueID: string, entries: Activity[]): HTMLElement {
   for (const [value, label] of [["all", "All"], ["comment", "Comments"], ["change", "Changes"]] as const) {
     const button = element("button", value === "all" ? "active" : "", label) as HTMLButtonElement;
     button.type = "button";
+    button.setAttribute("aria-pressed", String(value === "all"));
     button.addEventListener("click", () => {
       selected = value;
-      for (const item of filters.querySelectorAll("button")) item.classList.toggle("active", item === button);
+      for (const item of filters.querySelectorAll("button")) {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      }
       draw();
     });
     filters.append(button);
@@ -810,6 +907,8 @@ function activitySection(issueID: string, entries: Activity[]): HTMLElement {
 
 function commentComposer(issueID: string): HTMLElement {
   const form = element("form", "comment-composer") as HTMLFormElement;
+  form.append(avatar(identity, "composer-avatar"));
+  const body = element("div", "comment-composer-body");
   const textarea = document.createElement("textarea");
   textarea.name = "body";
   textarea.placeholder = "Write a comment…";
@@ -824,7 +923,10 @@ function commentComposer(issueID: string): HTMLElement {
     event.preventDefault();
     if (!button.disabled) form.requestSubmit(button);
   });
-  form.append(textarea, hint, button);
+  const actions = element("div", "comment-composer-actions");
+  actions.append(hint, button);
+  body.append(textarea, actions);
+  form.append(body);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     button.disabled = true;
@@ -834,7 +936,7 @@ function commentComposer(issueID: string): HTMLElement {
     } catch (error) {
       button.disabled = false;
       const message = error instanceof ApiError ? error.message : String(error);
-      form.append(element("p", "comment-error", message));
+      body.append(element("p", "comment-error", message));
     }
   });
   return form;
@@ -842,42 +944,41 @@ function commentComposer(issueID: string): HTMLElement {
 
 function activityEntry(entry: Activity): HTMLElement {
   const row = element("article", `activity-entry activity-${entry.kind}`);
+  const marker = element("div", `activity-marker activity-marker-${entry.kind}`);
+  if (entry.kind === "comment") marker.append(avatar(entry.actor));
+  else marker.append(svgIcon(entry.action.includes("label") ? "tag" : "change"));
+  const card = element("div", "activity-card");
   const header = element("header", "activity-header");
   header.append(element("strong", "activity-actor", entry.actor === "" ? "system" : entry.actor));
-  const time = element("time", "timestamp", entry.created_at);
-  time.setAttribute("datetime", entry.created_at);
-  header.append(time);
-  row.append(header);
+  header.append(timeElement(entry.created_at));
+  card.append(header);
   if (entry.kind === "comment") {
-    if (entry.action !== "") row.append(element("div", "activity-action", activityAction(entry.action)));
+    if (entry.action !== "") card.append(element("div", "activity-action", activityAction(entry.action)));
     const body = element("div", "activity-comment-body markdown");
     body.innerHTML = renderMarkdown(entry.body);
-    row.append(body);
+    card.append(body);
   } else {
-    row.append(element("div", "activity-action", activityAction(entry.action)));
+    card.append(element("div", "activity-action", activityAction(entry.action)));
   }
   if (entry.changes.length > 0) {
     const changes = element("ul", "activity-changes");
     for (const change of entry.changes) {
+      const [from, to] = activityValues(change.from, change.to);
       const item = element("li");
       item.append(element("span", "activity-field", change.field));
-      item.append(element("code", "", displayActivityValue(change.from)));
+      item.append(element("code", "", from));
       item.append(element("span", "activity-arrow", "→"));
-      item.append(element("code", "", displayActivityValue(change.to)));
+      item.append(element("code", "", to));
       changes.append(item);
     }
-    row.append(changes);
+    card.append(changes);
   }
+  row.append(marker, card);
   return row;
 }
 
 function activityAction(action: string): string {
   return action.replaceAll("_", " ");
-}
-
-function displayActivityValue(value: unknown): string {
-  if (typeof value === "string") return value === "" ? "(empty)" : value;
-  return JSON.stringify(value);
 }
 
 /**
@@ -976,7 +1077,7 @@ function searchBox(): HTMLElement {
   const input = document.createElement("input");
   configureSearchBox(form, input);
   input.value = parseRoute().query.getAll("q").join(" ");
-  form.append(input);
+  form.append(svgIcon("search"), input);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -992,16 +1093,32 @@ function searchBox(): HTMLElement {
 }
 
 function chrome(): HTMLElement {
-  const header = element("header");
+  const header = element("header", "app-header");
   const nav = element("nav");
-  nav.append(link("#/ready", "Ready"));
-  nav.append(link("#/issues", "Issues"));
-  nav.append(link("#/blocked", "Blocked"));
-  nav.append(link("#/projects", "Projects"));
-  header.append(element("span", "brand", "Agent Work Board"));
+  const route = parseRoute();
+  const navLink = (href: string, label: string, icon: IconName): HTMLAnchorElement => {
+    const anchor = link(href, "");
+    anchor.append(svgIcon(icon), document.createTextNode(label));
+    return anchor;
+  };
+  nav.append(navLink(projectScopedHref("ready", route.query), "Ready", "ready"));
+  nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
+  nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
+  nav.append(navLink(projectScopedHref("projects", route.query), "Projects", "projects"));
+  const brand = link("#/ready", "", "brand");
+  const mark = document.createElement("img");
+  mark.src = "awb-mark.png";
+  mark.alt = "";
+  mark.className = "brand-mark";
+  brand.append(mark, document.createTextNode("Agent Work Board"));
+  header.append(brand);
   header.append(nav);
   header.append(searchBox());
-  if (identity !== "") header.append(element("span", "identity", `@${identity}`));
+  if (identity !== "") {
+    const account = element("span", "identity");
+    account.append(avatar(identity), element("span", "identity-name", `@${identity}`));
+    header.append(account);
+  }
   return header;
 }
 
@@ -1053,7 +1170,7 @@ async function routeView(route: Route): Promise<HTMLElement> {
 function markActiveNav(route: Route): void {
   const current = route.path[0] ?? "ready";
   for (const anchor of app.querySelectorAll("nav a")) {
-    const target = anchor.getAttribute("href")?.replace("#/", "") ?? "";
+    const target = navigationPath(anchor.getAttribute("href") ?? "");
     anchor.classList.toggle("active", target === current);
   }
 }
