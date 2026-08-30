@@ -206,6 +206,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		ParamEnrich: boaParams,
 		SubCmds: []*cobra.Command{
 			newInitCommand(e),
+			newDumpCommand(e),
 			newStatusCommand(e),
 			newAgentGuideCommand(e),
 			newProjectCommand(e),
