@@ -229,3 +229,31 @@ func TestOpeningMigratesForward(t *testing.T) {
 		assert.Equal(t, table, name)
 	}
 }
+
+func TestOpenCurrentIsReadOnlyAndDoesNotMigrate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	db, err := storage.Init(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	readOnly, err := storage.OpenCurrent(t.Context(), path)
+	require.NoError(t, err)
+	_, err = readOnly.SQL().ExecContext(t.Context(), "CREATE TABLE forbidden (n INTEGER)")
+	require.Error(t, err)
+	require.NoError(t, readOnly.Close())
+
+	raw, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	_, err = raw.Exec("PRAGMA user_version = 1")
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	_, err = storage.OpenCurrent(t.Context(), path)
+	require.Error(t, err)
+	raw, err = sql.Open("sqlite", path)
+	require.NoError(t, err)
+	defer raw.Close() //nolint:errcheck
+	var version int
+	require.NoError(t, raw.QueryRow("PRAGMA user_version").Scan(&version))
+	assert.Equal(t, 1, version, "completion opening must not migrate")
+}

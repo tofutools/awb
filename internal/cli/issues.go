@@ -208,7 +208,7 @@ func listing(e *env, use, short, long string, opts filterOptions,
 		Short:             short,
 		Long:              long,
 		ParamEnrich:       boaParams,
-		InitFuncCtx:       filterInit(opts),
+		InitFuncCtx:       filterInit(e, opts, fix),
 		PostCreateFuncCtx: filterPostCreate(opts),
 		RunFuncE: func(flags *FilterFlags, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, flags, opts, fix, withBlockers, nil)
@@ -270,7 +270,7 @@ func newSearchCommand(e *env) *cobra.Command {
 			"than the syntax.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
-			return filterInit(opts)(ctx, &p.FilterFlags, cmd)
+			return filterInit(e, opts, nil)(ctx, &p.FilterFlags, cmd)
 		},
 		PostCreateFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
 			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)

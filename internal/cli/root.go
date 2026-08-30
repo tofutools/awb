@@ -119,6 +119,9 @@ type env struct {
 	flags   config.Flags
 	json    bool
 	compact bool
+	// completion makes local backend opening read-only and non-migrating. It is
+	// set only by a dynamic alternatives callback.
+	completion bool
 
 	// openAPI is the document serve publishes at /openapi.json and
 	// /openapi.yaml. It arrives from main because openapi.yaml sits at the
@@ -287,7 +290,12 @@ func (e *env) backend(ctx context.Context) (backend.Backend, error) {
 		return e.be, nil
 	}
 
-	db, err := storage.Open(ctx, cfg.DB)
+	var db *storage.DB
+	if e.completion {
+		db, err = storage.OpenCurrent(ctx, cfg.DB)
+	} else {
+		db, err = storage.Open(ctx, cfg.DB)
+	}
 	if err != nil {
 		return nil, err
 	}

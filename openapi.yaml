@@ -802,15 +802,23 @@ paths:
       operationId: listLabels
       summary: The distinct labels in use, with counts
       description: |
-        Honours the selection parameters of `GET /api/issues`, the facet's own
-        included, so `?label=parser` lists the labels that co-occur with
-        `parser` and a UI can narrow progressively. A value with a count of zero
-        is not listed at all.
+        Honours the selection parameters of `GET /api/issues` and optional
+        full-text `q` terms, the facet's own included, so `?label=parser` lists
+        the labels that co-occur with `parser` and a UI can narrow
+        progressively. A value with a count of zero is not listed at all.
 
         `limit` and `offset` page the facet rows rather than the issues behind
         them, so `count` is the same whatever page it appears on. `sort` is not
         accepted: the row order is fixed at value ascending.
       parameters:
+        - name: q
+          in: query
+          description: One literal full-text search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
         - $ref: '#/components/parameters/type'
@@ -836,6 +844,14 @@ paths:
         As `GET /api/labels`. There is no row for the empty assignee:
         unassigned is a filter, not a value.
       parameters:
+        - name: q
+          in: query
+          description: One literal full-text search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
         - $ref: '#/components/parameters/type'

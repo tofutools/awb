@@ -332,7 +332,7 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 type projectGrantParams struct {
 	Key    string `positional:"true" required:"true"`
 	User   string `positional:"true" required:"true"`
-	Access string `long:"access" default:"regular" optional:"true" help:"regular to work with the project's issues, admin to also grant and revoke its users"`
+	Access string `long:"access" default:"regular" optional:"true" alts:"regular,admin" help:"regular to work with the project's issues, admin to also grant and revoke its users"`
 }
 
 func newProjectGrantCommand(e *env) *cobra.Command {

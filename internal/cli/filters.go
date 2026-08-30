@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
 
@@ -42,8 +45,33 @@ type filterOptions struct {
 	relevance bool
 }
 
-func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.Command) error {
+func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
+	*boa.HookContext, *FilterFlags, *cobra.Command) error {
 	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
+		boa.GetParamT(ctx, &f.Projects).SetAlternativesFunc(e.completeProjects)
+		boa.GetParamT(ctx, &f.Labels).SetAlternativesFunc(
+			func(cmd *cobra.Command, args []string, _ string) []string {
+				e.prepareCompletion(cmd)
+				filter, err := f.build(e, cmd, opts)
+				if err != nil {
+					return nil
+				}
+				if err := addSearchTerms(filter, args, opts.relevance); err != nil {
+					return nil
+				}
+				if fix != nil {
+					fix(filter)
+				}
+				// A repeated label is an OR, so the facet must be computed without
+				// its own dimension or the first label would hide alternatives.
+				filter.Labels = nil
+				filter.Limit = nil
+				return e.queryCompletion(cmd,
+					func(ctx context.Context, be backend.Backend) ([]string, error) {
+						page, err := be.LabelFacets(ctx, filter)
+						return facetValues(page.Facets), err
+					})
+			})
 		sortHelp := "priority, created, updated or id, optionally prefixed with \"-\""
 		if opts.relevance {
 			sortHelp = "relevance, priority, created, updated or id, optionally prefixed with \"-\""
@@ -57,9 +85,46 @@ func filterInit(opts filterOptions) func(*boa.HookContext, *FilterFlags, *cobra.
 			boa.GetParamT(ctx, &f.Assignees).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Mine).SetIgnored(true)
 			boa.GetParamT(ctx, &f.Unassigned).SetIgnored(true)
+		} else {
+			boa.GetParamT(ctx, &f.Assignees).SetAlternativesFunc(
+				func(cmd *cobra.Command, args []string, _ string) []string {
+					e.prepareCompletion(cmd)
+					filter, err := f.build(e, cmd, opts)
+					if err != nil {
+						return nil
+					}
+					if err := addSearchTerms(filter, args, opts.relevance); err != nil {
+						return nil
+					}
+					if fix != nil {
+						fix(filter)
+					}
+					filter.Assignees = nil
+					filter.Unassigned = false
+					filter.Limit = nil
+					return e.queryCompletion(cmd,
+						func(ctx context.Context, be backend.Backend) ([]string, error) {
+							page, err := be.AssigneeFacets(ctx, filter)
+							return facetValues(page.Facets), err
+						})
+				})
 		}
 		return nil
 	}
+}
+
+func addSearchTerms(filter *domain.Filter, terms []string, search bool) error {
+	if !search {
+		return nil
+	}
+	for _, term := range terms {
+		valid, err := domain.ValidateSearchTerm(term)
+		if err != nil {
+			return err
+		}
+		filter.Terms = append(filter.Terms, valid)
+	}
+	return nil
 }
 
 // filterPostCreate adds search's two extra sort values after Boa has read the

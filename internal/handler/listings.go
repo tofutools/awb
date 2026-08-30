@@ -226,9 +226,9 @@ func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
 	}, nil
 }
 
-// The two facet operations honour the selection parameters of GET /api/issues,
-// the facet's own included, so ?label=parser lists the labels that co-occur
-// with parser and a UI can narrow progressively.
+// The two facet operations honour the selection parameters of GET /api/issues
+// and optional search terms, the facet's own included, so ?label=parser lists
+// the labels that co-occur with parser and a UI can narrow progressively.
 //
 // limit and offset page the facet rows rather than the issues behind them, so
 // count is the same whatever page it appears on, and neither declares sort:
@@ -237,6 +237,7 @@ func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
 func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
+		terms:         params.Q,
 		statuses:      params.Status,
 		includeClosed: params.IncludeClosed.Or(false),
 		types:         params.Type,
@@ -259,6 +260,7 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
+		terms:         params.Q,
 		statuses:      params.Status,
 		includeClosed: params.IncludeClosed.Or(false),
 		types:         params.Type,
