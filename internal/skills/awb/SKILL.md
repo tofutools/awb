@@ -81,7 +81,7 @@ awb attach delete <id> trace.txt --force
 - labels and assignees: lowercase letters, digits, `-_./` only
 
 **Output modes.** `--compact` is one line per issue and costs the least context:
-`<id> P<priority> <status> <type> "<title>" [@assignee] [#label...] [!blocked]`
+`<id> P<priority> <status> <type> "<title>" [@assignee...] [#label...] [!blocked]`
 The title is a JSON string, so split on whitespace outside it. `--json` is the
 stable full representation. The default table is for humans; do not parse it.
 

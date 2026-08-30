@@ -65,6 +65,17 @@ func TestCreateWithAssigneeIsAClaim(t *testing.T) {
 	assert.False(t, issue.Ready())
 }
 
+func TestCreateWithSeveralAssigneesIsAClaim(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"claude-1", "claude-2", "claude-1"}
+	})
+
+	assert.Equal(t, domain.StatusInProgress, issue.Status)
+	assert.Equal(t, "claude-1", issue.Assignee)
+	assert.Equal(t, []string{"claude-1", "claude-2"}, issue.Assignees)
+}
+
 func TestCreateWithLabelsAndRelationsInOneTransaction(t *testing.T) {
 	b, ctx := newBackend(t)
 	origin := create(t, b, ctx, "origin")
@@ -206,6 +217,21 @@ func TestClaimRefusesBlockedAndClosed(t *testing.T) {
 	require.Len(t, activity.Activity, 1)
 	assert.Equal(t, "closed", activity.Activity[0].Action)
 	assert.Equal(t, reason, activity.Activity[0].Body)
+}
+
+func TestForcedClaimOfClosedIssueStartsANewAssignmentSet(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "done", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"alice", "bob"}
+	})
+	_, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+
+	reclaimed, err := b.Claim(ctx, issue.ID,
+		backend.ClaimRequest{Assignee: "carol", Force: true}, "")
+	require.NoError(t, err)
+	assert.Equal(t, "carol", reclaimed.Assignee)
+	assert.Equal(t, []string{"carol"}, reclaimed.Assignees)
 }
 
 func TestRelease(t *testing.T) {

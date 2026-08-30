@@ -10,15 +10,15 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// The four transitions below are the only way status or assignee ever moves.
-// Keeping them out of update is what stops in_progress and an assignee from
-// drifting apart and stops a claim being taken silently.
+// The four transitions below are the only way status or assignees ever move.
+// Keeping them out of update is what stops in_progress and the assignment set
+// from drifting apart and stops a claim being taken silently.
 
 // Claim atomically adds an assignee and sets status to in_progress.
 //
 // Claiming an issue you already hold succeeds; if it is already in_progress
-// nothing changes. It fails with a conflict if the issue is assigned to
-// someone else, blocked, or closed, and --force overrides all three.
+// nothing changes. Another claimant joins without replacing anyone. A blocked
+// or closed issue conflicts, and --force overrides those two refusals.
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
 	assignee, err := domain.ValidateAssignee(req.Assignee)
@@ -49,6 +49,12 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 
 		fields := storage.Fields(issue)
+		if req.Force && issue.Status == domain.StatusClosed {
+			// A closed issue's assignees are a historical record. Reclaiming it starts
+			// a new active assignment rather than reviving everyone who completed it.
+			fields.Assignee = ""
+			fields.Assignees = nil
+		}
 		if !slices.Contains(fields.Assignees, assignee) {
 			fields.Assignees = append(fields.Assignees, assignee)
 		}
@@ -110,7 +116,7 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 // CloseIssue sets status to closed and records a non-empty reason as a typed
 // comment on that same transition. Closing a closed issue succeeds and changes
 // nothing, so a reason can never become detached from the act of closing. The
-// assignee is left alone, since it records who did the work.
+// assignees are left alone, since they record who did the work.
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
 	reason := ""
@@ -129,7 +135,7 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 	})
 }
 
-// Reopen sets status to open and clears the assignee, so the issue returns to
+// Reopen sets status to open and clears the assignees, so the issue returns to
 // the pool awb ready draws from. Its close-reason comment remains in history.
 //
 // It acts only on a closed issue: on an issue that is not closed it succeeds

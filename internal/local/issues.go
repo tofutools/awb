@@ -434,6 +434,7 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody
 		}
 		before := *issue
 		before.Labels = slices.Clone(issue.Labels)
+		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
 		if err := apply(tx, issue); err != nil {
 			return err

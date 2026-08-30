@@ -267,6 +267,14 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	now := Now()
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
+	assignees := issue.Assignees
+	if len(assignees) == 0 && issue.Assignee != "" {
+		// The singular form is the version 1 input representation.
+		assignees = []string{issue.Assignee}
+	}
+	if err := validateAssignment(issue.Status, issue.Assignee, assignees); err != nil {
+		return err
+	}
 
 	for attempt := range maxAttempts {
 		salt, err := domain.NewSalt()
@@ -282,10 +290,6 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 			issue.Status, issue.Priority, issue.Assignee,
 			issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
-			assignees := issue.Assignees
-			if len(assignees) == 0 && issue.Assignee != "" {
-				assignees = []string{issue.Assignee}
-			}
 			for position, assignee := range assignees {
 				if _, err := t.q.ExecContext(t.ctx,
 					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
@@ -331,6 +335,9 @@ func Fields(i *domain.Issue) IssueFields {
 // when something actually changed. A write that changes nothing leaves the
 // timestamp alone.
 func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
+	if err := validateAssignment(fields.Status, fields.Assignee, fields.Assignees); err != nil {
+		return err
+	}
 	before := Fields(issue)
 	if before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
@@ -373,6 +380,21 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil
+}
+
+func validateAssignment(status domain.Status, projection string, assignees []string) error {
+	switch {
+	case len(assignees) == 0 && projection != "":
+		return awberr.Runtimef("refusing to store an inconsistent issue: assignee projection has no assignment row")
+	case len(assignees) > 0 && projection != assignees[0]:
+		return awberr.Runtimef("refusing to store an inconsistent issue: assignee projection is not the first assignment")
+	case status == domain.StatusOpen && len(assignees) > 0:
+		return awberr.Runtimef("refusing to store an inconsistent issue: open issue has assignees")
+	case status == domain.StatusInProgress && len(assignees) == 0:
+		return awberr.Runtimef("refusing to store an inconsistent issue: in_progress issue has no assignees")
+	default:
+		return nil
+	}
 }
 
 // touchIssue moves updated_at for a change that is not to a column of the

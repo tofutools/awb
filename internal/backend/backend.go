@@ -231,9 +231,9 @@ type NewRelation struct {
 }
 
 // IssuePatch is what awb update and PATCH /api/issues/{id} may change. It
-// cannot change status or assignee: the four transitions are the only way to
-// move either, which keeps in_progress and an assignee from drifting apart and
-// keeps a claim from being taken silently.
+// cannot change status or assignees: the four transitions are the only way to
+// move either, which keeps in_progress and the assignment set from drifting
+// apart and keeps a claim from being taken silently.
 //
 // A nil field is left alone; a non-nil one is written, so an empty string
 // clears an optional value.

@@ -475,7 +475,7 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 			cells: cells(func(i *domain.Issue) string { return string(i.Type) })},
 		{header: "TITLE", floor: titleFloor,
 			cells: cells(func(i *domain.Issue) string { return t.listTitle(i.Title) })},
-		{header: "ASSIGNEE", expendable: true, paint: always(t.assignee),
+		{header: "ASSIGNEES", expendable: true, paint: always(t.assignee),
 			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Assignees, ",") })},
 		{header: "LABELS", floor: labelsFloor, expendable: true, paint: always(t.label),
 			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Labels, ",") })},

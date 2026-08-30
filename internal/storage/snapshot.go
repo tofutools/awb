@@ -62,6 +62,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 			if len(assignees) == 0 && issue.Assignee != "" {
 				assignees = []string{issue.Assignee}
 			}
+			if err := validateAssignment(issue.Status, issue.Assignee, assignees); err != nil {
+				return err
+			}
 			for position, assignee := range assignees {
 				if _, err := tx.q.ExecContext(ctx,
 					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,

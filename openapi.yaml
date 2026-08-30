@@ -1270,8 +1270,8 @@ components:
     Status:
       type: string
       description: |
-        Changed only by creating with an assignee and by the claim, release,
-        close and reopen endpoints, so it never drifts from the assignee.
+        Changed only by creating with assignees and by the claim, release,
+        close and reopen endpoints, so it never drifts from the assignment set.
       enum: [open, in_progress, closed]
 
     Priority:
@@ -1759,7 +1759,7 @@ components:
         Applied in one transaction, so the issue, its labels and its relations
         are created in a single call. Nothing beyond these fields is recognised:
         `id`, `status`, the timestamps and the derived fields
-        are rejected rather than ignored — `status` follows from `assignee` and
+        are rejected rather than ignored — `status` follows from assignment and
         the rest are the server's to assign.
 
         An omitted `type` is `task` and an omitted `priority` is `2`. Those

@@ -220,6 +220,7 @@ func TestPatchIssue(t *testing.T) {
 	for _, body := range []string{
 		`{"status":"closed"}`,
 		`{"assignee":"claude-1"}`,
+		`{"assignees":["claude-1"]}`,
 		`{"labels":["a"]}`,
 	} {
 		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
@@ -338,6 +339,27 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 	var claimed domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &claimed))
 	assert.Equal(t, "mikael", claimed.Assignee)
+}
+
+func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t","assignees":["alice","bob"]}`)
+	assert.Equal(t, "alice", issue.Assignee)
+	assert.Equal(t, []string{"alice", "bob"}, issue.Assignees)
+
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
+		`{"assignee":"carol"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var joined domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &joined))
+	assert.Equal(t, []string{"alice", "bob", "carol"}, joined.Assignees)
+
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/release",
+		`{"assignee":"bob"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var left domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &left))
+	assert.Equal(t, []string{"alice", "carol"}, left.Assignees)
 }
 
 // Every mutating endpoint answers with the resulting object, the label and
