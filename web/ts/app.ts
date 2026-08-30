@@ -86,7 +86,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "blocked" | "change" | "chevron-left" | "chevron-right" | "issues" | "projects" | "ready" | "search" | "tag";
+type IconName = "blocked" | "change" | "info" | "issues" | "projects" | "ready" | "search" | "tag";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -94,8 +94,7 @@ function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
-    "chevron-left": '<path d="m15 18-6-6 6-6"></path>',
-    "chevron-right": '<path d="m9 18 6-6-6-6"></path>',
+    info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
     ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
@@ -828,7 +827,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   toggle.setAttribute("aria-controls", aside.id);
   const drawToggle = (): void => {
     const collapsed = view.classList.contains("sidebar-collapsed");
-    toggle.replaceChildren(svgIcon(collapsed ? "chevron-left" : "chevron-right"));
+    toggle.replaceChildren(svgIcon("info"), document.createTextNode("Details"));
     toggle.title = collapsed ? "Show issue details" : "Hide issue details";
     toggle.setAttribute("aria-label", toggle.title);
     toggle.setAttribute("aria-expanded", String(!collapsed));
