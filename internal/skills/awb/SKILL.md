@@ -1,6 +1,6 @@
 ---
 name: awb
-description: Track and coordinate work in Agent Work Board (awb), a lightweight alternative to Jira, Linear, or GitHub Issues. Use only when the current project or task uses awb, such as when asked to find, claim, create, update, relate, attach evidence to, or close awb issues.
+description: Track and coordinate work in Agent Work Board (awb), a lightweight alternative to Jira, Linear, or GitHub Issues. Use when the current project or task uses awb, such as when asked to find, claim, create, update, relate, attach evidence to, or close awb issues.
 ---
 
 ## Issue tracking with awb
