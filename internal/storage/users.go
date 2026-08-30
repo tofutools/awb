@@ -159,11 +159,11 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 //
 // Only visible memberships are hydrated. A username may be shared across
 // projects without disclosing the names of projects the caller cannot see.
-func (t *Tx) ListVisibleUsers(limit, offset *int) (users []domain.User, total int, err error) {
+func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
 	visibleProject, visibleArgs := t.visibleClause("project")
 	visibleIssueProject, visibleIssueArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
-	args := append([]any{t.scope.user}, visibleArgs...)
+	args := append([]any{caller}, visibleArgs...)
 	args = append(args, visibleIssueArgs...)
 	args = append(args, visibleActivityArgs...)
 	cte := `WITH visible_users(name) AS (

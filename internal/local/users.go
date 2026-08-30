@@ -97,17 +97,17 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 
 // ListUsers lists accounts ordered by name ascending. Account administrators
 // see every account. Other authenticated callers see the current accounts
-// that share or have participated in projects they can see; project
-// administrators consequently see everyone, because every project is visible
-// to them.
+// that share or have participated in projects they can see. Project
+// administrators see participation across every project, but not dormant
+// accounts that have never touched one.
 func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.UserPage, error) {
 	var page backend.UserPage
 	err := b.read(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		var err error
-		if caller.MayManageUsers() || !tx.Scope().Restricted() {
+		if caller.MayManageUsers() {
 			page.Users, page.Total, err = tx.ListUsers(limit, offset)
 		} else {
-			page.Users, page.Total, err = tx.ListVisibleUsers(limit, offset)
+			page.Users, page.Total, err = tx.ListVisibleUsers(caller.Name, limit, offset)
 		}
 		return err
 	})

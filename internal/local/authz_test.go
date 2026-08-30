@@ -350,6 +350,13 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 		forbidden(t, err)
 	}
 
+	for name, be := range map[string]*local.Backend{"bob": bob, "alice": alice} {
+		users, err := be.ListUsers(ctx, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, users.Users, 1, "unrelated dormant accounts stay outside the directory")
+		assert.Equal(t, name, users.Users[0].Name)
+	}
+
 	_, err := dana.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
 	require.NoError(t, err)
 	users, err := dana.ListUsers(ctx, nil, nil)
