@@ -70,6 +70,13 @@ nav a.active::after {
   content: "";
 }
 
+@media (min-width: 701px) {
+  /* The tab remains the full header height, but its contents sit near the
+     underline instead of floating midway between the rule and the top. */
+  nav a { align-items: flex-end; padding-top: 1rem; padding-bottom: 0.15rem; }
+  .brand { align-self: flex-end; margin-bottom: 0.15rem; }
+}
+
 .icon {
   width: 1.25rem;
   height: 1.25rem;
@@ -359,7 +366,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .identity { margin-left: auto; }
   .identity-name { display: none; }
   nav { order: 3; width: 100%; padding-bottom: 0.5rem; overflow-x: auto; overflow-y: hidden; }
-  nav a { flex: 1 1 auto; justify-content: center; padding-inline: 0.25rem; font-size: 0.8rem; }
+  nav a { flex: 1 1 auto; justify-content: center; padding: 0.4rem 0.25rem; font-size: 0.8rem; }
   nav a .icon { width: 1rem; height: 1rem; }
   nav a.active::after { bottom: 0; }
   .listing-tools { flex-wrap: wrap; }
