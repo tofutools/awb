@@ -330,7 +330,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .sort-button:hover .sort-hint, .sort-button:focus-visible .sort-hint { opacity: 0.65; }
 .column-heading { display: flex; align-items: stretch; }
 .column-heading .sort-button { min-width: 0; flex: 1 1 auto; width: auto; }
-.updated-display-control { display: inline-flex; align-items: center; }
+.updated-display-control { display: inline-flex; align-items: stretch; }
 .updated-display-button {
   display: inline-flex;
   gap: 0.15rem;
