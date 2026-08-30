@@ -230,6 +230,70 @@ func TestRemoteCompletionUsesAuthenticatedSearchFacets(t *testing.T) {
 	assert.Equal(t, "parser\n:0\n", stdout.String())
 }
 
+func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.SetMember(ctx, "awb", "bob", domain.AccessRegular)
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_USER", "bob")
+	t.Setenv("AWB_PASSWORD", "hunter2")
+	t.Setenv("AWB_IDENTITY", "local-default")
+	t.Setenv("AWB_PROJECT", "")
+	t.Setenv("AWB_CONFIG_FILE", "")
+	t.Setenv("NO_COLOR", "1")
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	code := Execute(ctx, "test", openapi.New(raw), []string{"status", "--json"},
+		&stdout, &stderr, strings.NewReader(""))
+	require.Equal(t, 0, code, stderr.String())
+	assert.NotContains(t, stdout.String(), "hunter2")
+	assert.JSONEq(t, `{
+		"connection": {
+			"mode": "remote",
+			"database": "",
+			"server": "`+server.URL+`",
+			"ui": "`+server.URL+`/#/projects",
+			"attachments": ""
+		},
+		"configuration": {
+			"identity": "bob",
+			"configured_identity": "local-default",
+			"user": "bob",
+			"password_set": true,
+			"default_project": "",
+			"context_project": "",
+			"context_label": "",
+			"user_file": "",
+			"local_file": "",
+			"color": "never"
+		},
+		"environment": [
+			{"name":"AWB_CONFIG_FILE","value":""},
+			{"name":"AWB_DB","value":"`+server.URL+`"},
+			{"name":"AWB_USER","value":"bob"},
+			{"name":"AWB_PASSWORD","value":"<redacted>"},
+			{"name":"AWB_IDENTITY","value":"local-default"},
+			{"name":"AWB_PROJECT","value":""},
+			{"name":"NO_COLOR","value":"1"}
+		],
+		"projects": [
+			{"key":"awb","name":"awb","open":0,"in_progress":0,"closed":0,"total":0}
+		]
+	}`, stdout.String())
+}
+
 // The whole user and membership surface goes over the wire and behaves as it
 // does on a file, which is what one interface with two implementations buys.
 func TestRemoteModeManagesUsers(t *testing.T) {

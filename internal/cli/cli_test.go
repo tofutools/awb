@@ -105,6 +105,69 @@ func (h *harness) create(args ...string) string {
 	return strings.TrimSpace(h.mustRun(append([]string{"create"}, args...)...))
 }
 
+func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("AWB_PASSWORD", "hunter2")
+
+	h.create("Open", "--project", "awb")
+	inProgress := h.create("In progress", "--project", "awb")
+	h.mustRun("claim", inProgress)
+	closed := h.create("Closed", "--project", "awb")
+	h.mustRun("close", closed, "--reason", "done")
+
+	stdout := h.mustRun("status", "--json")
+	assert.NotContains(t, stdout, "hunter2")
+
+	var report struct {
+		Connection struct {
+			Mode        string `json:"mode"`
+			Database    string `json:"database"`
+			Server      string `json:"server"`
+			UI          string `json:"ui"`
+			Attachments string `json:"attachments"`
+		} `json:"connection"`
+		Configuration struct {
+			Identity           string `json:"identity"`
+			ConfiguredIdentity string `json:"configured_identity"`
+			PasswordSet        bool   `json:"password_set"`
+		} `json:"configuration"`
+		Environment []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"environment"`
+		Projects []struct {
+			Key        string `json:"key"`
+			Open       int    `json:"open"`
+			InProgress int    `json:"in_progress"`
+			Closed     int    `json:"closed"`
+			Total      int    `json:"total"`
+		} `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &report))
+	assert.Equal(t, "local", report.Connection.Mode)
+	assert.Equal(t, filepath.Join(h.root(), "awb.db"), report.Connection.Database)
+	assert.Empty(t, report.Connection.Server)
+	assert.Empty(t, report.Connection.UI)
+	assert.Equal(t, filepath.Join(h.root(), "attachments"), report.Connection.Attachments)
+	assert.Equal(t, "mikael", report.Configuration.Identity)
+	assert.Equal(t, "mikael", report.Configuration.ConfiguredIdentity)
+	assert.True(t, report.Configuration.PasswordSet)
+
+	password := ""
+	for _, variable := range report.Environment {
+		if variable.Name == "AWB_PASSWORD" {
+			password = variable.Value
+		}
+	}
+	assert.Equal(t, "<redacted>", password)
+	require.Len(t, report.Projects, 1)
+	assert.Equal(t, "awb", report.Projects[0].Key)
+	assert.Equal(t, 1, report.Projects[0].Open)
+	assert.Equal(t, 1, report.Projects[0].InProgress)
+	assert.Equal(t, 1, report.Projects[0].Closed)
+	assert.Equal(t, 3, report.Projects[0].Total)
+}
+
 // Enum-like parameters advertise their complete vocabulary to Boa, which
 // validates their values and supplies these alternatives to shell completion.
 func TestEnumParameterCompletions(t *testing.T) {
@@ -349,6 +412,33 @@ func TestDirectoryContext(t *testing.T) {
 
 	// --no-context restores the view of the whole database.
 	assert.Contains(t, h.mustRun("list", "--compact", "--no-context"), elsewhere)
+}
+
+// A project from the user configuration or AWB_PROJECT is the default filter,
+// just like a project from directory context. An explicit project replaces it,
+// and --all-projects removes it without giving up the other filters.
+func TestConfiguredDefaultProjectFiltersListings(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "create", "web")
+	awb := h.create("in awb", "--project", "awb")
+	web := h.create("in web", "--project", "web")
+
+	userConfig := filepath.Join(h.root(), "config.yaml")
+	require.NoError(t, os.WriteFile(userConfig, []byte("project: awb\n"), 0o600))
+	t.Setenv("AWB_CONFIG_FILE", userConfig)
+
+	assert.Contains(t, h.mustRun("list", "--compact"), awb)
+	assert.NotContains(t, h.mustRun("list", "--compact"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--project", "web"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--all-projects"), web)
+
+	t.Setenv("AWB_PROJECT", "web")
+	assert.NotContains(t, h.mustRun("list", "--compact"), awb)
+	assert.Contains(t, h.mustRun("list", "--compact"), web)
+
+	_, stderr, code := h.run("list", "--project", "awb", "--all-projects")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--project and --all-projects are mutually exclusive")
 }
 
 // A subdirectory is reached by the upward search.

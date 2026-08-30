@@ -104,7 +104,7 @@ func newCreateCommand(e *env) *cobra.Command {
 
 			// The project is resolved as --project, else AWB_PROJECT, else the local
 			// file, else the user file.
-			target := cfg.CreateProject
+			target := cfg.DefaultProject
 			if cmd.Flags().Changed("project") {
 				target = p.Project
 			}

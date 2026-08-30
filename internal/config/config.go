@@ -101,15 +101,18 @@ type Config struct {
 	// in remote mode. They are ignored when DB is a path.
 	User     string
 	Password string
+	// PasswordSet distinguishes an explicitly configured empty password from
+	// no password setting. The empty value is valid for a server account.
+	PasswordSet bool
 
 	// Identity is the default assignee: what --mine resolves to and what claim
 	// uses without --as. It may be empty, in which case the commands that need
 	// one fail asking for it to be set.
 	Identity string
 
-	// CreateProject is the default project for awb create, resolved through the
-	// full precedence chain.
-	CreateProject string
+	// DefaultProject is the default project for creation and issue listings,
+	// resolved through the full precedence chain.
+	DefaultProject string
 
 	// ContextProject and ContextLabel are the directory's own scope. They are
 	// empty when --no-context was given or no local file was found.
@@ -117,6 +120,11 @@ type Config struct {
 	ContextLabel   string
 
 	Color ColorMode
+
+	// UserFilePath is the user configuration file that was read. It is empty
+	// when the default file does not exist. LocalFilePath has the same meaning
+	// for directory context below.
+	UserFilePath string
 
 	// LocalFilePath is the local configuration file that was used, for error
 	// messages. It is empty when none was found.
@@ -132,7 +140,7 @@ func (c *Config) Remote() bool { return c.RemoteURL != nil }
 // workingDir is the directory the command was run in; it is resolved through
 // symlinks before the upward search begins.
 func Load(flags Flags, workingDir string) (*Config, error) {
-	userCfg, userPath, err := loadUserFile()
+	userCfg, userPath, userFound, err := loadUserFile()
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +151,9 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	}
 
 	cfg := &Config{LocalFilePath: localPath}
+	if userFound {
+		cfg.UserFilePath = userPath
+	}
 
 	if err := resolveDB(cfg, flags, userCfg, userPath); err != nil {
 		return nil, err
@@ -159,7 +170,7 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	if err := resolveContext(cfg, flags, localCfg, localPath); err != nil {
 		return nil, err
 	}
-	if err := resolveCreateProject(cfg, userCfg, userPath); err != nil {
+	if err := resolveDefaultProject(cfg, userCfg, userPath); err != nil {
 		return nil, err
 	}
 	if err := resolveColor(cfg, flags, userCfg, userPath); err != nil {
@@ -190,23 +201,23 @@ func usageError(source string, err error) error {
 // silently falling back to the defaults would hide a typo in the path the same
 // way silently ignoring a malformed file would hide its contents. The default
 // path is under no such obligation, having been named by nobody.
-func loadUserFile() (*userFile, string, error) {
+func loadUserFile() (*userFile, string, bool, error) {
 	path, explicit, err := userFilePath()
 	if err != nil {
-		return nil, path, err
+		return nil, path, false, err
 	}
 	var cfg userFile
 	found, err := readYAML(path, &cfg)
 	if err != nil {
-		return nil, path, err
+		return nil, path, false, err
 	}
 	if !found {
 		if explicit {
-			return nil, path, usageError("AWB_CONFIG_FILE", fmt.Errorf("%s: no such file", path))
+			return nil, path, false, usageError("AWB_CONFIG_FILE", fmt.Errorf("%s: no such file", path))
 		}
-		return &userFile{}, path, nil
+		return &userFile{}, path, false, nil
 	}
-	return &cfg, path, nil
+	return &cfg, path, true, nil
 }
 
 // userFilePath is the user configuration file to read, and whether it was
@@ -414,8 +425,10 @@ func resolveCredentials(cfg *Config, userCfg *userFile, userPath string) error {
 
 	if value, set := os.LookupEnv("AWB_PASSWORD"); set {
 		cfg.Password = value
+		cfg.PasswordSet = true
 	} else if userCfg.Password != nil {
 		cfg.Password = *userCfg.Password
+		cfg.PasswordSet = true
 	}
 	return nil
 }
@@ -461,8 +474,8 @@ func FoldOSUsername() string {
 
 // resolveContext reads the directory's own scope. --no-context ignores the
 // project and label of the local configuration file for this invocation,
-// restoring the view of the whole database — but it does not stop the file
-// from being read, so a malformed one still fails the command.
+// falling through to any user-level project default — but it does not stop the
+// file from being read, so a malformed one still fails the command.
 func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath string) error {
 	if flags.NoContext {
 		return nil
@@ -482,9 +495,9 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 	return nil
 }
 
-// resolveCreateProject applies the precedence chain for awb create's default
-// project: --project, else AWB_PROJECT, else project in the local
-// configuration file, else project in the user configuration file.
+// resolveDefaultProject applies the project precedence chain: --project, else
+// AWB_PROJECT, else project in the local configuration file, else project in
+// the user configuration file.
 //
 // --project is a per-command flag rather than a global one, so it is applied
 // by the command itself; what is resolved here is everything below it.
@@ -493,25 +506,25 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 // directory's own project, so awb create run in a directory scoped to another
 // project puts the issue where the variable says. The variable is a deliberate
 // override and wins as one.
-func resolveCreateProject(cfg *Config, userCfg *userFile, userPath string) error {
+func resolveDefaultProject(cfg *Config, userCfg *userFile, userPath string) error {
 	if value := os.Getenv("AWB_PROJECT"); value != "" {
 		if _, err := domain.ValidateProjectKey(value); err != nil {
 			return usageError("AWB_PROJECT", err)
 		}
-		cfg.CreateProject = value
+		cfg.DefaultProject = value
 		return nil
 	}
 	// --no-context removes the local file from this chain but not the rest, which
 	// is what ContextProject already being empty expresses.
 	if cfg.ContextProject != "" {
-		cfg.CreateProject = cfg.ContextProject
+		cfg.DefaultProject = cfg.ContextProject
 		return nil
 	}
 	if userCfg.Project != nil {
 		if _, err := domain.ValidateProjectKey(*userCfg.Project); err != nil {
 			return configError(userPath, err)
 		}
-		cfg.CreateProject = *userCfg.Project
+		cfg.DefaultProject = *userCfg.Project
 	}
 	return nil
 }
