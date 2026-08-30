@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -147,6 +148,22 @@ func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
 	assert.Contains(t, out,
 		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07Demo",
 		"the project name opens the same listing")
+
+	plain := ansi.Strip(out)
+	var header, row string
+	for _, line := range lines(plain) {
+		if strings.Contains(line, "KEY") && strings.Contains(line, "IN PROGRESS") {
+			header = line
+		}
+		if strings.Contains(line, "demo") && strings.Contains(line, "Demo") {
+			row = line
+		}
+	}
+	require.NotEmpty(t, header)
+	require.NotEmpty(t, row)
+	assert.Equal(t, strings.Index(header, "NAME"), strings.Index(row, "Demo"))
+	assert.Equal(t, strings.Index(header, "OPEN")+len("OPEN"), strings.Index(row, "2")+len("2"),
+		"OSC 8 bytes must not change visible column alignment")
 }
 
 // A local database has no associated web address, redirected output is not an

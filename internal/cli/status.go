@@ -198,16 +198,34 @@ func (e *env) printStatus(report *statusReport) error {
 	_, _ = fmt.Fprintln(w, "\nProjects")
 	if len(report.Projects) == 0 {
 		_, _ = fmt.Fprintln(w, "  (none)")
-	} else {
-		_, _ = fmt.Fprintln(w, "  KEY\tNAME\tOPEN\tIN PROGRESS\tCLOSED\tTOTAL")
-		for _, project := range report.Projects {
-			route := "/issues?" + url.Values{"project": []string{project.Key}}.Encode()
-			_, _ = fmt.Fprintf(w, "  %s\t%s\t%d\t%d\t%d\t%d\n",
-				e.entityLink(t, project.Key, route), e.entityLink(t, project.Name, route),
-				project.Open, project.InProgress, project.Closed, project.Total)
-		}
+		_ = w.Flush()
+		return e.stdout.Err()
 	}
 	_ = w.Flush()
+
+	keys := make([]string, len(report.Projects))
+	names := make([]string, len(report.Projects))
+	open := make([]string, len(report.Projects))
+	inProgress := make([]string, len(report.Projects))
+	closed := make([]string, len(report.Projects))
+	totals := make([]string, len(report.Projects))
+	for i, project := range report.Projects {
+		route := "/issues?" + url.Values{"project": []string{project.Key}}.Encode()
+		keys[i] = e.entityLink(t, project.Key, route)
+		names[i] = e.entityLink(t, project.Name, route)
+		open[i] = strconv.Itoa(project.Open)
+		inProgress[i] = strconv.Itoa(project.InProgress)
+		closed[i] = strconv.Itoa(project.Closed)
+		totals[i] = strconv.Itoa(project.Total)
+	}
+	e.writeListing(t, []col{
+		{header: "KEY", cells: keys, paint: always(t.id)},
+		{header: "NAME", cells: names, floor: nameFloor},
+		{header: "OPEN", cells: open, right: true},
+		{header: "IN PROGRESS", cells: inProgress, right: true},
+		{header: "CLOSED", cells: closed, right: true},
+		{header: "TOTAL", cells: totals, right: true},
+	})
 	return e.stdout.Err()
 }
 
