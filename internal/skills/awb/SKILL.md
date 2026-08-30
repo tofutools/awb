@@ -68,3 +68,6 @@ stable full representation. The default table is for humans; do not parse it.
 a project you have no access to is `3`, since it is not yours to know about).
 
 An issue ID is `<project>-<hash>`; any unambiguous prefix, or a bare hash, works.
+
+For commands not covered here, explore the command tree with `awb --help`, then
+use `awb <command> --help` or `awb <group> <command> --help` for details.
