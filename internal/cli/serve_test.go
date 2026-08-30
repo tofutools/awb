@@ -50,6 +50,19 @@ func newServeHandlerWith(t *testing.T, opts serveOptions) http.Handler {
 	return h
 }
 
+func newProxyServeHandler(t *testing.T, proxyTo string) http.Handler {
+	t.Helper()
+	target, err := parseProxyURL(proxyTo)
+	require.NoError(t, err)
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	h, err := buildProxyHandler(target, openapi.New(raw), serveOptions{
+		addr: "127.0.0.1", port: 7777,
+	}, log.New(io.Discard, "", 0))
+	require.NoError(t, err)
+	return h
+}
+
 // newServeHandlerOn builds the server and hands back the database behind it,
 // so a test can add the user that turns authentication on.
 func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Backend) {
@@ -152,6 +165,78 @@ func TestStaticAssetsAreServed(t *testing.T) {
 	resp, body = get(t, h, http.MethodGet, "/issues/awb-a1b2c3")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "<!doctype html>")
+}
+
+func TestUIProxyServesLocalUIAndForwardsAPIReads(t *testing.T) {
+	var upstreamHost string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/awb/api/projects", r.URL.Path)
+		assert.Equal(t, "page=2", r.URL.RawQuery)
+		assert.Equal(t, upstreamHost, r.Host)
+		assert.Equal(t, "Basic dGVzdDpzZWNyZXQ=", r.Header.Get("Authorization"))
+		w.Header().Set("X-Total-Count", "7")
+		w.Header().Set("Access-Control-Allow-Origin", "https://elsewhere.example")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
+		_, _ = io.WriteString(w, `[{"key":"awb"}]`)
+	}))
+	defer upstream.Close()
+	upstreamHost = strings.TrimPrefix(upstream.URL, "http://")
+
+	h := newProxyServeHandler(t, upstream.URL+"/awb/")
+	resp, body := get(t, h, http.MethodGet, "/")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "<!doctype html>")
+
+	resp, body = get(t, h, http.MethodGet, "/api/projects?page=2",
+		"Authorization", "Basic dGVzdDpzZWNyZXQ=")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "7", resp.Header.Get("X-Total-Count"))
+	assert.Empty(t, resp.Header.Get("Access-Control-Allow-Origin"))
+	assert.NotEqual(t, "default-src 'none'", resp.Header.Get("Content-Security-Policy"))
+	assert.Len(t, resp.Header.Values("Content-Security-Policy"), 1)
+	assert.JSONEq(t, `[{"key":"awb"}]`, body)
+}
+
+func TestUIProxyForwardsAuthenticationChallenge(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="remote awb"`)
+		http.Error(w, "credentials required", http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	resp, _ := get(t, newProxyServeHandler(t, upstream.URL), http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, `Basic realm="remote awb"`, resp.Header.Get("WWW-Authenticate"))
+}
+
+func TestUIProxyForwardsBrowserWritesAfterCheckingTheirOrigin(t *testing.T) {
+	requests := 0
+	var upstreamURL string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/awb/api/issues", r.URL.Path)
+		assert.Equal(t, upstreamURL, r.Header.Get("Origin"))
+		assert.Equal(t, upstreamURL+"/awb/", r.Header.Get("Referer"))
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{}`, string(body))
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer upstream.Close()
+	upstreamURL = upstream.URL
+
+	h := newProxyServeHandler(t, upstream.URL+"/awb")
+	resp, _ := send(t, h, http.MethodPost, "/api/issues", `{}`,
+		"Origin", "http://127.0.0.1:7777",
+		"Referer", "http://127.0.0.1:7777/#/issues")
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.Equal(t, 1, requests)
+
+	resp, _ = send(t, h, http.MethodPost, "/api/issues", `{}`,
+		"Origin", "https://elsewhere.example")
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Equal(t, 1, requests)
 }
 
 // Every embedded asset is reachable at the path it is embedded under.
@@ -376,6 +461,30 @@ func TestPublicURLMustBeAnOriginABrowserCanSend(t *testing.T) {
 		parsed, err := parsePublicURL(publicURL)
 		assert.NoError(t, err, publicURL)
 		assert.NotNil(t, parsed, publicURL)
+	}
+}
+
+func TestProxyTargetMustBeAnHTTPBaseURL(t *testing.T) {
+	for _, proxyTo := range []string{
+		"//example.com/awb",
+		"file:///tmp/awb",
+		"https:///awb",
+		"https://user:pw@example.com/awb",
+		"https://example.com/awb?project=demo",
+		"https://example.com/awb#issues",
+		"https://example.com:65536/awb",
+	} {
+		_, err := parseProxyURL(proxyTo)
+		assert.Error(t, err, proxyTo)
+	}
+
+	for _, proxyTo := range []string{
+		"http://example.com",
+		"https://example.com/awb/",
+	} {
+		parsed, err := parseProxyURL(proxyTo)
+		require.NoError(t, err, proxyTo)
+		assert.False(t, strings.HasSuffix(parsed.Path, "/"), proxyTo)
 	}
 }
 

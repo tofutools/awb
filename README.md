@@ -289,6 +289,20 @@ a single interface with two implementations and cannot tell them apart.
 `--cors-origin` lets a separately hosted UI call the API, and is opt-in because
 any page in the browser could otherwise reach it.
 
+To test the UI bundled into a local build against an existing awb server
+without changing that server, use the UI proxy:
+
+```console
+$ awb serve --proxy-to https://example.com/awb/
+2026/05/17 09:41:02 awb serving on http://127.0.0.1:7777/
+```
+
+The UI and its assets come from the local binary. Requests under `/api/` are
+forwarded to the remote server, including its Basic Authentication challenge.
+Browser writes must pass the local server's cross-site request check before
+they are forwarded. The default loopback binding keeps the proxy local to this
+machine, and no CORS change is needed on the remote server.
+
 `--addr` and `--port` are independent: `--addr 0.0.0.0` reaches other machines
 on the default port, `--port 8080` moves the port and leaves the binding alone.
 
