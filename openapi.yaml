@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 2.0.0
+  version: 0.6.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -48,8 +48,9 @@ info:
     reason, so adding one can be refused on account of an edge the caller
     cannot see.
 
-    Within a major version, changes to this document are additive only.
-    `info.version` tracks the API, not the binary.
+    The API is still pre-1.0: a new `0.x` minor version may contain breaking
+    changes while the design settles. `info.version` tracks the API, not the
+    binary.
   license:
     name: MIT
     identifier: MIT
