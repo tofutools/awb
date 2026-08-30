@@ -40,9 +40,10 @@ a:hover { text-decoration: underline; }
 #app { max-width: 96rem; margin: 0 auto; padding: 0 1.5rem 4rem; }
 
 .app-header {
+  --control-height: 2.25rem;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.75rem 2rem;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--line);
@@ -80,6 +81,9 @@ nav a.active::after {
 }
 
 @media (min-width: 701px) {
+  .app-header > * { height: var(--control-height); }
+  nav a { box-sizing: border-box; height: 100%; }
+  .search input { box-sizing: border-box; height: 100%; }
   main > :not(.issue-view) { margin-inline: 1rem; }
 }
 
