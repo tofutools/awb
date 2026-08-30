@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tofutools/awb/internal/awberr"
+	"github.com/tofutools/awb/internal/skills"
 	"github.com/tofutools/awb/internal/storage"
 )
 
@@ -68,6 +69,33 @@ func newAgentGuideCommand(e *env) *cobra.Command {
 				return err
 			}
 			return writeGuideBlock(*p.Write, AgentGuide)
+		},
+	}.ToCobra()
+}
+
+type installSkillsParams struct {
+	Harnesses []string `long:"harness" collection:"array" optional:"true" alts:"all,claude,codex,opencode,copilot" help:"install for this harness; repeatable (all, claude, codex, opencode, copilot)"`
+}
+
+func newInstallSkillsCommand(e *env) *cobra.Command {
+	return boa.CmdT[installSkillsParams]{
+		Use:   "install-skills",
+		Short: "Install the bundled awb skill for agent harnesses",
+		Long: "Install or refresh awb's bundled skill in the user skill directories\n" +
+			"used by agent harnesses. With no --harness, all known harnesses are\n" +
+			"selected. The flag is repeatable, and --harness all selects all of them.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *installSkillsParams, _ *cobra.Command, _ []string) error {
+			installed, err := skills.Install(p.Harnesses)
+			if err != nil {
+				return awberr.Wrap(awberr.Runtime, err, "install agent skill")
+			}
+			for _, item := range installed {
+				if _, err := fmt.Fprintf(e.stdout, "Installed awb skill for %s at %s\n", item.Harness, item.Path); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}.ToCobra()
 }
