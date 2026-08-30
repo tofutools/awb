@@ -608,12 +608,12 @@ func TestProjectDeletionAndCascade(t *testing.T) {
 	assert.Empty(t, page.Issues)
 }
 
-// The conditional-edit precondition. The CLI never sends one and gets
-// last-write-wins; a UI sends the tag it read.
+// The conditional-edit precondition. A caller which sends the tag it read gets
+// compare-and-set semantics; omitting it gets last-write-wins.
 func TestIfMatch(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")
-	tag := local.ETag(issue.UpdatedAt)
+	tag := backend.ETag(issue.UpdatedAt)
 
 	title := "renamed"
 	updated, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Title: &title}, tag)
@@ -627,7 +627,7 @@ func TestIfMatch(t *testing.T) {
 
 	// The fresh one does.
 	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Title: &title2},
-		local.ETag(updated.UpdatedAt))
+		backend.ETag(updated.UpdatedAt))
 	assert.NoError(t, err)
 
 	// No precondition is last-write-wins.
@@ -642,7 +642,7 @@ func TestETagIsNotInvalidatedByRelations(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")
 	other := create(t, b, ctx, "other")
-	tag := local.ETag(issue.UpdatedAt)
+	tag := backend.ETag(issue.UpdatedAt)
 
 	_, err := b.AddRelation(ctx, issue.ID,
 		backend.RelationRequest{Type: domain.RelBlockedBy, Other: other.ID}, "")

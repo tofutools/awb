@@ -21,8 +21,9 @@ import (
 // Backend is every operation awb can perform on the data.
 //
 // The ifMatch parameters carry the optional conditional-edit precondition: the
-// ETag a client read, or "" for no precondition. The CLI always passes "" and
-// gets last-write-wins; a web UI passes the tag it read.
+// ETag a client read, or "" for no precondition. The CLI passes the tag saved
+// by a description fetch when replacing that description; callers which omit
+// it get last-write-wins.
 type Backend interface {
 	// Identity is who the backend attributes an unattributed action to: the
 	// caller's own identity locally, and the server's answer to GET /api/identity
@@ -106,6 +107,13 @@ type Backend interface {
 	// connections of an HTTP client.
 	Close() error
 }
+
+// ETag is the strong entity tag derived from an entity's strictly increasing
+// updated_at value. Both backend implementations return updated_at, so a
+// caller can preserve the same precondition in direct and remote mode. For an
+// issue, updated_at also moves when a comment is posted, so a tag guards both
+// its stored fields and comments added since the caller read it.
+func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 
 // IssuePage is a listing with the unpaged total that X-Total-Count carries, so
 // a UI can show "1–50 of 214".

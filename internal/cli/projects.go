@@ -23,6 +23,7 @@ func newProjectCommand(e *env) *cobra.Command {
 		"A project is the top-level organising unit; every issue belongs to exactly one.",
 		newProjectCreateCommand(e),
 		newProjectUpdateCommand(e),
+		newProjectDescriptionCommand(e),
 		newProjectShowCommand(e),
 		newProjectListCommand(e),
 		newProjectDeleteCommand(e),
@@ -73,8 +74,9 @@ func newProjectCreateCommand(e *env) *cobra.Command {
 
 type projectUpdateParams struct {
 	DescriptionFlags
-	Key  string  `positional:"true" required:"true"`
-	Name *string `long:"name" help:"human-readable name; \"\" restores the key"`
+	Key   string  `positional:"true" required:"true"`
+	Name  *string `long:"name" help:"human-readable name; \"\" restores the key"`
+	Force bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
 func newProjectUpdateCommand(e *env) *cobra.Command {
@@ -82,16 +84,22 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 		Use:   "update",
 		Short: "Change a project's name or description",
 		Long: "Change a project's name or description. The key itself is immutable.\n\n" +
-			"--name \"\" restores the key as the name.",
+			"A description file must first be fetched with awb project description get,\n" +
+			"whose receipt prevents overwriting a concurrent edit. --force deliberately\n" +
+			"replaces a description without that precondition. --name \"\" restores the\n" +
+			"key as the name.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *projectUpdateParams, cmd *cobra.Command) error {
 			return describe("project")(ctx, &p.DescriptionFlags, cmd)
 		},
 		RunFuncE: func(p *projectUpdateParams, cmd *cobra.Command, _ []string) error {
 			patch := backend.ProjectPatch{Name: p.Name}
-			description, err := p.value(e)
+			description, ifMatch, err := p.valueForUpdate(e, "project", p.Key, p.Force)
 			if err != nil {
 				return err
+			}
+			if p.Force && description == nil {
+				return awberr.Usagef("--force only applies when replacing a description")
 			}
 			patch.Description = description
 
@@ -99,9 +107,13 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.UpdateProject(cmd.Context(), p.Key, patch, "")
+			project, err := be.UpdateProject(cmd.Context(), p.Key, patch, ifMatch)
 			if err != nil {
-				return err
+				file := ""
+				if p.File != nil {
+					file = *p.File
+				}
+				return descriptionPreconditionError(err, "project", p.Key, file)
 			}
 			return e.mutatedProject(project)
 		},

@@ -372,6 +372,15 @@ both standard input and standard output, and refuses alongside `--json` and
 `--compact`, because a caller who asked for a screen to scroll asked for
 something those cannot give.
 
+The normal CLI editing workflow fetches an issue or project description to a
+file and writes a receipt beside it. The receipt binds that working file to the
+data source, canonical entity and entity ETag; updating from the file sends the
+saved tag as `If-Match` in remote mode and enforces the same precondition in
+direct mode. It therefore refuses an edit made against an older entity version.
+`--force` is the conspicuous escape hatch for an intentional blind replacement.
+Neither ordinary display nor the Markdown itself carries or refreshes this
+metadata.
+
 In remote mode, issue and project identifiers in the human output link to the
 bundled web UI. The stable JSON form carries the same destinations as explicit
 `issue_link` and `project_link` fields; they are empty in direct mode, where a

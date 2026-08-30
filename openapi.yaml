@@ -983,8 +983,9 @@ components:
       in: header
       required: false
       description: |
-        The ETag the client read. Optional — a caller that omits it, as the CLI
-        always does, gets last-write-wins — but a UI is expected to send it.
+        The ETag the client read. Optional — a caller that omits it gets
+        last-write-wins. The CLI sends it for a description replacement made
+        from a file fetched with its description command.
       schema: { type: string }
     status:
       name: status

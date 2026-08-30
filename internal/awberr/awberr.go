@@ -176,9 +176,9 @@ func ExitCode(err error) int {
 }
 
 // ErrPreconditionFailed marks a conditional request whose If-Match no longer
-// matches. It has no exit code of its own — the command line never sends
-// If-Match — so it is a Runtime error that the HTTP adapter recognises and
-// answers 412.
+// matches. It has no exit code of its own, so it is a Runtime error that the
+// HTTP adapter recognises and answers 412. The description-file CLI workflow
+// also recognises it to tell the caller to fetch a fresh working copy.
 var ErrPreconditionFailed = errors.New("it has changed since you read it")
 
 // PreconditionFailed reports that a conditional request lost its race.
