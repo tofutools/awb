@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  emptyFacetLabel,
   filterIssues,
   filterProjects,
   nextSortValue,
@@ -10,6 +11,12 @@ import {
   sortState,
   withClosedIssues,
 } from "../../static/listings.js";
+
+test("empty applicable facet groups remain visible", () => {
+  assert.equal(emptyFacetLabel([]), "none");
+  assert.equal(emptyFacetLabel([{ value: "frontend", count: 1 }]), null);
+  assert.equal(emptyFacetLabel(null), null, "inapplicable groups stay omitted");
+});
 
 function issue(overrides = {}) {
   return {
