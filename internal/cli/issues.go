@@ -152,7 +152,7 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 
 			if e.json {
-				return e.writeJSON(issue)
+				return e.writeIssueJSON(issue)
 			}
 			// create is one of the exceptions to "mutating commands print nothing on
 			// success": it prints the new ID.
@@ -571,7 +571,7 @@ func newDeleteCommand(e *env) *cobra.Command {
 			if e.json {
 				// A deleting command prints the object as it was immediately before
 				// deletion, relations included.
-				return e.writeJSON(&deleted.Issue)
+				return e.writeIssueJSON(&deleted.Issue)
 			}
 			return e.summarise("Deleted %s and %d relation(s).\n",
 				deleted.Issue.ID, deleted.RelationsRemoved)

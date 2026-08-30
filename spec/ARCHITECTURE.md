@@ -331,6 +331,12 @@ description says. What a given terminal makes of any of it is the terminal's
 own business, which is why nothing there is the only way to reach anything: the
 links a description holds are still listed as plain text beside it.
 
+In remote mode, issue and project identifiers in the human output link to the
+bundled web UI. The stable JSON form carries the same destinations as explicit
+`issue_link` and `project_link` fields; they are empty in direct mode, where a
+database file has no associated web address. These are CLI presentation
+metadata rather than stored fields.
+
 Mutating commands print nothing on success, so a script's output is signal.
 Three say something anyway, and each says it for a reason: `awb create` prints
 the new ID, because minting it is the point; the deleting commands and `awb
@@ -351,11 +357,11 @@ database: third-party interfaces, dashboards and integrations, and later a
 shared team instance.
 
 It is specified by an OpenAPI document that is embedded in the binary and served
-from it. The document's component schemas *are* the CLI's JSON structures —
-there is no second, HTTP-only representation of anything the CLI also returns.
-If the two ever diverge, the shapes are what changed and both must be corrected
-together. A test enforces this by checking the document's vocabulary against the
-code's.
+from it. The document's component schemas carry the same domain fields as the
+CLI's JSON structures. The remote CLI additionally derives web-navigation links
+from its configured server URL; the API does not return that presentation
+metadata. A test enforces the shared vocabulary by checking the document against
+the code.
 
 **The document is the source of truth, not a description written afterwards.**
 The Go server — routing, parameter and body decoding, the vocabulary, the

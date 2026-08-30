@@ -38,6 +38,55 @@ func (e *env) writeJSON(value any) error {
 	return nil
 }
 
+// issueJSON and projectJSON are the CLI's JSON presentation shapes. The API
+// returns the domain objects themselves, but a remote CLI also knows the web
+// address that presents each object and includes it as navigation metadata.
+// The fields remain present and empty in direct mode, where no web address
+// exists to name.
+type issueJSON struct {
+	*domain.Issue
+	IssueLink   string `json:"issue_link"`
+	ProjectLink string `json:"project_link"`
+}
+
+type projectJSON struct {
+	*domain.Project
+	ProjectLink string `json:"project_link"`
+}
+
+type issueTreeJSON struct {
+	issueJSON
+	Children []issueTreeJSON `json:"children"`
+}
+
+func (e *env) issueJSON(issue *domain.Issue) issueJSON {
+	return issueJSON{
+		Issue:       issue,
+		IssueLink:   e.issueURL(issue.ID),
+		ProjectLink: e.projectURL(issue.Project),
+	}
+}
+
+func (e *env) projectJSON(project *domain.Project) projectJSON {
+	return projectJSON{Project: project, ProjectLink: e.projectURL(project.Key)}
+}
+
+func (e *env) issueTreeJSON(node *domain.IssueTree) issueTreeJSON {
+	children := make([]issueTreeJSON, len(node.Children))
+	for i := range node.Children {
+		children[i] = e.issueTreeJSON(&node.Children[i])
+	}
+	return issueTreeJSON{issueJSON: e.issueJSON(&node.Issue), Children: children}
+}
+
+func (e *env) writeIssueJSON(issue *domain.Issue) error {
+	return e.writeJSON(e.issueJSON(issue))
+}
+
+func (e *env) writeProjectJSON(project *domain.Project) error {
+	return e.writeJSON(e.projectJSON(project))
+}
+
 const (
 	// What to assume a terminal is when it will not say how wide it is.
 	assumedWidth = 100
@@ -383,7 +432,11 @@ func (e *env) printIssues(issues []domain.Issue, withBlockers bool) error {
 		if issues == nil {
 			issues = []domain.Issue{}
 		}
-		return e.writeJSON(issues)
+		out := make([]issueJSON, len(issues))
+		for i := range issues {
+			out[i] = e.issueJSON(&issues[i])
+		}
+		return e.writeJSON(out)
 	case e.compact:
 		for i := range issues {
 			_, _ = fmt.Fprintln(e.stdout, domain.CompactLine(&issues[i], withBlockers))
@@ -442,11 +495,30 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 // text. Hyperlinks follow the same escape-sequence switch as the rest of the
 // human output: --color never means no terminal escapes at all.
 func (e *env) entityLink(t *theme, text, route string) string {
-	if !t.boxed || !t.color || e.cfg == nil || e.cfg.RemoteURL == nil {
+	if !t.boxed || !t.color {
 		return text
 	}
-	destination := e.cfg.RemoteURL.String() + "/#" + route
+	destination := e.entityURL(route)
+	if destination == "" {
+		return text
+	}
 	return lipgloss.NewStyle().Hyperlink(safeURL(destination)).Render(text)
+}
+
+func (e *env) entityURL(route string) string {
+	if e.cfg == nil || e.cfg.RemoteURL == nil {
+		return ""
+	}
+	return e.cfg.RemoteURL.String() + "/#" + route
+}
+
+func (e *env) issueURL(id string) string {
+	return e.entityURL("/issues/" + url.PathEscape(id))
+}
+
+func (e *env) projectURL(key string) string {
+	query := url.Values{"project": []string{key}}.Encode()
+	return e.entityURL("/issues?" + query)
 }
 
 func (e *env) issueLink(t *theme, id string) string {
@@ -462,8 +534,7 @@ func (e *env) issueLinks(t *theme, ids []string, separator string) string {
 }
 
 func (e *env) projectLink(t *theme, key string) string {
-	query := url.Values{"project": []string{key}}.Encode()
-	return e.entityLink(t, key, "/issues?"+query)
+	return e.entityLink(t, key, "/issues?"+url.Values{"project": []string{key}}.Encode())
 }
 
 // listTitle gives a title whichever width treatment the layout can offer. With
@@ -528,7 +599,7 @@ func truncate(s string, width int) string {
 func (e *env) printIssue(issue *domain.Issue) error {
 	switch {
 	case e.json:
-		return e.writeJSON(issue)
+		return e.writeIssueJSON(issue)
 	case e.compact:
 		_, _ = fmt.Fprintln(e.stdout, domain.CompactLine(issue, false))
 		return nil
@@ -541,8 +612,8 @@ func (e *env) printIssue(issue *domain.Issue) error {
 func (e *env) printIssueDetail(issue *domain.Issue) {
 	t := e.theme()
 
-	e.writeHeading(t, issue.ID, issue.Title)
-	e.field(t, "Project", issue.Project)
+	e.writeHeading(t, e.issueLink(t, issue.ID), issue.Title)
+	e.field(t, "Project", e.projectLink(t, issue.Project))
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
@@ -553,7 +624,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	e.field(t, "Updated", issue.UpdatedAt)
 
 	if len(issue.Blockers) > 0 {
-		e.field(t, "Blocked by", t.apply(t.blocked, strings.Join(issue.Blockers, ", ")))
+		e.field(t, "Blocked by", t.apply(t.blocked, e.issueLinks(t, issue.Blockers, ", ")))
 	}
 
 	e.writeDescription(t, issue.Description)
@@ -587,7 +658,8 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 			if rel.Direction == domain.DirectionIn {
 				subject, other = rel.Other, issue.ID
 			}
-			tbl.Row(t.apply(t.id, subject), string(rel.Type), t.apply(t.id, other))
+			tbl.Row(t.apply(t.id, e.issueLink(t, subject)), string(rel.Type),
+				t.apply(t.id, e.issueLink(t, other)))
 		}
 		e.writeSection(tbl)
 	}
@@ -643,7 +715,11 @@ func (e *env) printProjects(projects []domain.Project) error {
 		if projects == nil {
 			projects = []domain.Project{}
 		}
-		return e.writeJSON(projects)
+		out := make([]projectJSON, len(projects))
+		for i := range projects {
+			out[i] = e.projectJSON(&projects[i])
+		}
+		return e.writeJSON(out)
 	case e.compact:
 		for i := range projects {
 			_, _ = fmt.Fprintln(e.stdout, domain.CompactProjectLine(&projects[i]))
@@ -679,7 +755,7 @@ func (e *env) printProjects(projects []domain.Project) error {
 func (e *env) printProject(project *domain.Project) error {
 	switch {
 	case e.json:
-		return e.writeJSON(project)
+		return e.writeProjectJSON(project)
 	case e.compact:
 		_, _ = fmt.Fprintln(e.stdout, domain.CompactProjectLine(project))
 		return nil
@@ -692,7 +768,7 @@ func (e *env) printProject(project *domain.Project) error {
 func (e *env) printProjectDetail(project *domain.Project) {
 	t := e.theme()
 
-	e.writeHeading(t, project.Key, project.Name)
+	e.writeHeading(t, e.projectLink(t, project.Key), project.Name)
 	// The same count project list shows, under the heading it uses there.
 	e.field(t, "Open", strconv.Itoa(project.ActiveIssues))
 	e.field(t, "Created", project.CreatedAt)
@@ -856,7 +932,7 @@ func (e *env) mutatedMembership(membership *domain.Membership) error {
 func (e *env) printTree(root *domain.IssueTree) error {
 	switch {
 	case e.json:
-		return e.writeJSON(root)
+		return e.writeJSON(e.issueTreeJSON(root))
 	case e.compact:
 		e.walkTree(root, 0, func(node *domain.IssueTree, depth int) {
 			_, _ = fmt.Fprintln(e.stdout,
@@ -892,7 +968,7 @@ func (e *env) issueTree(t *theme, node *domain.IssueTree) *tree.Tree {
 
 func (e *env) treeNode(t *theme, node *domain.IssueTree) string {
 	return fmt.Sprintf("%s  %s  %s  %s",
-		t.apply(t.id, node.ID),
+		t.apply(t.id, e.issueLink(t, node.ID)),
 		t.apply(t.priority[clampPriority(node.Priority)], "P"+strconv.Itoa(node.Priority)),
 		e.renderStatus(t, &node.Issue),
 		truncate(node.Title, unboxedTitleWidth))
@@ -911,7 +987,7 @@ func (e *env) walkTree(node *domain.IssueTree, depth int, visit func(*domain.Iss
 // under --json every one of them prints the resulting object.
 func (e *env) mutated(issue *domain.Issue) error {
 	if e.json {
-		return e.writeJSON(issue)
+		return e.writeIssueJSON(issue)
 	}
 	return nil
 }
@@ -925,7 +1001,7 @@ func (e *env) attached(attachment *domain.Attachment) error {
 
 func (e *env) mutatedProject(project *domain.Project) error {
 	if e.json {
-		return e.writeJSON(project)
+		return e.writeProjectJSON(project)
 	}
 	return nil
 }

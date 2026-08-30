@@ -181,7 +181,7 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 				return err
 			}
 			if e.json {
-				return e.writeJSON(&deleted.Project)
+				return e.writeProjectJSON(&deleted.Project)
 			}
 			if p.Cascade {
 				return e.summarise("Deleted project %s and the issues it held.\n",

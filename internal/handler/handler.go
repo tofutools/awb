@@ -287,10 +287,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	_, _ = w.Write(bytes.TrimRight(buffer.Bytes(), "\n"))
 }
 
-// The conversions between the API's shapes and the domain's. The two are the
-// same shapes — the document's schemas are the CLI's --json structures — so
-// each of these is a rename and nothing more; anything else here would be the
-// beginning of a second representation.
+// The conversions between the API's shapes and the domain's. The two carry the
+// same fields, so each of these is a rename and nothing more; anything else
+// here would be the beginning of a second representation. The remote CLI adds
+// web links as presentation metadata only after it receives one of these.
 
 func toIssue(issue *domain.Issue) api.Issue {
 	return api.Issue{
