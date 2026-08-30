@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -75,4 +76,21 @@ func TestActivityKindAndPaging(t *testing.T) {
 	assert.Equal(t, 2, page.Total)
 	require.Len(t, page.Activity, 1)
 	assert.Equal(t, "first", page.Activity[0].Body)
+}
+
+func TestAttachmentActivityNamesWhatChanged(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "title")
+	_, err := b.AddAttachment(ctx, issue.ID, backend.AttachmentCreate{
+		Name: "evidence.txt", Content: strings.NewReader("evidence"),
+	})
+	require.NoError(t, err)
+
+	page, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Activity, 2)
+	assert.Equal(t, "attachment_added", page.Activity[0].Action)
+	require.Len(t, page.Activity[0].Changes, 1)
+	assert.Equal(t, "attachment", page.Activity[0].Changes[0].Field)
+	assert.Contains(t, string(page.Activity[0].Changes[0].To), `"name":"evidence.txt"`)
 }

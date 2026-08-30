@@ -88,7 +88,9 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 			return err
 		}
 		placed = true
-		return recordChange(tx, caller, issueID, "attachment_added", nil)
+		return recordChange(tx, caller, issueID, "attachment_added", []domain.ActivityChange{{
+			Field: "attachment", From: activityJSON(nil), To: activityJSON(attachment),
+		}})
 	})
 	if err != nil {
 		return nil, err
@@ -158,7 +160,9 @@ func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 			return err
 		}
 		deleted = attachment
-		return recordChange(tx, caller, attachment.Issue, "attachment_removed", nil)
+		return recordChange(tx, caller, attachment.Issue, "attachment_removed", []domain.ActivityChange{{
+			Field: "attachment", From: activityJSON(attachment), To: activityJSON(nil),
+		}})
 	})
 	if err != nil {
 		return nil, err
