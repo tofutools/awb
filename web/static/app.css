@@ -629,6 +629,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .comment-hint { align-self: flex-start; }
   .comment-submit { width: 100%; }
   .activity-header { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
-  .activity-changes li { display: grid; grid-template-columns: auto auto auto; justify-content: start; gap: 0.15rem 0.4rem; }
+  .activity-changes li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); justify-content: start; gap: 0.15rem 0.4rem; }
   .activity-field { grid-column: 1 / -1; min-width: 0; }
+  .activity-changes code { max-width: none; overflow: visible; text-overflow: clip; white-space: normal; }
 }
