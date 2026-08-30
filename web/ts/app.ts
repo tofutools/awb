@@ -29,6 +29,7 @@ import {
 } from "./listings.js";
 import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
+import { initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -82,6 +83,42 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   if (className !== "") node.className = className;
   if (text !== "") node.textContent = text;
   return node;
+}
+
+type IconName = "blocked" | "change" | "chevron" | "issues" | "projects" | "ready" | "search" | "tag";
+
+/** svgIcon keeps the small, decorative interface icons in the document rather
+ * than adding another asset pipeline or network request. */
+function svgIcon(name: IconName): SVGSVGElement {
+  const paths: Record<IconName, string> = {
+    blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
+    change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
+    chevron: '<path d="m8 10 4 4 4-4"></path>',
+    issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
+    projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
+    ready: '<rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="m8 12 3 3 5-6"></path>',
+    search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
+    tag: '<path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1"></circle>',
+  };
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("icon");
+  svg.innerHTML = paths[name];
+  return svg;
+}
+
+function avatar(name: string, className = ""): HTMLElement {
+  const marker = element("span", `avatar${className === "" ? "" : ` ${className}`}`, initialFor(name));
+  marker.setAttribute("aria-hidden", "true");
+  return marker;
+}
+
+function timeElement(timestamp: string): HTMLTimeElement {
+  const time = element("time", "timestamp", relativeTime(timestamp)) as HTMLTimeElement;
+  time.dateTime = timestamp;
+  time.title = timestamp;
+  return time;
 }
 
 function clear(node: HTMLElement): void {
@@ -708,28 +745,31 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-	const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
+  const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
-  const view = element("div", "issue");
-  view.append(element("h1", "", issue.title));
+  const view = element("div", "issue-view");
+  const content = element("div", "issue-content");
+  const heading = element("div", "issue-heading");
+  heading.append(element("div", "issue-key", issue.id));
+  heading.append(element("h1", "", issue.title));
+  content.append(heading);
 
-  const meta = element("div", "meta");
-  meta.append(element("span", "id", issue.id));
-  meta.append(link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project, "project"));
-  meta.append(element("span", "type", issue.type));
-  meta.append(issueBadges(issue));
-  view.append(meta);
+  const description = element("section", "issue-description");
+  description.append(element("h2", "", "Description"));
 
   if (issue.description !== "") {
-    const body = element("div", "markdown");
+    const body = element("div", "issue-description-body markdown");
     body.innerHTML = renderMarkdown(issue.description);
-    view.append(body);
+    description.append(body);
+  } else {
+    description.append(element("p", "empty", "No description."));
   }
+  content.append(description);
 
   // The derived links array is rendered explicitly as well as inside the
   // prose, so the authoritative list is always visible.
   if (issue.links.length > 0) {
-    view.append(element("h2", "", "Links"));
+    content.append(element("h2", "", "Links"));
     const list = element("ul", "links");
     for (const item of issue.links) {
       const row = element("li");
@@ -740,18 +780,18 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       if (item.text !== "") row.append(element("span", "url", item.url));
       list.append(row);
     }
-    view.append(list);
+    content.append(list);
   }
 
   if (issue.attachments.length > 0) {
-    view.append(element("h2", "", "Attachments"));
+    content.append(element("h2", "", "Attachments"));
     const list = element("ul", "attachments");
     for (const attachment of issue.attachments) list.append(attachmentRow(attachment));
-    view.append(list);
+    content.append(list);
   }
 
   if (issue.relations.length > 0) {
-    view.append(element("h2", "", "Relations"));
+    content.append(element("h2", "", "Relations"));
     const list = element("ul", "relations");
     for (const relation of issue.relations) {
       // Every relation reads "subject — type — other", whichever end is
@@ -764,17 +804,46 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       row.append(link(`#/issues/${other}`, other, "id"));
       list.append(row);
     }
-    view.append(list);
+    content.append(list);
   }
 
-  const footer = element("p", "timestamps");
-  footer.append(element("span", "", `created ${issue.created_at}`));
-  footer.append(element("span", "", `updated ${issue.updated_at}`));
-  view.append(footer);
+  content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
+  content.append(activitySection(issue.id, activity.rows));
+  view.append(content, issueSidebar(issue));
+  return view;
+}
 
-	view.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
-	view.append(activitySection(issue.id, activity.rows));
-	return view;
+function issueSidebar(issue: Issue): HTMLElement {
+  const aside = element("aside", "issue-sidebar");
+  aside.setAttribute("aria-label", "Issue details");
+  const facts = element("dl", "issue-facts");
+
+  const add = (label: string, value: Node): void => {
+    const row = element("div", "issue-fact");
+    row.append(element("dt", "", label));
+    const detail = element("dd");
+    detail.append(value);
+    row.append(detail);
+    facts.append(row);
+  };
+  const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
+
+  add("ID", element("span", "id", issue.id));
+  add("Project", link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project));
+  add("Type", badge("type", issue.type));
+  add("Status", badge(`status status-${issue.status}`, issue.status));
+  add("Priority", badge(`priority p${issue.priority}`, `P${issue.priority}`));
+  if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
+
+  const labels = element("span", "sidebar-labels");
+  if (issue.labels.length === 0) labels.append(text("—"));
+  for (const label of issue.labels) labels.append(badge("label", label));
+  add("Labels", labels);
+  add("Assignee", text(issue.assignee === "" ? "" : `@${issue.assignee}`));
+  add("Created", timeElement(issue.created_at));
+  add("Updated", timeElement(issue.updated_at));
+  aside.append(facts);
+  return aside;
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {
@@ -796,9 +865,14 @@ function activitySection(issueID: string, entries: Activity[]): HTMLElement {
   for (const [value, label] of [["all", "All"], ["comment", "Comments"], ["change", "Changes"]] as const) {
     const button = element("button", value === "all" ? "active" : "", label) as HTMLButtonElement;
     button.type = "button";
+    button.setAttribute("aria-pressed", String(value === "all"));
     button.addEventListener("click", () => {
       selected = value;
-      for (const item of filters.querySelectorAll("button")) item.classList.toggle("active", item === button);
+      for (const item of filters.querySelectorAll("button")) {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      }
       draw();
     });
     filters.append(button);
@@ -810,6 +884,8 @@ function activitySection(issueID: string, entries: Activity[]): HTMLElement {
 
 function commentComposer(issueID: string): HTMLElement {
   const form = element("form", "comment-composer") as HTMLFormElement;
+  form.append(avatar(identity, "composer-avatar"));
+  const body = element("div", "comment-composer-body");
   const textarea = document.createElement("textarea");
   textarea.name = "body";
   textarea.placeholder = "Write a comment…";
@@ -824,7 +900,10 @@ function commentComposer(issueID: string): HTMLElement {
     event.preventDefault();
     if (!button.disabled) form.requestSubmit(button);
   });
-  form.append(textarea, hint, button);
+  const actions = element("div", "comment-composer-actions");
+  actions.append(hint, button);
+  body.append(textarea, actions);
+  form.append(body);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     button.disabled = true;
@@ -834,7 +913,7 @@ function commentComposer(issueID: string): HTMLElement {
     } catch (error) {
       button.disabled = false;
       const message = error instanceof ApiError ? error.message : String(error);
-      form.append(element("p", "comment-error", message));
+      body.append(element("p", "comment-error", message));
     }
   });
   return form;
@@ -842,19 +921,21 @@ function commentComposer(issueID: string): HTMLElement {
 
 function activityEntry(entry: Activity): HTMLElement {
   const row = element("article", `activity-entry activity-${entry.kind}`);
+  const marker = element("div", `activity-marker activity-marker-${entry.kind}`);
+  if (entry.kind === "comment") marker.append(avatar(entry.actor));
+  else marker.append(svgIcon(entry.action.includes("label") ? "tag" : "change"));
+  const card = element("div", "activity-card");
   const header = element("header", "activity-header");
   header.append(element("strong", "activity-actor", entry.actor === "" ? "system" : entry.actor));
-  const time = element("time", "timestamp", entry.created_at);
-  time.setAttribute("datetime", entry.created_at);
-  header.append(time);
-  row.append(header);
+  header.append(timeElement(entry.created_at));
+  card.append(header);
   if (entry.kind === "comment") {
-    if (entry.action !== "") row.append(element("div", "activity-action", activityAction(entry.action)));
+    if (entry.action !== "") card.append(element("div", "activity-action", activityAction(entry.action)));
     const body = element("div", "activity-comment-body markdown");
     body.innerHTML = renderMarkdown(entry.body);
-    row.append(body);
+    card.append(body);
   } else {
-    row.append(element("div", "activity-action", activityAction(entry.action)));
+    card.append(element("div", "activity-action", activityAction(entry.action)));
   }
   if (entry.changes.length > 0) {
     const changes = element("ul", "activity-changes");
@@ -866,8 +947,9 @@ function activityEntry(entry: Activity): HTMLElement {
       item.append(element("code", "", displayActivityValue(change.to)));
       changes.append(item);
     }
-    row.append(changes);
+    card.append(changes);
   }
+  row.append(marker, card);
   return row;
 }
 
@@ -976,7 +1058,7 @@ function searchBox(): HTMLElement {
   const input = document.createElement("input");
   configureSearchBox(form, input);
   input.value = parseRoute().query.getAll("q").join(" ");
-  form.append(input);
+  form.append(svgIcon("search"), input);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -992,16 +1074,25 @@ function searchBox(): HTMLElement {
 }
 
 function chrome(): HTMLElement {
-  const header = element("header");
+  const header = element("header", "app-header");
   const nav = element("nav");
-  nav.append(link("#/ready", "Ready"));
-  nav.append(link("#/issues", "Issues"));
-  nav.append(link("#/blocked", "Blocked"));
-  nav.append(link("#/projects", "Projects"));
-  header.append(element("span", "brand", "Agent Work Board"));
+  const navLink = (href: string, label: string, icon: IconName): HTMLAnchorElement => {
+    const anchor = link(href, "");
+    anchor.append(svgIcon(icon), document.createTextNode(label));
+    return anchor;
+  };
+  nav.append(navLink("#/ready", "Ready", "ready"));
+  nav.append(navLink("#/issues", "Issues", "issues"));
+  nav.append(navLink("#/blocked", "Blocked", "blocked"));
+  nav.append(navLink("#/projects", "Projects", "projects"));
+  header.append(link("#/ready", "Agent Work Board", "brand"));
   header.append(nav);
   header.append(searchBox());
-  if (identity !== "") header.append(element("span", "identity", `@${identity}`));
+  if (identity !== "") {
+    const account = element("span", "identity");
+    account.append(avatar(identity), element("span", "identity-name", `@${identity}`), svgIcon("chevron"));
+    header.append(account);
+  }
   return header;
 }
 
