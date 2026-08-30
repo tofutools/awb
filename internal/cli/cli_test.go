@@ -109,10 +109,10 @@ func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("AWB_PASSWORD", "hunter2")
 
-	h.create("Open")
-	inProgress := h.create("In progress")
+	h.create("Open", "--project", "awb")
+	inProgress := h.create("In progress", "--project", "awb")
 	h.mustRun("claim", inProgress)
-	closed := h.create("Closed")
+	closed := h.create("Closed", "--project", "awb")
 	h.mustRun("close", closed, "--reason", "done")
 
 	stdout := h.mustRun("status", "--json")

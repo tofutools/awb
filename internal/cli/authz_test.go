@@ -248,6 +248,7 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 	t.Setenv("AWB_USER", "bob")
 	t.Setenv("AWB_PASSWORD", "hunter2")
 	t.Setenv("AWB_IDENTITY", "local-default")
+	t.Setenv("AWB_PROJECT", "")
 	t.Setenv("AWB_CONFIG_FILE", "")
 	t.Setenv("NO_COLOR", "1")
 	raw, err := os.ReadFile("../../openapi.yaml")
@@ -283,6 +284,7 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 			{"name":"AWB_USER","value":"bob"},
 			{"name":"AWB_PASSWORD","value":"<redacted>"},
 			{"name":"AWB_IDENTITY","value":"local-default"},
+			{"name":"AWB_PROJECT","value":""},
 			{"name":"NO_COLOR","value":"1"}
 		],
 		"projects": [
