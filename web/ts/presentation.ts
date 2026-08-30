@@ -11,26 +11,29 @@ export function relativeTime(timestamp: string, now = Date.now()): string {
   const then = Date.parse(timestamp);
   if (!Number.isFinite(then)) return timestamp;
 
-  const seconds = (then - now) / 1000;
-  const absolute = Math.abs(seconds);
-  if (absolute < 45) return "just now";
+  const difference = Math.round((then - now) / 1000);
+  const absolute = Math.abs(difference);
+  if (absolute < 10) return "just now";
 
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  const choices: readonly [number, Intl.RelativeTimeFormatUnit][] = [
-    [60, "minute"],
-    [60, "hour"],
-    [24, "day"],
-    [30, "month"],
-    [12, "year"],
-  ];
-  let value = seconds;
-  let unit: Intl.RelativeTimeFormatUnit = "second";
-  for (const [size, next] of choices) {
-    if (Math.abs(value) < size) break;
-    value /= size;
-    unit = next;
-  }
-  return formatter.format(Math.round(value), unit);
+  const minute = 60;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const month = 30 * day;
+  const year = 365 * day;
+  let duration: string;
+  if (absolute < minute) duration = `${absolute}s`;
+  else if (absolute < hour) duration = `${Math.floor(absolute / minute)}m`;
+  else if (absolute < day) duration = compoundDuration(absolute, hour, "h", minute, "m");
+  else if (absolute < month) duration = compoundDuration(absolute, day, "d", hour, "h");
+  else if (absolute < year) duration = compoundDuration(absolute, month, "mo", day, "d");
+  else duration = compoundDuration(absolute, year, "y", month, "mo");
+  return difference < 0 ? `${duration} ago` : `in ${duration}`;
+}
+
+function compoundDuration(value: number, majorSize: number, majorUnit: string, minorSize: number, minorUnit: string): string {
+  const major = Math.floor(value / majorSize);
+  const minor = Math.floor((value % majorSize) / minorSize);
+  return `${major}${majorUnit}${minor === 0 ? "" : ` ${minor}${minorUnit}`}`;
 }
 
 /** activityValue keeps structural audit values useful without spilling whole

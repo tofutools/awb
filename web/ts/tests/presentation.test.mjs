@@ -11,9 +11,11 @@ test("identity initials tolerate handles, whitespace and the system actor", () =
 
 test("timestamps use concise relative language", () => {
   const now = Date.parse("2026-08-30T12:00:00.000Z");
-  assert.equal(relativeTime("2026-08-30T11:59:40.000Z", now), "just now");
-  assert.equal(relativeTime("2026-08-30T10:00:00.000Z", now), "2 hours ago");
-  assert.equal(relativeTime("2026-08-29T12:00:00.000Z", now), "yesterday");
+  assert.equal(relativeTime("2026-08-30T11:59:55.000Z", now), "just now");
+  assert.equal(relativeTime("2026-08-30T11:59:40.000Z", now), "20s ago");
+  assert.equal(relativeTime("2026-08-30T09:42:00.000Z", now), "2h 18m ago");
+  assert.equal(relativeTime("2026-08-29T10:00:00.000Z", now), "1d 2h ago");
+  assert.equal(relativeTime("2026-08-30T14:17:00.000Z", now), "in 2h 17m");
   assert.equal(relativeTime("not-a-date", now), "not-a-date");
 });
 
