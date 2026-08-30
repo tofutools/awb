@@ -40,7 +40,7 @@ tasks:
 
   install:
     desc: Install awb to GOBIN or GOPATH/bin
-    deps: [generate, fe:build]
+    deps: [fe:build]
     cmds:
       - env CGO_ENABLED=0 go install -trimpath -buildvcs=true .
 
