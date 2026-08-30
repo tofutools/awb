@@ -3,9 +3,9 @@
 [![CI](https://github.com/tofutools/awb/actions/workflows/ci.yml/badge.svg)](https://github.com/tofutools/awb/actions/workflows/ci.yml)
 
 `awb` is an agent-first issue tracker: a single Go binary backed by SQLite, with
-a command line interface for coding agents, humans and scripts. It fills the
-project issue-and-work-tracking role commonly served by Jira, Linear or GitHub
-Issues, with a deliberately smaller agent-first model.
+a command line interface for coding agents, humans and scripts. It is a
+deliberately smaller, agent-first alternative to Jira, Linear and GitHub Issues;
+different projects can use different trackers.
 
 It takes the dependency-aware "what can I work on now" model seriously and
 leaves nearly everything else out. There is no permission model, no configurable
