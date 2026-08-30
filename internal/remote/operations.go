@@ -391,10 +391,10 @@ func (b *Backend) facets(ctx context.Context, path string, filter *domain.Filter
 	return backend.FacetPage{Facets: facets, Total: totalCount(header, len(facets))}, nil
 }
 
-// ServerIdentity asks the server who it thinks the caller is. The CLI does not
-// use it — it resolves its own identity locally — but it is what a browser UI
-// has no other way to learn.
-func (b *Backend) ServerIdentity(ctx context.Context) (string, error) {
+// AuthenticatedIdentity asks the server who it thinks the caller is. This is
+// deliberately separate from Identity, which is the client's configured
+// default assignee and is resolved locally.
+func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
 	var body identityBody
 	if _, err := b.call(ctx, http.MethodGet, b.endpoint("/api/identity", nil), nil, "", &body); err != nil {
 		return "", err

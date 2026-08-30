@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -125,6 +126,44 @@ func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
 	assert.Contains(t, projects,
 		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
 		"the web UI represents a project as its filtered issue listing")
+}
+
+func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
+	out := renderRemote(config.ColorAlways, true, func(e *env) {
+		require.NoError(t, e.printStatus(&statusReport{
+			Connection: statusConnection{
+				Mode: "remote", Server: "https://example.com/awb",
+				UI: "https://example.com/awb/#/projects",
+			},
+			Configuration: statusConfiguration{Color: config.ColorAlways},
+			Projects:      []statusProject{{Key: "demo", Name: "Demo", Open: 2, Total: 2}},
+		}))
+	})
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/projects\x07https://example.com/awb/#/projects",
+		"the visible full UI URL opens the project index")
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
+		"the project key opens its filtered issue listing")
+	assert.Contains(t, out,
+		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07Demo",
+		"the project name opens the same listing")
+
+	plain := ansi.Strip(out)
+	var header, row string
+	for _, line := range lines(plain) {
+		if strings.Contains(line, "KEY") && strings.Contains(line, "IN PROGRESS") {
+			header = line
+		}
+		if strings.Contains(line, "demo") && strings.Contains(line, "Demo") {
+			row = line
+		}
+	}
+	require.NotEmpty(t, header)
+	require.NotEmpty(t, row)
+	assert.Equal(t, strings.Index(header, "NAME"), strings.Index(row, "Demo"))
+	assert.Equal(t, strings.Index(header, "OPEN")+len("OPEN"), strings.Index(row, "2")+len("2"),
+		"OSC 8 bytes must not change visible column alignment")
 }
 
 // A local database has no associated web address, redirected output is not an

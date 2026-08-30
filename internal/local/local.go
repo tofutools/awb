@@ -71,6 +71,12 @@ func (b *Backend) Identity(_ context.Context) (string, error) {
 	return b.identity, nil
 }
 
+// AuthenticatedIdentity is the local caller. Direct mode has no separate
+// authentication boundary, so it is identical to Identity.
+func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
+	return b.Identity(ctx)
+}
+
 // Close releases the database.
 func (b *Backend) Close() error { return b.db.Close() }
 

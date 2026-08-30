@@ -88,6 +88,7 @@ whatever is under the key is meant.
 | Command | What it does |
 | --- | --- |
 | `awb init` | Create the database. The only command that does. |
+| `awb status` | Show the active local database or remote server and web UI, identity, configuration, environment overrides and per-project issue counts. |
 | `awb create <title>` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. |
 | `awb ready` | Open, unblocked, unassigned issues, highest priority first. |
 | `awb list` / `blocked` / `search` | The other listings. |
