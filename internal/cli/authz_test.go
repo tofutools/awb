@@ -280,7 +280,7 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	// request, so they are exit code 1 and not 5.
 	wrong := remote.New(base, "bob", "hunter3", "bob")
 	t.Cleanup(func() { _ = wrong.Close() })
-	_, err = wrong.ListProjects(ctx, nil, nil)
+	_, err = wrong.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.Error(t, err)
 	assert.Equal(t, 1, awberr.ExitCode(err))
 }

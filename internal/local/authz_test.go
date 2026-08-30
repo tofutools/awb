@@ -80,7 +80,7 @@ func TestDirectModeIsUnauthorized(t *testing.T) {
 	// backend acting as bob does everything anyway.
 	direct := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
 
-	page, err := direct.ListProjects(ctx, nil, nil)
+	page, err := direct.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, page.Projects, 2)
 
@@ -108,7 +108,7 @@ func TestVisibilityIsMembership(t *testing.T) {
 
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, nil, nil)
+	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, projects.Projects, 1)
 	assert.Equal(t, "awb", projects.Projects[0].Key)
@@ -263,7 +263,7 @@ func TestAProjectAdministratorSeesEverything(t *testing.T) {
 	require.NoError(t, err)
 
 	alice := root.WithUser("alice")
-	projects, err := alice.ListProjects(ctx, nil, nil)
+	projects, err := alice.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, projects.Projects, 2)
 
@@ -364,7 +364,7 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 	assert.Len(t, users.Users, 4)
 
 	// Managing users confers no access to any project.
-	projects, err := dana.ListProjects(ctx, nil, nil)
+	projects, err := dana.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, projects.Projects)
 }
@@ -487,7 +487,7 @@ func TestAnUnknownCallerIsRefused(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 
 	ghost := root.WithUser("nobody")
-	_, err := ghost.ListProjects(ctx, nil, nil)
+	_, err := ghost.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	forbidden(t, err)
 }
 
@@ -633,13 +633,13 @@ func TestPermissionsAreReadPerOperation(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, nil, nil)
+	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, projects.Projects)
 
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	projects, err = bob.ListProjects(ctx, nil, nil)
+	projects, err = bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
 }

@@ -10,6 +10,42 @@ export interface SortState {
   explicit: boolean;
 }
 
+export const pageSize = 50;
+
+/** pageNumber reads the UI's one-based page parameter. Invalid values fall
+ * back to the first page and never reach the API as an invalid offset. */
+export function pageNumber(query: URLSearchParams): number {
+  const value = query.get("page");
+  if (value === null || !/^\d+$/.test(value)) return 1;
+  const page = Number(value);
+  return Number.isSafeInteger(page) && page > 0 ? page : 1;
+}
+
+/** withPage changes only pagination state. Page one is the canonical URL and
+ * therefore has no explicit page parameter. */
+export function withPage(query: URLSearchParams, page: number): URLSearchParams {
+  const next = new URLSearchParams(query);
+  if (page <= 1) next.delete("page");
+  else next.set("page", String(page));
+  return next;
+}
+
+export interface PageWindow {
+  page: number;
+  pages: number;
+  first: number;
+  last: number;
+}
+
+/** pageWindow describes the range represented by a backend page. */
+export function pageWindow(total: number, requested: number, size = pageSize): PageWindow {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const page = Math.min(Math.max(1, requested), pages);
+  const first = total === 0 ? 0 : (page - 1) * size + 1;
+  const last = total === 0 ? 0 : Math.min(page * size, total);
+  return { page, pages, first, last };
+}
+
 /** Empty applicable facet groups advertise themselves; null means omitted. */
 export function emptyFacetLabel(values: readonly unknown[] | null): string | null {
   return values !== null && values.length === 0 ? "none" : null;
@@ -20,6 +56,7 @@ export function emptyFacetLabel(values: readonly unknown[] | null): string | nul
  * filters and presentation choices. */
 export function withClosedIssues(query: URLSearchParams, include: boolean): URLSearchParams {
   const next = new URLSearchParams(query);
+  next.delete("page");
   if (include) next.set("include-closed", "true");
   else next.delete("include-closed");
   return next;
@@ -92,7 +129,6 @@ export function filterProjects(projects: Project[], query: string): Project[] {
     query,
   ));
 }
-
 /** filterUsers matches the account name, roles and visible memberships. */
 export function filterUsers(users: User[], query: string): User[] {
   if (query.trim() === "") return users;
@@ -102,65 +138,4 @@ export function filterUsers(users: User[], query: string): User[] {
     user.user_admin ? "user administrator" : "",
     ...user.projects.flatMap((membership) => [membership.project, membership.access]),
   ].join(" "), query));
-}
-
-type Comparable = string | number | null;
-
-function compareValues(a: Comparable, b: Comparable, direction: SortDirection): number {
-  const aBlank = a === null || a === "";
-  const bBlank = b === null || b === "";
-  if (aBlank || bBlank) return aBlank === bBlank ? 0 : aBlank ? 1 : -1;
-
-  const comparison = typeof a === "number" && typeof b === "number"
-    ? a - b
-    : String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
-  return direction === "desc" ? -comparison : comparison;
-}
-
-/** sortIssues orders a copy by every column the responsive issue tables expose. */
-export function sortIssues(issues: Issue[], state: SortState): Issue[] {
-  if (state.key === "relevance") return issues;
-
-  const value = (issue: Issue): Comparable => {
-    switch (state.key) {
-      case "id": return issue.id;
-      case "project": return issue.project;
-      case "priority": return issue.priority;
-      case "status": return issue.status;
-      case "assignee": return issue.assignees.join(" ");
-      case "created": return issue.created_at;
-      case "updated": return issue.updated_at;
-      case "type": return issue.type;
-      case "blockers": return issue.blockers.join(" ");
-      default: return null;
-    }
-  };
-
-  return issues.slice().sort((a, b) => {
-    const compared = compareValues(value(a), value(b), state.direction);
-    if (compared !== 0) return compared;
-    if (state.key === "priority") {
-      const created = compareValues(a.created_at, b.created_at, "asc");
-      if (created !== 0) return created;
-    }
-    return compareValues(a.id, b.id, "asc");
-  });
-}
-
-/** sortProjects orders a copy by every project table column. */
-export function sortProjects(projects: Project[], state: SortState): Project[] {
-  const value = (project: Project): Comparable => {
-    switch (state.key) {
-      case "key": return project.key;
-      case "name": return project.name;
-      case "active": return project.active_issues;
-      case "updated": return project.updated_at;
-      default: return null;
-    }
-  };
-
-  return projects.slice().sort((a, b) => {
-    const compared = compareValues(value(a), value(b), state.direction);
-    return compared !== 0 ? compared : compareValues(a.key, b.key, "asc");
-  });
 }

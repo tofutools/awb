@@ -43,6 +43,8 @@ export type IssueFilters = Query<"listIssues">;
 export type ReadyFilters = Query<"listReady">;
 export type BlockedFilters = Query<"listBlocked">;
 export type SearchFilters = Query<"searchIssues">;
+export type ProjectFilters = Query<"listProjects">;
+export type UserFilters = Query<"listUsers">;
 export type FacetFilters = Query<"listLabels">;
 export type ActivityFilters = Query<"listIssueActivity">;
 
@@ -72,7 +74,7 @@ export function blockedFilters(filters: Filters): BlockedFilters {
 
 /** The facet endpoints fix the row order at value ascending. */
 export function facetFilters(filters: Filters): FacetFilters {
-  const { sort, q, ...accepted } = filters;
+  const { sort, q, limit, offset, ...accepted } = filters;
   return accepted;
 }
 
@@ -169,8 +171,8 @@ export const api = {
   addComment: (id: string, body: string) =>
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
-  projects: () => getPage<Project>("api/projects"),
-  users: () => getPage<User>("api/users"),
+  projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
+  users: (filters: UserFilters = {}) => getPage<User>(`api/users${toQuery(filters)}`),
   labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
   assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),

@@ -7,10 +7,11 @@ import {
   filterProjects,
   filterUsers,
   nextSortValue,
-  sortIssues,
-  sortProjects,
+  pageNumber,
+  pageWindow,
   sortState,
   withClosedIssues,
+  withPage,
 } from "../../static/listings.js";
 
 test("empty applicable facet groups remain visible", () => {
@@ -64,12 +65,27 @@ test("sort state accepts known signed keys and otherwise uses the natural order"
 });
 
 test("showing closed issues preserves the rest of the listing route", () => {
-  const query = new URLSearchParams("project=awb&label=frontend&sort=-updated");
+  const query = new URLSearchParams("project=awb&label=frontend&sort=-updated&page=3");
   assert.equal(
     withClosedIssues(query, true).toString(),
     "project=awb&label=frontend&sort=-updated&include-closed=true",
   );
   assert.equal(query.has("include-closed"), false, "the current route is not mutated");
+});
+
+test("backend pagination uses canonical one-based route state", () => {
+  assert.equal(pageNumber(new URLSearchParams()), 1);
+  assert.equal(pageNumber(new URLSearchParams("page=3")), 3);
+  assert.equal(pageNumber(new URLSearchParams("page=-1")), 1);
+  assert.equal(pageNumber(new URLSearchParams("page=not-a-number")), 1);
+  assert.equal(withPage(new URLSearchParams("project=awb&page=3"), 1).toString(), "project=awb");
+  assert.equal(withPage(new URLSearchParams("project=awb"), 4).toString(), "project=awb&page=4");
+});
+
+test("pagination ranges are clamped to the unpaged backend total", () => {
+  assert.deepEqual(pageWindow(214, 2), { page: 2, pages: 5, first: 51, last: 100 });
+  assert.deepEqual(pageWindow(214, 99), { page: 5, pages: 5, first: 201, last: 214 });
+  assert.deepEqual(pageWindow(0, 1), { page: 1, pages: 1, first: 0, last: 0 });
 });
 
 test("hiding closed issues restores the default status set", () => {
@@ -103,7 +119,6 @@ test("project filtering includes key, name and description", () => {
   assert.deepEqual(filterProjects(rows, "agent issue").map((row) => row.key), ["awb"]);
   assert.deepEqual(filterProjects(rows, "remote").map((row) => row.key), ["cli"]);
 });
-
 test("user filtering includes names, roles and visible projects", () => {
   const rows = [
     {
@@ -118,58 +133,4 @@ test("user filtering includes names, roles and visible projects", () => {
   assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
   assert.equal(filterUsers(rows, "hidden-project").length, 0);
-});
-
-test("issue sorting supports UI-only columns and keeps blank assignees last", () => {
-  const rows = [
-    issue({ id: "awb-c", project: "zeta" }),
-    issue({ id: "awb-b", project: "alpha", assignees: ["zoe", "mikael"] }),
-    issue({ id: "awb-a", project: "alpha", assignees: ["anna"] }),
-  ];
-  assert.deepEqual(
-    sortIssues(rows, { key: "project", direction: "asc", explicit: true }).map((row) => row.id),
-    ["awb-a", "awb-b", "awb-c"],
-  );
-  assert.deepEqual(
-    sortIssues(rows, { key: "assignee", direction: "desc", explicit: true }).map((row) => row.id),
-    ["awb-b", "awb-a", "awb-c"],
-  );
-});
-
-test("priority sorting retains the API's oldest-first tie break", () => {
-  const rows = [
-    issue({ id: "awb-new", priority: 1, created_at: "2026-02-01T00:00:00.000Z" }),
-    issue({ id: "awb-old", priority: 1, created_at: "2026-01-01T00:00:00.000Z" }),
-    issue({ id: "awb-p2", priority: 2 }),
-  ];
-  assert.deepEqual(
-    sortIssues(rows, { key: "priority", direction: "asc", explicit: false }).map((row) => row.id),
-    ["awb-old", "awb-new", "awb-p2"],
-  );
-});
-
-test("created sorting preserves supported API URL orderings", () => {
-  const rows = [
-    issue({ id: "awb-new", created_at: "2026-02-01T00:00:00.000Z" }),
-    issue({ id: "awb-old", created_at: "2026-01-01T00:00:00.000Z" }),
-  ];
-  assert.deepEqual(
-    sortIssues(rows, { key: "created", direction: "asc", explicit: true }).map((row) => row.id),
-    ["awb-old", "awb-new"],
-  );
-  assert.deepEqual(
-    sortIssues(rows, { key: "created", direction: "desc", explicit: true }).map((row) => row.id),
-    ["awb-new", "awb-old"],
-  );
-});
-
-test("project sorting handles numeric open counts", () => {
-  const rows = [
-    project({ key: "few", active_issues: 2 }),
-    project({ key: "many", active_issues: 12 }),
-  ];
-  assert.deepEqual(
-    sortProjects(rows, { key: "active", direction: "desc", explicit: true }).map((row) => row.key),
-    ["many", "few"],
-  );
 });

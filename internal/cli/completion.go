@@ -54,7 +54,7 @@ func (e *env) queryCompletion(cmd *cobra.Command,
 // credentials or a server produce no suggestions rather than a shell error.
 func (e *env) completeProjects(cmd *cobra.Command, _ []string, _ string) []string {
 	return e.queryCompletion(cmd, func(ctx context.Context, be backend.Backend) ([]string, error) {
-		page, err := be.ListProjects(ctx, nil, nil)
+		page, err := be.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
 		if err != nil {
 			return nil, err
 		}

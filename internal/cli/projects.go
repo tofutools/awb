@@ -8,6 +8,7 @@ import (
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
 )
 
 // summarise prints the one-line human-readable summary the deleting commands
@@ -162,7 +163,7 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjects(cmd.Context(), nil, nil)
+			page, err := be.ListProjects(cmd.Context(), domain.DefaultProjectSort, nil, nil)
 			if err != nil {
 				return err
 			}

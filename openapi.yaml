@@ -577,8 +577,9 @@ paths:
           schema:
             type: string
             enum:
-              [relevance, priority, created, updated, id,
-               -relevance, -priority, -created, -updated, -id]
+              [relevance, priority, created, updated, id, project, status, assignee, type, blockers,
+               -relevance, -priority, -created, -updated, -id, -project, -status, -assignee, -type,
+               -blockers]
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -589,8 +590,17 @@ paths:
     get:
       tags: [projects]
       operationId: listProjects
-      summary: List projects, ordered by key ascending
+      summary: List projects
       parameters:
+        - name: sort
+          in: query
+          description: |
+            Ordering, optionally prefixed with `-` for descending. Every sort
+            ends with key ascending as a final tiebreak, so the order is total.
+          schema:
+            type: string
+            default: key
+            enum: [key, active, updated, -key, -active, -updated]
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -1082,7 +1092,9 @@ components:
       schema:
         type: string
         default: priority
-        enum: [priority, created, updated, id, -priority, -created, -updated, -id]
+        enum:
+          [priority, created, updated, id, project, status, assignee, type, blockers,
+           -priority, -created, -updated, -id, -project, -status, -assignee, -type, -blockers]
     limit:
       name: limit
       in: query
