@@ -20,7 +20,7 @@ const dumpPageSize = 100
 type dumpParams struct {
 	OutputDB          string `long:"output-db" required:"true" help:"new SQLite database to create"`
 	OutputAttachments string `long:"output-attachments" required:"true" help:"new attachment content directory to create"`
-	Overwrite         bool   `long:"overwrite" optional:"true" help:"replace existing outputs after the new dump completes"`
+	Force             bool   `long:"force" optional:"true" help:"replace existing outputs after the new dump completes"`
 	IncludeUsers      bool   `long:"include-users" optional:"true" help:"include users and credentials (not yet implemented)"`
 }
 
@@ -34,7 +34,7 @@ func newDumpCommand(e *env) *cobra.Command {
 			"stored issue state are preserved, so the result can be served by this version\n" +
 			"of awb for local testing. Against a server, dump uses only the existing read\n" +
 			"API and requires no server upgrade.\n\n" +
-			"Both output paths must be absent unless --overwrite is given. An overwrite\n" +
+			"Both output paths must be absent unless --force is given. A forced dump\n" +
 			"keeps the existing outputs until the replacement has downloaded successfully.\n" +
 			"A failed dump removes only the new outputs it created.\n" +
 			"Users, credentials and project memberships are not included; the resulting\n" +
@@ -48,7 +48,7 @@ func newDumpCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if p.Overwrite && !cfg.Remote() {
+			if p.Force && !cfg.Remote() {
 				conflict, err := localSourceOutputConflict(cfg.DB, cfg.Attachments,
 					p.OutputDB, p.OutputAttachments)
 				if err != nil {
@@ -56,20 +56,20 @@ func newDumpCommand(e *env) *cobra.Command {
 				}
 				if conflict {
 					return awberr.Usagef(
-						"--overwrite outputs must not overlap the local database or attachment directory being dumped")
+						"--force outputs must not overlap the local database or attachment directory being dumped")
 				}
 			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return dump(cmd, be, p.OutputDB, p.OutputAttachments, p.Overwrite)
+			return dump(cmd, be, p.OutputDB, p.OutputAttachments, p.Force)
 		},
 	}.ToCobra()
 }
 
 func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachments string,
-	overwrite bool) error {
+	force bool) error {
 	overlap, overlapErr := pathsOverlap(outputDB, outputAttachments)
 	if overlapErr != nil {
 		return overlapErr
@@ -77,7 +77,7 @@ func dump(cmd *cobra.Command, source backend.Backend, outputDB, outputAttachment
 	if overlap {
 		return awberr.Usagef("--output-db and --output-attachments must not contain one another")
 	}
-	if overwrite {
+	if force {
 		return overwriteDump(cmd, source, outputDB, outputAttachments)
 	}
 	return createDump(cmd, source, outputDB, outputAttachments)
