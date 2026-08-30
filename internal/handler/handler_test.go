@@ -220,13 +220,16 @@ func TestPatchIssue(t *testing.T) {
 	for _, body := range []string{
 		`{"status":"closed"}`,
 		`{"assignee":"claude-1"}`,
-		`{"close_reason":"done"}`,
 		`{"labels":["a"]}`,
 	} {
 		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, "cannot be changed", body)
 	}
+
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"close_reason":"done"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(t, payload, "unexpected field")
 }
 
 // Labels are compared as the sorted form, which is what a client read.

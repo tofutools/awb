@@ -65,6 +65,39 @@ func CompactProjectLine(p *Project) string {
 	return p.Key + " " + strconv.Itoa(p.ActiveIssues) + " " + jsonString(p.Name)
 }
 
+// CompactActivityLine renders one timeline entry as a stable single line.
+// Comment bodies and change arrays are JSON so embedded whitespace and line
+// breaks never make one entry span multiple lines.
+func CompactActivityLine(a *Activity) string {
+	var b strings.Builder
+	b.WriteString(strconv.FormatInt(a.ID, 10))
+	b.WriteByte(' ')
+	b.WriteString(a.CreatedAt)
+	b.WriteByte(' ')
+	b.WriteString(string(a.Kind))
+	if a.Actor != "" {
+		b.WriteString(" @")
+		b.WriteString(a.Actor)
+	}
+	if a.Kind == ActivityKindComment {
+		if a.Action != "" {
+			b.WriteByte(' ')
+			b.WriteString(a.Action)
+		}
+		b.WriteByte(' ')
+		b.WriteString(jsonString(a.Body))
+	} else {
+		b.WriteByte(' ')
+		b.WriteString(a.Action)
+	}
+	if len(a.Changes) > 0 {
+		encoded, _ := json.Marshal(a.Changes)
+		b.WriteByte(' ')
+		b.Write(encoded)
+	}
+	return b.String()
+}
+
 // CompactUserLine renders a user as the compact one-line form:
 //
 //	alice +project-admin awb:admin web:regular

@@ -29,7 +29,6 @@ function issue(overrides = {}) {
     priority: 2,
     labels: ["frontend"],
     assignee: "",
-    close_reason: "",
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-02T00:00:00.000Z",
     blocked: false,

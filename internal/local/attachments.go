@@ -70,7 +70,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 		Size:        staged.Size,
 		Sha256:      staged.Sha256,
 	}
-	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issueID, err := resolve(tx, issueRef)
 		if err != nil {
 			return err
@@ -88,7 +88,9 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 			return err
 		}
 		placed = true
-		return nil
+		return recordChange(tx, caller, issueID, "attachment_added", []domain.ActivityChange{{
+			Field: "attachment", From: activityJSON(nil), To: activityJSON(attachment),
+		}})
 	})
 	if err != nil {
 		return nil, err
@@ -149,7 +151,7 @@ func (b *Backend) OpenAttachment(ctx context.Context, issueRef, name string) (
 func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 	*domain.Attachment, error) {
 	var deleted *domain.Attachment
-	err := b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		attachment, err := loadAttachment(tx, issueRef, name)
 		if err != nil {
 			return err
@@ -158,7 +160,9 @@ func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 			return err
 		}
 		deleted = attachment
-		return nil
+		return recordChange(tx, caller, attachment.Issue, "attachment_removed", []domain.ActivityChange{{
+			Field: "attachment", From: activityJSON(attachment), To: activityJSON(nil),
+		}})
 	})
 	if err != nil {
 		return nil, err

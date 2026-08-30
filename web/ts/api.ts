@@ -24,6 +24,7 @@ export type Issue = components["schemas"]["Issue"];
 export type Relation = components["schemas"]["Relation"];
 export type Link = components["schemas"]["Link"];
 export type Attachment = components["schemas"]["Attachment"];
+export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];
@@ -41,6 +42,7 @@ export type ReadyFilters = Query<"listReady">;
 export type BlockedFilters = Query<"listBlocked">;
 export type SearchFilters = Query<"searchIssues">;
 export type FacetFilters = Query<"listLabels">;
+export type ActivityFilters = Query<"listIssueActivity">;
 
 /** Every filter any listing takes, which is what a route can carry. */
 export type Filters = IssueFilters & Partial<SearchFilters>;
@@ -105,8 +107,10 @@ function toQuery(filters: Record<string, unknown>): string {
   return query ? `?${query}` : "";
 }
 
-async function request(path: string): Promise<Response> {
-  const resp = await fetch(path, { headers: { Accept: "application/json" } });
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  const resp = await fetch(path, { ...init, headers });
   if (!resp.ok) {
     let message = resp.statusText;
     try {
@@ -132,12 +136,28 @@ async function getOne<T>(path: string): Promise<T> {
   return (await resp.json()) as T;
 }
 
+async function postOne<T>(path: string, body: unknown): Promise<T> {
+  return getResponse<T>(await request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
+async function getResponse<T>(resp: Response): Promise<T> {
+  return (await resp.json()) as T;
+}
+
 export const api = {
   issues: (filters: IssueFilters = {}) => getPage<Issue>(`api/issues${toQuery(filters)}`),
   ready: (filters: ReadyFilters = {}) => getPage<Issue>(`api/ready${toQuery(filters)}`),
   blocked: (filters: BlockedFilters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
   search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
+  activity: (id: string, filters: ActivityFilters = {}) =>
+    getPage<Activity>(`api/issues/${encodeURIComponent(id)}/activity${toQuery(filters)}`),
+  addComment: (id: string, body: string) =>
+    postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: () => getPage<Project>("api/projects"),
   labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),

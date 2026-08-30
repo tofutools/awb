@@ -85,9 +85,8 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 		Type:        optType(req.Type),
 		Priority:    optPriority(req.Priority),
 
-		ExpectStatus:      optStatus(req.Status),
-		ExpectAssignee:    optString(req.Assignee),
-		ExpectCloseReason: optString(req.CloseReason),
+		ExpectStatus:   optStatus(req.Status),
+		ExpectAssignee: optString(req.Assignee),
 	}
 	// A labels array that is absent is nil; one the caller sent is not, even
 	// when it is empty, and is then compared against what is stored.

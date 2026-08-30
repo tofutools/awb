@@ -189,9 +189,13 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	if err != nil {
 		return err
 	}
+	activity, err := dumpActivity(cmd, source, issues)
+	if err != nil {
+		return err
+	}
 
 	if err := db.RestoreSnapshot(cmd.Context(), storage.Snapshot{
-		Projects: projects, Issues: issues, Attachments: attachments,
+		Projects: projects, Issues: issues, Attachments: attachments, Activity: activity,
 	}); err != nil {
 		return err
 	}
@@ -201,6 +205,42 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	dbOpen = false
 	complete = true
 	return nil
+}
+
+func dumpActivity(cmd *cobra.Command, source backend.Backend, issues []domain.Issue) (
+	[]domain.Activity, error) {
+	activity := []domain.Activity{}
+	for i := range issues {
+		issue := &issues[i]
+		total := -1
+		fetched := 0
+		seen := make(map[int64]struct{})
+		for total < 0 || fetched < total {
+			limit, offset := dumpPageSize, fetched
+			page, err := source.ListActivity(cmd.Context(), issue.ID, "", &limit, &offset)
+			if err != nil {
+				return nil, err
+			}
+			if total >= 0 && page.Total != total {
+				return nil, awberr.Runtimef("activity of %s changed while the dump was being read", issue.ID)
+			}
+			total = page.Total
+			if len(page.Activity) == 0 && fetched < total {
+				return nil, awberr.Runtimef("activity pagination for %s ended after %d of %d entries",
+					issue.ID, fetched, total)
+			}
+			fetched += len(page.Activity)
+			for _, entry := range page.Activity {
+				if _, duplicate := seen[entry.ID]; duplicate {
+					return nil, awberr.Runtimef("activity %d of %s appeared in more than one dump page",
+						entry.ID, issue.ID)
+				}
+				seen[entry.ID] = struct{}{}
+				activity = append(activity, entry)
+			}
+		}
+	}
+	return activity, nil
 }
 
 type displacedOutput struct {

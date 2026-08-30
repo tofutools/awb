@@ -59,6 +59,12 @@ type Backend interface {
 
 	Tree(ctx context.Context, ref string) (*domain.IssueTree, error)
 
+	// Activity is append-only. Comments are explicit writes; change entries are
+	// produced by the mutations above inside their own transactions.
+	AddComment(ctx context.Context, ref, body string) (*domain.Activity, error)
+	ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
+		limit, offset *int) (ActivityPage, error)
+
 	// The attachment operations. An attachment is addressed by the issue it
 	// belongs to and its name, which is the pair that identifies one; it has no
 	// identifier of its own. It is immutable once stored, so there is no update
@@ -125,6 +131,12 @@ type FacetPage struct {
 type AttachmentPage struct {
 	Attachments []domain.Attachment
 	Total       int
+}
+
+// ActivityPage is an issue timeline with its unpaged total.
+type ActivityPage struct {
+	Activity []domain.Activity
+	Total    int
 }
 
 // UserPage is a user listing with its unpaged total.
@@ -239,10 +251,9 @@ type IssuePatch struct {
 	// comparison happens inside the same transaction as the write. Checking
 	// them beforehand would leave a window in which a concurrent transition
 	// could make a stale value pass.
-	ExpectLabels      *[]string
-	ExpectStatus      *domain.Status
-	ExpectAssignee    *string
-	ExpectCloseReason *string
+	ExpectLabels   *[]string
+	ExpectStatus   *domain.Status
+	ExpectAssignee *string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.
@@ -285,8 +296,8 @@ type ReleaseRequest struct {
 
 // CloseRequest is the body of awb close and POST /api/issues/{id}/close.
 type CloseRequest struct {
-	// Reason is nil when --reason was not given, which leaves any recorded reason
-	// alone; a pointer to "" clears it.
+	// A non-empty Reason is recorded as a typed comment on the closing
+	// transition. Nil and a pointer to "" both record no reason comment.
 	Reason *string
 }
 

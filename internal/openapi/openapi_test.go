@@ -186,7 +186,7 @@ func TestIssueSchemaCoversEveryField(t *testing.T) {
 
 	for _, field := range []string{
 		"id", "project", "title", "description", "type", "status", "priority",
-		"labels", "assignee", "close_reason", "created_at", "updated_at",
+		"labels", "assignee", "created_at", "updated_at",
 		"blocked", "blockers", "relations", "links",
 	} {
 		assert.Contains(t, properties, field)
@@ -277,7 +277,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 38)
+	require.Len(t, operations, 40)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -310,9 +310,11 @@ func TestOperations(t *testing.T) {
 	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))
 	assert.ElementsMatch(t, []string{"name", "content-type"}, names("addAttachment"))
 	assert.ElementsMatch(t, []string{"limit", "offset"}, names("listAttachments"))
+	assert.ElementsMatch(t, []string{"kind", "limit", "offset"}, names("listIssueActivity"))
 	assert.Empty(t, names("getIssue"))
 
 	assert.True(t, operations["createIssue"].TakesBody)
+	assert.True(t, operations["addComment"].DeclaresJSONBody())
 	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
 	assert.False(t, operations["reopenIssue"].TakesBody)
 	assert.False(t, operations["deleteIssue"].TakesBody)

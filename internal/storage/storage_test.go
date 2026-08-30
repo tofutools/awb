@@ -110,15 +110,12 @@ func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
 		fields storage.IssueFields
 		ok     bool
 	}{
-		{"open with no assignee", fields(domain.StatusOpen, "", ""), true},
-		{"open with an assignee", fields(domain.StatusOpen, "claude-1", ""), false},
-		{"in_progress with an assignee", fields(domain.StatusInProgress, "claude-1", ""), true},
-		{"in_progress with none", fields(domain.StatusInProgress, "", ""), false},
-		{"closed with an assignee", fields(domain.StatusClosed, "claude-1", ""), true},
-		{"closed with none", fields(domain.StatusClosed, "", ""), true},
-		{"closed with a reason", fields(domain.StatusClosed, "", "done"), true},
-		{"open with a reason", fields(domain.StatusOpen, "", "done"), false},
-		{"in_progress with a reason", fields(domain.StatusInProgress, "c", "done"), false},
+		{"open with no assignee", fields(domain.StatusOpen, ""), true},
+		{"open with an assignee", fields(domain.StatusOpen, "claude-1"), false},
+		{"in_progress with an assignee", fields(domain.StatusInProgress, "claude-1"), true},
+		{"in_progress with none", fields(domain.StatusInProgress, ""), false},
+		{"closed with an assignee", fields(domain.StatusClosed, "claude-1"), true},
+		{"closed with none", fields(domain.StatusClosed, ""), true},
 	}
 
 	for _, tc := range cases {
@@ -139,10 +136,10 @@ func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
 	}
 }
 
-func fields(status domain.Status, assignee, reason string) storage.IssueFields {
+func fields(status domain.Status, assignee string) storage.IssueFields {
 	return storage.IssueFields{
 		Title: "t", Type: domain.TypeTask, Priority: 2,
-		Status: status, Assignee: assignee, CloseReason: reason,
+		Status: status, Assignee: assignee,
 	}
 }
 

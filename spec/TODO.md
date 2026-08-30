@@ -37,11 +37,10 @@ below.
 Each of these was considered and left out. They are recorded here so the
 reasoning is not lost and so they are not re-litigated by accident.
 
-* **A read/write web UI.** The API is already specified and implemented as if
-  one existed: complete write coverage, optimistic concurrency, paging, facet
-  endpoints and a caller-identity endpoint. Shipping a read-only UI in version 1
-  was a scope decision about the UI alone, so this is a change to the frontend
-  and nothing else. It is the most valuable item on this list and the cheapest.
+* **A fully read/write web UI.** The API already has complete write coverage,
+  optimistic concurrency, paging, facet endpoints and a caller-identity
+  endpoint. The bundled UI can post issue comments, but editing issue state is
+  still a command-line operation.
 
 * **An MCP server.** The command line is the agent interface, and a second one
   would be a second surface to keep in step.
@@ -49,8 +48,13 @@ reasoning is not lost and so they are not re-litigated by accident.
 * **Bulk import from stdin.** Reading a description from stdin exists; reading a
   stream of issues does not.
 
-* **Comments, audit logs and history.** Git holds the history of the work; the
-  tracker holds its state.
+* **Project activity and comments.** Issues have comments and append-only change
+  events. A project detail page could aggregate its issues' activity and, if a
+  concrete need emerges, hold project-scoped comments.
+
+* **Full history and compliance audit logs.** The issue activity stream is a
+  work log, not reconstructable version history: hard deletion removes it and
+  there are no tombstones, retention rules or redaction policy.
 
 * **Sprints, boards, burndowns, time tracking and notifications.** Planning and
   reporting are what this tool is not.

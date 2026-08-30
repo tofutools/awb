@@ -226,6 +226,8 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			newDeleteCommand(e),
 			newDepCommand(e),
 			newAttachCommand(e),
+			newCommentCommand(e),
+			newActivityCommand(e),
 			newDemoCommand(e),
 			newServeCommand(e),
 		},

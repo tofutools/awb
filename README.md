@@ -98,6 +98,8 @@ whatever is under the key is meant.
 | `awb label add\|rm <id> <label>` | One label per invocation. |
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |
 | `awb dep tree <id>` | The decomposition below an issue. |
+| `awb comment add\|list <id>` | Add or list append-only Markdown comments. |
+| `awb activity <id>` | Comments and recorded changes, newest first. |
 | `awb attach add <id> <file>` | Attach a file to an issue. Prints the new attachment ID. |
 | `awb attach list <id>` | The files attached to an issue. |
 | `awb attach show\|get\|delete <id> <name>` | One attachment: its metadata, its content, or its deletion. |
@@ -118,6 +120,26 @@ A description is Markdown, and `awb show` and `awb project show` draw it as
 such on a terminal: emphasis, headings, lists, code and links the terminal can
 open. Piped or redirected the description is the source text exactly as it was
 written, and so it is under `--json` and `--compact`.
+
+### Comments and activity
+
+Each issue has an append-only timeline containing Markdown comments and compact
+system records of its changes.
+
+```console
+$ awb comment add awb-5c1d84 --body "Reproduced with an empty token stream."
+$ awb comment add awb-5c1d84 --body-file investigation.md
+$ awb activity awb-5c1d84 --compact
+$ awb comment list awb-5c1d84 --json
+```
+
+An ordinary comment records the current identity and is stored byte-for-byte as
+sent. A successful mutation records its change in the same transaction; a
+failed or no-op mutation records nothing. A non-empty `awb close --reason` is a
+typed comment with action `closed`, recorded atomically with that transition;
+it remains in the timeline if the issue is reopened. This is a work log rather
+than immutable compliance history: hard-deleting an issue deletes its activity
+too.
 
 ### Attachments
 
@@ -263,8 +285,8 @@ $ awb serve
 ```
 
 That serves a JSON API, the OpenAPI 3.1 document describing it at
-`/openapi.json` and `/openapi.yaml`, and a read-only web UI for browsing
-projects, issues, search results and dependency trees.
+`/openapi.json` and `/openapi.yaml`, and a web UI for browsing projects, issues,
+search results and dependency trees and for posting issue comments.
 
 That document — `openapi.yaml` in this repository — is the source of truth
 rather than a description written afterwards: the server's routing, decoding
@@ -274,8 +296,8 @@ UI is written against.
 The API mirrors the CLI one to one, and is complete enough to drive a fully
 functional read/write UI — it has optimistic concurrency through `ETag` and
 `If-Match`, paging with `X-Total-Count`, and facet endpoints for populating
-filter menus. Only the *bundled* UI is limited to reading; making it writable
-later is a change to the UI alone.
+filter menus. The bundled UI currently uses that write surface for issue
+comments; other mutations remain command-line operations.
 
 Pointing the CLI at a server makes every command work against it:
 

@@ -619,7 +619,6 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
 	e.field(t, "Assignee", t.apply(t.assignee, issue.Assignee))
 	e.field(t, "Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
-	e.field(t, "Closed", issue.CloseReason)
 	e.field(t, "Created", issue.CreatedAt)
 	e.field(t, "Updated", issue.UpdatedAt)
 

@@ -10,7 +10,7 @@ import (
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
 const issueColumns = `id, project, title, description, type, status, priority,
-	assignee, close_reason, created_at, updated_at`
+	assignee, created_at, updated_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -19,7 +19,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.Assignee, &i.CloseReason, &i.CreatedAt, &i.UpdatedAt)
+		&i.Priority, &i.Assignee, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -256,9 +256,9 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.Assignee, issue.CloseReason,
+			issue.Status, issue.Priority, issue.Assignee,
 			issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
 			return nil
@@ -283,14 +283,13 @@ type IssueFields struct {
 	Status      domain.Status
 	Priority    int
 	Assignee    string
-	CloseReason string
 }
 
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignee: i.Assignee, CloseReason: i.CloseReason,
+		Priority: i.Priority, Assignee: i.Assignee,
 	}
 }
 
@@ -306,10 +305,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
 		   SET title = ?, description = ?, type = ?, status = ?, priority = ?,
-		       assignee = ?, close_reason = ?, updated_at = ?
+		       assignee = ?, updated_at = ?
 		 WHERE id = ?`,
 		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority,
-		fields.Assignee, fields.CloseReason, updated, issue.ID)
+		fields.Assignee, updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
@@ -323,7 +322,6 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
 	issue.Assignee = fields.Assignee
-	issue.CloseReason = fields.CloseReason
 	issue.UpdatedAt = updated
 	return nil
 }

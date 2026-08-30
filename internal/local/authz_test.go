@@ -129,6 +129,29 @@ func TestVisibilityIsMembership(t *testing.T) {
 	notFound(t, err)
 }
 
+func TestActivityUsesTheIssueProjectScope(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Visible"})
+	require.NoError(t, err)
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Hidden"})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	comment, err := bob.AddComment(ctx, visible.ID, "I can see this.")
+	require.NoError(t, err)
+	assert.Equal(t, "bob", comment.Actor)
+	page, err := bob.ListActivity(ctx, visible.ID, "", nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, page.Activity, 2)
+
+	_, err = bob.AddComment(ctx, hidden.ID, "I cannot see this.")
+	notFound(t, err)
+	_, err = bob.ListActivity(ctx, hidden.ID, "", nil, nil)
+	notFound(t, err)
+}
+
 // A project a caller cannot see is answered "no such project" and never
 // "forbidden": it is not theirs to know about.
 func TestAnInvisibleProjectIsNotFoundEverywhere(t *testing.T) {

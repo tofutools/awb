@@ -15,7 +15,7 @@ import (
 // not follow a Go field rename.
 //
 // Every field turns on presence or absence, and null is neither: a description
-// or a close reason is cleared with "" and left alone by omission.
+// is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
 	Project     string         `json:"project"`
@@ -43,10 +43,9 @@ type issuePatchBody struct {
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
 	// the only place the comparison means anything.
-	Labels      *[]string      `json:"labels,omitempty"`
-	Status      *domain.Status `json:"status,omitempty"`
-	Assignee    *string        `json:"assignee,omitempty"`
-	CloseReason *string        `json:"close_reason,omitempty"`
+	Labels   *[]string      `json:"labels,omitempty"`
+	Status   *domain.Status `json:"status,omitempty"`
+	Assignee *string        `json:"assignee,omitempty"`
 }
 
 type claimBody struct {
@@ -81,6 +80,10 @@ type projectPatchBody struct {
 
 type identityBody struct {
 	Identity string `json:"identity"`
+}
+
+type commentBody struct {
+	Body string `json:"body"`
 }
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
@@ -216,10 +219,9 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Type:        req.Type,
 		Priority:    req.Priority,
 
-		Labels:      req.ExpectLabels,
-		Status:      req.ExpectStatus,
-		Assignee:    req.ExpectAssignee,
-		CloseReason: req.ExpectCloseReason,
+		Labels:   req.ExpectLabels,
+		Status:   req.ExpectStatus,
+		Assignee: req.ExpectAssignee,
 	}
 	return b.issueCall(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(ref), body, ifMatch)
 }
@@ -293,6 +295,33 @@ func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, erro
 		return nil, err
 	}
 	return &tree, nil
+}
+
+func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Activity, error) {
+	var activity domain.Activity
+	_, err := b.call(ctx, http.MethodPost,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/comments", nil),
+		commentBody{Body: body}, "", &activity)
+	if err != nil {
+		return nil, err
+	}
+	return &activity, nil
+}
+
+func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
+	limit, offset *int) (backend.ActivityPage, error) {
+	query := pageQuery(limit, offset)
+	if kind != "" {
+		query.Set("kind", string(kind))
+	}
+	entries := []domain.Activity{}
+	header, err := b.call(ctx, http.MethodGet,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/activity", query),
+		nil, "", &entries)
+	if err != nil {
+		return backend.ActivityPage{}, err
+	}
+	return backend.ActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
 }
 
 func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) (*domain.Project, error) {

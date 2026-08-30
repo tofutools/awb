@@ -1,5 +1,5 @@
-// The bundled read-only web UI: projects, issues, search and dependency trees,
-// over the same HTTP API anything else would use.
+// The bundled web UI: projects, issues, search, dependency trees and issue
+// comments, over the same HTTP API anything else would use.
 
 import {
   api,
@@ -8,6 +8,7 @@ import {
   facetFilters,
   readyFilters,
   type Attachment,
+  type Activity,
   type Facet,
   type Filters,
   type Issue,
@@ -26,6 +27,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
+import { commentSubmitShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 
 /** One route: the fragment after "#/" split into segments and a query. */
@@ -705,7 +707,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-  const issue = await api.issue(id);
+	const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
   const view = element("div", "issue");
   view.append(element("h1", "", issue.title));
@@ -716,10 +718,6 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   meta.append(element("span", "type", issue.type));
   meta.append(issueBadges(issue));
   view.append(meta);
-
-  if (issue.close_reason !== "") {
-    view.append(element("p", "close-reason", `Closed: ${issue.close_reason}`));
-  }
 
   if (issue.description !== "") {
     const body = element("div", "markdown");
@@ -773,8 +771,112 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   footer.append(element("span", "", `updated ${issue.updated_at}`));
   view.append(footer);
 
-  view.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
-  return view;
+	view.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
+	view.append(activitySection(issue.id, activity.rows));
+	return view;
+}
+
+function activitySection(issueID: string, entries: Activity[]): HTMLElement {
+  const section = element("section", "activity-section");
+  section.append(element("h2", "", "Activity"));
+
+  const filters = element("div", "activity-filters");
+  const timeline = element("div", "activity-timeline");
+  let selected: "all" | Activity["kind"] = "all";
+  const draw = (): void => {
+    clear(timeline);
+    const visible = selected === "all" ? entries : entries.filter((entry) => entry.kind === selected);
+    if (visible.length === 0) {
+      timeline.append(element("p", "empty", selected === "all" ? "No activity yet." : `No ${selected}s yet.`));
+      return;
+    }
+    for (const entry of visible) timeline.append(activityEntry(entry));
+  };
+  for (const [value, label] of [["all", "All"], ["comment", "Comments"], ["change", "Changes"]] as const) {
+    const button = element("button", value === "all" ? "active" : "", label) as HTMLButtonElement;
+    button.type = "button";
+    button.addEventListener("click", () => {
+      selected = value;
+      for (const item of filters.querySelectorAll("button")) item.classList.toggle("active", item === button);
+      draw();
+    });
+    filters.append(button);
+  }
+  section.append(filters, commentComposer(issueID), timeline);
+  draw();
+  return section;
+}
+
+function commentComposer(issueID: string): HTMLElement {
+  const form = element("form", "comment-composer") as HTMLFormElement;
+  const textarea = document.createElement("textarea");
+  textarea.name = "body";
+  textarea.placeholder = "Write a comment…";
+  textarea.required = true;
+  textarea.setAttribute("aria-label", "Comment");
+  textarea.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+  const hint = element("span", "comment-hint", "Comments use Markdown. Ctrl/⌘+Enter to submit.");
+  const button = element("button", "comment-submit", "Add comment") as HTMLButtonElement;
+  button.type = "submit";
+  textarea.addEventListener("keydown", (event) => {
+    if (!commentSubmitShortcut(event)) return;
+    event.preventDefault();
+    if (!button.disabled) form.requestSubmit(button);
+  });
+  form.append(textarea, hint, button);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    try {
+      await api.addComment(issueID, textarea.value);
+      await render();
+    } catch (error) {
+      button.disabled = false;
+      const message = error instanceof ApiError ? error.message : String(error);
+      form.append(element("p", "comment-error", message));
+    }
+  });
+  return form;
+}
+
+function activityEntry(entry: Activity): HTMLElement {
+  const row = element("article", `activity-entry activity-${entry.kind}`);
+  const header = element("header", "activity-header");
+  header.append(element("strong", "activity-actor", entry.actor === "" ? "system" : entry.actor));
+  const time = element("time", "timestamp", entry.created_at);
+  time.setAttribute("datetime", entry.created_at);
+  header.append(time);
+  row.append(header);
+  if (entry.kind === "comment") {
+    if (entry.action !== "") row.append(element("div", "activity-action", activityAction(entry.action)));
+    const body = element("div", "activity-comment-body markdown");
+    body.innerHTML = renderMarkdown(entry.body);
+    row.append(body);
+  } else {
+    row.append(element("div", "activity-action", activityAction(entry.action)));
+  }
+  if (entry.changes.length > 0) {
+    const changes = element("ul", "activity-changes");
+    for (const change of entry.changes) {
+      const item = element("li");
+      item.append(element("span", "activity-field", change.field));
+      item.append(element("code", "", displayActivityValue(change.from)));
+      item.append(element("span", "activity-arrow", "→"));
+      item.append(element("code", "", displayActivityValue(change.to)));
+      changes.append(item);
+    }
+    row.append(changes);
+  }
+  return row;
+}
+
+function activityAction(action: string): string {
+  return action.replaceAll("_", " ");
+}
+
+function displayActivityValue(value: unknown): string {
+  if (typeof value === "string") return value === "" ? "(empty)" : value;
+  return JSON.stringify(value);
 }
 
 /**
@@ -867,7 +969,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
   return view;
 }
 
-/** searchBox is the one interactive control the read-only UI has. */
+/** searchBox is the global navigation control. */
 function searchBox(): HTMLElement {
   const form = element("form", "search") as HTMLFormElement;
   const input = document.createElement("input");
