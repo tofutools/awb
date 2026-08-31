@@ -477,11 +477,13 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	assert.False(t, created.UserAdmin)
 	assert.Empty(t, created.Projects)
 
-	membership, err := client.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
+	membership, err := client.AddMember(ctx, "awb", "bob", domain.AccessAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, domain.AccessAdmin, membership.Access)
 	assert.Equal(t, "awb", membership.Project)
 	assert.Equal(t, "bob", membership.User)
+	_, err = client.AddMember(ctx, "awb", "bob", domain.AccessRegular)
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err), err)
 
 	members, err := client.ListMembers(ctx, "awb", nil, nil)
 	require.NoError(t, err)

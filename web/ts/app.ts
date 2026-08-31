@@ -1364,6 +1364,7 @@ async function changeProjectMembership(
   success: string,
   refreshNotFound = false,
   redirect = false,
+  refreshConflict = false,
 ): Promise<void> {
   const section = host.closest<HTMLElement>(".membership-card") ?? host;
   section.setAttribute("aria-busy", "true");
@@ -1380,6 +1381,14 @@ async function changeProjectMembership(
     if (refreshNotFound && error instanceof ApiError && error.status === 404) {
       pendingNotice = {
         message: "Membership changed elsewhere. The current member list has been reloaded.",
+        error: true,
+      };
+      await render();
+      return;
+    }
+    if (refreshConflict && error instanceof ApiError && error.status === 409) {
+      pendingNotice = {
+        message: "That user was added elsewhere. The current member list has been reloaded.",
         error: true,
       };
       await render();
@@ -1497,8 +1506,11 @@ function projectMembershipEditor(project: Project, members: Membership[]): HTMLF
     void changeProjectMembership(
       form,
       [input, access, add],
-      () => api.setProjectMember(project.key, user, next),
+      () => api.addProjectMember(project.key, user, next),
       `@${user} was added with ${next} access to ${project.key}.`,
+      false,
+      false,
+      true,
     );
   });
   return form;

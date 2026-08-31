@@ -491,6 +491,17 @@ func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
 	forbidden(t, err, "a regular member cannot promote themselves")
 
 	carol := root.WithUser("carol")
+	_, err = carol.AddMember(ctx, "awb", "bob", domain.AccessAdmin)
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err), err)
+	members, err := carol.ListMembers(ctx, "awb", nil, nil)
+	require.NoError(t, err)
+	for _, member := range members.Members {
+		if member.User == "bob" {
+			assert.Equal(t, domain.AccessRegular, member.Access,
+				"a stale create must not replace the concurrent grant")
+		}
+	}
+
 	membership, err := carol.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, domain.AccessAdmin, membership.Access)

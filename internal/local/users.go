@@ -278,6 +278,40 @@ func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset
 	return page, nil
 }
 
+// AddMember grants access only when the user is not already a member. The
+// existence check and insert share the write transaction, preventing a stale
+// administration view from replacing a concurrent grant.
+func (b *Backend) AddMember(ctx context.Context, project, user string, access domain.Access) (
+	*domain.Membership, error) {
+	membership, err := validateMembership(project, user, access)
+	if err != nil {
+		return nil, err
+	}
+
+	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		if err := permitMembership(tx, caller, membership.Project); err != nil {
+			return err
+		}
+		if _, err := tx.GetUser(membership.User); err != nil {
+			return err
+		}
+		if _, alreadyMember, err := tx.Membership(membership.Project, membership.User); err != nil {
+			return err
+		} else if alreadyMember {
+			return awberr.Conflictf("%s is already a member of project %s",
+				membership.User, membership.Project)
+		}
+		if err := tx.SetMembership(membership.Project, membership.User, membership.Access); err != nil {
+			return err
+		}
+		return tx.ForgetProjectIgnored(membership.User, membership.Project)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return membership, nil
+}
+
 // SetMember grants a user an access level in a project, replacing whatever
 // they held there before. Granting the level they already hold succeeds and
 // changes nothing. Membership administration bypasses only the caller's

@@ -865,6 +865,29 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/MembershipList' }
         default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [projects]
+      operationId: addProjectMember
+      summary: Grant a user who is not already a member access to a project
+      description: |
+        Requires `admin` access to the project. Unlike the member resource's
+        `PUT`, this create operation returns `409` when the user is already a
+        member. The existence check and insert share one write transaction, so
+        a stale administration view cannot overwrite a concurrent access
+        grant. The dedicated administration path remains available when the
+        caller has personally ignored the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipCreate' }
+      responses:
+        '201':
+          description: The new membership.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+        default: { $ref: '#/components/responses/Error' }
 
   /api/projects/{key}/members/{user}:
     parameters:
@@ -2285,6 +2308,15 @@ components:
           items: { $ref: '#/components/schemas/Membership' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    MembershipCreate:
+      type: object
+      description: The body of `POST /api/projects/{key}/members`.
+      additionalProperties: false
+      required: [user, access]
+      properties:
+        user: { $ref: '#/components/schemas/Username' }
+        access: { $ref: '#/components/schemas/Access' }
 
     MembershipSet:
       type: object

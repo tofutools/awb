@@ -297,6 +297,8 @@ export const api = {
   },
   projectMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
+  addProjectMember: (key: string, user: string, access: MembershipAccess) =>
+    postOne<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { user, access }),
   setProjectMember: async (key: string, user: string, access: MembershipAccess) =>
     getResponse<Membership>(await request(
       `api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
