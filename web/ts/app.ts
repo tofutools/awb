@@ -37,7 +37,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
@@ -1187,10 +1187,24 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 
   const editForm = issueEditForm(issue);
   editForm.hidden = true;
-  editButton.addEventListener("click", () => {
-    editForm.hidden = !editForm.hidden;
+  const showEditor = (show: boolean) => {
+    editForm.hidden = !show;
     editButton.textContent = editForm.hidden ? "Edit issue" : "Hide editor";
+  };
+  editButton.addEventListener("click", () => {
+    showEditor(editForm.hidden === true);
     if (!editForm.hidden) editForm.querySelector<HTMLInputElement>("input")?.focus();
+  });
+  editForm.addEventListener("keydown", (event) => {
+    const shortcut = issueEditorShortcut(event);
+    if (shortcut === undefined) return;
+    event.preventDefault();
+    if (shortcut === "save") {
+      editForm.requestSubmit();
+      return;
+    }
+    showEditor(false);
+    editButton.focus();
   });
   content.append(editForm);
 
