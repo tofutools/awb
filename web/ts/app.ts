@@ -1661,9 +1661,25 @@ function configureInspectorPopover(
   popover.setAttribute("popover", "auto");
   popover.setAttribute("role", "dialog");
   popover.setAttribute("aria-label", label);
-  trigger.setAttribute("aria-controls", popover.id);
-  trigger.setAttribute("aria-expanded", "false");
-  trigger.setAttribute("aria-haspopup", "dialog");
+  if (toggleOnClick) {
+    trigger.setAttribute("aria-controls", popover.id);
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-haspopup", "dialog");
+  }
+
+  const reposition = (): void => {
+    if (!popover.matches(":popover-open")) return;
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = popover.getBoundingClientRect();
+    const viewport = visualViewport;
+    const viewportBounds = viewport === null
+      ? { width: innerWidth, height: innerHeight }
+      : { width: viewport.width, height: viewport.height, left: viewport.offsetLeft, top: viewport.offsetTop };
+    popover.style.maxHeight = `${Math.max(0, viewportBounds.height - 16)}px`;
+    const position = inspectorPopoverPosition(anchor, bounds, viewportBounds);
+    popover.style.left = `${position.left}px`;
+    popover.style.top = `${position.top}px`;
+  };
 
   const open = (): void => {
     if (popover.matches(":popover-open")) {
@@ -1671,17 +1687,26 @@ function configureInspectorPopover(
       return;
     }
     popover.showPopover();
-    const anchor = trigger.getBoundingClientRect();
-    const bounds = popover.getBoundingClientRect();
-    const position = inspectorPopoverPosition(anchor, bounds, { width: innerWidth, height: innerHeight });
-    popover.style.left = `${position.left}px`;
-    popover.style.top = `${position.top}px`;
+    reposition();
     (popover.querySelector<HTMLElement>("input, select") ??
       popover.querySelector<HTMLElement>("button"))?.focus();
   };
   if (toggleOnClick) trigger.addEventListener("click", open);
+  let listeners: AbortController | undefined;
+  const resizeObserver = new ResizeObserver(reposition);
   popover.addEventListener("toggle", () => {
-    trigger.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+    const opened = popover.matches(":popover-open");
+    if (toggleOnClick) trigger.setAttribute("aria-expanded", String(opened));
+    listeners?.abort();
+    resizeObserver.disconnect();
+    if (!opened) return;
+    listeners = new AbortController();
+    const options = { capture: true, signal: listeners.signal };
+    addEventListener("scroll", reposition, options);
+    addEventListener("resize", reposition, { signal: listeners.signal });
+    visualViewport?.addEventListener("scroll", reposition, { signal: listeners.signal });
+    visualViewport?.addEventListener("resize", reposition, { signal: listeners.signal });
+    resizeObserver.observe(popover);
   });
   return open;
 }
@@ -2337,6 +2362,7 @@ function viewSettings(): HTMLElement {
 
 async function render(): Promise<void> {
   const route = parseRoute();
+  for (const popover of app.querySelectorAll<HTMLElement>(":popover-open")) popover.hidePopover();
   clear(app);
   app.append(chrome());
 

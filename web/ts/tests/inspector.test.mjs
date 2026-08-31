@@ -28,4 +28,9 @@ test("an inspector popover stays in the viewport and flips above its trigger", (
     { width: 300, height: 100 },
     { width: 320, height: 300 },
   ), { left: 8, top: 56 });
+  assert.deepEqual(inspectorPopoverPosition(
+    { top: 180, right: 560, bottom: 210, width: 100, height: 30 },
+    { width: 240, height: 180 },
+    { left: 200, top: 100, width: 360, height: 320 },
+  ), { left: 312, top: 216 });
 });

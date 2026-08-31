@@ -834,6 +834,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   position: fixed;
   inset: auto;
   width: min(18rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow-y: auto;
   margin: 0;
   padding: 0.75rem;
   border: 1px solid var(--line);
@@ -844,6 +846,12 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .inspector-popover::backdrop { background: transparent; }
 .inspector-popover .sidebar-editor { margin-top: 0; }
+.inspector-popover .autocomplete-list {
+  position: static;
+  max-height: min(16rem, calc(100dvh - 10rem));
+  margin-top: 0.2rem;
+  box-shadow: none;
+}
 .inspector-popover .assignee-actions:empty { display: none; }
 .inspector-release-all { color: var(--warn); justify-self: start; }
 .sidebar-select {

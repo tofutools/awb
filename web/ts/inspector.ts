@@ -26,14 +26,21 @@ export interface InspectorRect {
 export function inspectorPopoverPosition(
   anchor: InspectorRect,
   popover: Pick<InspectorRect, "width" | "height">,
-  viewport: { width: number; height: number },
+  viewport: { width: number; height: number; left?: number; top?: number },
   gap = 6,
   gutter = 8,
 ): { left: number; top: number } {
-  const left = Math.max(gutter, Math.min(viewport.width - popover.width - gutter, anchor.right - popover.width));
+  const viewportLeft = viewport.left ?? 0;
+  const viewportTop = viewport.top ?? 0;
+  const viewportRight = viewportLeft + viewport.width;
+  const viewportBottom = viewportTop + viewport.height;
+  const left = Math.max(
+    viewportLeft + gutter,
+    Math.min(viewportRight - popover.width - gutter, anchor.right - popover.width),
+  );
   const below = anchor.bottom + gap;
-  const top = below + popover.height <= viewport.height - gutter
+  const top = below + popover.height <= viewportBottom - gutter
     ? below
-    : Math.max(gutter, anchor.top - popover.height - gap);
+    : Math.max(viewportTop + gutter, anchor.top - popover.height - gap);
   return { left, top };
 }
