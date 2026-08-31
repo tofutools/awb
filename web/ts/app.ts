@@ -42,11 +42,16 @@ import {
   type SortState,
 } from "./listings.js";
 import { commentSubmitShortcut, inspectorDismissShortcut, issueEditorShortcut } from "./keyboard.js";
+import {
+  CommandPalette,
+  CommandRegistry,
+  type PaletteCommand,
+} from "./command-palette.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
-import { navigationPath, projectScopedHref } from "./navigation.js";
+import { namedDestinations, navigationPath, projectScopedHref } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
@@ -80,6 +85,7 @@ let inspectorEditorID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
+let commandPalette: CommandPalette | null = null;
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -1146,9 +1152,15 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
     limit: size,
     offset: (requested - 1) * size,
   };
-  let page = await api.users(filters);
+  const focusedUser = route.query.get("user");
+  let page = focusedUser === null
+    ? await api.users(filters)
+    : await api.navigation(focusedUser).then((results) => {
+      const exact = results.users.filter((user) => user.name === focusedUser);
+      return { rows: exact, total: exact.length };
+    });
   const normalized = normalizePageRoute(route, page.total);
-  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
+  if (focusedUser === null && (filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
     page = await api.users(filters);
   }
@@ -2097,6 +2109,13 @@ function chrome(): HTMLElement {
   brand.append(mark, document.createTextNode("Agent Work Board"));
   header.append(brand);
   header.append(nav);
+  const commands = button("Commands", "command-palette-button");
+  commands.setAttribute("aria-keyshortcuts", "Control+K Meta+K");
+  commands.title = "Open command palette (Ctrl/Cmd+K)";
+  const shortcut = element("kbd", "", navigator.platform.toLocaleLowerCase().includes("mac") ? "⌘K" : "Ctrl K");
+  commands.append(shortcut);
+  commands.addEventListener("click", () => commandPalette?.open());
+  header.append(commands);
   header.append(searchBox());
   if (identity !== "") header.append(accountMenu());
   return header;
@@ -2355,6 +2374,36 @@ async function start(): Promise<void> {
   } catch {
     // A server that cannot say who the caller is still browses fine.
   }
+  const registry = new CommandRegistry();
+  registry.register("navigation", () => {
+    const route = parseRoute();
+    const commands: PaletteCommand[] = namedDestinations.map((destination) => ({
+      id: `view:${destination.id}`,
+      label: `Go to ${destination.label}`,
+      hint: "View",
+      keywords: destination.keywords,
+      group: "Navigation",
+      run: () => {
+        location.hash = destination.projectScoped === undefined
+          ? destination.path
+          : projectScopedHref(destination.projectScoped, route.query);
+      },
+    }));
+    if (identity !== "") commands.push({
+      id: "view:profile",
+      label: "Go to profile",
+      hint: `@${identity}`,
+      keywords: "account settings password",
+      group: "Navigation",
+      run: () => { location.hash = "#/profile"; },
+    });
+    return commands;
+  });
+  commandPalette = new CommandPalette(
+    registry,
+    (query, signal) => api.navigation(query, signal),
+    (href) => { location.hash = href; },
+  );
   window.addEventListener("hashchange", () => void render());
   await render();
 }

@@ -31,6 +31,7 @@ export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
 export type Membership = components["schemas"]["Membership"];
+export type NavigationResults = components["schemas"]["NavigationResults"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
@@ -209,6 +210,8 @@ export const api = {
   search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
   issueSuggestions: (query: string, signal?: AbortSignal) =>
     getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
+  navigation: async (query: string, signal?: AbortSignal) =>
+    getResponse<NavigationResults>(await request(`api/navigation${toQuery({ q: query, limit: 6 })}`, { signal })),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),

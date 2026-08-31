@@ -33,6 +33,7 @@ type Backend interface {
 	// same as Identity in direct mode; against a server it is the server's
 	// answer, which may differ from the client's configured default identity.
 	AuthenticatedIdentity(ctx context.Context) (string, error)
+	SearchNavigation(ctx context.Context, query string, limit int) (NavigationResults, error)
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)
@@ -128,6 +129,14 @@ type IssuePage struct {
 type ProjectPage struct {
 	Projects []domain.Project
 	Total    int
+}
+
+// NavigationResults is the small, grouped autocomplete result used by clients
+// that navigate to records without first loading their full collections.
+type NavigationResults struct {
+	Issues   []domain.Issue
+	Projects []domain.Project
+	Users    []domain.User
 }
 
 // FacetPage is a facet listing with its unpaged total. The total counts the

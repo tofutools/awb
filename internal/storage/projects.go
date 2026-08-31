@@ -129,6 +129,32 @@ func (t *Tx) ListProjects(sort domain.ProjectSort,
 	return projects, total, nil
 }
 
+// SearchProjectsForNavigation performs a bounded substring search over the
+// immutable key and display name, within the transaction's visible projects.
+func (t *Tx) SearchProjectsForNavigation(query string, limit int) ([]domain.Project, error) {
+	visible, args := t.visibleClause("p.key")
+	args = append(args, query, query, limit)
+	active := `(SELECT count(*) FROM issues i WHERE i.project = p.key AND i.status <> 'closed')`
+	rows, err := t.q.QueryContext(t.ctx, `
+		SELECT p.key, p.name, p.description, p.created_at, p.updated_at, `+active+`
+		  FROM projects p
+		 WHERE `+visible+` AND (instr(lower(p.key), lower(?)) > 0 OR instr(lower(p.name), lower(?)) > 0)
+		 ORDER BY p.key ASC LIMIT ?`, args...)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "search projects for navigation")
+	}
+	defer rows.Close()
+	projects := []domain.Project{}
+	for rows.Next() {
+		var p domain.Project
+		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "search projects for navigation")
+		}
+		projects = append(projects, p)
+	}
+	return projects, awberr.Wrap(awberr.Runtime, rows.Err(), "search projects for navigation")
+}
+
 // InsertProject stores a new project.
 func (t *Tx) InsertProject(key, name, description string) error {
 	now := Now()

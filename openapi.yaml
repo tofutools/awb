@@ -608,6 +608,32 @@ paths:
         '200': { $ref: '#/components/responses/IssueList' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/navigation:
+    get:
+      tags: [metadata]
+      operationId: searchNavigation
+      summary: Search addressable records for keyboard navigation
+      description: |
+        Case-insensitive substring matching over issue IDs and titles, project
+        keys and names, and usernames and full names. Each result kind is independently
+        capped by `limit`, and normal visibility rules apply.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: limit
+          in: query
+          description: Maximum results returned for each record kind.
+          schema: { type: integer, minimum: 1, maximum: 20, default: 6 }
+      responses:
+        '200':
+          description: Matching records grouped by navigation kind.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NavigationResults' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/projects:
     get:
       tags: [projects]
@@ -1297,6 +1323,20 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    NavigationResults:
+      type: object
+      required: [issues, projects, users]
+      properties:
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/Issue' }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/Project' }
+        users:
+          type: array
+          items: { $ref: '#/components/schemas/UserDirectoryEntry' }
+
     Type:
       type: string
       description: |
