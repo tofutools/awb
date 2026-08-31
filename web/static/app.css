@@ -501,6 +501,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .project-description.markdown > :first-child { margin-top: 0; }
 .project-description.markdown > :last-child { margin-bottom: 0; }
 
+.user-table th:first-child { width: 24%; }
+.user-table th:last-child { width: 24%; }
+.user-name { display: inline-flex; gap: 0.5rem; align-items: center; font-weight: 600; }
+.user-name .avatar { width: 1.8rem; height: 1.8rem; }
+.user-projects, .user-roles { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+a.user-project:hover { color: var(--accent); text-decoration: none; }
+
 @media (max-width: 700px) {
   #app { padding-inline: 0.8rem; }
   .app-header { align-items: flex-start; gap: 0.5rem 1rem; }
@@ -508,8 +515,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .app-header .search input { width: 100%; }
   .account-menu { margin-left: auto; }
   .identity-name { display: none; }
-  nav { order: 3; width: 100%; padding-bottom: 0.5rem; overflow-x: auto; overflow-y: hidden; }
-  nav a { flex: 1 1 auto; justify-content: center; padding: 0.4rem 0.25rem; font-size: 0.8rem; }
+  nav { order: 3; width: 100%; gap: 0.15rem; padding-bottom: 0.5rem; overflow-x: auto; overflow-y: hidden; }
+  nav a { flex: 1 1 auto; gap: 0.25rem; justify-content: center; padding: 0.4rem 0.2rem; font-size: 0.72rem; }
   nav a .icon { width: 1rem; height: 1rem; }
   nav a.active::after { bottom: 0; }
   .listing-tools { flex-wrap: wrap; }
@@ -572,11 +579,11 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     letter-spacing: 0.035em;
     text-transform: uppercase;
   }
-  .issue-table td:first-child, .project-table td:first-child {
+  .issue-table td:first-child, .project-table td:first-child, .user-table td:first-child {
     display: block;
     padding-bottom: 0.35rem;
   }
-  .issue-table td:first-child::before, .project-table td:first-child::before { content: none; }
+  .issue-table td:first-child::before, .project-table td:first-child::before, .user-table td:first-child::before { content: none; }
 }
 
 .close-reason { color: var(--muted); border-left: 3px solid var(--line); padding-left: 0.75rem; }

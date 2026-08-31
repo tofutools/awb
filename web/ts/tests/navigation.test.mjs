@@ -15,4 +15,5 @@ test("issue listing tabs preserve selected projects only", () => {
 test("active navigation ignores preserved project filters", () => {
   assert.equal(navigationPath("#/issues?project=awb&project=other"), "issues");
   assert.equal(navigationPath("#/ready"), "ready");
+  assert.equal(navigationPath("#/users"), "users");
 });

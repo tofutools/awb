@@ -170,6 +170,7 @@ export const api = {
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: () => getPage<Project>("api/projects"),
+  users: () => getPage<User>("api/users"),
   labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
   assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),

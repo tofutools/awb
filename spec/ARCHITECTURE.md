@@ -525,6 +525,12 @@ each query, because a read that forgets it does not fail — it leaks. There is
 one place a transaction is restricted, one place the caller's permissions are
 read, and every query consults the transaction it is running in.
 
+The user directory follows the same boundary without pretending that a person
+belongs to only one project. A member sees current accounts that participated
+in any visible project, including its retained assignments and activity, while
+memberships in other projects stay hidden. User administrators see the whole
+directory.
+
 An invisible project is answered *not found* rather than *forbidden*, and so is
 every issue in it, and so is every spelling of an issue reference that would
 resolve to one. Forbidden is reserved for what a caller can see and may not

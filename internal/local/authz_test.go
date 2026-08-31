@@ -344,12 +344,17 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 	for _, be := range []*local.Backend{bob, alice} {
 		_, err := be.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
 		forbidden(t, err)
-		_, err = be.ListUsers(ctx, nil, nil)
-		forbidden(t, err)
 		_, err = be.GetUser(ctx, "dana")
 		forbidden(t, err)
 		_, err = be.DeleteUser(ctx, "dana", "")
 		forbidden(t, err)
+	}
+
+	for name, be := range map[string]*local.Backend{"bob": bob, "alice": alice} {
+		users, err := be.ListUsers(ctx, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, users.Users, 1, "unrelated dormant accounts stay outside the directory")
+		assert.Equal(t, name, users.Users[0].Name)
 	}
 
 	_, err := dana.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
@@ -362,6 +367,44 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 	projects, err := dana.ListProjects(ctx, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, projects.Projects)
+}
+
+// A member's user directory includes collaborators and retained work history,
+// without exposing memberships in projects they cannot see.
+func TestMembersListUsersFromVisibleProjects(t *testing.T) {
+	root, ctx := newInstance(t)
+	for _, name := range []string{"alice", "bob", "carol", "dana", "erin"} {
+		addUser(t, root, ctx, name, false, name == "dana")
+	}
+	grant(t, root, ctx, "awb", "alice", domain.AccessRegular)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	grant(t, root, ctx, "web", "bob", domain.AccessAdmin)
+
+	// Carol's old assignment remains visible even though she has no current
+	// access to awb, as does Erin through the same multi-assignee issue. Carol's
+	// unrelated web membership must not come with it.
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "awb", Title: "Parser crashes", Assignees: []string{"carol", "erin"},
+	})
+	require.NoError(t, err)
+	grant(t, root, ctx, "web", "carol", domain.AccessRegular)
+
+	page, err := root.WithUser("alice").ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Users, 4)
+	assert.Equal(t, 4, page.Total)
+	assert.Equal(t, []string{"alice", "bob", "carol", "erin"}, []string{
+		page.Users[0].Name, page.Users[1].Name, page.Users[2].Name, page.Users[3].Name,
+	})
+	require.Len(t, page.Users[1].Projects, 1)
+	assert.Equal(t, "awb", page.Users[1].Projects[0].Project)
+	assert.Empty(t, page.Users[2].Projects, "carol's hidden web membership is not disclosed")
+
+	// A user administrator retains the complete management listing.
+	all, err := root.WithUser("dana").ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, all.Users, 5)
+	assert.Equal(t, 5, all.Total)
 }
 
 // Anybody may read their own account and set their own password, and nobody

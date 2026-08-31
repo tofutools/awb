@@ -95,15 +95,20 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 	return user, nil
 }
 
-// ListUsers lists accounts ordered by name ascending.
+// ListUsers lists accounts ordered by name ascending. Account administrators
+// see every account. Other authenticated callers see the current accounts
+// that share or have participated in projects they can see. Project
+// administrators see participation across every project, but not dormant
+// accounts that have never touched one.
 func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.UserPage, error) {
 	var page backend.UserPage
 	err := b.read(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		if !caller.MayManageUsers() {
-			return awberr.Forbiddenf("only a user administrator may list users")
-		}
 		var err error
-		page.Users, page.Total, err = tx.ListUsers(limit, offset)
+		if caller.MayManageUsers() {
+			page.Users, page.Total, err = tx.ListUsers(limit, offset)
+		} else {
+			page.Users, page.Total, err = tx.ListVisibleUsers(caller.Name, limit, offset)
+		}
 		return err
 	})
 	if err != nil {

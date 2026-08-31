@@ -10,10 +10,10 @@ import (
 
 // The user and membership queries.
 //
-// None of them is scoped by Tx.scope. A user is not owned by a project, so
-// there is no project key to hide one behind; who may read and change one is
-// decided by the rules in the domain layer, which the local backend applies
-// before it calls any of this.
+// A user is not owned by a project, so the account-management queries are not
+// scoped. ListVisibleUsers is the exception used by the collaborative user
+// directory: it derives people from projects in Tx.scope, and scopes the
+// memberships it returns by that same set.
 
 // AnyUsers reports whether the database holds a user at all.
 //
@@ -145,14 +145,70 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
 	}
 
-	if err := t.hydrateMemberships(users); err != nil {
+	if err := t.hydrateMemberships(users, false); err != nil {
+		return nil, 0, err
+	}
+	return users, total, nil
+}
+
+// ListVisibleUsers returns current accounts that have participated in a
+// project visible to the transaction, plus the caller themselves. Participation
+// is a membership, an assignment, or an activity entry: removing somebody's
+// membership must not erase them from the history their former collaborators
+// can already read.
+//
+// Only visible memberships are hydrated. A username may be shared across
+// projects without disclosing the names of projects the caller cannot see.
+func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
+	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
+	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
+	args := append([]any{caller}, visibleArgs...)
+	args = append(args, visibleAssignmentArgs...)
+	args = append(args, visibleActivityArgs...)
+	cte := `WITH visible_users(name) AS (
+		SELECT ?
+		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
+		UNION SELECT assignee FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
+			WHERE ` + visibleAssignmentProject + `
+		UNION SELECT actor FROM issue_activity a JOIN issues i ON i.id = a.issue
+			WHERE actor <> '' AND ` + visibleActivityProject + `
+	)`
+
+	if err := t.q.QueryRowContext(t.ctx, cte+`
+		SELECT count(*) FROM users WHERE name IN (SELECT name FROM visible_users)`, args...).Scan(&total); err != nil {
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count visible users")
+	}
+
+	rows, err := t.q.QueryContext(t.ctx, cte+`
+		SELECT name, project_admin, user_admin, created_at, updated_at
+		  FROM users WHERE name IN (SELECT name FROM visible_users)
+		 ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
+	if err != nil {
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
+	}
+	defer rows.Close()
+
+	users = []domain.User{}
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.Name, &u.ProjectAdmin, &u.UserAdmin,
+			&u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
+	}
+	if err := t.hydrateMemberships(users, true); err != nil {
 		return nil, 0, err
 	}
 	return users, total, nil
 }
 
 // hydrateMemberships fills in the Projects of a page of users in one query.
-func (t *Tx) hydrateMemberships(users []domain.User) error {
+func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	if len(users) == 0 {
 		return nil
 	}
@@ -163,10 +219,17 @@ func (t *Tx) hydrateMemberships(users []domain.User) error {
 		byName[users[i].Name] = &users[i]
 	}
 
+	where := `user IN (` + placeholders(len(names)) + `)`
+	args := anyArgs(names)
+	if visibleOnly {
+		visible, visibleArgs := t.visibleClause("project")
+		where += ` AND ` + visible
+		args = append(args, visibleArgs...)
+	}
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT project, user, access FROM project_members
-		 WHERE user IN (`+placeholders(len(names))+`)
-		 ORDER BY user ASC, project ASC`, anyArgs(names)...)
+		 WHERE `+where+`
+		 ORDER BY user ASC, project ASC`, args...)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read memberships")
 	}
