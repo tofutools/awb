@@ -12,7 +12,8 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// AddComment appends Markdown prose to an issue as the current caller.
+// AddComment appends Markdown prose to an issue as the current caller and
+// moves the issue's updated_at in the same transaction.
 func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Activity, error) {
 	validated, err := domain.ValidateComment(body)
 	if err != nil {
@@ -32,7 +33,10 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 			Issue: issue.ID, Kind: domain.ActivityKindComment,
 			Actor: actor, Body: validated,
 		}
-		return tx.InsertActivity(&activity)
+		if err := tx.InsertActivity(&activity); err != nil {
+			return err
+		}
+		return tx.TouchIssue(issue)
 	})
 	if err != nil {
 		return nil, err

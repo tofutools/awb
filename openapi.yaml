@@ -947,9 +947,9 @@ components:
         client can make a conditional edit without repeating the GET.
 
         It is not a cache validator and nothing should treat it as one: it
-        guards the entity's own stored fields, which are what a form edits. Two
-        issue bodies differing only in `relations`, `blocked`, `blockers` or
-        `attachments` carry the same tag.
+        guards the entity's own stored fields and, for an issue, comments
+        posted since a form read it. Two issue bodies differing only in
+        `relations`, `blocked`, `blockers` or `attachments` carry the same tag.
       schema: { type: string }
     XTotalCount:
       description: The number of rows before `limit` and `offset` were applied.

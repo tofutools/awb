@@ -288,6 +288,22 @@ func TestETagSurvivesARelation(t *testing.T) {
 		"the tag guards the issue's own stored fields")
 }
 
+// A comment is issue activity and moves updated_at, so a form based on the
+// previous version must reload before it edits the issue.
+func TestCommentInvalidatesIssueETag(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	tag := local.ETag(issue.UpdatedAt)
+
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
+		`{"body":"new information"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"renamed"}`, "If-Match", tag)
+	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode, payload)
+}
+
 // A tree aggregates many issues and no one version tags it.
 func TestTreeCarriesNoETag(t *testing.T) {
 	a := newAPI(t)
