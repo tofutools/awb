@@ -155,7 +155,7 @@ func TestCommitFailureRollsBackConnection(t *testing.T) {
 }
 
 func TestRollbackFailureDiscardsConnection(t *testing.T) {
-	connector := &rollbackFailureConnector{}
+	connector := &transactionFailureConnector{failQuery: "ROLLBACK"}
 	sqlDB := sql.OpenDB(connector)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
@@ -169,6 +169,44 @@ func TestRollbackFailureDiscardsConnection(t *testing.T) {
 	require.NoError(t, db.Write(t.Context(), func(*Tx) error { return nil }))
 	assert.Equal(t, int32(2), connector.opened.Load())
 	assert.Equal(t, int32(1), connector.closed.Load())
+}
+
+func TestBeginFailureDiscardsConnection(t *testing.T) {
+	cases := []struct {
+		name      string
+		failQuery string
+		operation func(*DB, func(*Tx) error) error
+	}{
+		{"read", "BEGIN", func(db *DB, fn func(*Tx) error) error {
+			return db.Read(t.Context(), fn)
+		}},
+		{"write", "BEGIN IMMEDIATE", func(db *DB, fn func(*Tx) error) error {
+			return db.Write(t.Context(), fn)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			connector := &transactionFailureConnector{failQuery: tc.failQuery}
+			sqlDB := sql.OpenDB(connector)
+			sqlDB.SetMaxOpenConns(1)
+			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+			db := &DB{db: sqlDB}
+
+			// The test driver enters a transaction and then reports that BEGIN
+			// failed, modelling cancellation racing with modernc's SQLite step.
+			callbackRan := false
+			err := tc.operation(db, func(*Tx) error {
+				callbackRan = true
+				return nil
+			})
+			require.ErrorContains(t, err, "begin transaction")
+			assert.False(t, callbackRan)
+
+			require.NoError(t, db.Write(t.Context(), func(*Tx) error { return nil }))
+			assert.Equal(t, int32(2), connector.opened.Load())
+			assert.Equal(t, int32(1), connector.closed.Load())
+		})
+	}
 }
 
 func assertPoolRemainsUsable(t *testing.T, db *DB) {
@@ -193,47 +231,65 @@ func TestJoinTransactionErrorPreservesOperationError(t *testing.T) {
 	assert.ErrorIs(t, err, rollbackErr)
 }
 
-type rollbackFailureConnector struct {
-	opened atomic.Int32
-	closed atomic.Int32
+type transactionFailureConnector struct {
+	opened    atomic.Int32
+	closed    atomic.Int32
+	failQuery string
 }
 
-func (c *rollbackFailureConnector) Connect(context.Context) (driver.Conn, error) {
+func (c *transactionFailureConnector) Connect(context.Context) (driver.Conn, error) {
 	n := c.opened.Add(1)
-	return &rollbackFailureConn{connector: c, failRollback: n == 1}, nil
+	failQuery := ""
+	if n == 1 {
+		failQuery = c.failQuery
+	}
+	return &transactionFailureConn{connector: c, failQuery: failQuery}, nil
 }
 
-func (*rollbackFailureConnector) Driver() driver.Driver { return rollbackFailureDriver{} }
+func (*transactionFailureConnector) Driver() driver.Driver { return transactionFailureDriver{} }
 
-type rollbackFailureDriver struct{}
+type transactionFailureDriver struct{}
 
-func (rollbackFailureDriver) Open(string) (driver.Conn, error) {
+func (transactionFailureDriver) Open(string) (driver.Conn, error) {
 	return nil, errors.New("use connector")
 }
 
-type rollbackFailureConn struct {
-	connector    *rollbackFailureConnector
-	failRollback bool
+type transactionFailureConn struct {
+	connector     *transactionFailureConnector
+	failQuery     string
+	inTransaction bool
 }
 
-func (*rollbackFailureConn) Prepare(string) (driver.Stmt, error) {
+func (*transactionFailureConn) Prepare(string) (driver.Stmt, error) {
 	return nil, errors.New("prepare is not supported")
 }
 
-func (c *rollbackFailureConn) Close() error {
+func (c *transactionFailureConn) Close() error {
 	c.connector.closed.Add(1)
 	return nil
 }
 
-func (*rollbackFailureConn) Begin() (driver.Tx, error) {
+func (*transactionFailureConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("database/sql transactions are not used")
 }
 
-func (c *rollbackFailureConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (
+func (c *transactionFailureConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (
 	driver.Result, error,
 ) {
-	if query == "ROLLBACK" && c.failRollback {
-		return nil, errors.New("forced rollback failure")
+	switch query {
+	case "BEGIN", "BEGIN IMMEDIATE":
+		if c.inTransaction {
+			return nil, errors.New("cannot start a transaction within a transaction")
+		}
+		c.inTransaction = true
+	case "ROLLBACK", "COMMIT":
+		if query == c.failQuery {
+			return nil, errors.New("forced transaction failure")
+		}
+		c.inTransaction = false
+	}
+	if query == c.failQuery {
+		return nil, errors.New("forced transaction failure")
 	}
 	return driver.RowsAffected(0), nil
 }

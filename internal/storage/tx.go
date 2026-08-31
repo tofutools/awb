@@ -50,6 +50,7 @@ func (d *DB) Write(ctx context.Context, fn func(*Tx) error) (retErr error) {
 	defer conn.Close() //nolint:errcheck // returning the connection to the pool
 
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		discardConnection(conn)
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
 	committed := false
@@ -81,6 +82,7 @@ func (d *DB) Read(ctx context.Context, fn func(*Tx) error) (retErr error) {
 	defer conn.Close() //nolint:errcheck // returning the connection to the pool
 
 	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		discardConnection(conn)
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
 	defer func() { retErr = joinTransactionError(retErr, rollback(conn)) }()
@@ -98,10 +100,17 @@ func rollback(conn *sql.Conn) error {
 	defer cancel()
 
 	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		discardConnection(conn)
 		return err
 	}
 	return nil
+}
+
+// An ExecContext error does not prove that SQLite did nothing: cancellation
+// can race with a successfully executed BEGIN. ErrBadConn makes database/sql
+// close an uncertain connection instead of returning it to the pool.
+func discardConnection(conn *sql.Conn) {
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 }
 
 func joinTransactionError(operationErr, rollbackErr error) error {
