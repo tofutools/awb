@@ -33,6 +33,8 @@ type selection struct {
 	limit         api.OptInt
 	offset        api.OptInt
 	terms         []string
+	listingFilter string
+	readiness     api.OptFacetReadiness
 }
 
 // filter turns the selection into a domain filter. The values arrive already
@@ -44,6 +46,7 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 		IncludeClosed: s.includeClosed,
 		Unassigned:    s.unassigned,
 		Parent:        s.parent.Or(""),
+		ListingFilter: s.listingFilter,
 	}
 
 	for _, status := range s.statuses {
@@ -82,6 +85,14 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 			return nil, err
 		}
 		filter.Projects = append(filter.Projects, valid)
+	}
+	if readiness, ok := s.readiness.Get(); ok {
+		switch readiness {
+		case api.FacetReadinessReady:
+			filter.Readiness = domain.ReadinessReady
+		case api.FacetReadinessBlocked:
+			filter.Readiness = domain.ReadinessBlocked
+		}
 	}
 
 	if limit, ok := s.limit.Get(); ok {
@@ -131,6 +142,7 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
 		offset:        params.Offset,
+		listingFilter: params.Filter.Or(""),
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -144,15 +156,16 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
 	*api.IssueListHeaders, error) {
 	filter, err := selection{
-		types:       params.Type,
-		priorities:  params.Priority,
-		priorityMax: params.PriorityMax,
-		labels:      params.Label,
-		projects:    params.Project,
-		parent:      params.Parent,
-		sort:        string(params.Sort.Or("")),
-		limit:       params.Limit,
-		offset:      params.Offset,
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		projects:      params.Project,
+		parent:        params.Parent,
+		sort:          string(params.Sort.Or("")),
+		limit:         params.Limit,
+		offset:        params.Offset,
+		listingFilter: params.Filter.Or(""),
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -167,17 +180,18 @@ func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
 func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams) (
 	*api.IssueListHeaders, error) {
 	filter, err := selection{
-		types:       params.Type,
-		priorities:  params.Priority,
-		priorityMax: params.PriorityMax,
-		labels:      params.Label,
-		assignees:   params.Assignee,
-		unassigned:  params.Unassigned.Or(false),
-		projects:    params.Project,
-		parent:      params.Parent,
-		sort:        string(params.Sort.Or("")),
-		limit:       params.Limit,
-		offset:      params.Offset,
+		types:         params.Type,
+		priorities:    params.Priority,
+		priorityMax:   params.PriorityMax,
+		labels:        params.Label,
+		assignees:     params.Assignee,
+		unassigned:    params.Unassigned.Or(false),
+		projects:      params.Project,
+		parent:        params.Parent,
+		sort:          string(params.Sort.Or("")),
+		limit:         params.Limit,
+		offset:        params.Offset,
+		listingFilter: params.Filter.Or(""),
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -204,6 +218,7 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 		limit:         params.Limit,
 		offset:        params.Offset,
 		terms:         params.Q,
+		listingFilter: params.Filter.Or(""),
 	}.filter(true)
 	if err != nil {
 		return nil, err
@@ -266,6 +281,8 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 		parent:        params.Parent,
 		limit:         params.Limit,
 		offset:        params.Offset,
+		listingFilter: params.Filter.Or(""),
+		readiness:     params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -289,6 +306,8 @@ func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesPar
 		parent:        params.Parent,
 		limit:         params.Limit,
 		offset:        params.Offset,
+		listingFilter: params.Filter.Or(""),
+		readiness:     params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err

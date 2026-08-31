@@ -37,7 +37,7 @@ type Backend interface {
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)
-	ListProjects(ctx context.Context, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
+	ListProjects(ctx context.Context, filter string, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
 	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
 	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
 	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
@@ -95,7 +95,7 @@ type Backend interface {
 	// one, in either direction of the wire.
 	CreateUser(ctx context.Context, req UserCreate) (*domain.User, error)
 	GetUser(ctx context.Context, name string) (*domain.User, error)
-	ListUsers(ctx context.Context, limit, offset *int) (UserPage, error)
+	ListUsers(ctx context.Context, filter string, limit, offset *int) (UserPage, error)
 	UpdateUser(ctx context.Context, name string, req UserPatch, ifMatch string) (*domain.User, error)
 	DeleteUser(ctx context.Context, name string, ifMatch string) (*DeletedUser, error)
 

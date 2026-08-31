@@ -163,7 +163,7 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjects(cmd.Context(), domain.DefaultProjectSort, nil, nil)
+			page, err := be.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, nil, nil)
 			if err != nil {
 				return err
 			}

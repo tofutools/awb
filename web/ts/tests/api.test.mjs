@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { api, blockedFilters, facetFilters, readyFilters, toQuery } from "../../static/api.js";
+import { api, blockedFilters, facetFilters, readyFacetFilters, readyFilters, toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");
@@ -41,10 +41,11 @@ test("values are escaped", () => {
 });
 
 test("several filters combine", () => {
-  const query = toQuery({ project: ["awb"], label: ["parser"], "include-closed": true });
+  const query = toQuery({ project: ["awb"], label: ["parser"], filter: "needle docs", "include-closed": true });
   const params = new URLSearchParams(query.slice(1));
   assert.deepEqual(params.getAll("project"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
+  assert.equal(params.get("filter"), "needle docs");
   assert.equal(params.get("include-closed"), "true");
 });
 
@@ -106,8 +107,9 @@ test("ready filters drop what that endpoint does not accept", () => {
       assignee: ["mikael"],
       unassigned: true,
       q: ["parser"],
+      filter: "needle",
     }),
-    { project: ["awb"], label: ["parser"], sort: "priority" },
+    { project: ["awb"], label: ["parser"], filter: "needle", sort: "priority" },
   );
 });
 
@@ -116,6 +118,23 @@ test("ready filters keep an already narrow selection whole", () => {
   assert.deepEqual(readyFilters({ parent: "awb-a1b2c3", limit: 10 }), {
     parent: "awb-a1b2c3",
     limit: 10,
+  });
+});
+
+test("ready label facets keep the backend text filter and fixed selection", () => {
+  assert.deepEqual(readyFacetFilters({
+    filter: "needle",
+    project: ["awb"],
+    assignee: ["somebody"],
+    "include-closed": true,
+    sort: "priority",
+    limit: 10,
+  }), {
+    filter: "needle",
+    project: ["awb"],
+    status: ["open"],
+    unassigned: true,
+    readiness: "ready",
   });
 });
 
@@ -133,8 +152,8 @@ test("blocked filters drop the status set it fixes for itself", () => {
 
 test("facet filters drop the sort the row order fixes", () => {
   assert.deepEqual(
-    facetFilters({ label: ["parser"], status: ["open"], sort: "created", limit: 50, offset: 100 }),
-    { label: ["parser"], status: ["open"] },
+    facetFilters({ label: ["parser"], status: ["open"], filter: "needle", sort: "created", limit: 50, offset: 100 }),
+    { label: ["parser"], status: ["open"], filter: "needle" },
   );
 });
 

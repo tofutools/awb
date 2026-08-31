@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  BackendListingFilter,
   emptyFacetLabel,
-  filterIssues,
-  filterProjects,
-  filterUsers,
+  listingFilterMaxLength,
   lowestFacetGroup,
   nextSortValue,
   pageNumber,
@@ -19,6 +18,13 @@ import {
   withPage,
   withPageSize,
 } from "../../static/listings.js";
+import { autocompleteDebounceMs } from "../../static/autocomplete.js";
+
+const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+
+test("listing filter length mirrors the OpenAPI contract", () => {
+  assert.equal(listingFilterMaxLength, 500);
+});
 
 test("empty applicable facet groups remain visible", () => {
   assert.equal(emptyFacetLabel([]), "none");
@@ -31,40 +37,6 @@ test("pagination follows the lowest applicable facet row", () => {
   assert.equal(lowestFacetGroup([], null), "label");
   assert.equal(lowestFacetGroup(null, null), "project");
 });
-
-function issue(overrides = {}) {
-  return {
-    id: "awb-a00001",
-    project: "awb",
-    title: "Sortable listings",
-    description: "",
-    type: "feature",
-    status: "open",
-    priority: 2,
-    labels: ["frontend"],
-    assignees: [],
-    created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-02T00:00:00.000Z",
-    blocked: false,
-    blockers: [],
-    relations: [],
-    links: [],
-    attachments: [],
-    ...overrides,
-  };
-}
-
-function project(overrides = {}) {
-  return {
-    key: "awb",
-    name: "Agent Work Board",
-    description: "Agent-first issue tracking",
-    active_issues: 3,
-    created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-02T00:00:00.000Z",
-    ...overrides,
-  };
-}
 
 test("sort state accepts known signed keys and otherwise uses the natural order", () => {
   const allowed = ["key", "active"];
@@ -147,40 +119,39 @@ test("sort headers cycle ascending, descending, then natural order", () => {
   assert.equal(nextSortValue(null, "key", allowed, "key"), "-key");
 });
 
-test("issue filtering matches every word across visible listing values", () => {
-  const rows = [
-    issue({ id: "awb-one", title: "Sortable listings", assignees: ["mikael"] }),
-    issue({ id: "cli-two", project: "cli", title: "Remote mode", labels: ["docs"] }),
-  ];
-  assert.deepEqual(filterIssues(rows, "sort mikael").map((row) => row.id), ["awb-one"]);
-  assert.deepEqual(filterIssues(rows, "CLI docs").map((row) => row.id), ["cli-two"]);
-  assert.equal(filterIssues(rows, "not-present").length, 0);
+test("listing filters debounce requests and reject stale completions", async () => {
+  const pending = [];
+  const updates = [];
+  const search = new BackendListingFilter(
+    (query, signal) => new Promise((resolve) => pending.push({ query, signal, resolve })),
+    (result) => updates.push(result),
+    assert.fail,
+  );
+
+  search.query("old");
+  await wait(autocompleteDebounceMs + 20);
+  search.query("new");
+  assert.equal(pending[0].signal.aborted, true);
+  pending[0].resolve("stale");
+  await wait(0);
+  assert.deepEqual(updates, []);
+
+  await wait(autocompleteDebounceMs + 20);
+  pending[1].resolve("current");
+  await wait(0);
+  assert.deepEqual(updates, ["current"]);
+  search.close();
 });
 
-test("project filtering includes key, name and description", () => {
-  const rows = [
-    project(),
-    project({ key: "cli", name: "CLI tools", description: "Remote clients" }),
-  ];
-  assert.deepEqual(filterProjects(rows, "agent issue").map((row) => row.key), ["awb"]);
-  assert.deepEqual(filterProjects(rows, "remote").map((row) => row.key), ["cli"]);
-});
-test("user filtering includes names, roles and visible projects", () => {
-  const rows = [
-    {
-      name: "alice", full_name: "Alice Andersson", project_admin: false, user_admin: false,
-      projects: [{ project: "awb", user: "alice", access: "regular" }],
-      activity_projects: ["archive"],
-    },
-    {
-      name: "dana", full_name: "Dana Doe", project_admin: false, user_admin: true,
-      projects: [],
-      activity_projects: [],
-    },
-  ];
-  assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
-  assert.deepEqual(filterUsers(rows, "andersson").map((row) => row.name), ["alice"]);
-  assert.deepEqual(filterUsers(rows, "archive").map((row) => row.name), ["alice"]);
-  assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
-  assert.equal(filterUsers(rows, "hidden-project").length, 0);
+test("clearing a listing filter can request the unfiltered page immediately", async () => {
+  const calls = [];
+  const search = new BackendListingFilter(
+    async (query) => { calls.push(query); return query; },
+    () => {},
+    assert.fail,
+  );
+  search.query("", true);
+  await wait(0);
+  assert.deepEqual(calls, [""]);
+  search.close();
 });

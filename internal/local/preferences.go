@@ -27,7 +27,7 @@ func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectP
 		if !exists {
 			return awberr.NotFoundf("no such user: %s", caller.Name)
 		}
-		projects, _, err := tx.ListProjects(domain.ProjectSort{}, nil, nil)
+		projects, _, err := tx.ListProjects("", domain.ProjectSort{}, nil, nil)
 		if err != nil {
 			return err
 		}

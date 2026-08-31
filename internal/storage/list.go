@@ -94,6 +94,25 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 			anyArgs(f.Labels)...)
 	}
 
+	// The web listing filter mirrors the values hydrated into an issue row. Each
+	// word may match any displayed value, but every word must match. Keeping the
+	// predicate in this scoped selection makes totals, facets and pagination all
+	// describe the same authorized result set.
+	for _, word := range strings.Fields(f.ListingFilter) {
+		c.add(`(
+			instr(awb_casefold(i.id || ' ' || i.project || ' ' || i.title || ' ' ||
+				i.type || ' ' || i.status || ' P' || i.priority), awb_casefold(?)) > 0
+			OR EXISTS (SELECT 1 FROM issue_assignees a
+			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
+			OR EXISTS (SELECT 1 FROM issue_labels l
+			            WHERE l.issue = i.id AND instr(awb_casefold(l.label), awb_casefold(?)) > 0)
+			OR EXISTS (SELECT 1 FROM relations r JOIN issues b ON b.id = r.other
+			            WHERE r.subject = i.id AND r.type = 'blocked-by'
+			              AND i.status <> 'closed' AND b.status <> 'closed'
+			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
+		)`, word, word, word, word)
+	}
+
 	return c
 }
 

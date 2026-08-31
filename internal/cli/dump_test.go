@@ -92,9 +92,9 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	restored := local.New(db, storage.NewBlobs(outputAttachments), "local")
 
-	wantProjects, err := source.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	wantProjects, err := source.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
-	gotProjects, err := restored.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	gotProjects, err := restored.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, wantProjects, gotProjects)
 
@@ -121,7 +121,7 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	assert.Equal(t, attachment, gotAttachment)
 	assert.Equal(t, attachmentContent, string(gotContent))
 
-	users, err := restored.ListUsers(ctx, nil, nil)
+	users, err := restored.ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, users.Users)
 }

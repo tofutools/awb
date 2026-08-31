@@ -88,6 +88,18 @@ export function facetFilters(filters: Filters): FacetFilters {
   return accepted;
 }
 
+/** Ready's label facets accept its ordinary selection plus the status and
+ * empty-assignee constraints the listing fixes for itself. Derived readiness
+ * has no facet parameter, but the shared text filter must still narrow them. */
+export function readyFacetFilters(filters: Filters): FacetFilters {
+  return {
+    ...facetFilters(readyFilters(filters)),
+    status: ["open"],
+    unassigned: true,
+    readiness: "ready",
+  };
+}
+
 /** A listing together with the unpaged total X-Total-Count carries. */
 export interface Page<T> {
   rows: T[];
@@ -205,10 +217,14 @@ async function getResponse<T>(resp: Response): Promise<T> {
 }
 
 export const api = {
-  issues: (filters: IssueFilters = {}) => getPage<Issue>(`api/issues${toQuery(filters)}`),
-  ready: (filters: ReadyFilters = {}) => getPage<Issue>(`api/ready${toQuery(filters)}`),
-  blocked: (filters: BlockedFilters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
-  search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
+  issues: (filters: IssueFilters = {}, signal?: AbortSignal) =>
+    getPage<Issue>(`api/issues${toQuery(filters)}`, { signal }),
+  ready: (filters: ReadyFilters = {}, signal?: AbortSignal) =>
+    getPage<Issue>(`api/ready${toQuery(filters)}`, { signal }),
+  blocked: (filters: BlockedFilters = {}, signal?: AbortSignal) =>
+    getPage<Issue>(`api/blocked${toQuery(filters)}`, { signal }),
+  search: (filters: SearchFilters, signal?: AbortSignal) =>
+    getPage<Issue>(`api/search${toQuery(filters)}`, { signal }),
   issueSuggestions: (query: string, signal?: AbortSignal) =>
     getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   navigation: async (query: string, signal?: AbortSignal) =>
@@ -260,7 +276,8 @@ export const api = {
   addComment: (id: string, body: string) =>
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
-  projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
+  projects: (filters: ProjectFilters = {}, signal?: AbortSignal) =>
+    getPage<Project>(`api/projects${toQuery(filters)}`, { signal }),
   projectMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
   users: (filters: UserFilters = {}, signal?: AbortSignal) =>
@@ -270,7 +287,8 @@ export const api = {
     patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),
   labels: (filters: FacetFilters = {}, signal?: AbortSignal) =>
     getPage<Facet>(`api/labels${toQuery(filters)}`, { signal }),
-  assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
+  assignees: (filters: FacetFilters = {}, signal?: AbortSignal) =>
+    getPage<Facet>(`api/assignees${toQuery(filters)}`, { signal }),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
   user: (name: string) => getOne<User>(`api/users/${encodeURIComponent(name)}`),
   updateUser: (name: string, patch: UserPatch) =>

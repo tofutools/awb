@@ -21,7 +21,7 @@ func userResponse(user *domain.User) *api.UserHeaders {
 
 func (h *Handler) ListUsers(ctx context.Context, params api.ListUsersParams) (
 	*api.UserListHeaders, error) {
-	page, err := h.backendFor(ctx).ListUsers(ctx, optInt(params.Limit), optInt(params.Offset))
+	page, err := h.backendFor(ctx).ListUsers(ctx, params.Filter.Or(""), optInt(params.Limit), optInt(params.Offset))
 	if err != nil {
 		return nil, err
 	}

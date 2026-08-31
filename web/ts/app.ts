@@ -6,6 +6,7 @@ import {
   ApiError,
   blockedFilters,
   facetFilters,
+  readyFacetFilters,
   readyFilters,
   type Attachment,
   type Activity,
@@ -22,11 +23,10 @@ import {
   type Relation,
 } from "./api.js";
 import {
+  BackendListingFilter,
   emptyFacetLabel,
-  filterIssues,
-  filterProjects,
-  filterUsers,
   lowestFacetGroup,
+  listingFilterMaxLength,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -91,6 +91,10 @@ const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
 let commandPalette: CommandPalette | null = null;
+let activeListingFilter: BackendListingFilter<HTMLElement> | null = null;
+const listingFilterOwners = new WeakMap<HTMLElement, BackendListingFilter<HTMLElement>>();
+let activeRenderRequest: AbortController | null = null;
+let renderGeneration = 0;
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -109,10 +113,16 @@ const issueEditDrafts = new Map<string, IssueEditDraft>();
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
   const [path, query] = hash.split("?", 2);
-  return {
+  const route = {
     path: path.split("/").filter((segment) => segment !== ""),
     query: new URLSearchParams(query ?? ""),
   };
+  const filter = route.query.get("filter");
+  if (filter !== null && filter.length > listingFilterMaxLength) {
+    route.query.set("filter", filter.slice(0, listingFilterMaxLength));
+    history.replaceState(null, "", routeHref(route, route.query));
+  }
+  return route;
 }
 
 function link(href: string, text: string, className = ""): HTMLAnchorElement {
@@ -359,15 +369,6 @@ function refreshFacetHrefs(route: Route): void {
   for (const anchor of app.querySelectorAll<HTMLAnchorElement>("a[data-facet-name][data-facet-value]")) {
     anchor.href = facetHref(route, anchor.dataset.facetName ?? "", anchor.dataset.facetValue ?? "");
   }
-}
-
-function replaceRouteQuery(route: Route, name: string, value: string): void {
-  const query = new URLSearchParams(route.query);
-  if (value === "") query.delete(name);
-  else query.set(name, value);
-  route.query = query;
-  history.replaceState(null, "", routeHref(route, query));
-  refreshFacetHrefs(route);
 }
 
 /** issueBadges renders the small status markers a listing shows. */
@@ -617,7 +618,6 @@ function listingFilter(
   placeholder: string,
   noun: string,
   total: number,
-  update: (query: string) => number,
   trailingControl: HTMLElement | null = null,
   adjacentControl: HTMLElement | null = null,
 ): HTMLElement {
@@ -625,6 +625,7 @@ function listingFilter(
   const control = element("div", "listing-filter");
   const input = document.createElement("input");
   input.type = "search";
+  input.maxLength = listingFilterMaxLength;
   input.placeholder = placeholder;
   input.setAttribute("aria-label", placeholder);
   input.value = route.query.get("filter") ?? "";
@@ -638,25 +639,44 @@ function listingFilter(
   if (adjacentControl !== null) bar.append(adjacentControl);
   if (trailingControl !== null) bar.append(trailingControl);
 
-  const refresh = (): void => {
-    const visible = update(input.value);
-    count.textContent = input.value.trim() === ""
-      ? `${total} ${noun}${total === 1 ? "" : "s"}`
-      : `${visible} on this page`;
+  const search = new BackendListingFilter(
+    async (_query, signal) => routeView(route, signal),
+    (view) => {
+      const main = app.querySelector("main");
+      if (main === null) return;
+      clear(main);
+      main.append(view);
+      activateListingFilter(view);
+      markActiveNav(route);
+      const next = main.querySelector<HTMLInputElement>(".listing-filter input");
+      next?.focus();
+      next?.setSelectionRange(next.value.length, next.value.length);
+    },
+    (error) => showRouteError(error),
+  );
+  listingFilterOwners.set(bar, search);
+
+  const refresh = (immediate = false): void => {
+    const query = new URLSearchParams(route.query);
+    query.delete("page");
+    if (route.path[0] === "users") query.delete("user");
+    if (input.value === "") query.delete("filter");
+    else query.set("filter", input.value);
+    route.query = query;
+    history.replaceState(null, "", routeHref(route, query));
+    refreshFacetHrefs(route);
+    count.textContent = "Filtering…";
     clearButton.hidden = input.value === "";
-    replaceRouteQuery(route, "filter", input.value);
+    search.query(input.value, immediate);
   };
-  input.addEventListener("input", refresh);
+  input.addEventListener("input", () => refresh());
   clearButton.addEventListener("click", () => {
     input.value = "";
-    refresh();
+    refresh(true);
     input.focus();
   });
 
-  const visible = update(input.value);
-  count.textContent = input.value.trim() === ""
-    ? `${total} ${noun}${total === 1 ? "" : "s"}`
-    : `${visible} on this page`;
+  count.textContent = `${total} ${noun}${total === 1 ? "" : "s"}`;
   clearButton.hidden = input.value === "";
   return bar;
 }
@@ -761,25 +781,18 @@ function issueList(
   if (columns.some((column) => column.key === "updated")) {
     listingActions.append(mobileUpdatedDisplayControl());
   }
-  const update = (query: string): number => {
-    // Ordering belongs to the backend: otherwise sorting a page locally would
-    // produce a different order from sorting the complete result set.
-    const rows = filterIssues(issues, query);
-    clear(tableHost);
-    if (rows.length === 0) {
-      tableHost.append(element("p", "empty", query.trim() === "" ? emptyMessage : "No issues match this filter."));
-    } else {
-      tableHost.append(issueTable(route, rows, kind, state, defaultKey, defaultDirection));
-    }
-    return rows.length;
-  };
+  if (issues.length === 0) {
+    tableHost.append(element("p", "empty", route.query.get("filter") === null
+      ? emptyMessage : "No issues match this filter."));
+  } else {
+    tableHost.append(issueTable(route, issues, kind, state, defaultKey, defaultDirection));
+  }
 
   section.append(listingFilter(
     route,
-    `Filter this page of ${kind === "search" ? "results" : kind}…`,
+    `Filter all ${kind === "search" ? "results" : kind}…`,
     "issue",
     total,
-    update,
     listingActions,
     kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
   ));
@@ -798,6 +811,8 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
+  const listingFilter = query.get("filter");
+  if (listingFilter !== null && listingFilter !== "") filters.filter = listingFilter;
   const sort = query.get("sort");
   const apiSorts: string[] = issueSortKeys
     .filter((key) => key !== "relevance")
@@ -894,22 +909,26 @@ function facetBar(
   return bar;
 }
 
-async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): Promise<HTMLElement> {
+async function viewListing(
+  route: Route,
+  kind: "issues" | "ready" | "blocked",
+  signal?: AbortSignal,
+): Promise<HTMLElement> {
   const filters = filtersFrom(route.query);
 
   const load = () => kind === "ready"
-    ? api.ready(readyFilters(filters))
+    ? api.ready(readyFilters(filters), signal)
     : kind === "blocked"
-      ? api.blocked(blockedFilters(filters))
-      : api.issues(filters);
+      ? api.blocked(blockedFilters(filters), signal)
+      : api.issues(filters, signal);
 
   // Each listing is asked with the filters it accepts. Ready lists only
   // unassigned issues, so there is no assignee menu to offer there either.
   let [page, projects, labels, assignees] = await Promise.all([
     load(),
-    api.projects(),
-    api.labels(kind === "ready" ? {} : facetFilters(filters)),
-    kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
+    api.projects({}, signal),
+    api.labels(kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters), signal),
+    kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters), signal),
   ]);
   const normalized = normalizePageRoute(route, page.total);
   const size = listingPageSize(route.query);
@@ -1038,21 +1057,23 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
   return table;
 }
 
-async function viewProjects(route: Route): Promise<HTMLElement> {
+async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
   const filters: ProjectFilters = {
     limit: size,
     offset: (requested - 1) * size,
   };
+  const filterText = route.query.get("filter");
+  if (filterText !== null && filterText !== "") filters.filter = filterText;
   const sort = route.query.get("sort");
   const apiSorts = projectSortKeys.flatMap((key) => [key, `-${key}`]);
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as ProjectFilters["sort"];
-  let page = await api.projects(filters);
+  let page = await api.projects(filters, signal);
   const normalized = normalizePageRoute(route, page.total);
   if ((filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
-    page = await api.projects(filters);
+    page = await api.projects(filters, signal);
   }
 
   const view = element("div");
@@ -1067,23 +1088,16 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     mobileUpdatedDisplayControl(),
     pagination(route, page.total),
   );
-  const update = (query: string): number => {
-    const rows = filterProjects(page.rows, query);
-    clear(host);
-    if (rows.length === 0) {
-      host.append(element("p", "empty", query.trim() === ""
-        ? "No projects yet. Create one with: awb project create <key>"
-        : "No projects match this filter."));
-    }
-    else host.append(projectTable(route, rows, state));
-    return rows.length;
-  };
+  if (page.rows.length === 0) {
+    host.append(element("p", "empty", filterText === null
+      ? "No projects yet. Create one with: awb project create <key>"
+      : "No projects match this filter."));
+  } else host.append(projectTable(route, page.rows, state));
   listing.append(listingFilter(
     route,
-    "Filter this page of projects…",
+    "Filter all projects…",
     "project",
     page.total,
-    update,
     listingActions,
   ));
   listing.append(host);
@@ -1153,42 +1167,39 @@ function userTable(users: DirectoryUser[]): HTMLElement {
   return table;
 }
 
-async function viewUsers(route: Route): Promise<HTMLElement> {
+async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
   const filters: UserFilters = {
     limit: size,
     offset: (requested - 1) * size,
   };
+  const filterText = route.query.get("filter");
+  if (filterText !== null && filterText !== "") filters.filter = filterText;
   const focusedUser = route.query.get("user");
   let page = focusedUser === null
-    ? await api.users(filters)
-    : await api.navigation(focusedUser).then((results) => {
+    ? await api.users(filters, signal)
+    : await api.navigation(focusedUser, signal).then((results) => {
       const exact = results.users.filter((user) => user.name === focusedUser);
       return { rows: exact, total: exact.length };
     });
   const normalized = normalizePageRoute(route, page.total);
   if (focusedUser === null && (filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
-    page = await api.users(filters);
+    page = await api.users(filters, signal);
   }
   const view = element("div");
   view.append(element("h1", "", "Users"));
 
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
-  const update = (query: string): number => {
-    const rows = filterUsers(page.rows, query);
-    clear(host);
-    if (rows.length === 0) {
-      host.append(element("p", "empty", query.trim() === "" ? "No users yet." : "No users match this filter."));
-    } else {
-      host.append(userTable(rows));
-    }
-    return rows.length;
-  };
+  if (page.rows.length === 0) {
+    host.append(element("p", "empty", filterText === null ? "No users yet." : "No users match this filter."));
+  } else {
+    host.append(userTable(page.rows));
+  }
   listing.append(
-    listingFilter(route, "Filter this page of users…", "user", page.total, update, pagination(route, page.total)),
+    listingFilter(route, "Filter all users…", "user", page.total, pagination(route, page.total)),
     host,
   );
   view.append(listing);
@@ -2046,7 +2057,7 @@ function treeNode(node: IssueTree, depth: number): HTMLElement {
   return list;
 }
 
-async function viewSearch(route: Route): Promise<HTMLElement> {
+async function viewSearch(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const terms = route.query.getAll("q").filter((term) => term !== "");
 
   const view = element("div");
@@ -2062,14 +2073,14 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
 
   const filters = { ...filtersFrom(route.query, true), q: terms };
   let [page, projects] = await Promise.all([
-    api.search(filters),
-    api.projects(),
+    api.search(filters, signal),
+    api.projects({}, signal),
   ]);
   const normalized = normalizePageRoute(route, page.total);
   const size = listingPageSize(route.query);
   if ((filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
-    page = await api.search(filters);
+    page = await api.search(filters, signal);
   }
   const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
     ? element("span", "natural-order", "Best match")
@@ -2423,6 +2434,12 @@ async function viewSettings(): Promise<HTMLElement> {
 }
 
 async function render(): Promise<void> {
+  const generation = ++renderGeneration;
+  activeRenderRequest?.abort();
+  const request = new AbortController();
+  activeRenderRequest = request;
+  activeListingFilter?.close();
+  activeListingFilter = null;
   const route = parseRoute();
   for (const popover of app.querySelectorAll<HTMLElement>(":popover-open")) popover.hidePopover();
   clear(app);
@@ -2432,39 +2449,60 @@ async function render(): Promise<void> {
   app.append(main);
 
   try {
-    main.append(await routeView(route));
+    const view = await routeView(route, request.signal);
+    if (generation !== renderGeneration || request.signal.aborted) return;
+    main.append(view);
+    activateListingFilter(view);
   } catch (error) {
-    const message = error instanceof ApiError ? error.message : String(error);
-    const box = element("div", "error");
-    box.append(element("h1", "", "Something went wrong"));
-    box.append(element("p", "", message));
-    main.append(box);
+    if (generation !== renderGeneration || request.signal.aborted) return;
+    showRouteError(error, main);
   }
 
   markActiveNav(route);
+  if (activeRenderRequest === request) activeRenderRequest = null;
 }
 
-async function routeView(route: Route): Promise<HTMLElement> {
+// View construction can finish after its request was aborted. Controller
+// ownership changes only when a generation-guarded view is actually mounted,
+// so a detached stale view cannot steal cancellation from the live route.
+function activateListingFilter(view: HTMLElement): void {
+  const tools = view.querySelector<HTMLElement>(".listing-tools");
+  const next = tools === null ? undefined : listingFilterOwners.get(tools);
+  activeListingFilter?.close();
+  activeListingFilter = next ?? null;
+}
+
+function showRouteError(error: unknown, host = app.querySelector("main")): void {
+  if (host === null) return;
+  clear(host);
+  const message = error instanceof ApiError ? error.message : String(error);
+  const box = element("div", "error");
+  box.append(element("h1", "", "Something went wrong"));
+  box.append(element("p", "", message));
+  host.append(box);
+}
+
+async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   switch (route.path[0]) {
     case undefined:
     case "ready":
-      return viewListing(route, "ready");
+      return viewListing(route, "ready", signal);
     case "issues":
-      return route.path.length > 1 ? viewIssue(route.path[1]) : viewListing(route, "issues");
+      return route.path.length > 1 ? viewIssue(route.path[1]) : viewListing(route, "issues", signal);
     case "blocked":
-      return viewListing(route, "blocked");
+      return viewListing(route, "blocked", signal);
     case "projects":
-      return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route);
+      return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route, signal);
     case "profile":
       return viewProfile();
     case "settings":
       return viewSettings();
     case "users":
-      return viewUsers(route);
+      return viewUsers(route, signal);
     case "tree":
       return viewTree(route.path[1] ?? "");
     case "search":
-      return viewSearch(route);
+      return viewSearch(route, signal);
     default: {
       const view = element("div", "error");
       view.append(element("h1", "", "No such page"));

@@ -95,6 +95,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -526,6 +527,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -550,6 +552,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -590,6 +593,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
         - name: sort
           in: query
           description: |
@@ -640,6 +644,7 @@ paths:
       operationId: listProjects
       summary: List projects
       parameters:
+        - $ref: '#/components/parameters/listingFilter'
         - name: sort
           in: query
           description: |
@@ -850,6 +855,7 @@ paths:
         can see, whether through membership, assignment or activity. Their
         returned memberships are limited to those visible projects.
       parameters:
+        - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -972,6 +978,8 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
+        - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -1005,6 +1013,8 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/listingFilter'
+        - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -1179,6 +1189,23 @@ components:
         Select the direct children of that issue — the issues whose `has-parent`
         relation names it — not the whole subtree.
       schema: { type: string }
+    listingFilter:
+      name: filter
+      in: query
+      description: |
+        Case-insensitive substring filter over the values displayed by this
+        listing. Whitespace-separated words must all match, and filtering is
+        applied before counting, sorting and pagination.
+      schema: { type: string, maxLength: 500 }
+    readiness:
+      name: readiness
+      in: query
+      description: |
+        Select the derived ready or blocked state. Facet clients combine
+        `ready` with `status=open` and `unassigned=true` to describe the exact
+        selection of `GET /api/ready`.
+      schema:
+        $ref: '#/components/schemas/FacetReadiness'
     sort:
       name: sort
       in: query
@@ -1371,6 +1398,9 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    FacetReadiness:
+      type: string
+      enum: [ready, blocked]
     NavigationResults:
       type: object
       required: [issues, projects, users]

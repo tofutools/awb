@@ -1,6 +1,6 @@
 // Pure listing behavior shared by the DOM renderer and its Node tests.
 
-import type { DirectoryUser, Issue, Project } from "./api.js";
+import { autocompleteDebounceMs } from "./autocomplete.js";
 
 export type SortDirection = "asc" | "desc";
 
@@ -8,6 +8,51 @@ export interface SortState {
   key: string;
   direction: SortDirection;
   explicit: boolean;
+}
+
+// openapi.yaml caps every listing's shared filter at the same length. The UI
+// enforces it before a request so an invalid pasted URL cannot strand the tab
+// on an error page without its clear control.
+export const listingFilterMaxLength = 500;
+
+/** Runs one debounced listing request at a time. Aborting saves backend work;
+ * the generation guard also rejects a stale transport completion. */
+export class BackendListingFilter<T> {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private request: AbortController | undefined;
+  private generation = 0;
+
+  constructor(
+    private readonly load: (query: string, signal: AbortSignal) => Promise<T>,
+    private readonly update: (result: T) => void,
+    private readonly failed: (error: unknown) => void,
+  ) {}
+
+  query(query: string, immediate = false): void {
+    this.generation++;
+    const generation = this.generation;
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.request?.abort();
+    const run = (): void => {
+      const request = new AbortController();
+      this.request = request;
+      void this.load(query, request.signal).then((result) => {
+        if (generation !== this.generation || request.signal.aborted) return;
+        this.update(result);
+      }).catch((error: unknown) => {
+        if (generation !== this.generation || request.signal.aborted) return;
+        this.failed(error);
+      });
+    };
+    if (immediate) run();
+    else this.timer = setTimeout(run, autocompleteDebounceMs);
+  }
+
+  close(): void {
+    this.generation++;
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.request?.abort();
+  }
 }
 
 export const defaultPageSize = 10;
@@ -166,50 +211,4 @@ export function nextSortValue(
   if (current.key !== column) return column;
   if (current.direction === "asc") return `-${column}`;
   return null;
-}
-
-function words(value: string): string[] {
-  return value.toLocaleLowerCase().split(/\s+/).filter((word) => word !== "");
-}
-
-function containsEvery(haystack: string, query: string): boolean {
-  const folded = haystack.toLocaleLowerCase();
-  return words(query).every((word) => folded.includes(word));
-}
-
-/** filterIssues narrows only on values represented in an issue listing. */
-export function filterIssues(issues: Issue[], query: string): Issue[] {
-  if (query.trim() === "") return issues;
-  return issues.filter((issue) => containsEvery([
-    issue.id,
-    issue.project,
-    issue.title,
-    issue.type,
-    issue.status,
-    `P${issue.priority}`,
-    ...issue.assignees,
-    ...issue.labels,
-    ...issue.blockers,
-  ].join(" "), query));
-}
-
-/** filterProjects matches the three descriptive fields visible in the table. */
-export function filterProjects(projects: Project[], query: string): Project[] {
-  if (query.trim() === "") return projects;
-  return projects.filter((project) => containsEvery(
-    `${project.key} ${project.name} ${project.description}`,
-    query,
-  ));
-}
-/** filterUsers matches the username, full name, roles and visible memberships. */
-export function filterUsers(users: DirectoryUser[], query: string): DirectoryUser[] {
-  if (query.trim() === "") return users;
-  return users.filter((user) => containsEvery([
-    user.name,
-    user.full_name,
-    user.project_admin ? "project administrator" : "",
-    user.user_admin ? "user administrator" : "",
-    ...user.projects.flatMap((membership) => [membership.project, membership.access]),
-    ...user.activity_projects,
-  ].join(" "), query));
 }

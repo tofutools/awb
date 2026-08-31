@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
@@ -119,14 +120,15 @@ func (t *Tx) GetUser(name string) (*domain.User, error) {
 //
 // The memberships of each are read in one further query rather than one per
 // user, exactly as an issue listing hydrates its labels.
-func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err error) {
-	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM users`).Scan(&total); err != nil {
+func (t *Tx) ListUsers(filter string, limit, offset *int) (users []domain.User, total int, err error) {
+	match, args := t.userListingFilter(filter, false)
+	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM users u WHERE `+match, args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count users")
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
-		  FROM users ORDER BY name ASC`+limitOffsetClause(limit, offset))
+		  FROM users u WHERE `+match+` ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
 	if err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
 	}
@@ -173,13 +175,15 @@ func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, e
 //
 // Only visible memberships are hydrated. A username may be shared across
 // projects without disclosing the names of projects the caller cannot see.
-func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
+func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users []domain.User, total int, err error) {
 	visibleProject, visibleArgs := t.visibleClause("project_members.project")
 	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
 	args = append(args, visibleAssignmentArgs...)
 	args = append(args, visibleActivityArgs...)
+	match, matchArgs := t.userListingFilter(filter, true)
+	args = append(args, matchArgs...)
 	cte := `WITH visible_users(name) AS (
 		SELECT ?
 		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
@@ -190,13 +194,15 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 	)`
 
 	if err := t.q.QueryRowContext(t.ctx, cte+`
-		SELECT count(*) FROM users WHERE name IN (SELECT name FROM visible_users)`, args...).Scan(&total); err != nil {
+		SELECT count(*) FROM users u WHERE name IN (SELECT name FROM visible_users)
+		  AND `+match, args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count visible users")
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, cte+`
 		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
-		  FROM users WHERE name IN (SELECT name FROM visible_users)
+		  FROM users u WHERE name IN (SELECT name FROM visible_users)
+		   AND `+match+`
 		 ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
 	if err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
@@ -222,6 +228,51 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 		return nil, 0, err
 	}
 	return users, total, nil
+}
+
+// userListingFilter matches exactly the directory values the web table shows.
+// visibleOnly applies the transaction's project scope inside both correlated
+// project lookups, so a filter cannot infer a hidden membership or activity
+// project. Each whitespace-separated word may match a different field.
+func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) {
+	clauses := []string{}
+	args := []any{}
+	for _, word := range strings.Fields(filter) {
+		var membershipScope, activityScope string
+		var membershipScopeArgs, activityScopeArgs []any
+		if visibleOnly {
+			membershipScope, membershipScopeArgs = t.visibleClause("pm.project")
+			activityScope, activityScopeArgs = t.visibleClause("ap.project")
+		} else {
+			membershipScope, membershipScopeArgs = t.notIgnoredClause("pm.project")
+			activityScope, activityScopeArgs = t.notIgnoredClause("ap.project")
+		}
+		clauses = append(clauses, `(
+			instr(awb_casefold(u.name || ' ' || u.full_name ||
+				CASE WHEN u.project_admin THEN ' project administrator' ELSE '' END ||
+				CASE WHEN u.user_admin THEN ' user administrator' ELSE '' END), awb_casefold(?)) > 0
+			OR EXISTS (SELECT 1 FROM project_members pm
+			            WHERE pm.user = u.name AND `+membershipScope+`
+			              AND instr(awb_casefold(pm.project || ' ' || pm.access), awb_casefold(?)) > 0)
+			OR EXISTS (SELECT 1 FROM (
+				SELECT i.project, ia.assignee AS user
+				  FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
+				UNION SELECT i.project, a.actor AS user
+				  FROM issue_activity a JOIN issues i ON i.id = a.issue
+				 WHERE a.actor <> ''
+			) ap WHERE ap.user = u.name AND `+activityScope+`
+			  AND instr(awb_casefold(ap.project), awb_casefold(?)) > 0)
+		)`)
+		args = append(args, word)
+		args = append(args, membershipScopeArgs...)
+		args = append(args, word)
+		args = append(args, activityScopeArgs...)
+		args = append(args, word)
+	}
+	if len(clauses) == 0 {
+		return "1 = 1", nil
+	}
+	return strings.Join(clauses, " AND "), args
 }
 
 // SearchVisibleUsersForNavigation applies the directory visibility set before

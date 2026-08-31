@@ -506,6 +506,17 @@ func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Equal(t, 4, issues[0].Priority)
 	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?filter=high&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, "high", issues[0].Title)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?filter=missing", "")
+	assert.Equal(t, "0", resp.Header.Get("X-Total-Count"))
+	assert.Equal(t, "[]", payload)
 }
 
 func TestProjectPagingAppliesAfterSorting(t *testing.T) {
@@ -521,6 +532,13 @@ func TestProjectPagingAppliesAfterSorting(t *testing.T) {
 	require.Len(t, projects, 1)
 	assert.Equal(t, "awb", projects[0].Key)
 	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/projects?filter=web", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "web", projects[0].Key)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
 }
 
 // The endpoints that fix a filter for themselves reject the corresponding
@@ -607,7 +625,6 @@ func TestFacets(t *testing.T) {
 	a := newAPI(t)
 	a.createIssue(`{"project":"awb","title":"a","labels":["parser","frontend"]}`)
 	a.createIssue(`{"project":"awb","title":"b","labels":["parser"]}`)
-
 	resp, payload := a.do(http.MethodGet, "/api/labels", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.JSONEq(t, `[{"value":"frontend","count":1},{"value":"parser","count":2}]`, payload)
@@ -625,6 +642,20 @@ func TestFacets(t *testing.T) {
 	// There is no row for the empty assignee.
 	_, payload = a.do(http.MethodGet, "/api/assignees", "")
 	assert.Equal(t, "[]", payload)
+
+	ready := a.createIssue(`{"project":"awb","title":"Needle ready","labels":["ready-label"]}`)
+	blocked := a.createIssue(`{"project":"awb","title":"Needle blocked","labels":["blocked-label"]}`)
+	blocker := a.createIssue(`{"project":"awb","title":"Prerequisite"}`)
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+blocked.ID+"/relations",
+		`{"type":"blocked-by","other":"`+blocker.ID+`"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/labels?filter=needle&status=open&unassigned=true&readiness=ready", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.JSONEq(t, `[{"value":"ready-label","count":1}]`, payload,
+		"a matching blocked issue does not contribute to Ready's facets")
+	assert.NotEmpty(t, ready.ID)
 }
 
 func TestIdentity(t *testing.T) {

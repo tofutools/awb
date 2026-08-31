@@ -298,7 +298,7 @@ func newUserListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListUsers(cmd.Context(), nil, nil)
+			page, err := be.ListUsers(cmd.Context(), "", nil, nil)
 			if err != nil {
 				return err
 			}
