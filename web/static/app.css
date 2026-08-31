@@ -471,7 +471,10 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .search-control { position: relative; display: inline-flex; min-width: 0; }
 /* Only the browser affordance is removed; the adjacent AWB button preserves
    the search input's semantics while remaining consistent across engines. */
-.search-control > input[type="search"]::-webkit-search-cancel-button { appearance: none; }
+.search-control > input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
 .search-clear {
   position: absolute;
   top: 50%;
