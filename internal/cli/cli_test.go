@@ -1144,3 +1144,54 @@ func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
 		assert.Contains(t, stderr, "--public-url", publicURL)
 	}
 }
+
+// The interactive listing draws on standard output and reads keys from
+// standard input, so it refuses where there is no terminal on both rather than
+// quietly printing an ordinary listing: a caller who asked for a screen to
+// scroll asked for something that cannot happen here.
+func TestInteractiveNeedsATerminal(t *testing.T) {
+	h := newHarness(t)
+	h.create("Something to look at", "--project", "awb")
+
+	for _, args := range [][]string{
+		{"list", "-i"},
+		{"ready", "--interactive"},
+		{"blocked", "-i"},
+		{"search", "something", "-i"},
+		{"project", "list", "-i"},
+		{"user", "list", "-i"},
+	} {
+		stdout, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, "awb %s", strings.Join(args, " "))
+		assert.Empty(t, stdout, "awb %s prints no listing", strings.Join(args, " "))
+		assert.Contains(t, stderr, "terminal")
+	}
+}
+
+// --json and --compact are what a script and an agent read, and neither is a
+// screen to scroll.
+func TestInteractiveIsNotAnOutputMode(t *testing.T) {
+	h := newHarness(t)
+
+	for _, args := range [][]string{
+		{"list", "-i", "--json"},
+		{"list", "-i", "--compact"},
+		{"project", "list", "-i", "--json"},
+		{"user", "list", "-i", "--compact"},
+	} {
+		_, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, "awb %s", strings.Join(args, " "))
+		assert.Contains(t, stderr, "mutually exclusive")
+	}
+}
+
+// Without -i every listing is exactly what it always was, terminal or no
+// terminal.
+func TestListingsAreUnchangedWithoutInteractive(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("Still printed", "--project", "awb")
+
+	assert.Contains(t, h.mustRun("list"), id)
+	assert.Contains(t, h.mustRun("project", "list"), "awb")
+	assert.Contains(t, h.mustRun("user", "list", "--json"), "[]")
+}

@@ -199,9 +199,10 @@ func newRootCommand(e *env, version string) *cobra.Command {
 		Short: "Agent Work Board — an agent-first issue tracker",
 		Long: "awb is an agent-first issue tracker: a single binary over SQLite, with a\n" +
 			"command line interface for coding agents, humans and scripts.\n\n" +
-			"Every command is non-interactive and safe to script. --compact is the\n" +
-			"cheapest output there is and --json is the stable one; the default table is\n" +
-			"for humans and nothing should parse it.",
+			"Every command is non-interactive and safe to script, apart from the list\n" +
+			"commands' --interactive, which refuses to run without a terminal.\n" +
+			"--compact is the cheapest output there is and --json is the stable one;\n" +
+			"the default table is for humans and nothing should parse it.",
 		Version:     version,
 		ParamEnrich: boaParams,
 		SubCmds: []*cobra.Command{

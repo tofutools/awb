@@ -334,12 +334,23 @@ func (t *theme) fits(cols []col, widths []int) bool {
 	return total <= t.width
 }
 
-// writeListing draws a listing: a rounded box with a rule under the headings on
-// a terminal, and the same columns two spaces apart with no border anywhere
-// else.
+// writeListing prints a listing at its own natural place in the output.
 func (e *env) writeListing(t *theme, cols []col) {
-	cols = t.fit(cols)
+	_, _ = fmt.Fprintln(e.stdout, t.renderListing(t.fit(cols), noSelection))
+}
 
+// noSelection says that no row is the one the reader is on. A printed listing
+// has no cursor; only the interactive picker has.
+const noSelection = -1
+
+// renderListing draws a listing: a rounded box with a rule under the headings
+// on a terminal, and the same columns two spaces apart with no border anywhere
+// else.
+//
+// The columns arrive as fit left them, because the picker fits once over every
+// row it holds and then draws only the window it is showing, and selected is
+// the row its cursor is on.
+func (t *theme) renderListing(cols []col, selected int) string {
 	headers := make([]string, len(cols))
 	for i, c := range cols {
 		headers[i] = c.header
@@ -357,6 +368,13 @@ func (e *env) writeListing(t *theme, cols []col) {
 			}
 			if cols[c].right {
 				s = s.Align(lipgloss.Right)
+			}
+			// The cursor is not colour but position: it is how a full-screen
+			// picker says which row you are on, so --color never does not take
+			// it away. The headings are never it, whatever the picker is
+			// showing, and share the row number noSelection is.
+			if row == selected && row != table.HeaderRow {
+				return s.Reverse(true)
 			}
 			if !t.color {
 				return s
@@ -387,7 +405,7 @@ func (e *env) writeListing(t *theme, cols []col) {
 		tbl.Row(cells...)
 	}
 
-	_, _ = fmt.Fprintln(e.stdout, trimRight(tbl.Render()))
+	return trimRight(tbl.Render())
 }
 
 // section returns the borderless, heading-less table that lines up the columns
@@ -453,7 +471,12 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 		return
 	}
 	t := e.theme()
+	e.writeListing(t, e.issueCols(t, issues, withBlockers))
+}
 
+// issueCols is the listing an issue table draws, and the same one the picker
+// scrolls: the two differ in where the columns are sent, not in what they say.
+func (e *env) issueCols(t *theme, issues []domain.Issue, withBlockers bool) []col {
 	cells := func(text func(*domain.Issue) string) []string {
 		out := make([]string, len(issues))
 		for i := range issues {
@@ -485,8 +508,7 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 		cols = append(cols, col{header: "BLOCKED BY", floor: blockersFloor, paint: always(t.blocked),
 			cells: cells(func(i *domain.Issue) string { return e.issueLinks(t, i.Blockers, ",") })})
 	}
-
-	e.writeListing(t, cols)
+	return cols
 }
 
 // entityLink makes an identifier open the bundled web UI when this invocation
@@ -729,20 +751,25 @@ func (e *env) printProjects(projects []domain.Project) error {
 			return nil
 		}
 		t := e.theme()
-		keys := make([]string, len(projects))
-		counts := make([]string, len(projects))
-		names := make([]string, len(projects))
-		for i := range projects {
-			keys[i] = e.projectLink(t, projects[i].Key)
-			counts[i] = strconv.Itoa(projects[i].ActiveIssues)
-			names[i] = projects[i].Name
-		}
-		e.writeListing(t, []col{
-			{header: "KEY", cells: keys, paint: always(t.id)},
-			{header: "OPEN", cells: counts, right: true},
-			{header: "NAME", cells: names, floor: nameFloor},
-		})
+		e.writeListing(t, e.projectCols(t, projects))
 		return nil
+	}
+}
+
+// projectCols is the project listing, printed or scrolled.
+func (e *env) projectCols(t *theme, projects []domain.Project) []col {
+	keys := make([]string, len(projects))
+	counts := make([]string, len(projects))
+	names := make([]string, len(projects))
+	for i := range projects {
+		keys[i] = e.projectLink(t, projects[i].Key)
+		counts[i] = strconv.Itoa(projects[i].ActiveIssues)
+		names[i] = projects[i].Name
+	}
+	return []col{
+		{header: "KEY", cells: keys, paint: always(t.id)},
+		{header: "OPEN", cells: counts, right: true},
+		{header: "NAME", cells: names, floor: nameFloor},
 	}
 }
 
@@ -795,20 +822,25 @@ func (e *env) printUsers(users []domain.User) error {
 			return nil
 		}
 		t := e.theme()
-		names := make([]string, len(users))
-		flags := make([]string, len(users))
-		projects := make([]string, len(users))
-		for i := range users {
-			names[i] = users[i].Name
-			flags[i] = adminFlags(&users[i])
-			projects[i] = memberships(&users[i])
-		}
-		e.writeListing(t, []col{
-			{header: "NAME", cells: names, paint: always(t.id)},
-			{header: "ADMIN", cells: flags, floor: adminFloor},
-			{header: "PROJECTS", cells: projects, floor: labelsFloor},
-		})
+		e.writeListing(t, userCols(t, users))
 		return nil
+	}
+}
+
+// userCols is the user listing, printed or scrolled.
+func userCols(t *theme, users []domain.User) []col {
+	names := make([]string, len(users))
+	flags := make([]string, len(users))
+	projects := make([]string, len(users))
+	for i := range users {
+		names[i] = users[i].Name
+		flags[i] = adminFlags(&users[i])
+		projects[i] = memberships(&users[i])
+	}
+	return []col{
+		{header: "NAME", cells: names, paint: always(t.id)},
+		{header: "ADMIN", cells: flags, floor: adminFloor},
+		{header: "PROJECTS", cells: projects, floor: labelsFloor},
 	}
 }
 
