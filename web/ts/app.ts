@@ -65,6 +65,16 @@ let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 
+interface IssueEditDraft {
+  title: string;
+  description: string;
+}
+
+// Sidebar and resource edits save immediately and therefore rerender the
+// route. Keep the main form's unsaved text through that rerender instead of
+// silently replacing it with the last stored issue.
+const issueEditDrafts = new Map<string, IssueEditDraft>();
+
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
   const [path, query] = hash.split("?", 2);
@@ -1185,11 +1195,22 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   heading.append(headingText, editButton);
   content.append(heading);
 
-  const editForm = issueEditForm(issue);
+  const existingDraft = issueEditDrafts.get(issue.id);
+  const editForm = issueEditForm(issue, existingDraft);
+  const editTitle = editForm.elements.namedItem("title") as HTMLInputElement;
+  const editDescription = editForm.elements.namedItem("description") as HTMLTextAreaElement;
   editForm.hidden = true;
   const attachmentSection = issueAttachmentSection(issue);
   const relationSection = issueRelationSection(issue);
   const showEditor = (show: boolean) => {
+    if (show) {
+      issueEditDrafts.set(issue.id, {
+        title: editTitle.value,
+        description: editDescription.value,
+      });
+    } else {
+      issueEditDrafts.delete(issue.id);
+    }
     view.classList.toggle("issue-editing", show);
     editForm.hidden = !show;
     attachmentSection.editor.hidden = !show;
@@ -1253,6 +1274,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
+  if (existingDraft !== undefined) showEditor(true);
   return view;
 }
 
@@ -1308,19 +1330,19 @@ function issueRelationSection(issue: Issue): IssueResourceSection {
   return { section, editor };
 }
 
-function issueEditForm(issue: Issue): HTMLFormElement {
+function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
   const form = element("form", "edit-panel issue-edit-form") as HTMLFormElement;
   form.append(element("h2", "", "Edit issue"));
 
   const title = document.createElement("input");
   title.name = "title";
-  title.value = issue.title;
+  title.value = draft?.title ?? issue.title;
   title.required = true;
   title.maxLength = 500;
 
   const description = document.createElement("textarea");
   description.name = "description";
-  description.value = issue.description;
+  description.value = draft?.description ?? issue.description;
   description.rows = 10;
 
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
@@ -1331,12 +1353,21 @@ function issueEditForm(issue: Issue): HTMLFormElement {
     save,
   );
   form.append(field("Title", title), field("Description (Markdown)", description), actions);
+  const rememberDraft = (): void => {
+    issueEditDrafts.set(issue.id, { title: title.value, description: description.value });
+  };
+  title.addEventListener("input", rememberDraft);
+  description.addEventListener("input", rememberDraft);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [save], () => api.updateIssue(issue.id, {
-      title: title.value,
-      description: description.value,
-    }));
+    void mutate(form, [save], async () => {
+      const updated = await api.updateIssue(issue.id, {
+        title: title.value,
+        description: description.value,
+      });
+      issueEditDrafts.delete(issue.id);
+      return updated;
+    });
   });
   return form;
 }
