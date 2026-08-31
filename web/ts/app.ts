@@ -651,7 +651,7 @@ function pagination(route: Route, total: number): HTMLElement {
   const status = element(
     "span",
     "pagination-status",
-    total === 0 ? "Showing 0 of 0" : `Showing ${window.first}–${window.last} of ${total}`,
+    total === 0 ? "0 of 0" : `${window.first}–${window.last} of ${total}`,
   );
   const atEnd = window.page === window.pages;
   const next = pageLink("Next", window.page + 1, atEnd);
