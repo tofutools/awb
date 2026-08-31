@@ -811,10 +811,11 @@ function facetBar(
   const paginationGroup = lowestFacetGroup(labels, assignees);
 
   const projectGroup = element("div", "facet-group projects");
-  projectGroup.append(element("span", "facet-title", "projects"));
+  const projectValues = element("span", "facet-values");
+  projectGroup.append(element("span", "facet-title", "projects"), projectValues);
   const projectEmpty = emptyFacetLabel(projects);
   if (projectEmpty !== null) {
-    projectGroup.append(element("span", "facet-empty", projectEmpty));
+    projectValues.append(element("span", "facet-empty", projectEmpty));
   } else {
     for (const project of projects) {
       const active = route.query.getAll("project").includes(project.key);
@@ -825,19 +826,23 @@ function facetBar(
       );
       anchor.dataset.facetName = "project";
       anchor.dataset.facetValue = project.key;
-      projectGroup.append(anchor);
+      projectValues.append(anchor);
     }
   }
-  if (paginationGroup === "project") projectGroup.append(paginationControl);
+  if (paginationGroup === "project") {
+    projectGroup.classList.add("with-pagination");
+    projectGroup.append(paginationControl);
+  }
   bar.append(projectGroup);
 
   const build = (name: string, title: string, facets: Facet[] | null): HTMLElement | null => {
     if (facets === null) return null;
     const group = element("div", "facet-group");
-    group.append(element("span", "facet-title", title));
+    const values = element("span", "facet-values");
+    group.append(element("span", "facet-title", title), values);
     const empty = emptyFacetLabel(facets);
     if (empty !== null) {
-      group.append(element("span", "facet-empty", empty));
+      values.append(element("span", "facet-empty", empty));
       return group;
     }
     for (const facet of facets) {
@@ -850,19 +855,25 @@ function facetBar(
       );
       anchor.dataset.facetName = name;
       anchor.dataset.facetValue = facet.value;
-      group.append(anchor);
+      values.append(anchor);
     }
     return group;
   };
 
   const labelGroup = build("label", "labels", labels);
   if (labelGroup !== null) {
-    if (paginationGroup === "label") labelGroup.append(paginationControl);
+    if (paginationGroup === "label") {
+      labelGroup.classList.add("with-pagination");
+      labelGroup.append(paginationControl);
+    }
     bar.append(labelGroup);
   }
   const assigneeGroup = build("assignee", "assignees", assignees);
   if (assigneeGroup !== null) {
-    if (paginationGroup === "assignee") assigneeGroup.append(paginationControl);
+    if (paginationGroup === "assignee") {
+      assigneeGroup.classList.add("with-pagination");
+      assigneeGroup.append(paginationControl);
+    }
     bar.append(assigneeGroup);
   }
   return bar;
