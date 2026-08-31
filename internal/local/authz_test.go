@@ -215,6 +215,27 @@ func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "admin", false, true)
+	addUser(t, root, ctx, "bob", false, false)
+	for _, user := range []string{"admin", "bob"} {
+		grant(t, root, ctx, "awb", user, domain.AccessRegular)
+		grant(t, root, ctx, "web", user, domain.AccessRegular)
+	}
+	admin := root.WithUser("admin")
+	_, err := admin.SetProjectIgnored(ctx, "web", true)
+	require.NoError(t, err)
+
+	page, err := admin.ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Users, 2, "user administration still sees the complete account directory")
+	for _, user := range page.Users {
+		require.Len(t, user.Projects, 1)
+		assert.Equal(t, "awb", user.Projects[0].Project)
+	}
+}
+
 func TestActivityUsesTheIssueProjectScope(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
