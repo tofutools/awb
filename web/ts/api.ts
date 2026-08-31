@@ -146,6 +146,13 @@ const etags = new Map<string, string>();
 
 async function getOne<T>(path: string): Promise<T> {
   const resp = await request(path);
+  return entityResponse<T>(path, resp);
+}
+
+/** Decode one versioned entity and remember the version mutations must guard.
+ * PATCH responses replace that version just as GET responses establish it,
+ * which lets two profile forms update the same user in sequence. */
+async function entityResponse<T>(path: string, resp: Response): Promise<T> {
   const etag = resp.headers.get("ETag");
   if (etag !== null) etags.set(path, etag);
   return (await resp.json()) as T;
@@ -167,11 +174,12 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function patchOne<T>(path: string, body: unknown): Promise<T> {
-  return getResponse<T>(await request(path, {
+  const resp = await request(path, {
     method: "PATCH",
     headers: entityHeaders(path, { "Content-Type": "application/json" }),
     body: JSON.stringify(body),
-  }));
+  });
+  return entityResponse<T>(path, resp);
 }
 
 async function issueMutation<T>(id: string, suffix: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {

@@ -48,24 +48,31 @@ test("several filters combine", () => {
   assert.equal(params.get("include-closed"), "true");
 });
 
-test("the current user can read and update a safely encoded account path", async (t) => {
+test("profile edits use the safely encoded path and advance its ETag", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
     return new Response(JSON.stringify({ name: "a/b" }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ETag: calls.length === 1 ? '"user-v1"' : calls.length === 2 ? '"user-v2"' : '"user-v3"',
+      },
     });
   });
 
   await api.user("a/b");
+  await api.updateUser("a/b", { full_name: "Alice Andersson" });
   await api.updateUser("a/b", { password: "changed" });
 
   assert.equal(calls[0].path, "api/users/a%2Fb");
   assert.equal(calls[1].path, "api/users/a%2Fb");
   assert.equal(calls[1].init.method, "PATCH");
   assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
-  assert.equal(calls[1].init.body, JSON.stringify({ password: "changed" }));
+  assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"user-v1"');
+  assert.equal(calls[1].init.body, JSON.stringify({ full_name: "Alice Andersson" }));
+  assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v2"');
+  assert.equal(calls[2].init.body, JSON.stringify({ password: "changed" }));
 });
 
 // Every listing is asked with the filters it accepts. Regression: the listing
