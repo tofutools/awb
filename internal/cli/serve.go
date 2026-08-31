@@ -259,9 +259,10 @@ func newServeCommand(e *env) *cobra.Command {
 			"A server over a database whose users are all gone starts, and refuses every\n" +
 			"request until one is added; it is recovered without a restart, exactly as a\n" +
 			"running one is. What refuses to start is a server that would authenticate\n" +
-			"nobody where that looks like a mistake: over a database that never held a\n" +
-			"user, with --public-url, --https or --basic-auth-realm, or bound to anything\n" +
-			"but loopback.\n\n" +
+			"nobody where that looks like a mistake: one over a database that never held\n" +
+			"a user, bound to anything but loopback, or given --public-url, --https or\n" +
+			"--basic-auth-realm, each of which describes a deployment published beyond\n" +
+			"this machine.\n\n" +
 			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
 			"no users at all, so adding one does not close the door either. Taking it\n" +
 			"back is a restart without the flag.\n\n" +

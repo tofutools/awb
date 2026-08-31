@@ -351,10 +351,12 @@ A server started over a database whose users are already gone starts locked and
 says so in its log, rather than refusing: it answers nothing to anybody, so it
 exposes nothing wherever it is bound, and it recovers from the next
 `awb user add` without a further restart. What refuses to start is a server
-that would authenticate nobody where that looks like a mistake — over a
-database that never held a user, with `--public-url`, `--https` or
-`--basic-auth-realm`, each of which describes a server published to more than
-this machine, or bound to anything but loopback.
+that would authenticate nobody where that looks like a mistake: one over a
+database that never held a user, and either bound to something other than
+loopback, or given `--public-url`, `--https` or `--basic-auth-realm`. The
+binding is what other machines can reach; those three reach nothing by
+themselves, and each describes a deployment published beyond this machine,
+which is the intention the refusal is about.
 
 ```console
 $ echo hunter2 | awb user add alice --user-admin --project-admin

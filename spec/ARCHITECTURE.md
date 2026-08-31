@@ -496,10 +496,12 @@ anybody and so exposes nothing wherever it is bound, and because an operator
 whose service is supervised should not have to time creating an account against
 a restart — it recovers from the next one added, as a running server does. What
 `awb serve` refuses is an open server that looks published: one over a database
-that never held a user, with `--public-url`, `--https` or `--basic-auth-realm`,
-or bound off loopback. `--no-auth` is the operator saying it was meant, and
-means it: that server consults no users at all, so adding one does not close
-the door either.
+that never held a user, and either bound off loopback or carrying
+`--public-url`, `--https` or `--basic-auth-realm`. Only the binding reaches
+anywhere; the three flags are statements of intent, and an intention to publish
+is what the refusal is about. `--no-auth` is the operator saying it was meant,
+and means it: that server consults no users at all, so adding one does not
+close the door either.
 
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
