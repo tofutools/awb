@@ -14,7 +14,9 @@ import {
   type Issue,
   type IssueTree,
   type Project,
+  type ProjectFilters,
   type User,
+  type UserFilters,
 } from "./api.js";
 import {
   emptyFacetLabel,
@@ -22,9 +24,11 @@ import {
   filterProjects,
   filterUsers,
   nextSortValue,
-  sortIssues,
-  sortProjects,
+  pageNumber,
+  pageSize,
+  pageWindow,
   sortState,
+  withPage,
   withClosedIssues,
   type SortDirection,
   type SortState,
@@ -248,6 +252,7 @@ function routeHref(route: Route, query: URLSearchParams): string {
 
 function facetHref(route: Route, name: string, value: string): string {
   const query = new URLSearchParams(route.query);
+  query.delete("page");
   if (query.getAll(name).includes(value)) {
     const remaining = query.getAll(name).filter((current) => current !== value);
     query.delete(name);
@@ -424,6 +429,7 @@ function sortButton(
     );
     if (next === null) query.delete("sort");
     else query.set("sort", next);
+    query.delete("page");
     location.hash = routeHref(route, query).slice(1);
   });
   return button;
@@ -464,6 +470,7 @@ function mobileSortControl(
     const query = new URLSearchParams(route.query);
     if (select.value === "") query.delete("sort");
     else query.set("sort", select.value);
+    query.delete("page");
     location.hash = routeHref(route, query).slice(1);
   });
   label.append(select);
@@ -540,7 +547,7 @@ function listingFilter(
     const visible = update(input.value);
     count.textContent = input.value.trim() === ""
       ? `${total} ${noun}${total === 1 ? "" : "s"}`
-      : `${visible} of ${total}`;
+      : `${visible} on this page`;
     clearButton.hidden = input.value === "";
     replaceRouteQuery(route, "filter", input.value);
   };
@@ -554,7 +561,7 @@ function listingFilter(
   const visible = update(input.value);
   count.textContent = input.value.trim() === ""
     ? `${total} ${noun}${total === 1 ? "" : "s"}`
-    : `${visible} of ${total}`;
+    : `${visible} on this page`;
   clearButton.hidden = input.value === "";
   return bar;
 }
@@ -570,6 +577,52 @@ function includeClosedControl(route: Route): HTMLElement {
   });
   label.append(input, document.createTextNode("Show closed"));
   return label;
+}
+
+/** pagination renders links over the backend page. Sorting and selection stay
+ * in the URL, while page one remains the canonical form without ?page=1. */
+function pagination(route: Route, total: number): HTMLElement | null {
+  const window = pageWindow(total, pageNumber(route.query));
+  if (window.pages <= 1) return null;
+
+  const nav = element("div", "pagination");
+  nav.setAttribute("role", "navigation");
+  nav.setAttribute("aria-label", "Pagination");
+  const previous = link(
+    routeHref(route, withPage(route.query, window.page - 1)),
+    "Previous",
+    "pagination-link",
+  );
+  if (window.page === 1) {
+    previous.removeAttribute("href");
+    previous.setAttribute("aria-disabled", "true");
+  }
+  const status = element(
+    "span",
+    "pagination-status",
+    `${window.first}–${window.last} of ${total} · Page ${window.page} of ${window.pages}`,
+  );
+  const next = link(
+    routeHref(route, withPage(route.query, window.page + 1)),
+    "Next",
+    "pagination-link",
+  );
+  if (window.page === window.pages) {
+    next.removeAttribute("href");
+    next.setAttribute("aria-disabled", "true");
+  }
+  nav.append(previous, status, next);
+  return nav;
+}
+
+function normalizePageRoute(route: Route, total: number): number {
+  const requested = pageNumber(route.query);
+  const normalized = pageWindow(total, requested).page;
+  if (normalized !== requested) {
+    route.query = withPage(route.query, normalized);
+    history.replaceState(null, "", routeHref(route, route.query));
+  }
+  return normalized;
 }
 
 function issueList(
@@ -599,7 +652,9 @@ function issueList(
   }
 
   const update = (query: string): number => {
-    const rows = sortIssues(filterIssues(issues, query), state);
+    // Ordering belongs to the backend: otherwise sorting a page locally would
+    // produce a different order from sorting the complete result set.
+    const rows = filterIssues(issues, query);
     clear(tableHost);
     if (rows.length === 0) {
       tableHost.append(element("p", "empty", query.trim() === "" ? emptyMessage : "No issues match this filter."));
@@ -611,7 +666,7 @@ function issueList(
 
   section.append(listingFilter(
     route,
-    `Filter ${kind === "search" ? "results" : kind}…`,
+    `Filter this page of ${kind === "search" ? "results" : kind}…`,
     "issue",
     total,
     update,
@@ -620,6 +675,8 @@ function issueList(
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
+  const pager = pagination(route, total);
+  if (pager !== null) section.append(pager);
   return section;
 }
 
@@ -633,13 +690,14 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
-  // The UI adds presentation-only orderings for columns such as project and
-  // assignee. Pass through only the issue API's vocabulary; the complete,
-  // unpaged response is ordered locally for the other visible columns.
   const sort = query.get("sort");
-  const apiSorts = ["priority", "created", "updated", "id", "-priority", "-created", "-updated", "-id"];
+  const apiSorts: string[] = issueSortKeys
+    .filter((key) => key !== "relevance")
+    .flatMap((key) => [key, `-${key}`]);
   if (allowRelevance) apiSorts.push("relevance", "-relevance");
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
+  filters.limit = pageSize;
+  filters.offset = (pageNumber(query) - 1) * pageSize;
   return filters;
 }
 
@@ -710,18 +768,25 @@ function facetBar(
 async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): Promise<HTMLElement> {
   const filters = filtersFrom(route.query);
 
+  const load = () => kind === "ready"
+    ? api.ready(readyFilters(filters))
+    : kind === "blocked"
+      ? api.blocked(blockedFilters(filters))
+      : api.issues(filters);
+
   // Each listing is asked with the filters it accepts. Ready lists only
   // unassigned issues, so there is no assignee menu to offer there either.
-  const [page, projects, labels, assignees] = await Promise.all([
-    kind === "ready"
-      ? api.ready(readyFilters(filters))
-      : kind === "blocked"
-        ? api.blocked(blockedFilters(filters))
-        : api.issues(filters),
+  let [page, projects, labels, assignees] = await Promise.all([
+    load(),
     api.projects(),
     api.labels(kind === "ready" ? {} : facetFilters(filters)),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
   ]);
+  const normalized = normalizePageRoute(route, page.total);
+  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
+    filters.offset = (normalized - 1) * pageSize;
+    page = await load();
+  }
 
   const view = element("div");
   view.append(element("h1", "", titleFor(kind)));
@@ -784,6 +849,7 @@ function projectSortButton(route: Route, key: string, label: string, state: Sort
     const next = nextSortValue(query.get("sort"), key, projectSortKeys, "key");
     if (next === null) query.delete("sort");
     else query.set("sort", next);
+    query.delete("page");
     location.hash = routeHref(route, query).slice(1);
   });
   return button;
@@ -837,11 +903,24 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
 }
 
 async function viewProjects(route: Route): Promise<HTMLElement> {
-  const page = await api.projects();
+  const requested = pageNumber(route.query);
+  const filters: ProjectFilters = {
+    limit: pageSize,
+    offset: (requested - 1) * pageSize,
+  };
+  const sort = route.query.get("sort");
+  const apiSorts = projectSortKeys.flatMap((key) => [key, `-${key}`]);
+  if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as ProjectFilters["sort"];
+  let page = await api.projects(filters);
+  const normalized = normalizePageRoute(route, page.total);
+  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
+    filters.offset = (normalized - 1) * pageSize;
+    page = await api.projects(filters);
+  }
 
   const view = element("div");
   view.append(element("h1", "", "Projects"));
-  if (page.rows.length === 0) {
+  if (page.total === 0) {
     view.append(element("p", "empty", "No projects yet. Create one with: awb project create <key>"));
     return view;
   }
@@ -855,7 +934,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     mobileUpdatedDisplayControl(),
   );
   const update = (query: string): number => {
-    const rows = sortProjects(filterProjects(page.rows, query), state);
+    const rows = filterProjects(page.rows, query);
     clear(host);
     if (rows.length === 0) host.append(element("p", "empty", "No projects match this filter."));
     else host.append(projectTable(route, rows, state));
@@ -863,12 +942,14 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   };
   listing.append(listingFilter(
     route,
-    "Filter projects…",
+    "Filter this page of projects…",
     "project",
     page.total,
     update,
     listingActions,
   ), host);
+  const pager = pagination(route, page.total);
+  if (pager !== null) listing.append(pager);
   view.append(listing);
   return view;
 }
@@ -924,7 +1005,17 @@ function userTable(users: User[]): HTMLElement {
 }
 
 async function viewUsers(route: Route): Promise<HTMLElement> {
-  const page = await api.users();
+  const requested = pageNumber(route.query);
+  const filters: UserFilters = {
+    limit: pageSize,
+    offset: (requested - 1) * pageSize,
+  };
+  let page = await api.users(filters);
+  const normalized = normalizePageRoute(route, page.total);
+  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
+    filters.offset = (normalized - 1) * pageSize;
+    page = await api.users(filters);
+  }
   const view = element("div");
   view.append(element("h1", "", "Users"));
 
@@ -940,7 +1031,9 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
     }
     return rows.length;
   };
-  listing.append(listingFilter(route, "Filter users…", "user", page.total, update), host);
+  listing.append(listingFilter(route, "Filter this page of users…", "user", page.total, update), host);
+  const pager = pagination(route, page.total);
+  if (pager !== null) listing.append(pager);
   view.append(listing);
   return view;
 }
@@ -1249,10 +1342,16 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     return view;
   }
 
-  const [page, projects] = await Promise.all([
-    api.search({ ...filtersFrom(route.query, true), q: terms }),
+  const filters = { ...filtersFrom(route.query, true), q: terms };
+  let [page, projects] = await Promise.all([
+    api.search(filters),
     api.projects(),
   ]);
+  const normalized = normalizePageRoute(route, page.total);
+  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
+    filters.offset = (normalized - 1) * pageSize;
+    page = await api.search(filters);
+  }
   const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
     ? element("span", "natural-order", "Best match")
     : null;

@@ -22,7 +22,15 @@ func projectResponse(project *domain.Project) *api.ProjectHeaders {
 
 func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParams) (
 	*api.ProjectListHeaders, error) {
-	page, err := h.backendFor(ctx).ListProjects(ctx, optInt(params.Limit), optInt(params.Offset))
+	sort := domain.DefaultProjectSort
+	if value, ok := params.Sort.Get(); ok {
+		var err error
+		if sort, err = domain.ParseProjectSort(string(value)); err != nil {
+			return nil, err
+		}
+	}
+	page, err := h.backendFor(ctx).ListProjects(ctx, sort,
+		optInt(params.Limit), optInt(params.Offset))
 	if err != nil {
 		return nil, err
 	}

@@ -14,12 +14,20 @@ const (
 	SortCreated   SortKey = "created"
 	SortUpdated   SortKey = "updated"
 	SortID        SortKey = "id"
+	SortProject   SortKey = "project"
+	SortStatus    SortKey = "status"
+	SortAssignee  SortKey = "assignee"
+	SortType      SortKey = "type"
+	SortBlockers  SortKey = "blockers"
 	SortRelevance SortKey = "relevance"
 )
 
 // SortKeys lists the keys every listing accepts. relevance is deliberately not
 // among them: it is search's alone.
-var SortKeys = []SortKey{SortPriority, SortCreated, SortUpdated, SortID}
+var SortKeys = []SortKey{
+	SortPriority, SortCreated, SortUpdated, SortID, SortProject, SortStatus,
+	SortAssignee, SortType, SortBlockers,
+}
 
 // Sort is one parsed --sort value.
 //
@@ -79,6 +87,43 @@ func containsKey(keys []SortKey, key SortKey) bool {
 		}
 	}
 	return false
+}
+
+// ProjectSortKey names an ordering for project listings. Project ordering is
+// separate from issue ordering because "active" is a derived project count.
+type ProjectSortKey string
+
+const (
+	ProjectSortByKey   ProjectSortKey = "key"
+	ProjectSortActive  ProjectSortKey = "active"
+	ProjectSortUpdated ProjectSortKey = "updated"
+)
+
+// ProjectSort is one parsed project-list ordering.
+type ProjectSort struct {
+	Key  ProjectSortKey
+	Desc bool
+}
+
+// DefaultProjectSort is the stable key-ascending order used by the CLI and by
+// API callers that omit sort.
+var DefaultProjectSort = ProjectSort{Key: ProjectSortByKey}
+
+// ParseProjectSort reads a project ordering, optionally prefixed with "-".
+func ParseProjectSort(s string) (ProjectSort, error) {
+	desc := false
+	if rest, found := strings.CutPrefix(s, "-"); found {
+		desc = true
+		s = rest
+	}
+	key := ProjectSortKey(s)
+	switch key {
+	case ProjectSortByKey, ProjectSortActive, ProjectSortUpdated:
+		return ProjectSort{Key: key, Desc: desc}, nil
+	default:
+		return ProjectSort{}, awberr.Usagef(
+			"invalid project sort %q: must be one of key, active, updated, optionally prefixed with \"-\"", s)
+	}
 }
 
 // Readiness selects on the derived blocked state, which is what separates awb

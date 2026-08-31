@@ -36,7 +36,7 @@ type Backend interface {
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)
-	ListProjects(ctx context.Context, limit, offset *int) (ProjectPage, error)
+	ListProjects(ctx context.Context, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
 	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
 	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
 

@@ -411,7 +411,7 @@ func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project,
 	total := -1
 	for offset := 0; total < 0 || offset < total; offset = len(projects) {
 		limit, pageOffset := dumpPageSize, offset
-		page, err := source.ListProjects(cmd.Context(), &limit, &pageOffset)
+		page, err := source.ListProjects(cmd.Context(), domain.DefaultProjectSort, &limit, &pageOffset)
 		if err != nil {
 			return nil, err
 		}

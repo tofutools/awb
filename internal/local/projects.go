@@ -67,11 +67,12 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 
 // ListProjects lists projects ordered by key ascending, with counts of issues
 // that are not closed.
-func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend.ProjectPage, error) {
+func (b *Backend) ListProjects(ctx context.Context, sort domain.ProjectSort,
+	limit, offset *int) (backend.ProjectPage, error) {
 	var page backend.ProjectPage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
-		page.Projects, page.Total, err = tx.ListProjects(limit, offset)
+		page.Projects, page.Total, err = tx.ListProjects(sort, limit, offset)
 		return err
 	})
 	if err != nil {

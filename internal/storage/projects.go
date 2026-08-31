@@ -74,23 +74,39 @@ func (t *Tx) ProjectExists(key string) (bool, error) {
 	return true, nil
 }
 
-// ListProjects returns every project ordered by key ascending, which is what
-// makes the corresponding endpoint pageable. limit and offset page the result;
-// total is the unpaged count.
-func (t *Tx) ListProjects(limit, offset *int) (projects []domain.Project, total int, err error) {
+// ListProjects returns projects in a total order. limit and offset page the
+// result; total is the unpaged count.
+func (t *Tx) ListProjects(sort domain.ProjectSort,
+	limit, offset *int) (projects []domain.Project, total int, err error) {
 	visible, args := t.visibleClause("p.key")
 	if err := t.q.QueryRowContext(t.ctx,
 		`SELECT count(*) FROM projects p WHERE `+visible, args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count projects")
 	}
 
+	direction := "ASC"
+	if sort.Desc {
+		direction = "DESC"
+	}
+	active := `(SELECT count(*) FROM issues i
+		         WHERE i.project = p.key AND i.status <> 'closed')`
+	order := "p.key " + direction
+	switch sort.Key {
+	case domain.ProjectSortActive:
+		order = active + " " + direction + ", p.key ASC"
+	case domain.ProjectSortUpdated:
+		order = "p.updated_at " + direction + ", p.key ASC"
+	case domain.ProjectSortByKey:
+	default:
+		order = "p.key ASC"
+	}
+
 	query := `
 		SELECT p.key, p.name, p.description, p.created_at, p.updated_at,
-		       (SELECT count(*) FROM issues i
-		         WHERE i.project = p.key AND i.status <> 'closed')
+		       ` + active + `
 		  FROM projects p
 		 WHERE ` + visible + `
-		 ORDER BY p.key ASC` + limitOffsetClause(limit, offset)
+		 ORDER BY ` + order + limitOffsetClause(limit, offset)
 
 	rows, err := t.q.QueryContext(t.ctx, query, args...)
 	if err != nil {

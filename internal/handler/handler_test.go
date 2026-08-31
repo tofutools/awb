@@ -423,6 +423,35 @@ func TestPaging(t *testing.T) {
 	}
 }
 
+func TestPagingAppliesAfterIssueSorting(t *testing.T) {
+	a := newAPI(t)
+	a.createIssue(`{"project":"awb","title":"low","priority":4}`)
+	a.createIssue(`{"project":"awb","title":"high","priority":0}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/issues?sort=-priority&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var issues []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, 4, issues[0].Priority)
+	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+}
+
+func TestProjectPagingAppliesAfterSorting(t *testing.T) {
+	a := newAPI(t)
+	resp, payload := a.do(http.MethodPost, "/api/projects", `{"key":"web"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	a.createIssue(`{"project":"awb","title":"active"}`)
+
+	resp, payload = a.do(http.MethodGet, "/api/projects?sort=-active&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var projects []domain.Project
+	require.NoError(t, json.Unmarshal([]byte(payload), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "awb", projects[0].Key)
+	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+}
+
 // The endpoints that fix a filter for themselves reject the corresponding
 // parameters.
 func TestRejectedParameters(t *testing.T) {

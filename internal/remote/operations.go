@@ -356,10 +356,19 @@ func pageQuery(limit, offset *int) url.Values {
 	return query
 }
 
-func (b *Backend) ListProjects(ctx context.Context, limit, offset *int) (backend.ProjectPage, error) {
+func (b *Backend) ListProjects(ctx context.Context, sort domain.ProjectSort,
+	limit, offset *int) (backend.ProjectPage, error) {
 	projects := []domain.Project{}
+	query := pageQuery(limit, offset)
+	if sort.Key != "" {
+		value := string(sort.Key)
+		if sort.Desc {
+			value = "-" + value
+		}
+		query.Set("sort", value)
+	}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/projects", pageQuery(limit, offset)), nil, "", &projects)
+		b.endpoint("/api/projects", query), nil, "", &projects)
 	if err != nil {
 		return backend.ProjectPage{}, err
 	}

@@ -110,7 +110,7 @@ test("blocked filters drop the status set it fixes for itself", () => {
 
 test("facet filters drop the sort the row order fixes", () => {
   assert.deepEqual(
-    facetFilters({ label: ["parser"], status: ["open"], sort: "created" }),
+    facetFilters({ label: ["parser"], status: ["open"], sort: "created", limit: 50, offset: 100 }),
     { label: ["parser"], status: ["open"] },
   );
 });

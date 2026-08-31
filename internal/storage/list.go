@@ -106,6 +106,23 @@ func orderBy(sort domain.Sort) string {
 	if sort.Desc {
 		direction = "DESC"
 	}
+	const assignees = `COALESCE((
+		SELECT group_concat(assignee, ' ')
+		  FROM (SELECT a.assignee
+		          FROM issue_assignees a
+		         WHERE a.issue = i.id
+		         ORDER BY a.position)
+	), '')`
+	const blockers = `COALESCE((
+		SELECT group_concat(other, ' ')
+		  FROM (SELECT r.other
+		          FROM relations r
+		         WHERE r.subject = i.id AND r.type = 'blocked-by'
+		           AND i.status <> 'closed'
+		           AND EXISTS (SELECT 1 FROM issues b
+		                        WHERE b.id = r.other AND b.status <> 'closed')
+		         ORDER BY r.other)
+	), '')`
 
 	switch sort.Key {
 	case domain.SortPriority:
@@ -118,6 +135,21 @@ func orderBy(sort domain.Sort) string {
 		return " ORDER BY i.updated_at " + direction + ", i.id ASC"
 	case domain.SortID:
 		return " ORDER BY i.id " + direction
+	case domain.SortProject:
+		return " ORDER BY i.project " + direction + ", i.id ASC"
+	case domain.SortStatus:
+		return " ORDER BY i.status " + direction + ", i.id ASC"
+	case domain.SortAssignee:
+		// The visible assignee list is assignment-ordered. Page by that same
+		// joined representation, keeping unassigned issues last in both directions.
+		return " ORDER BY (" + assignees + " = '') ASC, " + assignees + " " + direction + ", i.id ASC"
+	case domain.SortType:
+		return " ORDER BY i.type " + direction + ", i.id ASC"
+	case domain.SortBlockers:
+		// The hydrated blocker list is sorted by id. Ordering by the same joined
+		// representation makes paging agree with the visible column. Issues with
+		// no blockers stay last in both directions, as empty assignees do.
+		return " ORDER BY (" + blockers + " = '') ASC, " + blockers + " " + direction + ", i.id ASC"
 	case domain.SortRelevance:
 		// bm25's better matches are its more negative values, so ascending is best
 		// match first, which is what a bare "relevance" means. "-relevance" is worst

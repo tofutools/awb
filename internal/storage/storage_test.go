@@ -660,6 +660,61 @@ func TestListPagingKeepsTheUnpagedTotal(t *testing.T) {
 	assert.Equal(t, 5, total, "while preserving the unpaged total")
 }
 
+func TestAssigneeSortingPagesByTheVisibleAssigneeList(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	add("unassigned")
+	anna := add("anna", func(i *domain.Issue) {
+		i.Status = domain.StatusInProgress
+		i.Assignees = []string{"anna"}
+	})
+	team := add("team", func(i *domain.Issue) {
+		i.Status = domain.StatusInProgress
+		i.Assignees = []string{"zoe", "mikael"}
+	})
+
+	limit := 2
+	issues, _, err := listWith(t, db, &domain.Filter{
+		Limit: &limit,
+		Sort:  domain.Sort{Key: domain.SortAssignee},
+	})
+	require.NoError(t, err)
+	require.Len(t, issues, 2)
+	assert.Equal(t, []string{anna, team}, []string{issues[0].ID, issues[1].ID})
+	assert.Equal(t, []string{"anna"}, issues[0].Assignees)
+	assert.Equal(t, []string{"zoe", "mikael"}, issues[1].Assignees)
+}
+
+func TestBlockerSortingPagesByTheVisibleBlockers(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	firstBlocker := add("first blocker")
+	lastBlocker := add("last blocker")
+	if firstBlocker > lastBlocker {
+		firstBlocker, lastBlocker = lastBlocker, firstBlocker
+	}
+	closed := add("closed subject")
+	open := add("open subject")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(closed, domain.RelBlockedBy, firstBlocker); err != nil {
+			return err
+		}
+		return tx.InsertRelation(open, domain.RelBlockedBy, lastBlocker)
+	}))
+	closeIssue(t, db, closed)
+
+	limit := 1
+	issues, _, err := listWith(t, db, &domain.Filter{
+		IncludeClosed: true,
+		Limit:         &limit,
+		Sort:          domain.Sort{Key: domain.SortBlockers},
+	})
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, open, issues[0].ID,
+		"a closed subject's historical blocker is not part of its visible sort value")
+}
+
 // Two invocations against unchanged data must agree, so every order is total.
 func TestListOrderIsTotal(t *testing.T) {
 	db := newDB(t)
@@ -671,7 +726,9 @@ func TestListOrderIsTotal(t *testing.T) {
 	for _, sort := range []domain.Sort{
 		{Key: domain.SortPriority}, {Key: domain.SortPriority, Desc: true},
 		{Key: domain.SortCreated}, {Key: domain.SortUpdated}, {Key: domain.SortID},
-		{Key: domain.SortID, Desc: true},
+		{Key: domain.SortID, Desc: true}, {Key: domain.SortProject},
+		{Key: domain.SortStatus}, {Key: domain.SortAssignee}, {Key: domain.SortAssignee, Desc: true},
+		{Key: domain.SortType}, {Key: domain.SortBlockers},
 	} {
 		first, _, err := listWith(t, db, &domain.Filter{Sort: sort})
 		require.NoError(t, err)
@@ -780,7 +837,7 @@ func TestProjects(t *testing.T) {
 		)
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error
-			ps, total, err = tx.ListProjects(nil, nil)
+			ps, total, err = tx.ListProjects(domain.DefaultProjectSort, nil, nil)
 			return err
 		})
 		return ps, total, err
@@ -791,6 +848,23 @@ func TestProjects(t *testing.T) {
 	assert.Equal(t, "awb", projects[0].Key, "ordered by key ascending")
 	assert.Equal(t, "web", projects[1].Key)
 	assert.Equal(t, 1, projects[0].ActiveIssues, "closed issues are not active")
+
+	projects, _, err = func() ([]domain.Project, int, error) {
+		var (
+			ps    []domain.Project
+			total int
+		)
+		err := db.Read(t.Context(), func(tx *storage.Tx) error {
+			var err error
+			ps, total, err = tx.ListProjects(
+				domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}, nil, nil)
+			return err
+		})
+		return ps, total, err
+	}()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"awb", "web"}, []string{projects[0].Key, projects[1].Key},
+		"active count sorting happens before paging")
 
 	// A duplicate key is a conflict.
 	err = db.Write(t.Context(), func(tx *storage.Tx) error {
