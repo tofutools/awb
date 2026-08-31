@@ -1240,6 +1240,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       });
     } else {
       issueEditDrafts.delete(issue.id);
+      attachmentSection.editor.reset();
+      relationSection.editor.reset();
     }
     view.classList.toggle("issue-editing", show);
     editForm.hidden = !show;
@@ -1436,11 +1438,17 @@ function relationEditor(issueID: string): HTMLFormElement {
   add.type = "submit";
   fields.append(type, otherAutocomplete, forceLabel, add);
   form.append(disclosureRow, fields);
-  disclose.addEventListener("click", () => {
+  const expand = (): void => {
     disclosureRow.hidden = true;
     fields.hidden = false;
     other.focus();
-  });
+  };
+  const collapse = (): void => {
+    disclosureRow.hidden = false;
+    fields.hidden = true;
+  };
+  disclose.addEventListener("click", expand);
+  form.addEventListener("reset", collapse);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [add], () => api.addRelation(issueID, {
@@ -1487,6 +1495,7 @@ function attachmentEditor(issueID: string): HTMLFormElement {
     const selected = event.dataTransfer?.files[0];
     if (selected !== undefined) upload(selected);
   });
+  form.addEventListener("reset", () => form.classList.remove("drag-active"));
   return form;
 }
 
