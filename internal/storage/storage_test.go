@@ -592,9 +592,9 @@ func TestSuggestIssuesByIDAndTitle(t *testing.T) {
 	issues, total := read("parser")
 	require.Len(t, issues, 3)
 	assert.Equal(t, 3, total)
-	assert.Equal(t, prefix, issues[0].ID, "a title prefix sorts before a contained match")
-	assert.ElementsMatch(t, []string{contains, closed}, []string{issues[1].ID, issues[2].ID},
-		"closed issues remain valid relation targets")
+	assert.ElementsMatch(t, []string{prefix, closed}, []string{issues[0].ID, issues[1].ID},
+		"title prefixes sort first, including a closed relation target")
+	assert.Equal(t, contains, issues[2].ID, "a contained match sorts after title prefixes")
 
 	issues, total = read(prefix[:len(prefix)-2])
 	require.Len(t, issues, 1)
