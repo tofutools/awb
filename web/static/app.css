@@ -349,6 +349,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .filter-count, .natural-order { color: var(--muted); font-size: 0.8em; }
 .listing-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
   margin-left: auto;
@@ -514,9 +515,10 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   flex-wrap: wrap;
   gap: 0.2rem;
   align-items: center;
-  margin-top: 0.65rem;
+  margin-left: auto;
   color: var(--muted);
   font-size: 0.82em;
+  white-space: nowrap;
 }
 .pagination-link {
   padding: 0.15rem 0.3rem;
@@ -583,9 +585,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
     font: inherit;
   }
   .facet-title { width: 100%; min-width: 0; }
-  .pagination-status { order: 5; flex-basis: 100%; text-align: left; }
-  .pagination-size { order: 6; margin-left: 0.4rem; }
-
   .listing-table, .listing-table tbody, .listing-table tr, .listing-table td { display: block; width: 100%; }
   .listing-table { border: 0; background: transparent; }
   .listing-table thead { display: none; }
