@@ -20,9 +20,10 @@ import (
 // This is what a server switches on: a database with no user is the version 1
 // database, and a server over it behaves exactly as version 1's did. Adding
 // the first user closes the door, and it closes on the next request rather
-// than on the next restart, because this is asked per request. The answer
-// going back to "none" does not reopen it — see cli.authenticator, which
-// remembers — so the switch is one-way within one run of a server.
+// than on the next restart, because this is asked per request.
+//
+// The answer going back to "none" does not open it again. That is what
+// UsersHaveExisted is for, and the two are asked together.
 func (t *Tx) AnyUsers() (bool, error) {
 	var one int
 	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM users LIMIT 1`).Scan(&one)
@@ -31,6 +32,26 @@ func (t *Tx) AnyUsers() (bool, error) {
 	}
 	if err != nil {
 		return false, awberr.Wrap(awberr.Runtime, err, "read users")
+	}
+	return true, nil
+}
+
+// UsersHaveExisted reports whether this database has ever held a user, which
+// no deletion clears; see schemaV6 for why the fact is stored rather than
+// remembered.
+//
+// It is what tells a database that authenticates and has just lost its last
+// account apart from one that never had one. The first is a server that must
+// refuse everybody until an account exists again; the second is a local
+// tracker, and is what every version 1 database still is.
+func (t *Tx) UsersHaveExisted() (bool, error) {
+	var one int
+	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM user_history LIMIT 1`).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, awberr.Wrap(awberr.Runtime, err, "read user history")
 	}
 	return true, nil
 }
@@ -177,7 +198,11 @@ func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
 		 WHERE user = ? ORDER BY project ASC`, []any{name})
 }
 
-// InsertUser stores a new user.
+// InsertUser stores a new user, and records that this database has had one.
+//
+// The two are one statement pair in one transaction, and the record is written
+// here rather than by the operation above, so that no way of creating a user
+// can leave the fact unwritten.
 func (t *Tx) InsertUser(name, hash string, projectAdmin, userAdmin bool) error {
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
@@ -188,6 +213,10 @@ func (t *Tx) InsertUser(name, hash string, projectAdmin, userAdmin bool) error {
 			return awberr.Conflictf("user %s already exists", name)
 		}
 		return awberr.Wrap(awberr.Runtime, err, "create user %s", name)
+	}
+	if _, err := t.q.ExecContext(t.ctx,
+		`INSERT OR IGNORE INTO user_history (one) VALUES (1)`); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "record that user %s was created", name)
 	}
 	return nil
 }

@@ -336,19 +336,22 @@ authenticates nobody, and any client that can reach the port has full read and
 write access — which is why the default binds loopback. Adding the first user
 turns authentication on, from the next request onwards.
 
-Deleting the last user does not turn it off again. A running server that has
-authenticated answers nothing — `503`, with no challenge, because no
-credentials could open a server with no accounts — until a user is added, which
-again takes effect from the next request. Turning a guarded server into an open
-one takes a restart, and saying so.
+Deleting the last user does not turn it off again. The server answers nothing —
+`503`, with no challenge, because no credentials could open a server with no
+accounts — until a user is added, which again takes effect from the next
+request. That a database has had users is recorded in the database itself, so
+it holds whether or not a server was running or watching at the time; turning a
+guarded database back into an open one takes saying so.
 
-For the same reason, a server that would authenticate nobody refuses to start
-where that looks like a mistake: with `--public-url`, `--https` or
+Which is what `--no-auth` is. A server started with it authenticates nobody
+whatever the database holds — it consults no users at all, so adding one does
+not close the door either — and taking it back is a restart without the flag.
+
+Without it, a server that would authenticate nobody refuses to start where that
+looks like a mistake: over a database whose users have all been deleted, or,
+over one that never had any, with `--public-url`, `--https` or
 `--basic-auth-realm`, each of which describes a server published to more than
-this machine, or bound to anything but loopback. Add a user, or pass
-`--no-auth` to say an open server is what you meant. `--no-auth` is refused on
-a database that does hold users, where it would be a false statement about what
-the server does.
+this machine, or bound to anything but loopback.
 
 ```console
 $ echo hunter2 | awb user add alice --user-admin --project-admin

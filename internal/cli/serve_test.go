@@ -521,11 +521,27 @@ func TestServeAcceptsALoopbackBindingWithNoUsers(t *testing.T) {
 	}
 }
 
-// --no-auth is how an operator says an open server is what they meant.
-func TestServeWithNoAuthOpensADatabaseWithNoUsers(t *testing.T) {
-	assert.NoError(t, checkNoAuth(serveOptions{addr: "0.0.0.0", noAuth: true}, true))
-	assert.Error(t, checkNoAuth(serveOptions{addr: "0.0.0.0"}, true))
-	assert.NoError(t, checkNoAuth(serveOptions{addr: "127.0.0.1"}, true))
+// --no-auth is how an operator says an open server is what they meant, and is
+// the only thing that says so.
+func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
+	none := userState{}
+	deleted := userState{existed: true}
+	users := userState{any: true, existed: true}
+
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, none),
+		"a local tracker on loopback is the open server that is meant to work")
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, none),
+		"reaching other machines with nobody to authenticate is the accident")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, none))
+
+	assert.Error(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, deleted),
+		"a server whose accounts are gone would answer nothing, wherever it is bound")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1", noAuth: true}, deleted))
+
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
+		"a server that authenticates may be published, which is the point of it")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, users),
+		"--no-auth means it: the users are simply not consulted")
 }
 
 // --https and --public-url describe one deployment, so they cannot disagree

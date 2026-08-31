@@ -93,30 +93,47 @@ func TestDeletingTheLastUserDoesNotOpenTheServer(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// A server started over a database that held users is locked from the start,
-// even if the last of them is deleted before it answers a single request: the
-// latch's starting position is what the database said at startup.
-func TestAServerStartedWithUsersNeverOpens(t *testing.T) {
-	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+// The lock does not depend on the server having watched it happen. A user
+// added and deleted between two requests leaves the database saying exactly
+// what it says after any other deletion, because what a server reads is a
+// stored fact and not its own memory of one — which is the whole reason the
+// fact is stored.
+func TestALockDoesNotDependOnHavingSeenTheUser(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 
-	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	// No request in between: this server never authenticates anybody.
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
-
-	raw, err := os.ReadFile("../../openapi.yaml")
-	require.NoError(t, err)
-	opts := serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"}
-	h, err := buildHandler(be, openapi.New(raw),
-		newAuthenticator(db, opts.basicAuthRealm, true), opts, log.New(io.Discard, "", 0))
-	require.NoError(t, err)
-
 	_, err = be.DeleteUser(t.Context(), "alice", "")
 	require.NoError(t, err)
 
 	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// Nothing is exempt from the lock either — not the UI, not the documents, and
+// not the CORS preflight that authentication itself lets past, because no
+// request could follow one successfully.
+func TestTheLockCoversEverythingTheServerServes(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
+		corsOrigins: []string{"https://ui.example.com"},
+	})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+
+	for _, path := range []string{
+		"/", "/app.js", "/api/issues", "/openapi.json", "/openapi.yaml",
+	} {
+		resp, _ := get(t, h, http.MethodGet, path)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, path)
+	}
+
+	resp, _ := get(t, h, http.MethodOptions, "/api/issues",
+		"Origin", "https://ui.example.com",
+		"Access-Control-Request-Method", "GET")
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 

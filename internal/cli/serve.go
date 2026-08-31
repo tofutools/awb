@@ -138,8 +138,9 @@ func (o serveOptions) validate() error {
 			"--https says a proxy terminates TLS, and --public-url %s says it does not",
 			o.publicURL)
 	}
-	// A realm is the name a server authenticates in. Asking for one on a
-	// server that authenticates nobody is asking for two different servers.
+	// A realm is the name a server authenticates in, and a server started with
+	// --no-auth never asks anybody for anything. The two describe different
+	// servers.
 	if o.noAuth && o.realmGiven {
 		return awberr.Usagef(
 			"--no-auth serves without authentication, so there is no realm to present in")
@@ -220,7 +221,7 @@ type serveParams struct {
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
 	BasicAuthRealm *string  `long:"basic-auth-realm" help:"realm presented to clients that supply no credentials (default awb)"`
-	NoAuth         bool     `long:"no-auth" optional:"true" help:"serve a database with no users, and no authentication, even where that looks like a mistake"`
+	NoAuth         bool     `long:"no-auth" optional:"true" help:"authenticate nobody, whatever the database holds; every client that reaches the port has full access"`
 	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying API requests to this awb server"`
 }
 
@@ -253,11 +254,15 @@ func newServeCommand(e *env) *cobra.Command {
 			"full read and write access, which is why the default binds loopback.\n\n" +
 			"Which of the two it is, is decided per request rather than at startup, so\n" +
 			"adding the first user closes the door without a restart. The door does not\n" +
-			"open again by itself: deleting the last user of a running server leaves it\n" +
-			"answering nothing until a user is added again, rather than serving everybody.\n\n" +
+			"open again by itself: deleting the last user leaves the server answering\n" +
+			"nothing until a user is added again, rather than serving everybody.\n\n" +
 			"A server that would authenticate nobody refuses to start where that looks\n" +
-			"like a mistake: with --public-url, --https or --basic-auth-realm, or bound to\n" +
-			"anything but loopback. --no-auth serves it anyway.\n\n" +
+			"like a mistake: over a database whose users have all been deleted, or, on\n" +
+			"one that never had any, with --public-url, --https or --basic-auth-realm, or\n" +
+			"bound to anything but loopback.\n\n" +
+			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
+			"no users at all, so adding one does not close the door either. Taking it\n" +
+			"back is a restart without the flag.\n\n" +
 			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
@@ -314,28 +319,26 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			defer db.Close() //nolint:errcheck // closing on the way out
 
-			// Whether the database holds a user decides both what this server
+			// What the database says about users decides both what this server
 			// may be started as and what an unauthenticated request would be
 			// attributed to, so it is asked once, here, and both demands are
 			// made at startup rather than on the first request.
-			open, err := serverIsOpen(cmd.Context(), db)
+			users, err := readUserState(cmd.Context(), db)
 			if err != nil {
 				return err
 			}
-			if err := checkNoAuth(opts, open); err != nil {
+			if err := checkAuthentication(opts, users); err != nil {
 				return err
 			}
 
 			// The fixed identity is what an unauthenticated request is
-			// attributed to, and is therefore only required while the database
-			// holds no user.
+			// attributed to, and is therefore only required on a server that
+			// would answer one: one over a database with no user, or one told
+			// to authenticate nobody. A server that authenticates every request
+			// never uses the value, and demanding one there would be asking the
+			// operator to name somebody who stands for nobody.
 			fixedIdentity, missing := resolveServerIdentity(cfg, p.Identity)
-			// Only a server that would answer an unauthenticated request needs
-			// one, so whether a missing one is fatal is the database's answer.
-			// A server that authenticates every request never uses the value,
-			// and demanding one there would be asking the operator to name
-			// somebody who stands for nobody.
-			if missing != nil && open {
+			if missing != nil && (opts.noAuth || !users.any) {
 				return missing
 			}
 
@@ -346,9 +349,17 @@ func newServeCommand(e *env) *cobra.Command {
 			// redirecting the command's output still captures all of it.
 			logger := log.New(e.stderr, "", log.LstdFlags)
 
+			// --no-auth is not a weaker authenticator, it is none: the whole
+			// point of typing it is a server that does not consult the users
+			// table, so adding one to a server started with it does not close
+			// the door either. Taking it back is a restart without the flag.
+			var credentials *authenticator
+			if !opts.noAuth {
+				credentials = &authenticator{db: db, realm: opts.basicAuthRealm}
+			}
+
 			base := local.New(db, storage.NewBlobs(cfg.Attachments), fixedIdentity)
-			httpHandler, err := buildHandler(base, e.openAPI,
-				newAuthenticator(db, opts.basicAuthRealm, !open), opts, logger)
+			httpHandler, err := buildHandler(base, e.openAPI, credentials, opts, logger)
 			if err != nil {
 				return err
 			}
@@ -358,28 +369,32 @@ func newServeCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-// checkNoAuth decides whether a server that would authenticate nobody may be
-// started, and whether saying so was the truth.
+// checkAuthentication decides whether a server that would authenticate nobody
+// may be started.
 //
 // A database with no user serves everybody who can reach the port. That is the
 // right answer for a local tracker on loopback and the wrong one everywhere
 // else, so a flag that says this deployment is somewhere else refuses to start
-// rather than opening the door; --no-auth is how an operator says they meant
-// it. On a database that holds users the flag is a false statement about what
-// the server does — it authenticates, whatever the flag says — and is refused
-// rather than ignored, because an operator who believes it is unguarded is
-// worse off than one whose command line failed.
-func checkNoAuth(opts serveOptions, open bool) error {
-	if !open {
-		if opts.noAuth {
-			return awberr.Usagef(
-				"--no-auth: this database holds users, so the server authenticates every " +
-					"request; delete them with \"awb user delete\" to serve without authentication")
-		}
+// rather than opening the door.
+//
+// A database that has had users and holds none is not that server at all: its
+// authentication was turned on and its accounts are gone, so it would answer
+// nothing whatever it were bound to, and starting one to serve 503 to every
+// request would only move the failure. It is refused where the mistake is, and
+// what recovers it is what a running server would have needed anyway.
+//
+// --no-auth answers both, being an operator saying an open server is what they
+// meant. It is the only thing that does, because it is the only thing that
+// says so.
+func checkAuthentication(opts serveOptions, users userState) error {
+	switch {
+	case opts.noAuth || users.any:
 		return nil
-	}
-	if opts.noAuth {
-		return nil
+	case users.existed:
+		return awberr.Usagef(
+			"this database has had users and holds none now, so the server would " +
+				"authenticate nobody after having authenticated everybody; add one with " +
+				"\"awb user add\", or pass --no-auth to serve it without authentication")
 	}
 	if why := opts.exposure(); why != "" {
 		return awberr.Usagef(
@@ -391,17 +406,31 @@ func checkNoAuth(opts serveOptions, open bool) error {
 	return nil
 }
 
-// serverIsOpen reports whether the database holds no user, which is the case
-// in which an unauthenticated request can arrive and a fixed identity is
-// therefore needed.
-func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
-	open := false
+// userState is what the database says about users at startup: whether it holds
+// any, and whether it ever has. The second is what tells a local tracker apart
+// from a server whose accounts have all been deleted.
+type userState struct {
+	any     bool
+	existed bool
+}
+
+// readUserState asks both questions in one read transaction, so the answers
+// cannot come from two different moments.
+func readUserState(ctx context.Context, db *storage.DB) (userState, error) {
+	var users userState
 	err := db.Read(ctx, func(tx *storage.Tx) error {
 		any, err := tx.AnyUsers()
-		open = !any
-		return err
+		if err != nil {
+			return err
+		}
+		existed, err := tx.UsersHaveExisted()
+		if err != nil {
+			return err
+		}
+		users = userState{any: any, existed: existed}
+		return nil
 	})
-	return open, err
+	return users, err
 }
 
 // checkIdentityFlag applies the assignee vocabulary to an explicit --identity,
@@ -618,6 +647,10 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
 	// behind it. Whether it asks for anything is the database's answer, given
 	// per request; see authenticator.
+	//
+	// There is no authenticator at all in proxy mode, which opens no database
+	// to authenticate against, or under --no-auth, which is an operator saying
+	// this server authenticates nobody whatever the database holds.
 	if credentials != nil {
 		chain = credentials.Middleware(logger)(chain)
 	}

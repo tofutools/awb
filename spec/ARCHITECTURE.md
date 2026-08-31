@@ -476,16 +476,25 @@ authenticates nobody — which is what a local tracker is, and what every versio
 The question is asked per request rather than at startup, so it closes without a
 restart, and it costs one indexed lookup.
 
-**The switch is one-way while a server runs.** Once a server has seen a user,
-losing the last of them leaves it answering nothing until one is added again,
-rather than reverting to the open server. Deleting a user is a change to who
-may act, and reading it as "everybody may act" turns an administrative mistake
-into an unguarded database that nobody was told about. What the database says
-is still consulted per request, so adding a user recovers without a restart;
-what a restart is needed for is the other direction, and `awb serve` refuses to
-be started into an open server that looks published — one with `--public-url`,
-`--https` or `--basic-auth-realm`, or bound off loopback — unless `--no-auth`
-says it was meant.
+**The switch is one-way.** Losing the last user leaves the server answering
+nothing until one is added again, rather than reverting to the open server:
+deleting a user says who may no longer act, and reading it as "everybody may
+act" turns an administrative mistake into an unguarded database that nobody was
+told about.
+
+That the database has had a user is therefore a stored fact, written by the
+insert that creates one and never cleared, and not something a server
+remembers. Users are added and deleted by a command line holding the file,
+which a running server learns of only by looking, so a server that looked
+before the first was added and again after the last was deleted would see the
+same empty table twice; no amount of memory can tell those two apart, and the
+window is as wide as the gap between two requests.
+
+Only saying so gets the door open again. `awb serve` refuses to start over a
+database whose users are gone, and refuses to start an open server that looks
+published — one with `--public-url`, `--https` or `--basic-auth-realm`, or
+bound off loopback. `--no-auth` is the operator saying it, and means it: that
+server consults no users at all, so adding one does not close the door either.
 
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the

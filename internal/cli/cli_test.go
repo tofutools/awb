@@ -1148,16 +1148,20 @@ func TestServeRefusesToOpenADatabaseWithNoUsers(t *testing.T) {
 	}
 }
 
-// On a database that holds users the flag is a false statement about what the
-// server does, so it is refused rather than quietly ignored.
-func TestServeRefusesNoAuthWhenTheDatabaseHoldsUsers(t *testing.T) {
+// A database whose users have all been deleted is not the open server a
+// database that never had one is: its authentication was turned on, and
+// starting a server that would answer nothing to every request only moves the
+// failure away from where the mistake was made.
+func TestServeRefusesADatabaseWhoseUsersAreGone(t *testing.T) {
 	h := newHarness(t)
 	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--user-admin")
+	h.mustRun("user", "delete", "alice", "--force")
 
-	_, stderr, code := h.run("serve", "--no-auth")
+	// Loopback and no other flag: the binding is not what is wrong here.
+	_, stderr, code := h.run("serve")
 	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "has had users")
 	assert.Contains(t, stderr, "--no-auth")
-	assert.Contains(t, stderr, "holds users")
 }
 
 // A server that authenticates nobody presents no realm, so asking for one says

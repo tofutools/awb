@@ -25,7 +25,8 @@ func newUserCommand(e *env) *cobra.Command {
 			"is created, and how an instance whose last administrator is gone is\n"+
 			"recovered.\n\n"+
 			"A database holding no user is a server without authentication. Adding the\n"+
-			"first one turns it on, from the next request onwards.",
+			"first one turns it on, from the next request onwards, and deleting them all\n"+
+			"does not turn it off again: that takes awb serve --no-auth.",
 		newUserAddCommand(e),
 		newUserUpdateCommand(e),
 		newUserShowCommand(e),

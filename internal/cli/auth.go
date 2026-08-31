@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"sync"
-	"sync/atomic"
 
 	"github.com/mikaelstaldal/go-server-common/auth"
 
@@ -26,33 +25,25 @@ import (
 // request rather than at startup is what makes adding the first user close the
 // door immediately, and it costs one indexed lookup.
 //
-// The door only opens the other way at a restart. Once this server has seen a
-// user, deleting the last one leaves it answering nothing rather than serving
-// everybody: a request that arrives a moment after the deletion is one the
-// operator has no reason to expect will be answered, and turning a server that
-// authenticates into an open one, without anybody saying so, is exactly the
-// accident that awb serve refuses to be started into.
+// It does not open the other way. Deleting the last user leaves the server
+// answering nothing until one is added again, rather than reverting to the
+// open server: a deletion says who may no longer act, and reading it as
+// "everybody may act" turns an administrative mistake into an unguarded
+// database that nobody was told about.
+//
+// That the database has had users is a stored fact rather than something this
+// server remembers, because the users are added and deleted by a command line
+// holding the file and a server learns of either only by looking. A server
+// that looked before the first was added and again after the last was deleted
+// would see the same empty table twice, and nothing it held in memory could
+// tell the two apart; see schemaV6.
 //
 // Everything the server answers sits behind it: the API, the OpenAPI document
-// and the web UI alike. The one thing that does not is a CORS preflight, which
-// carries no credentials because the specification forbids it and no data
-// because it is a question about the request that follows; see Middleware.
+// and the web UI alike, and, once it is locked, a CORS preflight too; see
+// Middleware.
 type authenticator struct {
 	db    *storage.DB
 	realm string
-	// hadUsers latches the moment this server sees a user, and is never
-	// cleared. It is read and written from every request in flight.
-	hadUsers atomic.Bool
-}
-
-// newAuthenticator builds one over a database that was found holding users, or
-// not, at startup — which is the latch's starting position, so that a server
-// whose last user is deleted before its first request is locked rather than
-// open.
-func newAuthenticator(db *storage.DB, realm string, hadUsers bool) *authenticator {
-	a := &authenticator{db: db, realm: realm}
-	a.hadUsers.Store(hadUsers)
-	return a
 }
 
 // authState is what the database says about a request before any credentials
@@ -60,12 +51,12 @@ func newAuthenticator(db *storage.DB, realm string, hadUsers bool) *authenticato
 type authState int
 
 const (
-	// authOpen: no user has ever been seen. Everything is let through, and the
-	// server's fixed identity stands in for the caller.
+	// authOpen: this database has never held a user. Everything is let
+	// through, and the server's fixed identity stands in for the caller.
 	authOpen authState = iota
 	// authRequired: the database holds a user, so credentials decide.
 	authRequired
-	// authLocked: users were seen and are all gone. Nothing is let through
+	// authLocked: it has held users and holds none now. Nothing is let through
 	// until one is added again.
 	authLocked
 )
@@ -101,11 +92,12 @@ var dummyHash = sync.OnceValue(func() string {
 	return hash
 })
 
-// check reports whether credentials open an account, and whether the database
-// requires any at all.
+// check reports whether credentials open an account, and what the database
+// asks of a request in the first place.
 //
-// Both questions are answered inside one read transaction, so a request cannot
-// see a database that holds no user and a user's hash at the same time.
+// Every question is answered inside one read transaction, so a request cannot
+// see a database that holds no user and a user's hash at the same time, nor
+// one that has never had users and the record of one at the same time.
 func (a *authenticator) check(ctx context.Context, username, password string) (
 	state authState, ok bool, err error) {
 	err = a.db.Read(ctx, func(tx *storage.Tx) error {
@@ -114,13 +106,16 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 			return err
 		}
 		if !any {
+			existed, err := tx.UsersHaveExisted()
+			if err != nil {
+				return err
+			}
 			state = authOpen
-			if a.hadUsers.Load() {
+			if existed {
 				state = authLocked
 			}
 			return nil
 		}
-		a.hadUsers.Store(true)
 		state = authRequired
 
 		hash, found, err := tx.PasswordHash(username)
@@ -153,6 +148,9 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			username, password, given := r.BasicAuth()
+			state, ok, err := a.check(r.Context(), username, password)
+
 			// A browser never puts credentials on a preflight — the CORS
 			// specification forbids it — so requiring them here would refuse
 			// every cross-origin request that needs one, and --cors-origin
@@ -160,13 +158,16 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 			// carries no data and returns none: it is answered with headers
 			// saying what the request that follows may be, and that request is
 			// authenticated like any other.
-			if isPreflight(r) {
+			//
+			// A locked server is the exception to the exception. There is no
+			// request that could follow one successfully, so answering the
+			// question would be describing a door that does not open, and
+			// "unreachable" would not be true of every request.
+			if err == nil && state != authLocked && isPreflight(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			username, password, given := r.BasicAuth()
-			state, ok, err := a.check(r.Context(), username, password)
 			switch {
 			case err != nil:
 				// The database could not say. That is this server's failure and
@@ -183,7 +184,7 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 				// not a challenge: it is the server saying it cannot serve
 				// anybody until one exists. Adding a user makes the next
 				// request work, with no restart, exactly as the first one did.
-				logger.Printf("refusing %s %s from %s: the last user was deleted",
+				logger.Printf("refusing %s %s from %s: this database has no users",
 					r.Method, r.URL.Path, r.RemoteAddr)
 				writeAuthError(w, http.StatusServiceUnavailable,
 					"no users: this server answers nothing until a user is added")
