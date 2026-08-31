@@ -537,6 +537,15 @@ each query, because a read that forgets it does not fail — it leaks. There is
 one place a transaction is restricted, one place the caller's permissions are
 read, and every query consults the transaction it is running in.
 
+A stored per-user ignore set narrows that same transaction scope after
+authorization. It is a preference rather than a permission, but applying it at
+the same boundary keeps listings, searches, suggestions, facets and their
+counts consistent, and makes direct and remote backends agree when their
+identity names the same stored user. The project-preferences operations are the
+single recovery exception: they omit only the ignore condition while retaining
+ordinary authorization, so an ignored project is always available to re-enable
+and an inaccessible project is never disclosed by the editor.
+
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
 in any visible project, including its retained assignments and activity, while
@@ -552,7 +561,9 @@ change. Two flags stand outside the projects — one over projects, one over use
 — and neither implies the other.
 
 **The graph is not scoped, and must not be.** A visible issue's relations and
-blockers may name issues the caller cannot fetch; the derived `blocked` state,
+blockers may name issues the caller cannot fetch; an ignored counterpart is
+suppressed from presentation because the user asked it to disappear, while the
+derived `blocked` state,
 and the relation rules that refuse a cycle or an inverted decomposition, are
 computed over the whole graph. A rule answered over half a graph is not the
 rule, and readiness computed over half a graph is a lie that sends somebody to

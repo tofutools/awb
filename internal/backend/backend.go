@@ -40,6 +40,8 @@ type Backend interface {
 	ListProjects(ctx context.Context, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
 	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
 	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
+	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
+	SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error)
 
 	CreateIssue(ctx context.Context, req IssueCreate) (*domain.Issue, error)
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)

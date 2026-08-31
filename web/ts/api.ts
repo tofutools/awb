@@ -27,6 +27,7 @@ export type Attachment = components["schemas"]["Attachment"];
 export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
+export type ProjectPreference = components["schemas"]["ProjectPreference"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
@@ -212,6 +213,14 @@ export const api = {
     getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   navigation: async (query: string, signal?: AbortSignal) =>
     getResponse<NavigationResults>(await request(`api/navigation${toQuery({ q: query, limit: 6 })}`, { signal })),
+  projectPreferences: async () =>
+    getResponse<ProjectPreference[]>(await request("api/preferences/projects")),
+  setProjectIgnored: async (key: string, ignored: boolean) =>
+    getResponse<ProjectPreference>(await request(`api/preferences/projects/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ignored }),
+    })),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),

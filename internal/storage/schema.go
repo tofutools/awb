@@ -25,6 +25,18 @@ var migrations = [][]string{
 	schemaV6,
 	schemaV7,
 	schemaV8,
+	schemaV9,
+}
+
+// schemaV9 stores the projects each user has chosen to hide. Both foreign keys
+// cascade so a withdrawn membership or deleted account cannot leave a stale
+// preference that unexpectedly takes effect if access is later restored.
+var schemaV9 = []string{
+	`CREATE TABLE ignored_projects (
+		user    TEXT NOT NULL REFERENCES users(name) ON DELETE CASCADE,
+		project TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+		PRIMARY KEY (user, project)
+	) STRICT, WITHOUT ROWID`,
 }
 
 // schemaV8 adds the optional descriptive name of a user. The empty default

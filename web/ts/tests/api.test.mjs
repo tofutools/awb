@@ -75,6 +75,22 @@ test("profile edits use the safely encoded path and advance its ETag", async (t)
   assert.equal(calls[2].init.body, JSON.stringify({ password: "changed" }));
 });
 
+test("project preferences use their dedicated recovery endpoints", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(calls.length === 1 ? "[]" : "{}", { status: 200 });
+  });
+
+  await api.projectPreferences();
+  await api.setProjectIgnored("team/web", true);
+
+  assert.equal(calls[0].path, "api/preferences/projects");
+  assert.equal(calls[1].path, "api/preferences/projects/team%2Fweb");
+  assert.equal(calls[1].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { ignored: true });
+});
+
 // Every listing is asked with the filters it accepts. Regression: the listing
 // view passed one filter object to all of them, so an assignee in the URL made
 // the ready listing a 400, include-closed did the same to blocked, and a sort

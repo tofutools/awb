@@ -79,6 +79,15 @@ type Project struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+// ProjectPreference is one otherwise-visible project together with whether the
+// current user has chosen to hide it from normal work. It is returned only by
+// the preference editor's recovery path, which deliberately bypasses that
+// choice while retaining ordinary authorization.
+type ProjectPreference struct {
+	Project Project `json:"project"`
+	Ignored bool    `json:"ignored"`
+}
+
 // Facet is a distinct value in use with the number of issues carrying it,
 // which GET /api/labels and GET /api/assignees return.
 type Facet struct {

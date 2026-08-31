@@ -680,6 +680,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Project' }
         default: { $ref: '#/components/responses/Error' }
+
     patch:
       tags: [projects]
       operationId: updateProject
@@ -717,6 +718,53 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/preferences/projects:
+    get:
+      tags: [users]
+      operationId: listProjectPreferences
+      summary: List the current user's otherwise-visible projects and ignore state
+      description: |
+        This is the recovery path for ignored projects. It deliberately bypasses
+        only the current user's ignored-project filter while retaining ordinary
+        project authorization, so an ignored project can always be re-enabled
+        without disclosing any project the caller may not otherwise know about.
+      responses:
+        '200':
+          description: The current user's project preferences, ordered by project key.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProjectPreference' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/preferences/projects/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    put:
+      tags: [users]
+      operationId: setProjectIgnored
+      summary: Set whether the current user ignores one otherwise-visible project
+      description: |
+        Idempotent. Like the preference listing, project resolution applies
+        ordinary authorization but bypasses the existing ignore state so false
+        can always re-enable the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectPreferenceSet' }
+      responses:
+        '200':
+          description: The resulting preference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectPreference' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/projects/{key}/members:
@@ -1750,6 +1798,23 @@ components:
           minimum: 0
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    ProjectPreference:
+      type: object
+      additionalProperties: false
+      required: [project, ignored]
+      properties:
+        project: { $ref: '#/components/schemas/Project' }
+        ignored:
+          type: boolean
+          description: Whether the current user hides this project from normal operations.
+
+    ProjectPreferenceSet:
+      type: object
+      additionalProperties: false
+      required: [ignored]
+      properties:
+        ignored: { type: boolean }
 
     Membership:
       type: object

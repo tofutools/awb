@@ -1,5 +1,7 @@
 package storage
 
+import "strings"
+
 // Scope is the set of projects a caller may see, carried by the transaction so
 // that every read inside it is answered from the same set.
 //
@@ -15,6 +17,7 @@ package storage
 type Scope struct {
 	user       string
 	restricted bool
+	ignoredBy  string
 }
 
 // Everything is the scope that hides nothing.
@@ -25,6 +28,13 @@ func Everything() Scope { return Scope{} }
 // administrator — is given Everything instead, because their access does not
 // come from rows.
 func VisibleTo(user string) Scope { return Scope{user: user, restricted: true} }
+
+// HideIgnoredBy adds one user's preference boundary without changing the
+// authorization boundary already carried by the scope.
+func (s Scope) HideIgnoredBy(user string) Scope {
+	s.ignoredBy = user
+	return s
+}
 
 // Restricted reports whether this scope hides anything.
 func (s Scope) Restricted() bool { return s.restricted }
@@ -41,18 +51,47 @@ func (t *Tx) Scope() Scope { return t.scope }
 // query is the same SQL it was before there were users.
 func (t *Tx) visible(c *conditions, column string) {
 	if !t.scope.restricted {
-		return
+		if t.scope.ignoredBy == "" {
+			return
+		}
+	} else {
+		c.add(column+` IN (SELECT project FROM project_members WHERE user = ?)`, t.scope.user)
 	}
-	c.add(column+` IN (SELECT project FROM project_members WHERE user = ?)`, t.scope.user)
+	if t.scope.ignoredBy != "" {
+		c.add(`NOT EXISTS (SELECT 1 FROM ignored_projects ip
+			WHERE ip.user = ? AND ip.project = `+column+`)`, t.scope.ignoredBy)
+	}
 }
 
 // visibleClause is visible for a query that is assembled by hand rather than
 // through conditions. It returns a clause that is always safe to AND onto a
 // WHERE, and its arguments.
 func (t *Tx) visibleClause(column string) (string, []any) {
-	if !t.scope.restricted {
+	clauses := []string{}
+	args := []any{}
+	if t.scope.restricted {
+		clauses = append(clauses, column+` IN (SELECT project FROM project_members WHERE user = ?)`)
+		args = append(args, t.scope.user)
+	}
+	if t.scope.ignoredBy != "" {
+		clauses = append(clauses, `NOT EXISTS (SELECT 1 FROM ignored_projects ip
+			WHERE ip.user = ? AND ip.project = `+column+`)`)
+		args = append(args, t.scope.ignoredBy)
+	}
+	if len(clauses) == 0 {
 		return "1 = 1", nil
 	}
-	return column + ` IN (SELECT project FROM project_members WHERE user = ?)`,
-		[]any{t.scope.user}
+	return strings.Join(clauses, " AND "), args
+}
+
+// notIgnoredClause applies only the preference half of the scope. Relation
+// hydration uses it for counterpart records: authorization deliberately keeps
+// graph names visible, while the opt-in preference asks those connections to
+// disappear from presentation without changing graph rules.
+func (t *Tx) notIgnoredClause(column string) (string, []any) {
+	if t.scope.ignoredBy == "" {
+		return "1 = 1", nil
+	}
+	return `NOT EXISTS (SELECT 1 FROM ignored_projects ip
+		WHERE ip.user = ? AND ip.project = ` + column + `)`, []any{t.scope.ignoredBy}
 }

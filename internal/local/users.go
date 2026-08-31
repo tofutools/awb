@@ -190,8 +190,14 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 			fields.FullName = *fullName
 		}
 
+		wasProjectAdmin := existing.ProjectAdmin
 		if err := tx.UpdateUser(existing, fields, hash); err != nil {
 			return err
+		}
+		if wasProjectAdmin && !fields.ProjectAdmin {
+			if err := tx.ForgetUnownedIgnoredProjects(name); err != nil {
+				return err
+			}
 		}
 		user, err = tx.GetUser(name)
 		return err
@@ -292,7 +298,17 @@ func (b *Backend) SetMember(ctx context.Context, project, user string, access do
 		if _, err := tx.GetUser(membership.User); err != nil {
 			return err
 		}
-		return tx.SetMembership(membership.Project, membership.User, membership.Access)
+		_, alreadyMember, err := tx.Membership(membership.Project, membership.User)
+		if err != nil {
+			return err
+		}
+		if err := tx.SetMembership(membership.Project, membership.User, membership.Access); err != nil {
+			return err
+		}
+		if !alreadyMember {
+			return tx.ForgetProjectIgnored(membership.User, membership.Project)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -322,6 +338,9 @@ func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*doma
 				membership.User, membership.Project)
 		}
 		membership.Access = access
+		if err := tx.ForgetProjectIgnored(membership.User, membership.Project); err != nil {
+			return err
+		}
 		return tx.DeleteMembership(membership.Project, membership.User)
 	})
 	if err != nil {
