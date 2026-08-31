@@ -193,6 +193,8 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 	require.Len(t, board.Lanes, 1)
 	assert.Equal(t, 2, board.Lanes[0].Columns[0].Total)
 	assert.Len(t, board.Lanes[0].Columns[0].Issues, 1)
+	resp, payload = a.do(http.MethodGet, "/api/boards/"+view.ID+"?card-limit=51", "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 
 	name := `{"name":"Renamed"}`
 	resp, payload = a.do(http.MethodPatch, "/api/board-views/"+view.ID, name, "If-Match", backend.ETag(view.UpdatedAt))

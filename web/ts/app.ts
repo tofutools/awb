@@ -1035,12 +1035,20 @@ function boardColumn(
 ): HTMLElement {
   const host = element("section", "board-column");
   host.dataset.status = column.status;
+  const headingID = `board-column-${project}-${column.status}`;
+  host.setAttribute("aria-labelledby", headingID);
   const heading = element("header");
-  heading.append(element("span", "", boardStatusLabel(column.status)), element("span", "board-column-count", String(column.total)));
+  const title = element("h3", "", boardStatusLabel(column.status));
+  title.id = headingID;
+  const count = element("span", "board-column-count", String(column.total));
+  heading.append(title, count);
   host.append(heading);
   const cards = element("div", "board-cards");
+  const loadedIDs = new Set<string>();
   const append = (issues: Issue[]): void => {
     for (const issue of issues) {
+      if (loadedIDs.has(issue.id)) continue;
+      loadedIDs.add(issue.id);
       issuesByID.set(issue.id, issue);
       cards.append(boardCard(issue));
     }
@@ -1049,18 +1057,30 @@ function boardColumn(
   if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
   host.append(cards);
   if (column.issues.length < column.total) {
-    const more = button(`Load ${column.total - column.issues.length} more`, "secondary-button board-column-more");
+    let total = column.total;
+    let cursor = column.issues.length;
+    const more = button("", "secondary-button board-column-more");
+    const labelMore = (): void => {
+      const remaining = Math.max(0, total - loadedIDs.size);
+      more.textContent = `Load ${Math.min(boardCardPageSize, remaining)} more · ${loadedIDs.size} of ${total}`;
+    };
+    labelMore();
     more.addEventListener("click", () => {
       more.disabled = true;
       void api.board(ref, {
         project: [project], status: column.status, "lane-limit": 1,
-        "card-limit": boardCardPageSize, "card-offset": cards.querySelectorAll(".board-card").length,
+        "card-limit": boardCardPageSize, "card-offset": cursor,
       }).then((page) => {
-        const next = page.lanes[0]?.columns[0]?.issues ?? [];
+        const nextColumn = page.lanes[0]?.columns[0];
+        if (nextColumn === undefined) { void render(); return; }
+        const next = nextColumn.issues;
+        cursor += next.length;
+        total = nextColumn.total;
+        count.textContent = String(total);
         append(next);
-        const loaded = cards.querySelectorAll(".board-card").length;
-        if (loaded >= column.total) more.remove();
-        else { more.disabled = false; more.textContent = `Load ${column.total - loaded} more`; }
+        if (loadedIDs.size > total || (cursor >= total && loadedIDs.size < total)) { void render(); return; }
+        if (loadedIDs.size >= total) more.remove();
+        else { more.disabled = false; labelMore(); }
       }).catch((error) => { more.disabled = false; mutationError(host, error); });
     });
     host.append(more);
@@ -1085,9 +1105,14 @@ function boardColumn(
 
 function boardLane(ref: string, lane: Board["lanes"][number], issuesByID: Map<string, Issue>): HTMLElement {
   const host = element("section", "board-lane");
+  const headingID = `board-lane-${lane.project.key}`;
+  host.setAttribute("aria-labelledby", headingID);
   const heading = element("header", "board-lane-heading");
   const name = element("div");
-  name.append(element("code", "", lane.project.key), element("strong", "", lane.project.name));
+  const title = element("h2");
+  title.id = headingID;
+  title.append(element("code", "", lane.project.key), document.createTextNode(` ${lane.project.name}`));
+  name.append(title);
   const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
   heading.append(name, element("span", "", `${total} issue${total === 1 ? "" : "s"}`));
   const columns = element("div", "board-columns");
@@ -1103,9 +1128,12 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     preferences = projects.rows.map((project) => ({ project, ignored: false }));
   }
   const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "board-view-dialog-heading");
   const form = element("form", "board-view-form") as HTMLFormElement;
   form.method = "dialog";
-  form.append(element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view"));
+  const heading = element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
+  heading.id = "board-view-dialog-heading";
+  form.append(heading);
   const name = document.createElement("input");
   name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
   form.append(field("Name", name));
@@ -1192,17 +1220,28 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     ? "Some lanes are hidden by your access or ignored-project settings."
     : "Project access and your ignored-project settings always apply to this view."));
   const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
-  for (const lane of board.lanes) lanes.append(boardLane(ref, lane, issuesByID));
+  const loadedProjects = new Set<string>();
+  for (const lane of board.lanes) { loadedProjects.add(lane.project.key); lanes.append(boardLane(ref, lane, issuesByID)); }
   if (board.lane_total === 0) lanes.append(element("p", "empty", saved === undefined ? "No visible projects." : "No projects match this view."));
   view.append(lanes);
   if (board.lanes.length < board.lane_total) {
-    const more = button(`Load more projects · ${board.lanes.length} of ${board.lane_total}`, "secondary-button board-lanes-more");
+    let total = board.lane_total;
+    let cursor = board.lanes.length;
+    const more = button("", "secondary-button board-lanes-more");
+    const labelMore = (): void => { more.textContent = `Load up to ${boardLanePageSize} more projects · ${loadedProjects.size} of ${total}`; };
+    labelMore();
     more.addEventListener("click", () => {
-      more.disabled = true; const nextFilters = { ...filters, "lane-offset": lanes.querySelectorAll(".board-lane").length };
+      more.disabled = true; const nextFilters = { ...filters, "lane-offset": cursor };
       void api.board(ref, nextFilters).then((page) => {
-        for (const lane of page.lanes) lanes.append(boardLane(ref, lane, issuesByID));
-        const loaded = lanes.querySelectorAll(".board-lane").length;
-        if (loaded >= board.lane_total) more.remove(); else { more.disabled = false; more.textContent = `Load more projects · ${loaded} of ${board.lane_total}`; }
+        cursor += page.lanes.length;
+        total = page.lane_total;
+        for (const lane of page.lanes) {
+          if (loadedProjects.has(lane.project.key)) continue;
+          loadedProjects.add(lane.project.key);
+          lanes.append(boardLane(ref, lane, issuesByID));
+        }
+        if (loadedProjects.size > total || (cursor >= total && loadedProjects.size < total)) { void render(); return; }
+        if (loadedProjects.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
       }).catch((error) => { more.disabled = false; mutationError(view, error); });
     }); view.append(more);
   }

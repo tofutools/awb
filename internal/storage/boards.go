@@ -160,3 +160,40 @@ func (t *Tx) DeleteBoardView(id string) error {
 	}
 	return nil
 }
+
+// bumpBoardViewsSelectingProject moves each affected view's ETag before the
+// project's foreign-key cascade removes its selected-project row.
+func (t *Tx) bumpBoardViewsSelectingProject(project string) error {
+	rows, err := t.q.QueryContext(t.ctx, `SELECT selected.view, views.updated_at
+		FROM board_view_projects AS selected
+		JOIN board_views AS views ON views.id = selected.view
+		WHERE selected.project = ?`, project)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+	}
+	type selectedView struct{ id, updatedAt string }
+	views := []selectedView{}
+	for rows.Next() {
+		var view selectedView
+		if err := rows.Scan(&view.id, &view.updatedAt); err != nil {
+			_ = rows.Close()
+			return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+		}
+		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+	}
+	if err := rows.Close(); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+	}
+	now := Now()
+	for _, view := range views {
+		if _, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET updated_at = ? WHERE id = ?`,
+			bumpedTimestamp(view.updatedAt, now), view.id); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "update board view %s before deleting project", view.id)
+		}
+	}
+	return nil
+}

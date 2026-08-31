@@ -1,11 +1,13 @@
 package local_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -41,6 +43,11 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.Empty(t, views, "shared links are unlisted")
 	_, err = bob.GetBoardView(ctx, private.ID)
 	notFound(t, err)
+	name := "disclosed"
+	_, err = bob.UpdateBoardView(ctx, private.ID, backend.BoardViewPatch{Name: &name}, "")
+	notFound(t, err, "a private view's mutation endpoint does not disclose it")
+	_, err = bob.DeleteBoardView(ctx, private.ID, "")
+	notFound(t, err, "a private view's delete endpoint does not disclose it")
 	visible, err := bob.GetBoardView(ctx, shared.ID)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"awb"}, visible.Projects, "view metadata cannot disclose an inaccessible key")
@@ -52,6 +59,21 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.True(t, board.ProjectsOmitted)
 	_, err = bob.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{}, "")
 	forbidden(t, err)
+
+	_, err = root.RemoveMember(ctx, "web", "alice")
+	require.NoError(t, err)
+	views, err = alice.ListBoardViews(ctx)
+	require.NoError(t, err)
+	for _, view := range views {
+		assert.NotContains(t, view.Projects, "web", "owned view listings do not disclose revoked projects")
+	}
+	renamed := "Release train"
+	unshared := false
+	updated, err := alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Name: &renamed, Shared: &unshared}, backend.ETag(shared.UpdatedAt))
+	require.NoError(t, err, "an unrelated edit preserves an inaccessible stored selection")
+	assert.Equal(t, renamed, updated.Name)
+	assert.False(t, updated.Shared)
+	assert.Equal(t, []string{"awb"}, updated.Projects, "the mutation response is scoped too")
 }
 
 func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
@@ -72,6 +94,10 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	require.NoError(t, err)
 	_, err = alice.SetProjectIgnored(ctx, "web", true)
 	require.NoError(t, err)
+	views, err := alice.ListBoardViews(ctx)
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	assert.Equal(t, []string{"awb", "web"}, views[0].Projects, "the owner can still edit an ignored selection")
 	one, zero := 1, 0
 	board, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{LaneLimit: &one, LaneOffset: &zero, CardLimit: &one})
 	require.NoError(t, err)
@@ -90,4 +116,49 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	require.Len(t, second.Lanes[0].Columns, 1)
 	assert.Equal(t, 2, second.Lanes[0].Columns[0].Total)
 	assert.Len(t, second.Lanes[0].Columns[0].Issues, 1)
+}
+
+func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
+	root, ctx := newInstance(t)
+	for i := range 51 {
+		_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: fmt.Sprintf("issue %02d", i)})
+		require.NoError(t, err)
+	}
+	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{})
+	require.NoError(t, err)
+	var open domain.BoardColumn
+	for _, lane := range board.Lanes {
+		if lane.Project.Key == "awb" {
+			open = lane.Columns[0]
+		}
+	}
+	assert.Equal(t, 51, open.Total)
+	assert.Len(t, open.Issues, 50, "an omitted card limit is still bounded")
+
+	over := 51
+	_, err = root.GetBoard(ctx, "default", backend.BoardQuery{CardLimit: &over})
+	require.Error(t, err)
+	assert.Equal(t, 2, exitOf(err))
+}
+
+func TestDeletingASelectedProjectMovesTheBoardViewETag(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "alice", false, false)
+	grant(t, root, ctx, "web", "alice", domain.AccessRegular)
+	alice := root.WithUser("alice")
+	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Web", AllProjects: false,
+		Projects: []string{"web"}, PriorityMax: 4})
+	require.NoError(t, err)
+
+	_, err = root.DeleteProject(ctx, "web", false, "")
+	require.NoError(t, err)
+	updated, err := alice.GetBoardView(ctx, view.ID)
+	require.NoError(t, err)
+	assert.Empty(t, updated.Projects)
+	assert.Greater(t, updated.UpdatedAt, view.UpdatedAt)
+
+	name := "stale edit"
+	_, err = alice.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(view.UpdatedAt))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed, "the pre-deletion ETag is stale")
 }

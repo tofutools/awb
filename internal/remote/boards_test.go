@@ -1,0 +1,69 @@
+package remote_test
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/tofutools/awb/internal/backend"
+	"github.com/tofutools/awb/internal/domain"
+	"github.com/tofutools/awb/internal/remote"
+)
+
+func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
+	const (
+		id   = "view-aaaaaaaaaaaaaaaaaaaaaaaa"
+		view = `{"id":"view-aaaaaaaaaaaaaaaaaaaaaaaa"}`
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/board-views":
+			_, _ = w.Write([]byte("[" + view + "]"))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
+			_, _ = w.Write([]byte(view))
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
+			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
+			_, _ = w.Write([]byte(view))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/board-views/"+id:
+			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
+			_, _ = w.Write([]byte(view))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/boards/"+id:
+			assert.Equal(t, []string{"awb", "web"}, r.URL.Query()["project"])
+			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
+			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
+			assert.Equal(t, "open", r.URL.Query().Get("status"))
+			_, _ = w.Write([]byte(`{"lanes":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "alice")
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	views, err := client.ListBoardViews(t.Context())
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{Name: "Release", Shared: true,
+		AllProjects: false, Projects: []string{"awb"}, PriorityMax: 4})
+	require.NoError(t, err)
+	name := "Release"
+	_, err = client.UpdateBoardView(t.Context(), id, backend.BoardViewPatch{Name: &name}, `"etag"`)
+	require.NoError(t, err)
+	_, err = client.DeleteBoardView(t.Context(), id, `"etag"`)
+	require.NoError(t, err)
+	assert.Equal(t, id, created.ID)
+
+	laneLimit, cardOffset := 7, 3
+	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
+		Projects: []string{"awb", "web"}, Status: domain.StatusOpen})
+	require.NoError(t, err)
+}

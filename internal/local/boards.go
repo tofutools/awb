@@ -10,6 +10,13 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
+const (
+	defaultBoardLaneLimit = 10
+	maximumBoardLaneLimit = 50
+	defaultBoardCardLimit = 50
+	maximumBoardCardLimit = 50
+)
+
 func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	name, err := domain.ValidateBoardViewName(req.Name)
 	if err != nil {
@@ -115,7 +122,17 @@ func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error
 			owner = b.identity
 		}
 		views, err = tx.ListBoardViews(owner)
-		return err
+		if err != nil {
+			return err
+		}
+		for i := range views {
+			views[i].Projects, _, err = visibleViewProjects(tx, views[i].Projects)
+			if err != nil {
+				return err
+			}
+			views[i].Normalize()
+		}
+		return nil
 	})
 	return views, err
 }
@@ -187,6 +204,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 			return err
 		}
 		if !caller.MayManageBoardView(existing.Owner) {
+			if !existing.Shared {
+				return awberr.NotFoundf("no such board view: %s", id)
+			}
 			return awberr.Forbiddenf("only @%s may change board view %s", existing.Owner, id)
 		}
 		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the board view"); err != nil {
@@ -219,19 +239,28 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 			return err
 		}
 		valid.ID, valid.Owner, valid.CreatedAt, valid.UpdatedAt = existing.ID, existing.Owner, existing.CreatedAt, existing.UpdatedAt
-		for _, project := range valid.Projects {
-			exists, err := tx.ProjectExists(project)
-			if err != nil {
-				return err
-			}
-			if !exists {
-				return awberr.NotFoundf("no such project: %s", project)
+		if req.Projects != nil {
+			for _, project := range valid.Projects {
+				exists, err := tx.ProjectExists(project)
+				if err != nil {
+					return err
+				}
+				if !exists {
+					return awberr.NotFoundf("no such project: %s", project)
+				}
 			}
 		}
 		if err := tx.UpdateBoardView(existing, valid); err != nil {
 			return err
 		}
 		updated, err = tx.GetBoardView(id)
+		if err != nil {
+			return err
+		}
+		updated.Projects, _, err = visibleViewProjects(tx, updated.Projects)
+		if err == nil {
+			updated.Normalize()
+		}
 		return err
 	})
 	return updated, err
@@ -252,11 +281,19 @@ func (b *Backend) DeleteBoardView(ctx context.Context, id, ifMatch string) (*dom
 			return err
 		}
 		if !caller.MayManageBoardView(deleted.Owner) {
+			if !deleted.Shared {
+				return awberr.NotFoundf("no such board view: %s", id)
+			}
 			return awberr.Forbiddenf("only @%s may delete board view %s", deleted.Owner, id)
 		}
 		if err := checkIfMatch(ifMatch, deleted.UpdatedAt, "the board view"); err != nil {
 			return err
 		}
+		deleted.Projects, _, err = visibleViewProjects(tx, deleted.Projects)
+		if err != nil {
+			return err
+		}
+		deleted.Normalize()
 		return tx.DeleteBoardView(id)
 	})
 	return deleted, err
@@ -278,8 +315,20 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			return nil, err
 		}
 	}
+	var err error
+	if query.LaneLimit, err = boundedBoardLimit(query.LaneLimit, defaultBoardLaneLimit, maximumBoardLaneLimit, "lane"); err != nil {
+		return nil, err
+	}
+	if query.CardLimit, err = boundedBoardLimit(query.CardLimit, defaultBoardCardLimit, maximumBoardCardLimit, "card"); err != nil {
+		return nil, err
+	}
+	for name, offset := range map[string]*int{"lane": query.LaneOffset, "card": query.CardOffset} {
+		if offset != nil && *offset < 0 {
+			return nil, awberr.Usagef("board %s offset must not be negative", name)
+		}
+	}
 	result := &domain.Board{Lanes: []domain.BoardLane{}}
-	err := b.db.Read(ctx, func(tx *storage.Tx) error {
+	err = b.db.Read(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, false)
 		if err != nil {
 			return err
@@ -348,4 +397,14 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		return nil
 	})
 	return result, err
+}
+
+func boundedBoardLimit(value *int, fallback, maximum int, name string) (*int, error) {
+	if value == nil {
+		value = &fallback
+	}
+	if *value < 0 || *value > maximum {
+		return nil, awberr.Usagef("board %s limit must be between 0 and %d", name, maximum)
+	}
+	return value, nil
 }

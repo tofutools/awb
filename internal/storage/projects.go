@@ -264,6 +264,9 @@ func (t *Tx) DeleteProjectIssues(key string) (int, error) {
 
 // DeleteProject removes the project row itself.
 func (t *Tx) DeleteProject(key string) error {
+	if err := t.bumpBoardViewsSelectingProject(key); err != nil {
+		return err
+	}
 	_, err := t.q.ExecContext(t.ctx, `DELETE FROM projects WHERE key = ?`, key)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "delete project %s", key)

@@ -718,13 +718,13 @@ paths:
           schema: { type: string, minLength: 1 }
         - name: lane-limit
           in: query
-          schema: { type: integer, minimum: 0 }
+          schema: { type: integer, minimum: 0, maximum: 50, default: 10 }
         - name: lane-offset
           in: query
           schema: { type: integer, minimum: 0 }
         - name: card-limit
           in: query
-          schema: { type: integer, minimum: 0 }
+          schema: { type: integer, minimum: 0, maximum: 50, default: 50 }
         - name: card-offset
           in: query
           schema: { type: integer, minimum: 0 }
