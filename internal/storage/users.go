@@ -17,11 +17,12 @@ import (
 
 // AnyUsers reports whether the database holds a user at all.
 //
-// This is the whole of the switch between an open server and one that
-// authenticates: a database with no user is the version 1 database, and a
-// server over it behaves exactly as version 1's did. Adding the first user
-// closes the door, and it closes on the next request rather than on the next
-// restart, because this is asked per request.
+// This is what a server switches on: a database with no user is the version 1
+// database, and a server over it behaves exactly as version 1's did. Adding
+// the first user closes the door, and it closes on the next request rather
+// than on the next restart, because this is asked per request. The answer
+// going back to "none" does not reopen it — see cli.authenticator, which
+// remembers — so the switch is one-way within one run of a server.
 func (t *Tx) AnyUsers() (bool, error) {
 	var one int
 	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM users LIMIT 1`).Scan(&one)

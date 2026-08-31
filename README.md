@@ -334,8 +334,21 @@ on the default port, `--port 8080` moves the port and leaves the binding alone.
 **The database decides whether the server authenticates.** One holding no user
 authenticates nobody, and any client that can reach the port has full read and
 write access — which is why the default binds loopback. Adding the first user
-turns authentication on, from the next request onwards; deleting the last turns
-it off again.
+turns authentication on, from the next request onwards.
+
+Deleting the last user does not turn it off again. A running server that has
+authenticated answers nothing — `503`, with no challenge, because no
+credentials could open a server with no accounts — until a user is added, which
+again takes effect from the next request. Turning a guarded server into an open
+one takes a restart, and saying so.
+
+For the same reason, a server that would authenticate nobody refuses to start
+where that looks like a mistake: with `--public-url`, `--https` or
+`--basic-auth-realm`, each of which describes a server published to more than
+this machine, or bound to anything but loopback. Add a user, or pass
+`--no-auth` to say an open server is what you meant. `--no-auth` is refused on
+a database that does hold users, where it would be a false statement about what
+the server does.
 
 ```console
 $ echo hunter2 | awb user add alice --user-admin --project-admin
@@ -460,7 +473,7 @@ $ task run ADDR=0.0.0.0
 $ task watch ADDR=0.0.0.0 PORT=8080
 ```
 
-This exposes the server without authentication unless the database holds a
-user.
+That reaches other machines, so it needs a database that holds a user — or
+`task run ADDR=0.0.0.0 -- --no-auth` to serve one that does not.
 
 [License](LICENSE) (MIT)

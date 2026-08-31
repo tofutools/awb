@@ -476,6 +476,17 @@ authenticates nobody — which is what a local tracker is, and what every versio
 The question is asked per request rather than at startup, so it closes without a
 restart, and it costs one indexed lookup.
 
+**The switch is one-way while a server runs.** Once a server has seen a user,
+losing the last of them leaves it answering nothing until one is added again,
+rather than reverting to the open server. Deleting a user is a change to who
+may act, and reading it as "everybody may act" turns an administrative mistake
+into an unguarded database that nobody was told about. What the database says
+is still consulted per request, so adding a user recovers without a restart;
+what a restart is needed for is the other direction, and `awb serve` refuses to
+be started into an open server that looks published — one with `--public-url`,
+`--https` or `--basic-auth-realm`, or bound off loopback — unless `--no-auth`
+says it was meant.
+
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
 absence of an identity.

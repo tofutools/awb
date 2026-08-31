@@ -59,11 +59,65 @@ func TestAddingTheFirstUserTurnsAuthenticationOn(t *testing.T) {
 	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// And deleting the last one opens it again.
+}
+
+// Deleting the last user does not undo that. A server that has authenticated
+// answers nothing rather than reverting to serving everybody, because nobody
+// asked for it to be opened and a client that arrives a moment later would
+// otherwise be handed the whole database.
+func TestDeletingTheLastUserDoesNotOpenTheServer(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	resp, _ := get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
 	_, err = be.DeleteUser(t.Context(), "alice", "")
 	require.NoError(t, err)
-	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+
+	// The same handler, no restart. There is no challenge, because no
+	// credentials could open a server with no accounts.
+	resp, body := get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
+	assert.Contains(t, body, "no users")
+
+	// Nor do the credentials that used to work.
+	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	// Adding one again makes the next request work, with no restart.
+	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("bob", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// A server started over a database that held users is locked from the start,
+// even if the last of them is deleted before it answers a single request: the
+// latch's starting position is what the database said at startup.
+func TestAServerStartedWithUsersNeverOpens(t *testing.T) {
+	dir := t.TempDir()
+	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	opts := serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"}
+	h, err := buildHandler(be, openapi.New(raw),
+		newAuthenticator(db, opts.basicAuthRealm, true), opts, log.New(io.Discard, "", 0))
+	require.NoError(t, err)
+
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+
+	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
 // A wrong password and an unknown username are the same answer, and neither is

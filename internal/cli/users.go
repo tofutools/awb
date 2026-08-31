@@ -318,7 +318,9 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
-			"Deleting the last user turns a server's authentication off again.",
+			"Deleting the last user does not turn a server's authentication off again:\n" +
+			"a running server that has authenticated answers nothing until a user is\n" +
+			"added back, rather than serving everybody.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {

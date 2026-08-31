@@ -508,6 +508,26 @@ func TestProxyTargetMustBeAnHTTPBaseURL(t *testing.T) {
 	}
 }
 
+// Loopback is what the default binds and is the local tracker the open server
+// is for, so it starts with no user and no flag. A server is not started here:
+// what is checked is that the refusal does not fire, which it would before the
+// port is bound.
+func TestServeAcceptsALoopbackBindingWithNoUsers(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1", "127.0.0.2", "::1", "localhost", "LOCALHOST"} {
+		assert.Empty(t, serveOptions{addr: addr}.exposure(), addr)
+	}
+	for _, addr := range []string{"", "0.0.0.0", "192.0.2.10", "::", "example.com"} {
+		assert.NotEmpty(t, serveOptions{addr: addr}.exposure(), addr)
+	}
+}
+
+// --no-auth is how an operator says an open server is what they meant.
+func TestServeWithNoAuthOpensADatabaseWithNoUsers(t *testing.T) {
+	assert.NoError(t, checkNoAuth(serveOptions{addr: "0.0.0.0", noAuth: true}, true))
+	assert.Error(t, checkNoAuth(serveOptions{addr: "0.0.0.0"}, true))
+	assert.NoError(t, checkNoAuth(serveOptions{addr: "127.0.0.1"}, true))
+}
+
 // --https and --public-url describe one deployment, so they cannot disagree
 // about whether it is behind TLS: a browser ignores Strict-Transport-Security
 // received over plain HTTP, so the pair would leave the operator believing in a

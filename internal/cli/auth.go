@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mikaelstaldal/go-server-common/auth"
 
@@ -25,6 +26,13 @@ import (
 // request rather than at startup is what makes adding the first user close the
 // door immediately, and it costs one indexed lookup.
 //
+// The door only opens the other way at a restart. Once this server has seen a
+// user, deleting the last one leaves it answering nothing rather than serving
+// everybody: a request that arrives a moment after the deletion is one the
+// operator has no reason to expect will be answered, and turning a server that
+// authenticates into an open one, without anybody saying so, is exactly the
+// accident that awb serve refuses to be started into.
+//
 // Everything the server answers sits behind it: the API, the OpenAPI document
 // and the web UI alike. The one thing that does not is a CORS preflight, which
 // carries no credentials because the specification forbids it and no data
@@ -32,7 +40,35 @@ import (
 type authenticator struct {
 	db    *storage.DB
 	realm string
+	// hadUsers latches the moment this server sees a user, and is never
+	// cleared. It is read and written from every request in flight.
+	hadUsers atomic.Bool
 }
+
+// newAuthenticator builds one over a database that was found holding users, or
+// not, at startup — which is the latch's starting position, so that a server
+// whose last user is deleted before its first request is locked rather than
+// open.
+func newAuthenticator(db *storage.DB, realm string, hadUsers bool) *authenticator {
+	a := &authenticator{db: db, realm: realm}
+	a.hadUsers.Store(hadUsers)
+	return a
+}
+
+// authState is what the database says about a request before any credentials
+// in it are looked at.
+type authState int
+
+const (
+	// authOpen: no user has ever been seen. Everything is let through, and the
+	// server's fixed identity stands in for the caller.
+	authOpen authState = iota
+	// authRequired: the database holds a user, so credentials decide.
+	authRequired
+	// authLocked: users were seen and are all gone. Nothing is let through
+	// until one is added again.
+	authLocked
+)
 
 // dummyHash is what a password is compared against when the username is not
 // one the database holds, so that an unknown user costs bcrypt work rather
@@ -71,16 +107,21 @@ var dummyHash = sync.OnceValue(func() string {
 // Both questions are answered inside one read transaction, so a request cannot
 // see a database that holds no user and a user's hash at the same time.
 func (a *authenticator) check(ctx context.Context, username, password string) (
-	required, ok bool, err error) {
+	state authState, ok bool, err error) {
 	err = a.db.Read(ctx, func(tx *storage.Tx) error {
 		any, err := tx.AnyUsers()
 		if err != nil {
 			return err
 		}
 		if !any {
+			state = authOpen
+			if a.hadUsers.Load() {
+				state = authLocked
+			}
 			return nil
 		}
-		required = true
+		a.hadUsers.Store(true)
+		state = authRequired
 
 		hash, found, err := tx.PasswordHash(username)
 		if err != nil {
@@ -96,7 +137,7 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 		ok = domain.CheckPassword(hash, password)
 		return nil
 	})
-	return required, ok, err
+	return state, ok, err
 }
 
 // Middleware requires credentials whenever the database holds a user, and lets
@@ -125,7 +166,7 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 			}
 
 			username, password, given := r.BasicAuth()
-			required, ok, err := a.check(r.Context(), username, password)
+			state, ok, err := a.check(r.Context(), username, password)
 			switch {
 			case err != nil:
 				// The database could not say. That is this server's failure and
@@ -134,8 +175,18 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 				writeAuthError(w, http.StatusInternalServerError,
 					"cannot check credentials right now")
 				return
-			case !required:
+			case state == authOpen:
 				next.ServeHTTP(w, r)
+				return
+			case state == authLocked:
+				// No credentials can open a server with no accounts, so this is
+				// not a challenge: it is the server saying it cannot serve
+				// anybody until one exists. Adding a user makes the next
+				// request work, with no restart, exactly as the first one did.
+				logger.Printf("refusing %s %s from %s: the last user was deleted",
+					r.Method, r.URL.Path, r.RemoteAddr)
+				writeAuthError(w, http.StatusServiceUnavailable,
+					"no users: this server answers nothing until a user is added")
 				return
 			case !given || !ok:
 				logger.Printf("authentication failed: %s %s from %s",
