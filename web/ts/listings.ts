@@ -146,11 +146,12 @@ export function filterProjects(projects: Project[], query: string): Project[] {
     query,
   ));
 }
-/** filterUsers matches the account name, roles and visible memberships. */
+/** filterUsers matches the username, full name, roles and visible memberships. */
 export function filterUsers(users: DirectoryUser[], query: string): DirectoryUser[] {
   if (query.trim() === "") return users;
   return users.filter((user) => containsEvery([
     user.name,
+    user.full_name,
     user.project_admin ? "project administrator" : "",
     user.user_admin ? "user administrator" : "",
     ...user.projects.flatMap((membership) => [membership.project, membership.access]),

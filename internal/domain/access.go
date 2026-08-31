@@ -138,6 +138,7 @@ func CheckPassword(hash, password string) bool {
 // changed by its own operations.
 type User struct {
 	Name             string       `json:"name"`
+	FullName         string       `json:"full_name"`
 	ProjectAdmin     bool         `json:"project_admin"`
 	UserAdmin        bool         `json:"user_admin"`
 	CreatedAt        string       `json:"created_at"`

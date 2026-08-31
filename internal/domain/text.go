@@ -13,13 +13,14 @@ import (
 // the one field meant to hold prose, is bounded in bytes instead, because that
 // is the size that matters for a blob nobody counts characters in.
 const (
-	MaxTitleLen       = 500
-	MaxCloseReasonLen = 500
-	MaxProjectNameLen = 500
-	MaxSearchTermLen  = 500
-	MaxLabelLen       = 64
-	MaxAssigneeLen    = 64
-	MaxProjectKeyLen  = 16
+	MaxTitleLen        = 500
+	MaxCloseReasonLen  = 500
+	MaxProjectNameLen  = 500
+	MaxUserFullNameLen = 500
+	MaxSearchTermLen   = 500
+	MaxLabelLen        = 64
+	MaxAssigneeLen     = 64
+	MaxProjectKeyLen   = 16
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
 	MaxDescriptionBytes = 64 * 1024
@@ -155,6 +156,22 @@ func ValidateProjectName(s string) (string, error) {
 		return "", err
 	}
 	if err := checkMaxRunes("project name", s, MaxProjectNameLen); err != nil {
+		return "", err
+	}
+	return s, nil
+}
+
+// ValidateUserFullName applies the input rules to a user's descriptive name.
+// It is optional, so empty clears it, and is otherwise stored byte for byte as
+// it arrived, like a project name.
+func ValidateUserFullName(s string) (string, error) {
+	if err := checkUTF8("full name", s); err != nil {
+		return "", err
+	}
+	if err := checkNoControls("full name", s); err != nil {
+		return "", err
+	}
+	if err := checkMaxRunes("full name", s, MaxUserFullNameLen); err != nil {
 		return "", err
 	}
 	return s, nil

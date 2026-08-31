@@ -35,6 +35,7 @@ func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate) (
 	*api.UserCreatedHeaders, error) {
 	user, err := h.backendFor(ctx).CreateUser(ctx, backend.UserCreate{
 		Name:         string(req.Name),
+		FullName:     string(req.FullName.Or("")),
 		Password:     string(req.Password.Or("")),
 		PasswordHash: string(req.PasswordHash.Or("")),
 		ProjectAdmin: req.ProjectAdmin.Or(false),
@@ -74,6 +75,7 @@ func (h *Handler) UpdateUser(ctx context.Context, req *api.UserPatch,
 	user, err := h.backendFor(ctx).UpdateUser(ctx, name, backend.UserPatch{
 		Password:     optPassword(req.Password),
 		PasswordHash: optPasswordHash(req.PasswordHash),
+		FullName:     optUserFullName(req.FullName),
 		ProjectAdmin: optBool(req.ProjectAdmin),
 		UserAdmin:    optBool(req.UserAdmin),
 	}, params.IfMatch.Or(""))
@@ -141,12 +143,21 @@ func (h *Handler) RemoveProjectMember(ctx context.Context, params api.RemoveProj
 func toUser(user *domain.User) api.User {
 	return api.User{
 		Name:         api.Username(user.Name),
+		FullName:     api.UserFullName(user.FullName),
 		ProjectAdmin: user.ProjectAdmin,
 		UserAdmin:    user.UserAdmin,
 		CreatedAt:    api.Timestamp(user.CreatedAt),
 		UpdatedAt:    api.Timestamp(user.UpdatedAt),
 		Projects:     toMemberships(user.Projects),
 	}
+}
+
+func optUserFullName(value api.OptUserFullName) *string {
+	if name, ok := value.Get(); ok {
+		plain := string(name)
+		return &plain
+	}
+	return nil
 }
 
 func toDirectoryUsers(users []domain.User) []api.UserDirectoryEntry {
@@ -159,6 +170,7 @@ func toDirectoryUsers(users []domain.User) []api.UserDirectoryEntry {
 		}
 		out[i] = api.UserDirectoryEntry{
 			Name:             user.Name,
+			FullName:         user.FullName,
 			ProjectAdmin:     user.ProjectAdmin,
 			UserAdmin:        user.UserAdmin,
 			CreatedAt:        user.CreatedAt,

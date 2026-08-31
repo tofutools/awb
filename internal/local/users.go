@@ -23,6 +23,10 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 	if err != nil {
 		return nil, err
 	}
+	fullName, err := domain.ValidateUserFullName(req.FullName)
+	if err != nil {
+		return nil, err
+	}
 	hash, err := credential(name, req.Password, req.PasswordHash, true)
 	if err != nil {
 		return nil, err
@@ -33,7 +37,7 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 		if !caller.MayManageUsers() {
 			return awberr.Forbiddenf("only a user administrator may create a user")
 		}
-		if err := tx.InsertUser(name, *hash, req.ProjectAdmin, req.UserAdmin); err != nil {
+		if err := tx.InsertUser(name, fullName, *hash, req.ProjectAdmin, req.UserAdmin); err != nil {
 			return err
 		}
 		user, err = tx.GetUser(name)
@@ -120,14 +124,14 @@ func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.Us
 	return page, nil
 }
 
-// UpdateUser changes an account's password or its two flags. Giving no field
+// UpdateUser changes an account's full name, password or its two flags. Giving no field
 // at all succeeds and changes nothing, exactly as an empty PATCH does — but it
 // is permitted as a read of the account, which is what it answers with.
 //
 // The two halves are permitted separately, because they are different powers:
-// changing the flags is a user administrator's, and changing a password is
-// theirs or the account holder's own. So a user may set their own password
-// without being able to grant themselves anything.
+// changing the flags is a user administrator's, while the profile and password
+// are theirs or the account holder's own. So a user may set their own full
+// name and password without being able to grant themselves anything.
 func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserPatch,
 	ifMatch string) (*domain.User, error) {
 	if _, err := domain.ValidateUsername(name); err != nil {
@@ -136,6 +140,14 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 	hash, err := credential(name, deref(req.Password), deref(req.PasswordHash), false)
 	if err != nil {
 		return nil, err
+	}
+	var fullName *string
+	if req.FullName != nil {
+		valid, validateErr := domain.ValidateUserFullName(*req.FullName)
+		if validateErr != nil {
+			return nil, validateErr
+		}
+		fullName = &valid
 	}
 	changesFlags := req.ProjectAdmin != nil || req.UserAdmin != nil
 
@@ -164,6 +176,7 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 		}
 
 		fields := storage.UserFields{
+			FullName:     existing.FullName,
 			ProjectAdmin: existing.ProjectAdmin,
 			UserAdmin:    existing.UserAdmin,
 		}
@@ -172,6 +185,9 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 		}
 		if req.UserAdmin != nil {
 			fields.UserAdmin = *req.UserAdmin
+		}
+		if fullName != nil {
+			fields.FullName = *fullName
 		}
 
 		if err := tx.UpdateUser(existing, fields, hash); err != nil {

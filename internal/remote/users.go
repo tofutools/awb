@@ -18,6 +18,7 @@ import (
 
 type userCreateBody struct {
 	Name         string `json:"name"`
+	FullName     string `json:"full_name,omitempty"`
 	Password     string `json:"password,omitempty"`
 	PasswordHash string `json:"password_hash,omitempty"`
 	ProjectAdmin bool   `json:"project_admin,omitempty"`
@@ -27,6 +28,7 @@ type userCreateBody struct {
 type userPatchBody struct {
 	Password     *string `json:"password,omitempty"`
 	PasswordHash *string `json:"password_hash,omitempty"`
+	FullName     *string `json:"full_name,omitempty"`
 	ProjectAdmin *bool   `json:"project_admin,omitempty"`
 	UserAdmin    *bool   `json:"user_admin,omitempty"`
 }
@@ -43,6 +45,7 @@ type directoryUser struct {
 func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*domain.User, error) {
 	body := userCreateBody{
 		Name:         req.Name,
+		FullName:     req.FullName,
 		Password:     req.Password,
 		PasswordHash: req.PasswordHash,
 		ProjectAdmin: req.ProjectAdmin,
@@ -75,6 +78,7 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 	body := userPatchBody{
 		Password:     req.Password,
 		PasswordHash: req.PasswordHash,
+		FullName:     req.FullName,
 		ProjectAdmin: req.ProjectAdmin,
 		UserAdmin:    req.UserAdmin,
 	}

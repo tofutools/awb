@@ -97,9 +97,9 @@ func (t *Tx) Caller(name string) (domain.Caller, error) {
 func (t *Tx) GetUser(name string) (*domain.User, error) {
 	var u domain.User
 	err := t.q.QueryRowContext(t.ctx, `
-		SELECT name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
 		  FROM users WHERE name = ?`, name,
-	).Scan(&u.Name, &u.ProjectAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such user: %s", name)
 	}
@@ -125,7 +125,7 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
 		  FROM users ORDER BY name ASC`+limitOffsetClause(limit, offset))
 	if err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
@@ -135,7 +135,7 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 	users = []domain.User{}
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.Name, &u.ProjectAdmin, &u.UserAdmin,
+		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin,
 			&u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
 		}
@@ -184,7 +184,7 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, cte+`
-		SELECT name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
 		  FROM users WHERE name IN (SELECT name FROM visible_users)
 		 ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
 	if err != nil {
@@ -195,7 +195,7 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 	users = []domain.User{}
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.Name, &u.ProjectAdmin, &u.UserAdmin,
+		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin,
 			&u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
 		}
@@ -323,11 +323,11 @@ func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
 // The two are one statement pair in one transaction, and the record is written
 // here rather than by the operation above, so that no way of creating a user
 // can leave the fact unwritten.
-func (t *Tx) InsertUser(name, hash string, projectAdmin, userAdmin bool) error {
+func (t *Tx) InsertUser(name, fullName, hash string, projectAdmin, userAdmin bool) error {
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
-		INSERT INTO users (name, password_hash, project_admin, user_admin, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, name, hash, projectAdmin, userAdmin, now, now)
+		INSERT INTO users (name, full_name, password_hash, project_admin, user_admin, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, name, fullName, hash, projectAdmin, userAdmin, now, now)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return awberr.Conflictf("user %s already exists", name)
@@ -345,6 +345,7 @@ func (t *Tx) InsertUser(name, hash string, projectAdmin, userAdmin bool) error {
 // separate: it is write-only and is not compared, so a change that sets the
 // same password again still counts as a change.
 type UserFields struct {
+	FullName     string
 	ProjectAdmin bool
 	UserAdmin    bool
 }
@@ -354,7 +355,8 @@ type UserFields struct {
 // level in a project does not touch it: memberships are their own rows, as an
 // issue's labels are.
 func (t *Tx) UpdateUser(u *domain.User, fields UserFields, hash *string) error {
-	unchanged := fields.ProjectAdmin == u.ProjectAdmin && fields.UserAdmin == u.UserAdmin
+	unchanged := fields.FullName == u.FullName && fields.ProjectAdmin == u.ProjectAdmin &&
+		fields.UserAdmin == u.UserAdmin
 	if unchanged && hash == nil {
 		return nil
 	}
@@ -363,17 +365,18 @@ func (t *Tx) UpdateUser(u *domain.User, fields UserFields, hash *string) error {
 	var err error
 	if hash != nil {
 		_, err = t.q.ExecContext(t.ctx, `
-			UPDATE users SET password_hash = ?, project_admin = ?, user_admin = ?, updated_at = ?
-			 WHERE name = ?`, *hash, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
+			UPDATE users SET password_hash = ?, full_name = ?, project_admin = ?, user_admin = ?, updated_at = ?
+			 WHERE name = ?`, *hash, fields.FullName, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
 	} else {
 		_, err = t.q.ExecContext(t.ctx, `
-			UPDATE users SET project_admin = ?, user_admin = ?, updated_at = ?
-			 WHERE name = ?`, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
+			UPDATE users SET full_name = ?, project_admin = ?, user_admin = ?, updated_at = ?
+			 WHERE name = ?`, fields.FullName, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
 	}
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update user %s", u.Name)
 	}
 
+	u.FullName = fields.FullName
 	u.ProjectAdmin = fields.ProjectAdmin
 	u.UserAdmin = fields.UserAdmin
 	u.UpdatedAt = updated
