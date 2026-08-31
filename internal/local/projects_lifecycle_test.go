@@ -15,6 +15,12 @@ import (
 func TestArchivedProjectIsRetainedReadOnlyAndRestorable(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "retained")
+	_, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	require.NoError(t, err)
+	other, err := b.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "linked"})
+	require.NoError(t, err)
+	_, err = b.AddRelation(ctx, other.ID, backend.RelationRequest{Type: domain.RelRelated, Other: issue.ID}, "")
+	require.NoError(t, err)
 	before, err := b.GetProject(ctx, "awb")
 	require.NoError(t, err)
 
@@ -26,7 +32,8 @@ func TestArchivedProjectIsRetainedReadOnlyAndRestorable(t *testing.T) {
 
 	active, err := b.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
-	assert.Empty(t, active.Projects)
+	require.Len(t, active.Projects, 1)
+	assert.Equal(t, "web", active.Projects[0].Key)
 	history, err := b.ListProjectsByState(ctx, "", domain.ProjectsArchived, domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, history.Projects, 1)
@@ -42,6 +49,12 @@ func TestArchivedProjectIsRetainedReadOnlyAndRestorable(t *testing.T) {
 	assert.Equal(t, 4, exitOf(err))
 	_, err = b.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "must not exist"})
 	require.Error(t, err)
+	assert.Equal(t, 4, exitOf(err))
+	_, err = b.DeleteProject(ctx, "awb", true, "")
+	require.Error(t, err)
+	assert.Equal(t, 4, exitOf(err))
+	_, err = b.DeleteProject(ctx, "web", true, "")
+	require.Error(t, err, "cascade cannot rewrite an archived counterpart's historical graph")
 	assert.Equal(t, 4, exitOf(err))
 
 	// The fresh version makes a repeated archive idempotent; stale state is

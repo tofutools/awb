@@ -219,6 +219,9 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		if !caller.MayManageProjects() {
 			return awberr.Forbiddenf("only a project administrator may delete project %s", key)
 		}
+		if project.State == domain.ProjectArchived {
+			return awberr.Conflictf("project %s is archived and read-only; restore it before deleting it", key)
+		}
 		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the project"); err != nil {
 			return err
 		}
@@ -231,6 +234,15 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 			return awberr.Conflictf(
 				"project %s still holds %d issue(s), closed ones included; use --cascade to delete them too",
 				key, held)
+		}
+		if cascade {
+			touchesArchived, err := tx.ProjectRelationsTouchArchived(key)
+			if err != nil {
+				return err
+			}
+			if touchesArchived {
+				return awberr.Conflictf("project %s has relations touching archived read-only work", key)
+			}
 		}
 
 		deleted.Project = *project

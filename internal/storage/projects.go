@@ -277,6 +277,22 @@ func (t *Tx) CountIssuesInProject(key string) (int, error) {
 	return n, nil
 }
 
+// ProjectRelationsTouchArchived reports whether deleting this project's
+// issues would remove a relation whose other retained endpoint is read-only.
+func (t *Tx) ProjectRelationsTouchArchived(key string) (bool, error) {
+	var found bool
+	err := t.q.QueryRowContext(t.ctx, `SELECT EXISTS (
+		SELECT 1 FROM relations r
+		JOIN issues subject ON subject.id = r.subject
+		JOIN issues other ON other.id = r.other
+		JOIN projects subject_project ON subject_project.key = subject.project
+		JOIN projects other_project ON other_project.key = other.project
+		WHERE (subject.project = ? OR other.project = ?)
+		  AND (subject_project.state = 'archived' OR other_project.state = 'archived')
+	)`, key, key).Scan(&found)
+	return found, awberr.Wrap(awberr.Runtime, err, "inspect archived relations of project %s", key)
+}
+
 // DeleteProjectIssues removes every issue the project holds, and with them
 // their labels and every relation they take part in — including relations to
 // issues in other projects, which may unblock work elsewhere. It reports how
