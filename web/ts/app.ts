@@ -37,7 +37,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
@@ -64,6 +64,16 @@ const app = document.getElementById("app") as HTMLElement;
 let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
+
+interface IssueEditDraft {
+  title: string;
+  description: string;
+}
+
+// Sidebar and resource edits save immediately and therefore rerender the
+// route. Keep the main form's unsaved text through that rerender instead of
+// silently replacing it with the last stored issue.
+const issueEditDrafts = new Map<string, IssueEditDraft>();
 
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
@@ -1188,12 +1198,44 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   heading.append(headingText, editButton);
   content.append(heading);
 
-  const editForm = issueEditForm(issue);
+  const existingDraft = issueEditDrafts.get(issue.id);
+  const editForm = issueEditForm(issue, existingDraft);
+  const editTitle = editForm.elements.namedItem("title") as HTMLInputElement;
+  const editDescription = editForm.elements.namedItem("description") as HTMLTextAreaElement;
   editForm.hidden = true;
+  const attachmentSection = issueAttachmentSection(issue);
+  const relationSection = issueRelationSection(issue);
+  const showEditor = (show: boolean) => {
+    if (show) {
+      issueEditDrafts.set(issue.id, {
+        title: editTitle.value,
+        description: editDescription.value,
+      });
+    } else {
+      issueEditDrafts.delete(issue.id);
+    }
+    view.classList.toggle("issue-editing", show);
+    editForm.hidden = !show;
+    attachmentSection.editor.hidden = !show;
+    attachmentSection.section.hidden = !show && issue.attachments.length === 0;
+    relationSection.editor.hidden = !show;
+    relationSection.section.hidden = !show && issue.relations.length === 0;
+    editButton.textContent = show ? "Hide editor" : "Edit issue";
+  };
   editButton.addEventListener("click", () => {
-    editForm.hidden = !editForm.hidden;
-    editButton.textContent = editForm.hidden ? "Edit issue" : "Hide editor";
+    showEditor(editForm.hidden === true);
     if (!editForm.hidden) editForm.querySelector<HTMLInputElement>("input")?.focus();
+  });
+  editForm.addEventListener("keydown", (event) => {
+    const shortcut = issueEditorShortcut(event);
+    if (shortcut === undefined) return;
+    event.preventDefault();
+    if (shortcut === "save") {
+      editForm.requestSubmit();
+      return;
+    }
+    showEditor(false);
+    editButton.focus();
   });
   content.append(editForm);
 
@@ -1208,6 +1250,11 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     description.append(element("p", "empty", "No description."));
   }
   content.append(description);
+
+  // These are deliberately compact, content-height lists directly below the
+  // description. Mutation controls only appear while the issue editor is
+  // open, so an issue with one resource does not reserve room for a form.
+  content.append(attachmentSection.section, relationSection.section);
 
   // The derived links array is rendered explicitly as well as inside the
   // prose, so the authoritative list is always visible.
@@ -1226,17 +1273,39 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     content.append(list);
   }
 
-  if (issue.attachments.length > 0) {
-    content.append(element("h2", "", "Attachments"));
-    const list = element("ul", "attachments");
-    for (const attachment of issue.attachments) list.append(attachmentRow(attachment, true));
-    content.append(list);
-  }
-  content.append(attachmentEditor(issue.id));
+  content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
+  content.append(activitySection(issue.id, activity.rows));
+  const [sidebar, sidebarToggle] = issueSidebar(issue, view);
+  view.append(content, sidebar, sidebarToggle);
+  if (existingDraft !== undefined) showEditor(true);
+  return view;
+}
 
+interface IssueResourceSection {
+  section: HTMLElement;
+  editor: HTMLFormElement;
+}
+
+function issueAttachmentSection(issue: Issue): IssueResourceSection {
+  const section = element("section", "issue-resource-section attachment-section");
+  section.append(element("h2", "", "Attachments"));
+  if (issue.attachments.length > 0) {
+    const list = element("ul", "attachments resource-list");
+    for (const attachment of issue.attachments) list.append(attachmentRow(attachment, true));
+    section.append(list);
+  }
+  const editor = attachmentEditor(issue.id);
+  editor.hidden = true;
+  section.append(editor);
+  section.hidden = issue.attachments.length === 0;
+  return { section, editor };
+}
+
+function issueRelationSection(issue: Issue): IssueResourceSection {
+  const section = element("section", "issue-resource-section relation-section");
+  section.append(element("h2", "", "Relations"));
   if (issue.relations.length > 0) {
-    content.append(element("h2", "", "Relations"));
-    const list = element("ul", "relations");
+    const list = element("ul", "relations resource-list");
     for (const relation of issue.relations) {
       // Every relation reads "subject — type — other", whichever end is
       // viewed.
@@ -1246,7 +1315,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       row.append(link(`#/issues/${subject}`, subject, "id"));
       row.append(element("span", "relation-type", relation.type));
       row.append(link(`#/issues/${other}`, other, "id"));
-      const remove = button("Remove", "inline-button danger-button");
+      const remove = button("Remove", "inline-button danger-button resource-remove");
       remove.addEventListener("click", () => {
         const addressed = relation.direction === "in" ? relation.other : issue.id;
         const addressedOther = relation.direction === "in" ? issue.id : relation.other;
@@ -1255,50 +1324,53 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       row.append(remove);
       list.append(row);
     }
-    content.append(list);
+    section.append(list);
   }
-  content.append(relationEditor(issue.id));
-
-  content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
-  content.append(activitySection(issue.id, activity.rows));
-  const [sidebar, sidebarToggle] = issueSidebar(issue, view);
-  view.append(content, sidebar, sidebarToggle);
-  return view;
+  const editor = relationEditor(issue.id);
+  editor.hidden = true;
+  section.append(editor);
+  section.hidden = issue.relations.length === 0;
+  return { section, editor };
 }
 
-function issueEditForm(issue: Issue): HTMLFormElement {
+function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
   const form = element("form", "edit-panel issue-edit-form") as HTMLFormElement;
   form.append(element("h2", "", "Edit issue"));
 
   const title = document.createElement("input");
   title.name = "title";
-  title.value = issue.title;
+  title.value = draft?.title ?? issue.title;
   title.required = true;
   title.maxLength = 500;
 
   const description = document.createElement("textarea");
   description.name = "description";
-  description.value = issue.description;
+  description.value = draft?.description ?? issue.description;
   description.rows = 10;
 
-  const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
-  type.name = "type";
-  const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
-  priority.name = "priority";
-
-  const row = element("div", "edit-field-row");
-  row.append(field("Type", type), field("Priority", priority));
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
-  form.append(field("Title", title), field("Description (Markdown)", description), row, save);
+  const actions = element("div", "edit-actions");
+  actions.append(
+    element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
+    save,
+  );
+  form.append(field("Title", title), field("Description (Markdown)", description), actions);
+  const rememberDraft = (): void => {
+    issueEditDrafts.set(issue.id, { title: title.value, description: description.value });
+  };
+  title.addEventListener("input", rememberDraft);
+  description.addEventListener("input", rememberDraft);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [save], () => api.updateIssue(issue.id, {
-      title: title.value,
-      description: description.value,
-      type: type.value as Issue["type"],
-      priority: Number(priority.value),
-    }));
+    void mutate(form, [save], async () => {
+      const updated = await api.updateIssue(issue.id, {
+        title: title.value,
+        description: description.value,
+      });
+      issueEditDrafts.delete(issue.id);
+      return updated;
+    });
   });
   return form;
 }
@@ -1366,6 +1438,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     drawToggle();
   });
   const facts = element("dl", "issue-facts");
+  aside.append(element("h2", "issue-sidebar-title", "Details"));
 
   const add = (label: string, value: Node): void => {
     const row = element("div", "issue-fact");
@@ -1380,20 +1453,24 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   add("ID", element("span", "id", issue.id));
   add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
-  type.className = "sidebar-select";
+  type.className = "sidebar-select sidebar-edit-control";
   type.setAttribute("aria-label", "Edit type");
   type.addEventListener("change", () => {
     void mutate(aside, [type], () => api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
   });
-  add("Type", type);
+  const typeControl = element("span", "sidebar-value");
+  typeControl.append(element("span", "sidebar-readonly", issue.type), type);
+  add("Type", typeControl);
   add("Status", badge(`status status-${issue.status}`, issue.status));
   const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
-  priority.className = `sidebar-select priority p${issue.priority}`;
+  priority.className = `sidebar-select sidebar-edit-control priority p${issue.priority}`;
   priority.setAttribute("aria-label", "Edit priority");
   priority.addEventListener("change", () => {
     void mutate(aside, [priority], () => api.updateIssue(issue.id, { priority: Number(priority.value) }));
   });
-  add("Priority", priority);
+  const priorityControl = element("span", "sidebar-value");
+  priorityControl.append(element("span", `sidebar-readonly priority p${issue.priority}`, `P${issue.priority}`), priority);
+  add("Priority", priorityControl);
   if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
 
   const labels = element("span", "sidebar-labels");
@@ -1420,7 +1497,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
 }
 
 function labelEditor(issueID: string): HTMLFormElement {
-  const form = element("form", "sidebar-editor") as HTMLFormElement;
+  const form = element("form", "sidebar-editor label-editor sidebar-edit-control") as HTMLFormElement;
   const input = document.createElement("input");
   input.placeholder = "Add label";
   input.setAttribute("aria-label", "Label");
@@ -1436,8 +1513,10 @@ function labelEditor(issueID: string): HTMLFormElement {
 }
 
 function lifecycleEditor(issue: Issue): HTMLElement {
-  const section = element("section", "lifecycle-editor");
-  section.append(element("h2", "", "Status and assignees"));
+  const section = element("details", "lifecycle-editor") as HTMLDetailsElement;
+  section.append(element("summary", "", "More actions"));
+  const body = element("div", "lifecycle-editor-body");
+  body.append(element("h2", "", "Status and assignees"));
 
   const claim = element("form", "sidebar-editor") as HTMLFormElement;
   const assignee = document.createElement("input");
@@ -1461,7 +1540,7 @@ function lifecycleEditor(issue: Issue): HTMLElement {
       force: force.checked,
     }));
   });
-  section.append(claim);
+  body.append(claim);
 
   const actions = element("div", "lifecycle-actions");
   if (issue.status === "in_progress") {
@@ -1506,7 +1585,8 @@ function lifecycleEditor(issue: Issue): HTMLElement {
     });
     actions.append(close);
   }
-  section.append(actions);
+  body.append(actions);
+  section.append(body);
   return section;
 }
 
@@ -1640,7 +1720,7 @@ function attachmentRow(attachment: Attachment, editable = false): HTMLElement {
   row.append(element("span", "size", formatSize(attachment.size)));
   row.append(element("span", "content-type", attachment.content_type));
   if (editable) {
-    const remove = button("Remove", "inline-button danger-button");
+    const remove = button("Remove", "inline-button danger-button resource-remove");
     remove.addEventListener("click", () => {
       void mutate(row, [remove], () => api.removeAttachment(attachment.issue, attachment.name));
     });
