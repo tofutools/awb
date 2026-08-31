@@ -96,6 +96,7 @@ func TestGetAndListUsers(t *testing.T) {
 	require.Len(t, users, 2)
 	assert.Equal(t, "alice", users[0].Name, "ordered by name ascending")
 	assert.Equal(t, "bob", users[1].Name)
+	assert.Contains(t, payload, `"activity_projects":[]`)
 
 	resp, payload = a.do(http.MethodGet, "/api/users/alice", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)

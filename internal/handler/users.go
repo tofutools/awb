@@ -27,7 +27,7 @@ func (h *Handler) ListUsers(ctx context.Context, params api.ListUsersParams) (
 	}
 	return &api.UserListHeaders{
 		XTotalCount: api.NewOptInt(page.Total),
-		Response:    toUsers(page.Users),
+		Response:    toDirectoryUsers(page.Users),
 	}, nil
 }
 
@@ -149,10 +149,23 @@ func toUser(user *domain.User) api.User {
 	}
 }
 
-func toUsers(users []domain.User) []api.User {
-	out := make([]api.User, len(users))
+func toDirectoryUsers(users []domain.User) []api.UserDirectoryEntry {
+	out := make([]api.UserDirectoryEntry, len(users))
 	for i := range users {
-		out[i] = toUser(&users[i])
+		user := toUser(&users[i])
+		projects := make([]api.ProjectKey, len(users[i].ActivityProjects))
+		for j := range users[i].ActivityProjects {
+			projects[j] = api.ProjectKey(users[i].ActivityProjects[j])
+		}
+		out[i] = api.UserDirectoryEntry{
+			Name:             user.Name,
+			ProjectAdmin:     user.ProjectAdmin,
+			UserAdmin:        user.UserAdmin,
+			CreatedAt:        user.CreatedAt,
+			UpdatedAt:        user.UpdatedAt,
+			Projects:         user.Projects,
+			ActivityProjects: projects,
+		}
 	}
 	return out
 }

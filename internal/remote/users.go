@@ -35,6 +35,11 @@ type membershipSetBody struct {
 	Access domain.Access `json:"access"`
 }
 
+type directoryUser struct {
+	domain.User
+	ActivityProjects []string `json:"activity_projects"`
+}
+
 func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*domain.User, error) {
 	body := userCreateBody{
 		Name:         req.Name,
@@ -51,11 +56,16 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 }
 
 func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.UserPage, error) {
-	users := []domain.User{}
+	entries := []directoryUser{}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/users", pageQuery(limit, offset)), nil, "", &users)
+		b.endpoint("/api/users", pageQuery(limit, offset)), nil, "", &entries)
 	if err != nil {
 		return backend.UserPage{}, err
+	}
+	users := make([]domain.User, len(entries))
+	for i := range entries {
+		users[i] = entries[i].User
+		users[i].ActivityProjects = entries[i].ActivityProjects
 	}
 	return backend.UserPage{Users: users, Total: totalCount(header, len(users))}, nil
 }

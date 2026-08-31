@@ -1,6 +1,6 @@
 // Pure listing behavior shared by the DOM renderer and its Node tests.
 
-import type { Issue, Project, User } from "./api.js";
+import type { DirectoryUser, Issue, Project } from "./api.js";
 
 export type SortDirection = "asc" | "desc";
 
@@ -147,12 +147,13 @@ export function filterProjects(projects: Project[], query: string): Project[] {
   ));
 }
 /** filterUsers matches the account name, roles and visible memberships. */
-export function filterUsers(users: User[], query: string): User[] {
+export function filterUsers(users: DirectoryUser[], query: string): DirectoryUser[] {
   if (query.trim() === "") return users;
   return users.filter((user) => containsEvery([
     user.name,
     user.project_admin ? "project administrator" : "",
     user.user_admin ? "user administrator" : "",
     ...user.projects.flatMap((membership) => [membership.project, membership.access]),
+    ...user.activity_projects,
   ].join(" "), query));
 }

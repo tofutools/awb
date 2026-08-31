@@ -1218,14 +1218,14 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/User' }
     UserList:
-      description: The users.
+      description: The user directory.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
       content:
         application/json:
           schema:
             type: array
-            items: { $ref: '#/components/schemas/User' }
+            items: { $ref: '#/components/schemas/UserDirectoryEntry' }
     Membership:
       description: The membership.
       content:
@@ -1737,6 +1737,30 @@ components:
             to the caller are included. Membership is changed by its own
             endpoints.
           items: { $ref: '#/components/schemas/Membership' }
+
+    UserDirectoryEntry:
+      type: object
+      description: |
+        One account as it appears in the user directory, including the
+        projects where that username occurs in an assignment or activity
+        entry. This is historical, so closed issues still count, and is kept
+        separate from the account's current memberships. The list remains
+        restricted to project names the caller may see, except that a user
+        administrator's complete directory includes every project.
+      additionalProperties: false
+      required: [name, project_admin, user_admin, created_at, updated_at, projects, activity_projects]
+      properties:
+        name: { $ref: '#/components/schemas/Username' }
+        project_admin: { type: boolean }
+        user_admin: { type: boolean }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+        activity_projects:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectKey' }
 
     Facet:
       type: object

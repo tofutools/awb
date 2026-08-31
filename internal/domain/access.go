@@ -137,12 +137,13 @@ func CheckPassword(hash, password string) bool {
 // derived and read-only, exactly as an issue's relations are: membership is
 // changed by its own operations.
 type User struct {
-	Name         string       `json:"name"`
-	ProjectAdmin bool         `json:"project_admin"`
-	UserAdmin    bool         `json:"user_admin"`
-	CreatedAt    string       `json:"created_at"`
-	UpdatedAt    string       `json:"updated_at"`
-	Projects     []Membership `json:"projects"`
+	Name             string       `json:"name"`
+	ProjectAdmin     bool         `json:"project_admin"`
+	UserAdmin        bool         `json:"user_admin"`
+	CreatedAt        string       `json:"created_at"`
+	UpdatedAt        string       `json:"updated_at"`
+	Projects         []Membership `json:"projects"`
+	ActivityProjects []string     `json:"-"`
 }
 
 // Normalize replaces a nil membership slice with an empty one, so the JSON
