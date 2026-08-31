@@ -722,6 +722,7 @@ function issueList(
   if (columns.some((column) => column.key === "updated")) {
     listingActions.append(mobileUpdatedDisplayControl());
   }
+  listingActions.append(pagination(route, total));
 
   const update = (query: string): number => {
     // Ordering belongs to the backend: otherwise sorting a page locally would
@@ -746,7 +747,7 @@ function issueList(
     kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
   ));
   if (facets !== null) section.append(facets);
-  section.append(pagination(route, total), tableHost);
+  section.append(tableHost);
   return section;
 }
 
@@ -1001,6 +1002,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   listingActions.append(
     mobileSortControl(route, projectColumns, "Natural order"),
     mobileUpdatedDisplayControl(),
+    pagination(route, page.total),
   );
   const update = (query: string): number => {
     const rows = filterProjects(page.rows, query);
@@ -1021,7 +1023,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     update,
     listingActions,
   ));
-  listing.append(pagination(route, page.total), host);
+  listing.append(host);
   view.append(listing);
   return view;
 }
@@ -1114,8 +1116,7 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
     return rows.length;
   };
   listing.append(
-    listingFilter(route, "Filter this page of users…", "user", page.total, update),
-    pagination(route, page.total),
+    listingFilter(route, "Filter this page of users…", "user", page.total, update, pagination(route, page.total)),
     host,
   );
   view.append(listing);
