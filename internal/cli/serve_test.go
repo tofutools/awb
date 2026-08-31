@@ -68,6 +68,14 @@ func newProxyServeHandler(t *testing.T, proxyTo string) http.Handler {
 // so a test can add the user that turns authentication on.
 func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Backend) {
 	t.Helper()
+	return newServeHandlerAuthenticating(t, opts, true)
+}
+
+// newServeHandlerAuthenticating builds one with or without an authenticator,
+// which is the whole of what --no-auth decides; see the serve command.
+func newServeHandlerAuthenticating(t *testing.T, opts serveOptions, authenticates bool) (
+	http.Handler, *local.Backend) {
+	t.Helper()
 	dir := t.TempDir()
 	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
@@ -76,9 +84,12 @@ func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Ba
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
+	var credentials *authenticator
+	if authenticates {
+		credentials = &authenticator{db: db, realm: opts.basicAuthRealm}
+	}
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	h, err := buildHandler(be, openapi.New(raw),
-		&authenticator{db: db, realm: opts.basicAuthRealm}, opts, log.New(io.Discard, "", 0))
+	h, err := buildHandler(be, openapi.New(raw), credentials, opts, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 	return h, be
 }
@@ -506,6 +517,46 @@ func TestProxyTargetMustBeAnHTTPBaseURL(t *testing.T) {
 		require.NoError(t, err, proxyTo)
 		assert.False(t, strings.HasSuffix(parsed.Path, "/"), proxyTo)
 	}
+}
+
+// Loopback is what the default binds and is the local tracker the open server
+// is for, so it starts with no user and no flag. A server is not started here:
+// what is checked is that the refusal does not fire, which it would before the
+// port is bound.
+func TestServeAcceptsALoopbackBindingWithNoUsers(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1", "127.0.0.2", "::1", "localhost", "LOCALHOST"} {
+		assert.Empty(t, serveOptions{addr: addr}.exposure(), addr)
+	}
+	for _, addr := range []string{"", "0.0.0.0", "192.0.2.10", "::", "example.com"} {
+		assert.NotEmpty(t, serveOptions{addr: addr}.exposure(), addr)
+	}
+}
+
+// --no-auth is how an operator says an open server is what they meant, and is
+// the only thing that says so.
+func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
+	none := userState{}
+	deleted := userState{existed: true}
+	users := userState{any: true, existed: true}
+
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, none),
+		"a local tracker on loopback is the open server that is meant to work")
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, none),
+		"reaching other machines with nobody to authenticate is the accident")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, none))
+
+	// A locked server answers nothing to anybody, so it exposes nothing
+	// wherever it is bound and none of those flags says anything about it. It
+	// starts, and recovers from the next "awb user add" as a running one does.
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, deleted))
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, deleted))
+	assert.NoError(t, checkAuthentication(serveOptions{https: true}, deleted))
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1", noAuth: true}, deleted))
+
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
+		"a server that authenticates may be published, which is the point of it")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, users),
+		"--no-auth means it: the users are simply not consulted")
 }
 
 // --https and --public-url describe one deployment, so they cannot disagree

@@ -476,6 +476,33 @@ authenticates nobody — which is what a local tracker is, and what every versio
 The question is asked per request rather than at startup, so it closes without a
 restart, and it costs one indexed lookup.
 
+**The switch is one-way.** Losing the last user leaves the server answering
+nothing until one is added again, rather than reverting to the open server:
+deleting a user says who may no longer act, and reading it as "everybody may
+act" turns an administrative mistake into an unguarded database that nobody was
+told about.
+
+That the database has had a user is therefore a stored fact, written by the
+insert that creates one and never cleared, and not something a server
+remembers. Users are added and deleted by a command line holding the file,
+which a running server learns of only by looking, so a server that looked
+before the first was added and again after the last was deleted would see the
+same empty table twice; no amount of memory can tell those two apart, and the
+window is as wide as the gap between two requests.
+
+Only saying so gets the door open again. A restart does not: a server over a
+database whose users are gone starts locked, because it answers nothing to
+anybody and so exposes nothing wherever it is bound, and because an operator
+whose service is supervised should not have to time creating an account against
+a restart — it recovers from the next one added, as a running server does. What
+`awb serve` refuses is an open server that looks published: one over a database
+that never held a user, and either bound off loopback or carrying
+`--public-url`, `--https` or `--basic-auth-realm`. Only the binding reaches
+anywhere; the three flags are statements of intent, and an intention to publish
+is what the refusal is about. `--no-auth` is the operator saying it was meant,
+and means it: that server consults no users at all, so adding one does not
+close the door either.
+
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
 absence of an identity.

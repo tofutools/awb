@@ -1127,6 +1127,47 @@ func TestServeChecksItsFlagsBeforeItOpensAnything(t *testing.T) {
 	assert.Contains(t, stderr, "--public-url")
 }
 
+// A database with no user serves everybody who reaches the port, so a flag
+// that says this server is meant to be reached from somewhere other than this
+// machine is refused rather than obeyed.
+func TestServeRefusesToOpenADatabaseWithNoUsers(t *testing.T) {
+	h := newHarness(t)
+
+	for _, args := range [][]string{
+		{"--public-url", "https://example.com/awb/"},
+		{"--https"},
+		{"--basic-auth-realm", "awb"},
+		{"--addr", "0.0.0.0"},
+		{"--addr", "192.0.2.10"},
+		{"--addr", ""},
+	} {
+		_, stderr, code := h.run(append([]string{"serve"}, args...)...)
+		assert.Equal(t, 2, code, args)
+		assert.Contains(t, stderr, args[0], args)
+		assert.Contains(t, stderr, "--no-auth", args)
+	}
+}
+
+// A server that authenticates nobody presents no realm, so asking for one says
+// two contradictory things about the same server.
+func TestNoAuthAndABasicAuthRealmContradictEachOther(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--no-auth", "--basic-auth-realm", "awb")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--no-auth")
+}
+
+// Proxy mode opens no database of its own, so it has no users to serve without.
+func TestNoAuthIsNotAProxyModeFlag(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--no-auth", "--proxy-to", "https://example.com/awb/")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--no-auth")
+	assert.Contains(t, stderr, "--proxy-to")
+}
+
 // A --public-url that cannot be a base is refused at startup rather than
 // serving a UI whose every relative URL is wrong.
 func TestServeRejectsAnUnusablePublicURL(t *testing.T) {

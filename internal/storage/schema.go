@@ -22,6 +22,29 @@ var migrations = [][]string{
 	schemaV3,
 	schemaV4,
 	schemaV5,
+	schemaV6,
+}
+
+// schemaV6 records that a database has had a user, which is what stops
+// deleting the last one from turning a running server's authentication off.
+//
+// The fact has to outlive the rows, and it has to live here rather than in the
+// server's memory. Users are added and deleted by a command line holding the
+// file, which a running server learns about only by looking; one that looked
+// before the first user was added and again after the last was deleted would
+// see the same empty table twice and go back to serving everybody. That is the
+// accident this table exists to prevent, and only something the deletion
+// cannot remove can prevent it.
+//
+// It is one row that exists or does not, written by the insert that creates a
+// user and never deleted. A database that already holds users is marked as the
+// migration runs, because its authentication is already on.
+var schemaV6 = []string{
+	`CREATE TABLE user_history (
+		one INTEGER PRIMARY KEY CHECK (one = 1)
+	) STRICT`,
+
+	`INSERT INTO user_history (one) SELECT 1 WHERE EXISTS (SELECT 1 FROM users)`,
 }
 
 // schemaV4 adds the append-only issue activity stream. Changes are JSON text

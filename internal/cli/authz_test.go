@@ -59,7 +59,104 @@ func TestAddingTheFirstUserTurnsAuthenticationOn(t *testing.T) {
 	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// And deleting the last one opens it again.
+}
+
+// Deleting the last user does not undo that. A server that has authenticated
+// answers nothing rather than reverting to serving everybody, because nobody
+// asked for it to be opened and a client that arrives a moment later would
+// otherwise be handed the whole database.
+func TestDeletingTheLastUserDoesNotOpenTheServer(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	resp, _ := get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+
+	// The same handler, no restart. There is no challenge, because no
+	// credentials could open a server with no accounts.
+	resp, body := get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
+	assert.Contains(t, body, "no users")
+
+	// Nor do the credentials that used to work.
+	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	// Adding one again makes the next request work, with no restart.
+	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "bob", Password: "hunter2"})
+	require.NoError(t, err)
+	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("bob", "hunter2")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// The lock does not depend on the server having watched it happen. A user
+// added and deleted between two requests leaves the database saying exactly
+// what it says after any other deletion, because what a server reads is a
+// stored fact and not its own memory of one — which is the whole reason the
+// fact is stored.
+func TestALockDoesNotDependOnHavingSeenTheUser(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+
+	// No request in between: this server never authenticates anybody.
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+
+	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// Nothing is exempt from the lock either — not the UI, not the documents, and
+// not the CORS preflight that authentication itself lets past, because no
+// request could follow one successfully.
+func TestTheLockCoversEverythingTheServerServes(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
+		corsOrigins: []string{"https://ui.example.com"},
+	})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+
+	for _, path := range []string{
+		"/", "/app.js", "/api/issues", "/openapi.json", "/openapi.yaml",
+	} {
+		resp, _ := get(t, h, http.MethodGet, path)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, path)
+	}
+
+	resp, _ := get(t, h, http.MethodOptions, "/api/issues",
+		"Origin", "https://ui.example.com",
+		"Access-Control-Request-Method", "GET")
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// --no-auth is not a weaker authenticator, it is none: the users table is not
+// consulted at all, so a database that holds accounts is served openly and
+// adding one to such a server does not close the door either. That is what the
+// flag was asked to mean, and taking it back is a restart without it.
+func TestNoAuthConsultsNoUsers(t *testing.T) {
+	opts := serveOptions{addr: "127.0.0.1", port: 7777, noAuth: true}
+	h, be := newServeHandlerAuthenticating(t, opts, false)
+
+	resp, body := get(t, h, http.MethodGet, "/api/identity")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "mikael", "the fixed identity stands in for a caller")
+
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "the first user does not close this door")
+	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
+
+	// Nor does deleting it lock one, there being nothing to lock.
 	_, err = be.DeleteUser(t.Context(), "alice", "")
 	require.NoError(t, err)
 	resp, _ = get(t, h, http.MethodGet, "/api/projects")
