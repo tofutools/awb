@@ -201,9 +201,9 @@ h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; color: var(--muted); font-weight
 .profile-project:last-child { border-bottom: 0; }
 .profile-project-name { font-family: var(--mono); }
 .profile-project-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile-password-form { display: grid; grid-template-columns: minmax(0, 22rem); gap: 0.4rem; }
-.profile-password-form label { color: var(--muted); font-size: 0.85em; }
-.profile-password-form input {
+.profile-name-form, .profile-password-form { display: grid; grid-template-columns: minmax(0, 22rem); gap: 0.4rem; }
+.profile-name-form label, .profile-password-form label { color: var(--muted); font-size: 0.85em; }
+.profile-name-form input, .profile-password-form input {
   margin-bottom: 0.35rem;
   padding: 0.45rem 0.55rem;
   border: 1px solid var(--line);
@@ -212,7 +212,8 @@ h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; color: var(--muted); font-weight
   color: var(--fg);
   font: inherit;
 }
-.profile-password-form input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+.profile-name-form input:focus, .profile-password-form input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
+.profile-form-help { margin: -0.15rem 0 0.35rem; color: var(--muted); font-size: 0.82em; }
 .profile-submit {
   justify-self: start;
   padding: 0.4rem 0.75rem;

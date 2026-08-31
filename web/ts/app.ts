@@ -1974,6 +1974,45 @@ function passwordForm(user: User): HTMLFormElement {
   return form;
 }
 
+function fullNameForm(user: User, onUpdated: (updated: User) => void): HTMLFormElement {
+  const form = element("form", "profile-name-form") as HTMLFormElement;
+  const inputID = "profile-full-name";
+  const input = document.createElement("input");
+  input.id = inputID;
+  input.name = "full_name";
+  input.value = user.full_name;
+  input.maxLength = 500;
+  input.autocomplete = "name";
+  const submit = element("button", "profile-submit", "Save full name") as HTMLButtonElement;
+  submit.type = "submit";
+  const message = element("p", "profile-form-message");
+  message.setAttribute("aria-live", "polite");
+  const help = element("p", "profile-form-help", `Optional. Shown with @${user.name} in the user directory.`);
+  const label = element("label", "", "Full name") as HTMLLabelElement;
+  label.htmlFor = inputID;
+  form.append(label, input, help, submit, message);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message.className = "profile-form-message";
+    submit.disabled = true;
+    message.textContent = "";
+    try {
+      const updated = await api.updateUser(user.name, { full_name: input.value });
+      Object.assign(user, updated);
+      input.value = updated.full_name;
+      onUpdated(updated);
+      message.textContent = "Full name saved.";
+    } catch (error) {
+      message.classList.add("form-error");
+      message.textContent = error instanceof ApiError ? error.message : String(error);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  return form;
+}
+
 async function viewProfile(): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
   const [user, projects] = await Promise.all([api.user(identity), api.projects()]);
@@ -1981,10 +2020,16 @@ async function viewProfile(): Promise<HTMLElement> {
   const heading = element("div", "profile-heading");
   heading.append(avatar(user.name, "profile-avatar"));
   const title = element("div");
-  title.append(
-    element("h1", "", user.full_name || `@${user.name}`),
-    element("p", "lede", user.full_name === "" ? "Your account and access" : `@${user.name} · Your account and access`),
-  );
+  const titleName = element("h1");
+  const titleDetail = element("p", "lede");
+  const showIdentity = (current: User): void => {
+    titleName.textContent = current.full_name || `@${current.name}`;
+    titleDetail.textContent = current.full_name === ""
+      ? "Your account and access"
+      : `@${current.name} · Your account and access`;
+  };
+  showIdentity(user);
+  title.append(titleName, titleDetail);
   heading.append(title);
   view.append(heading);
 
@@ -1993,20 +2038,27 @@ async function viewProfile(): Promise<HTMLElement> {
   const details = element("section", "profile-card");
   details.append(element("h2", "", "Account status"), roles);
   const facts = element("dl", "profile-facts");
+  let updatedValue: HTMLElement | undefined;
   const fact = (label: string, value: string): void => {
-    facts.append(element("dt", "", label), element("dd", "", value));
+    const definition = element("dd", "", value);
+    facts.append(element("dt", "", label), definition);
+    if (label === "Updated") updatedValue = definition;
   };
   fact("Username", user.name);
-  fact("Full name", user.full_name || "—");
   fact("Created", user.created_at);
   fact("Updated", user.updated_at);
   details.append(facts);
 
+  const profile = element("section", "profile-card");
+  profile.append(element("h2", "", "Profile"), fullNameForm(user, (updated) => {
+    showIdentity(updated);
+    if (updatedValue !== undefined) updatedValue.textContent = updated.updated_at;
+  }));
   const access = element("section", "profile-card");
   access.append(element("h2", "", "Project access"), profileProjectList(user, projects.rows));
   const security = element("section", "profile-card");
   security.append(element("h2", "", "Password"), passwordForm(user));
-  view.append(details, access, security);
+  view.append(details, profile, access, security);
   return view;
 }
 
