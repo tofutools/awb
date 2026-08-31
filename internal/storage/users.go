@@ -238,8 +238,8 @@ func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) 
 	clauses := []string{}
 	args := []any{}
 	for _, word := range strings.Fields(filter) {
-		membershipScope, membershipScopeArgs := "1 = 1", []any(nil)
-		activityScope, activityScopeArgs := "1 = 1", []any(nil)
+		var membershipScope, activityScope string
+		var membershipScopeArgs, activityScopeArgs []any
 		if visibleOnly {
 			membershipScope, membershipScopeArgs = t.visibleClause("pm.project")
 			activityScope, activityScopeArgs = t.visibleClause("ap.project")
