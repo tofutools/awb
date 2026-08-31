@@ -135,12 +135,13 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "search" | "tag" | "users";
+type IconName = "attachment" | "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "relation" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
 function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
+    attachment: '<path d="m21.4 11.6-8.5 8.5a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path>',
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
@@ -148,6 +149,7 @@ function svgIcon(name: IconName): SVGSVGElement {
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
     ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
+    relation: '<path d="M10 13a5 5 0 0 0 7.1 0l2-2A5 5 0 0 0 12 3.9L10.9 5"></path><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"></path>',
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
     tag: '<path d="M20 13 13 20 4 11V4h7z"></path><circle cx="8.5" cy="8.5" r="1"></circle>',
     users: '<circle cx="9" cy="8" r="3"></circle><path d="M3 20v-2a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v2"></path><path d="M16 5a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 4v2"></path>',
@@ -1238,6 +1240,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       });
     } else {
       issueEditDrafts.delete(issue.id);
+      attachmentSection.editor.reset();
+      relationSection.editor.reset();
     }
     view.classList.toggle("issue-editing", show);
     editForm.hidden = !show;
@@ -1253,14 +1257,9 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   });
   editForm.addEventListener("keydown", (event) => {
     const shortcut = issueEditorShortcut(event);
-    if (shortcut === undefined) return;
+    if (shortcut !== "save") return;
     event.preventDefault();
-    if (shortcut === "save") {
-      editForm.requestSubmit();
-      return;
-    }
-    showEditor(false);
-    editButton.focus();
+    editForm.requestSubmit();
   });
   content.append(editForm);
 
@@ -1302,6 +1301,13 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
+  view.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented ||
+        !view.classList.contains("issue-editing") || issueEditorShortcut(event) !== "hide") return;
+    event.preventDefault();
+    showEditor(false);
+    editButton.focus();
+  });
   if (existingDraft !== undefined) showEditor(true);
   return view;
 }
@@ -1401,7 +1407,16 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
 }
 
 function relationEditor(issueID: string): HTMLFormElement {
-  const form = element("form", "compact-editor") as HTMLFormElement;
+  const form = element("form", "compact-editor relation-editor") as HTMLFormElement;
+  const disclosureRow = element("div", "relation-disclosure-row");
+  const disclose = button("", "relation-disclosure");
+  disclose.append(svgIcon("relation"), document.createTextNode("+ Add relation"));
+  disclosureRow.append(
+    disclose,
+    element("span", "relation-hint", "Create a dependency or association"),
+  );
+  const fields = element("div", "relation-fields");
+  fields.hidden = true;
   const type = select(["blocked-by", "has-parent", "discovered-from", "related"]);
   type.setAttribute("aria-label", "Relation type");
   const other = document.createElement("input");
@@ -1420,9 +1435,21 @@ function relationEditor(issueID: string): HTMLFormElement {
   const force = document.createElement("input");
   force.type = "checkbox";
   forceLabel.append(force, document.createTextNode("Replace parent"));
-  const add = element("button", "primary-button", "Add relation") as HTMLButtonElement;
+  const add = element("button", "quiet-action", "Add relation") as HTMLButtonElement;
   add.type = "submit";
-  form.append(type, otherAutocomplete, forceLabel, add);
+  fields.append(type, otherAutocomplete, forceLabel, add);
+  form.append(disclosureRow, fields);
+  const expand = (): void => {
+    disclosureRow.hidden = true;
+    fields.hidden = false;
+    other.focus();
+  };
+  const collapse = (): void => {
+    disclosureRow.hidden = false;
+    fields.hidden = true;
+  };
+  disclose.addEventListener("click", expand);
+  form.addEventListener("reset", collapse);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [add], () => api.addRelation(issueID, {
@@ -1438,16 +1465,38 @@ function attachmentEditor(issueID: string): HTMLFormElement {
   const form = element("form", "compact-editor attachment-editor") as HTMLFormElement;
   const file = document.createElement("input");
   file.type = "file";
-  file.required = true;
+  file.className = "attachment-file-input";
   file.setAttribute("aria-label", "Attachment file");
-  const upload = element("button", "primary-button", "Attach file") as HTMLButtonElement;
-  upload.type = "submit";
-  form.append(file, upload);
+  const picker = element("label", "attachment-picker") as HTMLLabelElement;
+  picker.append(
+    svgIcon("attachment"),
+    document.createTextNode("Drop a file here or "),
+    element("span", "attachment-browse", "browse"),
+    file,
+  );
+  form.append(picker);
+  const upload = (selected: File): void => {
+    void mutate(form, [file], () => api.addAttachment(issueID, selected));
+  };
+  file.addEventListener("change", () => {
+    const selected = file.files?.[0];
+    if (selected !== undefined) upload(selected);
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (file.files?.[0] === undefined) return;
-    void mutate(form, [upload], () => api.addAttachment(issueID, file.files![0]));
   });
+  form.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    form.classList.add("drag-active");
+  });
+  form.addEventListener("dragleave", () => form.classList.remove("drag-active"));
+  form.addEventListener("drop", (event) => {
+    event.preventDefault();
+    form.classList.remove("drag-active");
+    const selected = event.dataTransfer?.files[0];
+    if (selected !== undefined) upload(selected);
+  });
+  form.addEventListener("reset", () => form.classList.remove("drag-active"));
   return form;
 }
 
