@@ -86,7 +86,7 @@ func TestCreateUserRejectsUnknownFields(t *testing.T) {
 func TestGetAndListUsers(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"bob","password":"hunter2"}`)
-	a.createUser(`{"name":"alice","password":"hunter2","project_admin":true}`)
+	a.createUser(`{"name":"alice","full_name":"Alice Andersson","password":"hunter2","project_admin":true}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/users", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -96,6 +96,7 @@ func TestGetAndListUsers(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(payload), &users))
 	require.Len(t, users, 2)
 	assert.Equal(t, "alice", users[0].Name, "ordered by name ascending")
+	assert.Equal(t, "Alice Andersson", users[0].FullName)
 	assert.Equal(t, "bob", users[1].Name)
 	assert.Contains(t, payload, `"activity_projects":[]`)
 
@@ -153,9 +154,15 @@ func TestUpdateUserPrecondition(t *testing.T) {
 	user := a.createUser(`{"name":"alice","password":"hunter2"}`)
 	stale := backend.ETag(user.UpdatedAt)
 
-	resp, _ := a.do(http.MethodPatch, "/api/users/alice", `{"user_admin":true}`,
+	resp, payload := a.do(http.MethodPatch, "/api/users/alice", `{"full_name":"Alice Andersson"}`,
 		"If-Match", stale)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var updated domain.User
+	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
+	assert.Equal(t, "Alice Andersson", updated.FullName)
+	assert.Greater(t, updated.UpdatedAt, user.UpdatedAt,
+		"a full-name-only change moves the user version")
+	assert.Equal(t, backend.ETag(updated.UpdatedAt), resp.Header.Get("ETag"))
 
 	resp, _ = a.do(http.MethodPatch, "/api/users/alice", `{"project_admin":true}`,
 		"If-Match", stale)

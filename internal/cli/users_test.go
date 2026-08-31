@@ -33,6 +33,7 @@ func TestUserFullName(t *testing.T) {
 	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--full-name", "Alice Andersson", "--compact")
 	assert.Equal(t, "alice\n", out)
 	assert.Contains(t, h.mustRun("user", "show", "alice"), "Alice Andersson")
+	assert.Contains(t, h.mustRun("user", "list"), "Alice Andersson")
 
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
