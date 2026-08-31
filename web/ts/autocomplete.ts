@@ -34,14 +34,14 @@ export function autocompleteKeyAction(
  * saves backend work; the generation check also ignores a stale response from
  * a transport that completed despite cancellation.
  */
-export class SuggestionSearch {
+export class SuggestionSearch<T = Suggestion> {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private request: AbortController | undefined;
   private generation = 0;
 
   constructor(
-    private readonly load: (query: string, signal: AbortSignal) => Promise<Suggestion[]>,
-    private readonly update: (state: SuggestionState, rows: Suggestion[]) => void,
+    private readonly load: (query: string, signal: AbortSignal) => Promise<T[]>,
+    private readonly update: (state: SuggestionState, rows: T[]) => void,
   ) {}
 
   query(raw: string): void {

@@ -154,6 +154,17 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 	return users, total, nil
 }
 
+// SearchUsersForNavigation performs a bounded username and full-name substring search.
+func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, error) {
+	rows, err := t.q.QueryContext(t.ctx, `
+		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		  FROM users
+		 WHERE instr(lower(name), lower(?)) > 0 OR instr(lower(full_name), lower(?)) > 0
+		 ORDER BY CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END, name ASC LIMIT ?`,
+		query, query, query, limit)
+	return t.navigationUsers(rows, false, err)
+}
+
 // ListVisibleUsers returns current accounts that have participated in a
 // project visible to the transaction, plus the caller themselves. Participation
 // is a membership, an assignment, or an activity entry: removing somebody's
@@ -211,6 +222,58 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 		return nil, 0, err
 	}
 	return users, total, nil
+}
+
+// SearchVisibleUsersForNavigation applies the directory visibility set before
+// matching, so autocomplete cannot disclose an otherwise hidden account.
+func (t *Tx) SearchVisibleUsersForNavigation(caller, query string, limit int) ([]domain.User, error) {
+	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
+	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
+	args := append([]any{caller}, visibleArgs...)
+	args = append(args, visibleAssignmentArgs...)
+	args = append(args, visibleActivityArgs...)
+	args = append(args, query, query, query, limit)
+	cte := `WITH visible_users(name) AS (
+		SELECT ?
+		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
+		UNION SELECT assignee FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
+			WHERE ` + visibleAssignmentProject + `
+		UNION SELECT actor FROM issue_activity a JOIN issues i ON i.id = a.issue
+			WHERE actor <> '' AND ` + visibleActivityProject + `
+	)`
+	rows, err := t.q.QueryContext(t.ctx, cte+`
+		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		  FROM users
+		 WHERE name IN (SELECT name FROM visible_users)
+		   AND (instr(lower(name), lower(?)) > 0 OR instr(lower(full_name), lower(?)) > 0)
+		 ORDER BY CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END, name ASC LIMIT ?`, args...)
+	return t.navigationUsers(rows, true, err)
+}
+
+func (t *Tx) navigationUsers(rows *sql.Rows, visibleOnly bool, err error) ([]domain.User, error) {
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "search users for navigation")
+	}
+	defer rows.Close()
+	users := []domain.User{}
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "search users for navigation")
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "search users for navigation")
+	}
+	if err := t.hydrateMemberships(users, visibleOnly); err != nil {
+		return nil, err
+	}
+	if err := t.hydrateActivityProjects(users, visibleOnly); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 // hydrateActivityProjects fills the directory-only history for a page in one

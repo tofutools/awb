@@ -118,6 +118,27 @@ func TestCreateIssue(t *testing.T) {
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 }
 
+func TestSearchNavigation(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"Keyboard Command Palette"}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/navigation?q=command+pal&limit=2", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var results struct {
+		Issues   []domain.Issue   `json:"issues"`
+		Projects []domain.Project `json:"projects"`
+		Users    []domain.User    `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &results))
+	require.Len(t, results.Issues, 1)
+	assert.Equal(t, issue.ID, results.Issues[0].ID)
+	assert.Empty(t, results.Projects)
+	assert.Empty(t, results.Users)
+
+	resp, payload = a.do(http.MethodGet, "/api/navigation?q=palette&limit=21", "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+}
+
 // Nothing beyond the recognised fields is accepted: they are rejected rather
 // than ignored.
 func TestCreateIssueRejectsUnknownFields(t *testing.T) {

@@ -463,6 +463,12 @@ endpoints for populating filter menus and for a caller's own identity. The
 bundled UI uses that write surface for comments; the CLI remains the interface
 for changing issue state.
 
+Keyboard navigation uses one bounded autocomplete endpoint. It applies the
+same visibility scope as ordinary listings and substring-matches the fields a
+person uses to address an issue, project or user (including a user's descriptive
+full name), returning a small independent
+cap for each kind rather than making the browser load whole directories.
+
 Two decisions there are worth stating. Status transitions are endpoints rather
 than fields in a general update, and labels are added and removed individually,
 both because a whole-object write would silently discard a concurrent edit.
@@ -478,6 +484,11 @@ integration can do, because the UI is doing it the same way.
 Its frontend is compiled ahead of time and embedded, so the shipped artifact
 stays one file. Third-party browser code is committed pre-built; no package
 manager runs at build time.
+
+The command palette is an extensible registry of named destinations and
+backend-provided record results. The browser debounces its requests and aborts
+or ignores stale ones; the palette owns focus and listbox keyboard interaction,
+while the existing hash routes remain the only navigation mechanism.
 
 ### Authentication and authorization
 

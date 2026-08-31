@@ -194,16 +194,27 @@ func (t *Tx) SuggestIssues(query string, limit *int) (issues []domain.Issue, tot
 		`SELECT count(*) FROM issues i WHERE `+c.where(), c.args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count issue suggestions")
 	}
+	issues, err = t.queryIssueSuggestions(c, query, limit)
+	return issues, total, err
+}
 
+// SearchIssuesForNavigation is the bounded suggestion lookup without the
+// unpaged count an autocomplete response does not consume.
+func (t *Tx) SearchIssuesForNavigation(query string, limit int) ([]domain.Issue, error) {
+	c := t.selection(&domain.Filter{IncludeClosed: true})
+	c.add(`(instr(lower(i.id), lower(?)) > 0 OR instr(lower(i.title), lower(?)) > 0)`, query, query)
+	return t.queryIssueSuggestions(c, query, &limit)
+}
+
+func (t *Tx) queryIssueSuggestions(c *conditions, query string, limit *int) ([]domain.Issue, error) {
 	order := ` ORDER BY CASE
 		WHEN lower(i.id) = lower(?) THEN 0
 		WHEN instr(lower(i.id), lower(?)) = 1 THEN 1
 		WHEN instr(lower(i.title), lower(?)) = 1 THEN 2
 		ELSE 3 END, i.id ASC`
 	args := append(append([]any{}, c.args...), query, query, query)
-	issues, err = t.queryIssues(`SELECT `+issueColumns+` FROM issues i WHERE `+c.where()+
+	return t.queryIssues(`SELECT `+issueColumns+` FROM issues i WHERE `+c.where()+
 		order+limitOffsetClause(limit, nil), args)
-	return issues, total, err
 }
 
 // searchIssues is ListIssues over the full text index.
