@@ -40,7 +40,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, inspectorDismissShortcut, issueEditorShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
@@ -1564,10 +1564,11 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
       trigger.setAttribute("aria-expanded", "true");
       activePanel = editor;
       activeTrigger = trigger;
-      editor.querySelector<HTMLElement>("input, select, button")?.focus();
+      (editor.querySelector<HTMLElement>("input, select") ??
+        editor.querySelector<HTMLElement>("button"))?.focus();
     });
     editor.addEventListener("keydown", (event) => {
-      if (event.defaultPrevented || event.key !== "Escape") return;
+      if (!inspectorDismissShortcut(event)) return;
       event.preventDefault();
       closeActivePanel();
       trigger.focus();
@@ -1745,7 +1746,11 @@ function assigneeEditor(issue: Issue): HTMLElement {
     const releaseForce = document.createElement("input");
     releaseForce.type = "checkbox";
     releaseForceLabel.append(releaseForce, document.createTextNode("Release all"));
-    const release = element("button", "quiet-action", "Release myself") as HTMLButtonElement;
+    const release = element(
+      "button",
+      "quiet-action",
+      issue.assignees.includes(identity) ? "Release myself" : "Release",
+    ) as HTMLButtonElement;
     release.type = "submit";
     releaseForm.append(releaseForceLabel, release);
     releaseForm.addEventListener("submit", (event) => {
