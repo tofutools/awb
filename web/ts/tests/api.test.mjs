@@ -156,6 +156,22 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(new Headers(requests[4].init.headers).get("If-Match"), '"issue-version"');
 });
 
+test("claim adds one assignee while forced release removes every assignee", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response("{}", { status: 200 });
+  });
+
+  await api.claimIssue("awb-123", { assignee: "second", force: false });
+  await api.releaseIssue("awb-123", { assignee: "operator", force: true });
+
+  assert.equal(calls[0].path, "api/issues/awb-123/claim");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { assignee: "second", force: false });
+  assert.equal(calls[1].path, "api/issues/awb-123/release");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { assignee: "operator", force: true });
+});
+
 test("project edits patch the project resource with its ETag", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
