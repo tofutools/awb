@@ -304,6 +304,29 @@ func TestCommentInvalidatesIssueETag(t *testing.T) {
 	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode, payload)
 }
 
+// Attachment changes move updated_at, so both upload and deletion invalidate
+// a form based on the preceding issue version.
+func TestAttachmentChangesInvalidateIssueETag(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	beforeAdd := backend.ETag(issue.UpdatedAt)
+
+	attachment := a.attach(issue.ID, "evidence.txt", "evidence")
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"after add"}`, "If-Match", beforeAdd)
+	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	beforeDelete := resp.Header.Get("ETag")
+
+	resp, payload = a.do(http.MethodDelete, attachmentPath(&attachment), "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"after delete"}`, "If-Match", beforeDelete)
+	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode, payload)
+}
+
 // A tree aggregates many issues and no one version tags it.
 func TestTreeCarriesNoETag(t *testing.T) {
 	a := newAPI(t)

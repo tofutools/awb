@@ -10,13 +10,54 @@ export interface SortState {
   explicit: boolean;
 }
 
-export const defaultPageSize = 50;
-export const pageSizes = [25, 50, 100] as const;
+export const defaultPageSize = 10;
+export const pageSizes = [10, 25, 50, 100] as const;
+const pageSizeKey = "awb.page-size";
+
+interface PageSizeStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+interface StorageHost {
+  readonly localStorage: PageSizeStorage;
+}
+
+/** Access to localStorage itself can be forbidden by the browser. */
+export function pageSizeStorage(host: StorageHost): PageSizeStorage | null {
+  try {
+    return host.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** rememberedPageSize returns the browser preference, or the UI default. */
+export function rememberedPageSize(storage: PageSizeStorage | null): number {
+  if (storage === null) return defaultPageSize;
+  try {
+    const value = Number(storage.getItem(pageSizeKey));
+    return pageSizes.includes(value as typeof pageSizes[number]) ? value : defaultPageSize;
+  } catch {
+    return defaultPageSize;
+  }
+}
+
+/** Storage can be unavailable in privacy modes; paging still works then. */
+export function rememberPageSize(storage: PageSizeStorage | null, size: number): void {
+  if (storage === null) return;
+  try {
+    storage.setItem(pageSizeKey, String(size));
+  } catch {
+    // The current route still changes even when the preference cannot persist.
+  }
+}
 
 /** pageSizeFrom reads one of the deliberately small set of UI page sizes. */
-export function pageSizeFrom(query: URLSearchParams): number {
+export function pageSizeFrom(query: URLSearchParams, fallback = defaultPageSize): number {
   const value = Number(query.get("size"));
-  return pageSizes.includes(value as typeof pageSizes[number]) ? value : defaultPageSize;
+  if (pageSizes.includes(value as typeof pageSizes[number])) return value;
+  return pageSizes.includes(fallback as typeof pageSizes[number]) ? fallback : defaultPageSize;
 }
 
 /** pageNumber reads the UI's one-based page parameter. Invalid values fall
@@ -146,11 +187,12 @@ export function filterProjects(projects: Project[], query: string): Project[] {
     query,
   ));
 }
-/** filterUsers matches the account name, roles and visible memberships. */
+/** filterUsers matches the username, full name, roles and visible memberships. */
 export function filterUsers(users: DirectoryUser[], query: string): DirectoryUser[] {
   if (query.trim() === "") return users;
   return users.filter((user) => containsEvery([
     user.name,
+    user.full_name,
     user.project_admin ? "project administrator" : "",
     user.user_admin ? "user administrator" : "",
     ...user.projects.flatMap((membership) => [membership.project, membership.access]),

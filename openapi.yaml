@@ -1351,6 +1351,11 @@ components:
       minLength: 1
       maxLength: 64
 
+    UserFullName:
+      type: string
+      maxLength: 500
+      description: The user's optional descriptive name. An empty value means unset.
+
     Access:
       type: string
       description: |
@@ -1708,9 +1713,10 @@ components:
         wire: a password goes in through `password` or `password_hash` and
         never comes back out.
       additionalProperties: false
-      required: [name, project_admin, user_admin, created_at, updated_at, projects]
+      required: [name, full_name, project_admin, user_admin, created_at, updated_at, projects]
       properties:
         name: { $ref: '#/components/schemas/Username' }
+        full_name: { $ref: '#/components/schemas/UserFullName' }
         project_admin:
           type: boolean
           description: |
@@ -1726,7 +1732,7 @@ components:
         updated_at:
           allOf: [$ref: '#/components/schemas/Timestamp']
           description: |
-            Moves when the password or either flag changes, and is strictly
+            Moves when the full name, password or either flag changes, and is strictly
             increasing per user. Granting or withdrawing access to a project
             does not move it, exactly as an issue's relations do not move its.
         projects:
@@ -1748,9 +1754,10 @@ components:
         restricted to project names the caller may see, except that a user
         administrator's complete directory includes every project.
       additionalProperties: false
-      required: [name, project_admin, user_admin, created_at, updated_at, projects, activity_projects]
+      required: [name, full_name, project_admin, user_admin, created_at, updated_at, projects, activity_projects]
       properties:
         name: { $ref: '#/components/schemas/Username' }
+        full_name: { $ref: '#/components/schemas/UserFullName' }
         project_admin: { type: boolean }
         user_admin: { type: boolean }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -1976,6 +1983,7 @@ components:
       required: [name]
       properties:
         name: { $ref: '#/components/schemas/Username' }
+        full_name: { $ref: '#/components/schemas/UserFullName' }
         password: { $ref: '#/components/schemas/Password' }
         password_hash: { $ref: '#/components/schemas/PasswordHash' }
         project_admin: { type: boolean, default: false }
@@ -1996,6 +2004,7 @@ components:
       properties:
         password: { $ref: '#/components/schemas/Password' }
         password_hash: { $ref: '#/components/schemas/PasswordHash' }
+        full_name: { $ref: '#/components/schemas/UserFullName' }
         project_admin: { type: boolean }
         user_admin: { type: boolean }
         name: { $ref: '#/components/schemas/Username' }

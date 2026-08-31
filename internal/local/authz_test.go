@@ -416,9 +416,9 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	assert.Equal(t, 5, all.Total)
 }
 
-// Anybody may read their own account and set their own password, and nobody
-// may grant themselves anything by doing so.
-func TestAUserMayChangeTheirOwnPassword(t *testing.T) {
+// Anybody may read and edit their own profile and password, and nobody may
+// grant themselves anything by doing so.
+func TestAUserMayChangeTheirOwnProfileAndPassword(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
@@ -431,8 +431,12 @@ func TestAUserMayChangeTheirOwnPassword(t *testing.T) {
 	assert.Equal(t, domain.AccessRegular, self.Projects[0].Access)
 
 	changed := "hunter3"
-	updated, err := bob.UpdateUser(ctx, "bob", backend.UserPatch{Password: &changed}, "")
+	fullName := "Bob Builder"
+	updated, err := bob.UpdateUser(ctx, "bob", backend.UserPatch{
+		FullName: &fullName, Password: &changed,
+	}, "")
 	require.NoError(t, err)
+	assert.Equal(t, fullName, updated.FullName)
 	assert.Greater(t, updated.UpdatedAt, self.UpdatedAt, "a password change moves updated_at")
 
 	// But not the flags, and not anybody else's password.
@@ -440,6 +444,8 @@ func TestAUserMayChangeTheirOwnPassword(t *testing.T) {
 	_, err = bob.UpdateUser(ctx, "bob", backend.UserPatch{UserAdmin: &yes}, "")
 	forbidden(t, err)
 	_, err = bob.UpdateUser(ctx, "alice", backend.UserPatch{Password: &changed}, "")
+	forbidden(t, err)
+	_, err = bob.UpdateUser(ctx, "alice", backend.UserPatch{FullName: &fullName}, "")
 	forbidden(t, err)
 }
 

@@ -25,6 +25,29 @@ func TestUserAddReadsThePasswordFromStdin(t *testing.T) {
 	assert.Contains(t, stderr, "unknown flag")
 }
 
+func TestUserFullName(t *testing.T) {
+	h := newHarness(t)
+
+	// Compact output stays compatible: free text is available in JSON and the
+	// human-readable views, but does not introduce a new compact token shape.
+	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--full-name", "Alice Andersson", "--compact")
+	assert.Equal(t, "alice\n", out)
+	assert.Contains(t, h.mustRun("user", "show", "alice"), "Alice Andersson")
+	assert.Contains(t, h.mustRun("user", "list"), "Alice Andersson")
+
+	var user domain.User
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
+	assert.Equal(t, "Alice Andersson", user.FullName)
+
+	h.mustRun("user", "update", "alice", "--full-name", "Alice Berg")
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
+	assert.Equal(t, "Alice Berg", user.FullName)
+
+	h.mustRun("user", "update", "alice", "--full-name", "")
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
+	assert.Empty(t, user.FullName)
+}
+
 // A password reaches the database as a hash and comes back out as nothing at
 // all: no output mode has a field it could appear in.
 func TestAUserNeverPrintsAPassword(t *testing.T) {
@@ -147,6 +170,7 @@ func TestUserJSON(t *testing.T) {
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
 	assert.Equal(t, "alice", user.Name)
+	assert.Empty(t, user.FullName)
 	assert.True(t, user.ProjectAdmin)
 	assert.False(t, user.UserAdmin)
 	assert.NotEmpty(t, user.CreatedAt)

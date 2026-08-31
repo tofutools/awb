@@ -141,6 +141,7 @@ func readPipedPassword(e *env) (string, error) {
 type userAddParams struct {
 	PasswordFlags
 	Name         string `positional:"true" required:"true"`
+	FullName     string `long:"full-name" optional:"true" help:"the user's descriptive name"`
 	ProjectAdmin bool   `long:"project-admin" optional:"true" help:"may create, change and delete projects, and works in every one of them"`
 	UserAdmin    bool   `long:"user-admin" optional:"true" help:"may create, change and delete users"`
 }
@@ -176,6 +177,7 @@ func newUserAddCommand(e *env) *cobra.Command {
 			}
 			user, err := be.CreateUser(cmd.Context(), backend.UserCreate{
 				Name:         p.Name,
+				FullName:     p.FullName,
 				Password:     password,
 				PasswordHash: hash,
 				ProjectAdmin: p.ProjectAdmin,
@@ -191,7 +193,8 @@ func newUserAddCommand(e *env) *cobra.Command {
 
 type userUpdateParams struct {
 	PasswordFlags
-	Name string `positional:"true" required:"true"`
+	Name     string  `positional:"true" required:"true"`
+	FullName *string `long:"full-name" help:"replace the user's descriptive name; empty clears it"`
 	// The two flags are pointers because each has three states and not two:
 	// granted, withdrawn, and left exactly as it was.
 	ProjectAdmin *bool `long:"project-admin" help:"may create, change and delete projects, and works in every one of them"`
@@ -201,13 +204,13 @@ type userUpdateParams struct {
 func newUserUpdateCommand(e *env) *cobra.Command {
 	return boa.CmdT[userUpdateParams]{
 		Use:   "update",
-		Short: "Change a user's password or what they may do",
-		Long: "Change a user's password or either of their two flags. The name itself is\n" +
+		Short: "Change a user's full name, password or what they may do",
+		Long: "Change a user's full name, password or either of their two flags. The username itself is\n" +
 			"immutable: it is the assignee their issues record.\n\n" +
 			"--password reads a new password exactly as awb user add does.\n\n" +
 			"Through a server the two halves are permitted separately: the flags are a\n" +
-			"user administrator's, and the password is theirs or the account holder's\n" +
-			"own, so anybody may change their own password without being able to grant\n" +
+			"user administrator's, and the full name and password are theirs or the account\n" +
+			"holder's own, so anybody may change their own profile without being able to grant\n" +
 			"themselves anything.\n\n" +
 			"Access to a project is not changed here; that is awb project grant.",
 		ParamEnrich: boaParams,
@@ -218,6 +221,7 @@ func newUserUpdateCommand(e *env) *cobra.Command {
 			}
 
 			patch := backend.UserPatch{
+				FullName:     p.FullName,
 				ProjectAdmin: p.ProjectAdmin,
 				UserAdmin:    p.UserAdmin,
 			}

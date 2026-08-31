@@ -111,8 +111,9 @@ type Backend interface {
 // ETag is the strong entity tag derived from an entity's strictly increasing
 // updated_at value. Both backend implementations return updated_at, so a
 // caller can preserve the same precondition in direct and remote mode. For an
-// issue, updated_at also moves when a comment is posted, so a tag guards both
-// its stored fields and comments added since the caller read it.
+// issue, updated_at also moves when its labels or attachments change or a
+// comment is posted, so a tag guards all of those changes since the caller
+// read it.
 func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 
 // IssuePage is a listing with the unpaged total that X-Total-Count carries, so
@@ -161,7 +162,8 @@ type MemberPage struct {
 
 // UserCreate is the body of awb user add and of POST /api/users.
 type UserCreate struct {
-	Name string
+	Name     string
+	FullName string
 	// Password is the plaintext, which is hashed and then dropped; PasswordHash
 	// is a bcrypt hash computed elsewhere, as "htpasswd -Bn" writes one. Exactly
 	// one of the two is given: a request carrying both says two things about one
@@ -184,6 +186,7 @@ type UserPatch struct {
 	// At most one of these two is given, for the reason UserCreate states.
 	Password     *string
 	PasswordHash *string
+	FullName     *string
 
 	ProjectAdmin *bool
 	UserAdmin    *bool

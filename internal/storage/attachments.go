@@ -22,13 +22,14 @@ func scanAttachment(row rowScanner) (*domain.Attachment, error) {
 	return &a, nil
 }
 
-// InsertAttachment stores an attachment's metadata.
+// InsertAttachment stores an attachment's metadata and moves the issue's
+// updated_at in the same transaction.
 //
 // An issue cannot hold two attachments under one name, that pair being what
 // identifies one, so a second is refused rather than being given a name it was
 // not asked to have. It is a conflict rather than a usage error because
 // whether it is one depends on what is stored.
-func (t *Tx) InsertAttachment(a *domain.Attachment) error {
+func (t *Tx) InsertAttachment(issue *domain.Issue, a *domain.Attachment) error {
 	a.CreatedAt = Now()
 
 	_, err := t.q.ExecContext(t.ctx, `
@@ -37,7 +38,7 @@ func (t *Tx) InsertAttachment(a *domain.Attachment) error {
 		a.Issue, a.Name, a.ContentType, a.Size, a.Sha256, a.CreatedAt)
 	switch {
 	case err == nil:
-		return nil
+		return t.TouchIssue(issue)
 	case isUniqueViolation(err):
 		return awberr.Conflictf("%s already has an attachment named %q", a.Issue, a.Name)
 	case isCheckViolation(err):
@@ -116,14 +117,15 @@ func (t *Tx) loadAttachments(ids []string, byID map[string]*domain.Issue) error 
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read attachments")
 }
 
-// DeleteAttachment removes one attachment's row.
-func (t *Tx) DeleteAttachment(issueID, name string) error {
+// DeleteAttachment removes one attachment's row and moves the issue's
+// updated_at in the same transaction.
+func (t *Tx) DeleteAttachment(issue *domain.Issue, name string) error {
 	_, err := t.q.ExecContext(t.ctx,
-		`DELETE FROM attachments WHERE issue = ? AND name = ?`, issueID, name)
+		`DELETE FROM attachments WHERE issue = ? AND name = ?`, issue.ID, name)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "delete attachment %q of %s", name, issueID)
+		return awberr.Wrap(awberr.Runtime, err, "delete attachment %q of %s", name, issue.ID)
 	}
-	return nil
+	return t.TouchIssue(issue)
 }
 
 // DigestsOfIssue is the distinct content digests one issue's attachments name.

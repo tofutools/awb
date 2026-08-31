@@ -9,7 +9,10 @@ import {
   nextSortValue,
   pageNumber,
   pageSizeFrom,
+  pageSizeStorage,
   pageWindow,
+  rememberedPageSize,
+  rememberPageSize,
   sortState,
   withClosedIssues,
   withPage,
@@ -85,23 +88,42 @@ test("backend pagination uses canonical one-based route state", () => {
 });
 
 test("page size is a fixed UI choice and changing it resets the page", () => {
-  assert.equal(pageSizeFrom(new URLSearchParams()), 50);
+  assert.equal(pageSizeFrom(new URLSearchParams()), 10);
+  assert.equal(pageSizeFrom(new URLSearchParams(), 25), 25);
   assert.equal(pageSizeFrom(new URLSearchParams("size=25")), 25);
-  assert.equal(pageSizeFrom(new URLSearchParams("size=37")), 50);
+  assert.equal(pageSizeFrom(new URLSearchParams("size=37")), 10);
   assert.equal(
     withPageSize(new URLSearchParams("project=awb&page=4"), 100).toString(),
     "project=awb&size=100",
   );
   assert.equal(
-    withPageSize(new URLSearchParams("project=awb&page=4&size=25"), 50).toString(),
+    withPageSize(new URLSearchParams("project=awb&page=4&size=25"), 10).toString(),
     "project=awb",
   );
 });
 
+test("page size is remembered when browser storage is available", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+
+  assert.equal(rememberedPageSize(storage), 10);
+  rememberPageSize(storage, 50);
+  assert.equal(rememberedPageSize(storage), 50);
+  values.set("awb.page-size", "37");
+  assert.equal(rememberedPageSize(storage), 10);
+
+  const blocked = pageSizeStorage({ get localStorage() { throw new Error("unavailable"); } });
+  assert.equal(blocked, null);
+  assert.doesNotThrow(() => rememberPageSize(blocked, 25));
+});
+
 test("pagination ranges are clamped to the unpaged backend total", () => {
-  assert.deepEqual(pageWindow(214, 2), { page: 2, pages: 5, first: 51, last: 100 });
+  assert.deepEqual(pageWindow(214, 2), { page: 2, pages: 22, first: 11, last: 20 });
   assert.deepEqual(pageWindow(214, 2, 25), { page: 2, pages: 9, first: 26, last: 50 });
-  assert.deepEqual(pageWindow(214, 99), { page: 5, pages: 5, first: 201, last: 214 });
+  assert.deepEqual(pageWindow(214, 99), { page: 22, pages: 22, first: 211, last: 214 });
   assert.deepEqual(pageWindow(0, 1), { page: 1, pages: 1, first: 0, last: 0 });
 });
 
@@ -139,17 +161,18 @@ test("project filtering includes key, name and description", () => {
 test("user filtering includes names, roles and visible projects", () => {
   const rows = [
     {
-      name: "alice", project_admin: false, user_admin: false,
+      name: "alice", full_name: "Alice Andersson", project_admin: false, user_admin: false,
       projects: [{ project: "awb", user: "alice", access: "regular" }],
       activity_projects: ["archive"],
     },
     {
-      name: "dana", project_admin: false, user_admin: true,
+      name: "dana", full_name: "Dana Doe", project_admin: false, user_admin: true,
       projects: [],
       activity_projects: [],
     },
   ];
   assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
+  assert.deepEqual(filterUsers(rows, "andersson").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "archive").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
   assert.equal(filterUsers(rows, "hidden-project").length, 0);

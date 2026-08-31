@@ -468,9 +468,12 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	client := remote.New(base, "alice", "hunter2", "alice")
 	t.Cleanup(func() { _ = client.Close() })
 
-	created, err := client.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
+	created, err := client.CreateUser(ctx, backend.UserCreate{
+		Name: "bob", FullName: "Bob Builder", Password: "hunter2",
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "bob", created.Name)
+	assert.Equal(t, "Bob Builder", created.FullName)
 	assert.False(t, created.UserAdmin)
 	assert.Empty(t, created.Projects)
 
@@ -490,8 +493,12 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	assert.Len(t, users.Users, 2)
 
 	yes := true
-	updated, err := client.UpdateUser(ctx, "bob", backend.UserPatch{ProjectAdmin: &yes}, "")
+	fullName := "Bob Berg"
+	updated, err := client.UpdateUser(ctx, "bob", backend.UserPatch{
+		FullName: &fullName, ProjectAdmin: &yes,
+	}, "")
 	require.NoError(t, err)
+	assert.Equal(t, fullName, updated.FullName)
 	assert.True(t, updated.ProjectAdmin)
 	require.Len(t, updated.Projects, 1)
 

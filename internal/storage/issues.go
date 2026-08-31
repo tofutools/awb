@@ -387,8 +387,8 @@ func validateAssignment(status domain.Status, assignees []string) error {
 }
 
 // TouchIssue moves updated_at for issue activity that is not a change to a
-// column of the issues table: a label being added or removed, or a comment
-// being posted.
+// column of the issues table: a label or attachment being added or removed,
+// or a comment being posted.
 func (t *Tx) TouchIssue(issue *domain.Issue) error {
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx,

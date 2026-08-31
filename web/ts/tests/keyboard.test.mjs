@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { commentSubmitShortcut } from "../../static/keyboard.js";
+import { commentSubmitShortcut, issueEditorShortcut } from "../../static/keyboard.js";
 
 function key(overrides = {}) {
   return {
@@ -22,4 +22,17 @@ test("plain Enter remains a newline and composition confirmation never submits",
   assert.equal(commentSubmitShortcut(key()), false);
   assert.equal(commentSubmitShortcut(key({ key: "Space", ctrlKey: true })), false);
   assert.equal(commentSubmitShortcut(key({ ctrlKey: true, isComposing: true })), false);
+});
+
+test("Escape hides the issue editor and Ctrl+Enter or Cmd+Enter saves it", () => {
+  assert.equal(issueEditorShortcut(key({ key: "Escape" })), "hide");
+  assert.equal(issueEditorShortcut(key({ ctrlKey: true })), "save");
+  assert.equal(issueEditorShortcut(key({ metaKey: true })), "save");
+});
+
+test("plain keys and input-method composition do not control the issue editor", () => {
+  assert.equal(issueEditorShortcut(key()), undefined);
+  assert.equal(issueEditorShortcut(key({ key: "Space", ctrlKey: true })), undefined);
+  assert.equal(issueEditorShortcut(key({ key: "Escape", isComposing: true })), undefined);
+  assert.equal(issueEditorShortcut(key({ ctrlKey: true, isComposing: true })), undefined);
 });

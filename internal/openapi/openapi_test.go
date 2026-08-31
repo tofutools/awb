@@ -146,9 +146,10 @@ func TestPriorityRangeMatches(t *testing.T) {
 func TestLengthMaximaMatch(t *testing.T) {
 	doc := document(t)
 	cases := map[string]int{
-		"Label":      domain.MaxLabelLen,
-		"Assignee":   domain.MaxAssigneeLen,
-		"ProjectKey": domain.MaxProjectKeyLen,
+		"Label":        domain.MaxLabelLen,
+		"Assignee":     domain.MaxAssigneeLen,
+		"ProjectKey":   domain.MaxProjectKeyLen,
+		"UserFullName": domain.MaxUserFullNameLen,
 	}
 	for name, want := range cases {
 		assert.Equal(t, want, number(t, schema(t, doc, name)["maxLength"]), name)
@@ -206,6 +207,20 @@ func TestProjectSchemaCoversEveryField(t *testing.T) {
 		"key", "name", "description", "active_issues", "created_at", "updated_at",
 	} {
 		assert.Contains(t, properties, field)
+	}
+}
+
+func TestUserSchemasAlwaysCarryTheFullName(t *testing.T) {
+	doc := document(t)
+	for _, name := range []string{"User", "UserDirectoryEntry"} {
+		user := schema(t, doc, name)
+		properties, ok := user["properties"].(map[string]any)
+		require.True(t, ok)
+		assert.Contains(t, properties, "full_name", name)
+
+		required, ok := user["required"].([]any)
+		require.True(t, ok)
+		assert.Contains(t, required, "full_name", name)
 	}
 }
 
