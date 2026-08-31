@@ -530,6 +530,29 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+func TestIssueSuggestionsSearchIDsAndTitles(t *testing.T) {
+	a := newAPI(t)
+	created := a.createIssue(`{"project":"awb","title":"Parser crashes on empty input"}`)
+	a.createIssue(`{"project":"awb","title":"Unrelated"}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/issues/suggestions?q=parser&limit=8", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var issues []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, created.ID, issues[0].ID)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/issues/suggestions?q="+created.ID[:len(created.ID)-2], "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, created.ID, issues[0].ID)
+
+	resp, _ = a.do(http.MethodGet, "/api/issues/suggestions", "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 // The facet endpoints honour the selection parameters, the facet's own
 // included, so a UI can narrow progressively.
 func TestFacets(t *testing.T) {

@@ -806,11 +806,34 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .compact-editor[hidden] { display: none; }
 .compact-editor input:not([type="checkbox"]), .compact-editor select { flex: 1 1 10rem; }
+.autocomplete { position: relative; flex: 1 1 10rem; min-width: 0; }
+.autocomplete > input { width: 100%; box-sizing: border-box; }
+.autocomplete-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  right: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, #000 20%, transparent);
+}
+.autocomplete-list[hidden] { display: none; }
+.autocomplete-option { display: grid; gap: 0.1rem; padding: 0.45rem 0.55rem; cursor: pointer; }
+.autocomplete-option:hover, .autocomplete-option.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.autocomplete-option-label { font-family: var(--mono); font-size: 0.85em; }
+.autocomplete-option-detail { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.autocomplete-status { padding: 0.55rem; color: var(--muted); font-size: 0.85em; }
 .check-field { display: inline-flex; gap: 0.35rem; align-items: center; color: var(--muted); font-size: 0.85em; }
 .sidebar-editor { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
 .sidebar-editor.sidebar-edit-control { display: none; }
 .issue-editing .sidebar-editor.sidebar-edit-control { display: flex; }
-.sidebar-editor input { flex: 1 1 auto; width: 0; }
+.sidebar-editor > input, .sidebar-editor > .autocomplete { flex: 1 1 auto; width: 0; }
 .lifecycle-editor { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .lifecycle-editor summary { color: var(--muted); cursor: pointer; text-align: center; }
 .lifecycle-editor summary:hover { color: var(--accent); }

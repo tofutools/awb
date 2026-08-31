@@ -30,6 +30,7 @@ export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
+export type Membership = components["schemas"]["Membership"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
@@ -135,8 +136,8 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   return resp;
 }
 
-async function getPage<T>(path: string): Promise<Page<T>> {
-  const resp = await request(path);
+async function getPage<T>(path: string, init: RequestInit = {}): Promise<Page<T>> {
+  const resp = await request(path, init);
   const rows = (await resp.json()) as T[];
   const header = resp.headers.get("X-Total-Count");
   return { rows, total: header === null ? rows.length : Number(header) };
@@ -206,6 +207,8 @@ export const api = {
   ready: (filters: ReadyFilters = {}) => getPage<Issue>(`api/ready${toQuery(filters)}`),
   blocked: (filters: BlockedFilters = {}) => getPage<Issue>(`api/blocked${toQuery(filters)}`),
   search: (filters: SearchFilters) => getPage<Issue>(`api/search${toQuery(filters)}`),
+  issueSuggestions: (query: string, signal?: AbortSignal) =>
+    getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
@@ -246,11 +249,15 @@ export const api = {
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
-  users: (filters: UserFilters = {}) => getPage<DirectoryUser>(`api/users${toQuery(filters)}`),
+  projectMembers: (key: string, signal?: AbortSignal) =>
+    getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
+  users: (filters: UserFilters = {}, signal?: AbortSignal) =>
+    getPage<DirectoryUser>(`api/users${toQuery(filters)}`, { signal }),
   project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
   updateProject: (key: string, patch: ProjectPatch) =>
     patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),
-  labels: (filters: FacetFilters = {}) => getPage<Facet>(`api/labels${toQuery(filters)}`),
+  labels: (filters: FacetFilters = {}, signal?: AbortSignal) =>
+    getPage<Facet>(`api/labels${toQuery(filters)}`, { signal }),
   assignees: (filters: FacetFilters = {}) => getPage<Facet>(`api/assignees${toQuery(filters)}`),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
   user: (name: string) => getOne<User>(`api/users/${encodeURIComponent(name)}`),

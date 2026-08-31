@@ -182,6 +182,27 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 	return page, nil
 }
 
+// SuggestIssues finds visible issues by a literal ID or title fragment for
+// reference editors. Closed issues are included because relations may name one.
+func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssuePage, error) {
+	valid, err := domain.ValidateSearchTerm(query)
+	if err != nil {
+		return backend.IssuePage{}, err
+	}
+	var page backend.IssuePage
+	err = b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+		page.Issues, page.Total, err = tx.SuggestIssues(valid, limit)
+		return err
+	})
+	if err != nil {
+		return backend.IssuePage{}, err
+	}
+	if page.Issues == nil {
+		page.Issues = []domain.Issue{}
+	}
+	return page, nil
+}
+
 // checkFilterProjects reports a filter naming a project that is not there.
 // Addressing a single entity that does not exist exits 3 even when it appears
 // as a listing's --project, because a filter naming something that is not

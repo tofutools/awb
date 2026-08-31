@@ -230,7 +230,7 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 	require.True(t, ok)
 
 	for _, path := range []string{
-		"/api/issues", "/api/issues/{id}", "/api/issues/{id}/claim",
+		"/api/issues", "/api/issues/suggestions", "/api/issues/{id}", "/api/issues/{id}/claim",
 		"/api/issues/{id}/release", "/api/issues/{id}/close", "/api/issues/{id}/reopen",
 		"/api/issues/{id}/labels", "/api/issues/{id}/relations",
 		"/api/issues/{id}/relations/{type}/{other}", "/api/issues/{id}/tree",
@@ -292,7 +292,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 40)
+	require.Len(t, operations, 41)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]

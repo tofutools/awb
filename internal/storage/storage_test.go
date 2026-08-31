@@ -568,6 +568,40 @@ func TestSearch(t *testing.T) {
 	assert.Empty(t, search("parser", "nonexistent"))
 }
 
+func TestSuggestIssuesByIDAndTitle(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	prefix := add("Parser crashes")
+	contains := add("Repair the parser")
+	closed := add("Parser work already shipped")
+	closeIssue(t, db, closed)
+	add("Unrelated")
+
+	read := func(query string) ([]domain.Issue, int) {
+		var issues []domain.Issue
+		var total int
+		err := db.Read(t.Context(), func(tx *storage.Tx) error {
+			var err error
+			issues, total, err = tx.SuggestIssues(query, nil)
+			return err
+		})
+		require.NoError(t, err)
+		return issues, total
+	}
+
+	issues, total := read("parser")
+	require.Len(t, issues, 3)
+	assert.Equal(t, 3, total)
+	assert.ElementsMatch(t, []string{prefix, closed}, []string{issues[0].ID, issues[1].ID},
+		"title prefixes sort first, including a closed relation target")
+	assert.Equal(t, contains, issues[2].ID, "a contained match sorts after title prefixes")
+
+	issues, total = read(prefix[:len(prefix)-2])
+	require.Len(t, issues, 1)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, prefix, issues[0].ID)
+}
+
 // No operator, wildcard or column prefix is passed through, so no input can
 // produce a query syntax error.
 func TestSearchTermsAreLiteral(t *testing.T) {

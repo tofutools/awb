@@ -599,6 +599,23 @@ func TestSearchIsScoped(t *testing.T) {
 	assert.Equal(t, "awb", scoped.Issues[0].Project)
 }
 
+func TestIssueSuggestionsAreScoped(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Parser drifts"})
+	require.NoError(t, err)
+
+	page, err := root.WithUser("bob").SuggestIssues(ctx, "parser", nil)
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 1)
+	assert.Equal(t, 1, page.Total)
+	assert.Equal(t, visible.ID, page.Issues[0].ID)
+}
+
 // Attachments hang off an issue, so they are scoped with it.
 func TestAttachmentsAreScoped(t *testing.T) {
 	root, ctx := newInstance(t)

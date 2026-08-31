@@ -115,6 +115,28 @@ paths:
         '201': { $ref: '#/components/responses/IssueCreated' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/issues/suggestions:
+    get:
+      tags: [issues]
+      operationId: suggestIssues
+      summary: Suggest visible issues whose ID or title contains the query
+      description: |
+        Intended for reference fields such as a relation target. Matching is
+        case-insensitive and includes closed issues. Exact IDs sort first,
+        followed by ID prefixes, title prefixes and other matches. The usual
+        project visibility scope applies, so suggestions cannot disclose an
+        issue the caller could not list.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The literal ID or title fragment to find.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200': { $ref: '#/components/responses/IssueList' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/issues/{id}:
     parameters:
       - $ref: '#/components/parameters/issueId'

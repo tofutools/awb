@@ -211,6 +211,22 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 	return h.listIssues(ctx, filter)
 }
 
+func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesParams) (
+	*api.IssueListHeaders, error) {
+	query, err := domain.ValidateSearchTerm(params.Q)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.backendFor(ctx).SuggestIssues(ctx, query, optInt(params.Limit))
+	if err != nil {
+		return nil, err
+	}
+	return &api.IssueListHeaders{
+		XTotalCount: api.NewOptInt(page.Total),
+		Response:    toIssues(page.Issues),
+	}, nil
+}
+
 // listIssues answers with the matching issues and the unpaged total that
 // X-Total-Count carries, so a UI can show "1–50 of 214" and page through
 // without loading everything.

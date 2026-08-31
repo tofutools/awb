@@ -43,6 +43,7 @@ type Backend interface {
 	CreateIssue(ctx context.Context, req IssueCreate) (*domain.Issue, error)
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
+	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
 	DeleteIssue(ctx context.Context, ref string, ifMatch string) (*DeletedIssue, error)
 
