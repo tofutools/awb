@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -172,6 +173,12 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	assert.True(t, issues.Issues[0].Blocked, "the complete graph still drives readiness")
 	assert.Empty(t, issues.Issues[0].Blockers, "an ignored connection is not presented")
 	assert.Empty(t, issues.Issues[0].Relations)
+	activity, err := bob.ListActivity(ctx, visible.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	encodedActivity, err := json.Marshal(activity.Activity)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encodedActivity), hidden.ID,
+		"historical relation snapshots must obey the current ignore boundary")
 
 	labels, err := bob.LabelFacets(ctx, &domain.Filter{})
 	require.NoError(t, err)
@@ -194,6 +201,12 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	assert.False(t, preference.Ignored)
 	_, err = bob.GetIssue(ctx, hidden.ID)
 	require.NoError(t, err)
+	activity, err = bob.ListActivity(ctx, visible.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	encodedActivity, err = json.Marshal(activity.Activity)
+	require.NoError(t, err)
+	assert.Contains(t, string(encodedActivity), hidden.ID,
+		"re-enabling restores the historical relation snapshot")
 }
 
 func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {

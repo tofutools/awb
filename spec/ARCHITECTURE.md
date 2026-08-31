@@ -524,7 +524,8 @@ that never held a user, and either bound off loopback or carrying
 anywhere; the three flags are statements of intent, and an intention to publish
 is what the refusal is about. `--no-auth` is the operator saying it was meant,
 and means it: that server consults no users at all, so adding one does not
-close the door either.
+close the door either. Its fixed identity is attribution, not a preference
+owner, even when an account with the same name happens to exist.
 
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
@@ -563,11 +564,12 @@ change. Two flags stand outside the projects — one over projects, one over use
 **The graph is not scoped, and must not be.** A visible issue's relations and
 blockers may name issues the caller cannot fetch; an ignored counterpart is
 suppressed from presentation because the user asked it to disappear, while the
-derived `blocked` state,
-and the relation rules that refuse a cycle or an inverted decomposition, are
-computed over the whole graph. A rule answered over half a graph is not the
-rule, and readiness computed over half a graph is a lie that sends somebody to
-start blocked work. What that costs is a name, and a name is all it costs.
+same suppression is applied to historical relation snapshots in activity. The
+derived `blocked` state, and the relation rules that refuse a cycle or an
+inverted decomposition, are computed over the whole graph. A rule answered
+over half a graph is not the rule, and readiness computed over half a graph is
+a lie that sends somebody to start blocked work. What that costs is a name,
+and a name is all it costs.
 
 **Both live in the same transaction as the write they guard.** The permissions
 are read from the user row inside the operation's own `BEGIN IMMEDIATE`, so they

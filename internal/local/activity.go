@@ -59,12 +59,51 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 			return err
 		}
 		page.Activity, page.Total, err = tx.ListActivity(issue.ID, kind, limit, offset)
-		return err
+		if err != nil {
+			return err
+		}
+		if !b.userPreferences {
+			return nil
+		}
+		return redactIgnoredRelationActivity(tx, b.identity, page.Activity)
 	})
 	if err != nil {
 		return backend.ActivityPage{}, err
 	}
 	return page, nil
+}
+
+// redactIgnoredRelationActivity applies today's preference boundary to the
+// relation snapshots stored in yesterday's activity. The activity row belongs
+// to a visible issue, but either endpoint snapshot may name an issue in a
+// project the caller later ignored; returning that immutable JSON verbatim
+// would make the hidden connection and ID visible again.
+func redactIgnoredRelationActivity(tx *storage.Tx, user string, entries []domain.Activity) error {
+	ignored, err := tx.IgnoredProjects(user)
+	if err != nil || len(ignored) == 0 {
+		return err
+	}
+	for i := range entries {
+		for j := range entries[i].Changes {
+			change := &entries[i].Changes[j]
+			if change.Field != "relations" {
+				continue
+			}
+			for _, value := range []*json.RawMessage{&change.From, &change.To} {
+				var relations []domain.Relation
+				if err := json.Unmarshal(*value, &relations); err != nil {
+					return awberr.Wrap(awberr.Runtime, err,
+						"decode relation activity %d", entries[i].ID)
+				}
+				relations = slices.DeleteFunc(relations, func(relation domain.Relation) bool {
+					project, _, ok := domain.SplitID(relation.Other)
+					return ok && ignored[project]
+				})
+				*value = activityJSON(relations)
+			}
+		}
+	}
+	return nil
 }
 
 // activityChanges compares the stored and separately-mutated parts of an

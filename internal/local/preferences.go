@@ -11,6 +11,9 @@ import (
 // ListProjectPreferences is the recovery path for ignored projects. It uses
 // ordinary authorization but deliberately omits only the preference boundary.
 func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error) {
+	if !b.userPreferences {
+		return nil, awberr.NotFoundf("no such user: %s", b.identity)
+	}
 	preferences := []domain.ProjectPreference{}
 	err := b.db.Read(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, true)
@@ -50,6 +53,9 @@ func (b *Backend) SetProjectIgnored(ctx context.Context, key string, ignored boo
 	key, err := domain.ValidateProjectKey(key)
 	if err != nil {
 		return nil, err
+	}
+	if !b.userPreferences {
+		return nil, awberr.NotFoundf("no such user: %s", b.identity)
 	}
 	var preference domain.ProjectPreference
 	err = b.db.Write(ctx, func(tx *storage.Tx) error {
