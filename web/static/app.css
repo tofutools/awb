@@ -529,6 +529,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   color: var(--muted);
   font-size: 0.82em;
 }
+.pagination[hidden] { display: none; }
 .pagination-link {
   padding: 0.15rem 0.3rem;
   border-radius: 3px;
