@@ -292,7 +292,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 44)
+	require.Len(t, operations, 50)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -327,6 +327,9 @@ func TestOperations(t *testing.T) {
 	}, names("searchIssues"))
 	assert.ElementsMatch(t, []string{"filter", "sort", "limit", "offset"}, names("listProjects"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))
+	assert.ElementsMatch(t, []string{
+		"lane-limit", "lane-offset", "card-limit", "card-offset", "project", "status",
+	}, names("getBoard"))
 	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
 	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))
 	assert.ElementsMatch(t, []string{"name", "content-type"}, names("addAttachment"))

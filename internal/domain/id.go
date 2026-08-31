@@ -19,6 +19,10 @@ const HashLen = 6
 // SaltLen is the number of random bytes mixed into a hash.
 const SaltLen = 16
 
+// BoardViewIDBytes makes view IDs long enough to be safely shared as
+// unguessable URLs without a project prefix or a collision-retry loop.
+const BoardViewIDBytes = 12
+
 // MintHash derives the hash part of an issue ID from the issue's content and a
 // random salt, following the Beads hash-ID scheme:
 //
@@ -54,6 +58,24 @@ func NewSalt() ([]byte, error) {
 		return nil, awberr.Wrap(awberr.Runtime, err, "generate salt")
 	}
 	return salt, nil
+}
+
+// NewBoardViewID mints the stable, opaque identifier of a saved board view.
+func NewBoardViewID() (string, error) {
+	raw := make([]byte, BoardViewIDBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "generate board view id")
+	}
+	return "view-" + hex.EncodeToString(raw), nil
+}
+
+// ValidateBoardViewID refuses path values that are not IDs awb can mint.
+func ValidateBoardViewID(s string) (string, error) {
+	const prefix = "view-"
+	if !strings.HasPrefix(s, prefix) || len(s) != len(prefix)+BoardViewIDBytes*2 || !IsHex(s[len(prefix):]) {
+		return "", awberr.Usagef("invalid board view id %q", s)
+	}
+	return s, nil
 }
 
 // MakeID joins a project key and a hash into an issue ID.

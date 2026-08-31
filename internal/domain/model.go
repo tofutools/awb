@@ -88,6 +88,59 @@ type ProjectPreference struct {
 	Ignored bool    `json:"ignored"`
 }
 
+// BoardView is a named, owner-scoped set of filters for the status board.
+// Empty filter slices mean no constraint. AllProjects distinguishes that from
+// an explicitly selected project set which currently has no visible members.
+type BoardView struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Owner       string   `json:"owner"`
+	Shared      bool     `json:"shared"`
+	AllProjects bool     `json:"all_projects"`
+	Projects    []string `json:"projects"`
+	Labels      []string `json:"labels"`
+	Assignees   []string `json:"assignees"`
+	PriorityMax int      `json:"priority_max"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
+}
+
+// Normalize makes every collection deterministic and non-null on the wire.
+func (v *BoardView) Normalize() {
+	slices.Sort(v.Projects)
+	slices.Sort(v.Labels)
+	slices.Sort(v.Assignees)
+	if v.Projects == nil {
+		v.Projects = []string{}
+	}
+	if v.Labels == nil {
+		v.Labels = []string{}
+	}
+	if v.Assignees == nil {
+		v.Assignees = []string{}
+	}
+}
+
+// Board is one bounded board page. LaneTotal is before lane pagination;
+// column totals are before card pagination.
+type Board struct {
+	View            *BoardView  `json:"view,omitempty"`
+	Lanes           []BoardLane `json:"lanes"`
+	LaneTotal       int         `json:"lane_total"`
+	ProjectsOmitted bool        `json:"projects_omitted"`
+}
+
+type BoardLane struct {
+	Project Project       `json:"project"`
+	Columns []BoardColumn `json:"columns"`
+}
+
+type BoardColumn struct {
+	Status Status  `json:"status"`
+	Issues []Issue `json:"issues"`
+	Total  int     `json:"total"`
+}
+
 // Facet is a distinct value in use with the number of issues carrying it,
 // which GET /api/labels and GET /api/assignees return.
 type Facet struct {

@@ -40,6 +40,10 @@ export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
 export type CloseRequest = components["schemas"]["CloseRequest"];
 export type RelationRequest = components["schemas"]["RelationRequest"];
 export type ProjectPatch = components["schemas"]["ProjectPatch"];
+export type Board = components["schemas"]["Board"];
+export type BoardView = components["schemas"]["BoardView"];
+export type BoardViewCreate = components["schemas"]["BoardViewCreate"];
+export type BoardViewPatch = components["schemas"]["BoardViewPatch"];
 
 /**
  * The query parameters of one operation, named exactly as the CLI flags are.
@@ -57,6 +61,7 @@ export type ProjectFilters = Query<"listProjects">;
 export type UserFilters = Query<"listUsers">;
 export type FacetFilters = Query<"listLabels">;
 export type ActivityFilters = Query<"listIssueActivity">;
+export type BoardFilters = Query<"getBoard">;
 
 /** Every filter any listing takes, which is what a route can carry. */
 export type Filters = IssueFilters & Partial<SearchFilters>;
@@ -212,11 +217,23 @@ async function deleteOne<T>(path: string): Promise<T> {
   return getResponse<T>(await request(path, { method: "DELETE" }));
 }
 
+async function deleteEntity<T>(path: string): Promise<T> {
+  return getResponse<T>(await request(path, { method: "DELETE", headers: entityHeaders(path) }));
+}
+
 async function getResponse<T>(resp: Response): Promise<T> {
   return (await resp.json()) as T;
 }
 
 export const api = {
+  boardViews: async () => getResponse<BoardView[]>(await request("api/board-views")),
+  boardView: (id: string) => getOne<BoardView>(`api/board-views/${encodeURIComponent(id)}`),
+  createBoardView: (body: BoardViewCreate) => postOne<BoardView>("api/board-views", body),
+  updateBoardView: (id: string, patch: BoardViewPatch) =>
+    patchOne<BoardView>(`api/board-views/${encodeURIComponent(id)}`, patch),
+  deleteBoardView: (id: string) => deleteEntity<BoardView>(`api/board-views/${encodeURIComponent(id)}`),
+  board: async (ref: string, filters: BoardFilters = {}, signal?: AbortSignal) =>
+    getResponse<Board>(await request(`api/boards/${encodeURIComponent(ref)}${toQuery(filters)}`, { signal })),
   issues: (filters: IssueFilters = {}, signal?: AbortSignal) =>
     getPage<Issue>(`api/issues${toQuery(filters)}`, { signal }),
   ready: (filters: ReadyFilters = {}, signal?: AbortSignal) =>

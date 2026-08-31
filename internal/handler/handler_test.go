@@ -166,6 +166,40 @@ func TestProjectPreferencesRecoverIgnoredProjects(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
 
+func TestBoardViewsAndPagedBoard(t *testing.T) {
+	a := newAPI(t)
+	for _, title := range []string{"first", "second"} {
+		a.createIssue(`{"project":"awb","title":"` + title + `","labels":["release"]}`)
+	}
+	resp, payload := a.do(http.MethodPost, "/api/board-views",
+		`{"name":"Release","shared":true,"all_projects":false,"projects":["awb"],"labels":["release"],"priority_max":4}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	var view domain.BoardView
+	require.NoError(t, json.Unmarshal([]byte(payload), &view))
+	assert.Equal(t, "/api/board-views/"+view.ID, resp.Header.Get("Location"))
+	assert.NotEmpty(t, resp.Header.Get("ETag"))
+
+	resp, payload = a.do(http.MethodGet, "/api/board-views", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var views []domain.BoardView
+	require.NoError(t, json.Unmarshal([]byte(payload), &views))
+	require.Len(t, views, 1)
+
+	resp, payload = a.do(http.MethodGet, "/api/boards/"+view.ID+"?lane-limit=1&card-limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var board domain.Board
+	require.NoError(t, json.Unmarshal([]byte(payload), &board))
+	assert.Equal(t, 1, board.LaneTotal)
+	require.Len(t, board.Lanes, 1)
+	assert.Equal(t, 2, board.Lanes[0].Columns[0].Total)
+	assert.Len(t, board.Lanes[0].Columns[0].Issues, 1)
+
+	name := `{"name":"Renamed"}`
+	resp, payload = a.do(http.MethodPatch, "/api/board-views/"+view.ID, name, "If-Match", backend.ETag(view.UpdatedAt))
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"name":"Renamed"`)
+}
+
 // Nothing beyond the recognised fields is accepted: they are rejected rather
 // than ignored.
 func TestCreateIssueRejectsUnknownFields(t *testing.T) {

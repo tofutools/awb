@@ -43,6 +43,13 @@ type Backend interface {
 	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
 	SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error)
 
+	ListBoardViews(ctx context.Context) ([]domain.BoardView, error)
+	CreateBoardView(ctx context.Context, req BoardViewCreate) (*domain.BoardView, error)
+	GetBoardView(ctx context.Context, id string) (*domain.BoardView, error)
+	UpdateBoardView(ctx context.Context, id string, req BoardViewPatch, ifMatch string) (*domain.BoardView, error)
+	DeleteBoardView(ctx context.Context, id, ifMatch string) (*domain.BoardView, error)
+	GetBoard(ctx context.Context, ref string, query BoardQuery) (*domain.Board, error)
+
 	CreateIssue(ctx context.Context, req IssueCreate) (*domain.Issue, error)
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
@@ -125,6 +132,35 @@ func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 type IssuePage struct {
 	Issues []domain.Issue
 	Total  int
+}
+
+type BoardViewCreate struct {
+	Name        string
+	Shared      bool
+	AllProjects bool
+	Projects    []string
+	Labels      []string
+	Assignees   []string
+	PriorityMax int
+}
+
+type BoardViewPatch struct {
+	Name        *string
+	Shared      *bool
+	AllProjects *bool
+	Projects    *[]string
+	Labels      *[]string
+	Assignees   *[]string
+	PriorityMax *int
+}
+
+type BoardQuery struct {
+	LaneLimit  *int
+	LaneOffset *int
+	CardLimit  *int
+	CardOffset *int
+	Projects   []string
+	Status     domain.Status
 }
 
 // ProjectPage is a project listing with its unpaged total.

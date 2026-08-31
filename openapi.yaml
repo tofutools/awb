@@ -72,6 +72,7 @@ security:
 
 tags:
   - name: issues
+  - name: boards
   - name: relations
   - name: attachments
   - name: projects
@@ -636,6 +637,113 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/NavigationResults' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/board-views:
+    get:
+      tags: [boards]
+      operationId: listBoardViews
+      summary: List the current identity's named board views
+      responses:
+        '200': { $ref: '#/components/responses/BoardViewList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [boards]
+      operationId: createBoardView
+      summary: Save a named board view
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BoardViewCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/BoardViewCreated' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/board-views/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/BoardViewID' }
+    get:
+      tags: [boards]
+      operationId: getBoardView
+      summary: Get an owned or shared board view
+      responses:
+        '200': { $ref: '#/components/responses/BoardView' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [boards]
+      operationId: updateBoardView
+      summary: Change a board view owned by the caller
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BoardViewPatch' }
+      responses:
+        '200': { $ref: '#/components/responses/BoardView' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [boards]
+      operationId: deleteBoardView
+      summary: Delete a board view owned by the caller
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200':
+          description: The deleted board view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BoardView' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/boards/{ref}:
+    get:
+      tags: [boards]
+      operationId: getBoard
+      summary: Read a bounded page of the default or a saved board
+      description: |
+        `default` means all projects visible under the caller's normal scope.
+        A saved view is evaluated under that same viewer-specific authorization
+        and ignored-project scope. Lane and card totals are calculated before
+        their respective offsets and limits.
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - name: lane-limit
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: lane-offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: card-limit
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: card-offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: project
+          in: query
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ProjectKey' }
+          style: form
+          explode: true
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/Status' }
+      responses:
+        '200':
+          description: The board page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Board' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/projects:
@@ -1257,6 +1365,28 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Issue' }
+    BoardView:
+      description: The board view.
+      headers:
+        Etag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BoardView' }
+    BoardViewCreated:
+      description: The new board view.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+        Etag: { $ref: '#/components/headers/ETag' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BoardView' }
+    BoardViewList:
+      description: The current identity's named board views.
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/BoardView' }
     ActivityCreated:
       description: The new comment activity entry.
       content:
@@ -1398,6 +1528,104 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    BoardViewID:
+      type: string
+      pattern: '^view-[0-9a-f]{24}$'
+
+    BoardView:
+      type: object
+      additionalProperties: false
+      required: [id, name, owner, shared, all_projects, projects, labels,
+        assignees, priority_max, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/BoardViewID' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        owner: { $ref: '#/components/schemas/Assignee' }
+        shared: { type: boolean }
+        all_projects: { type: boolean }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectKey' }
+        labels:
+          type: array
+          items: { $ref: '#/components/schemas/Label' }
+        assignees:
+          type: array
+          items: { $ref: '#/components/schemas/Assignee' }
+        priority_max: { $ref: '#/components/schemas/Priority' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    BoardViewCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        shared: { type: boolean }
+        all_projects: { type: boolean }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectKey' }
+        labels:
+          type: array
+          items: { $ref: '#/components/schemas/Label' }
+        assignees:
+          type: array
+          items: { $ref: '#/components/schemas/Assignee' }
+        priority_max: { $ref: '#/components/schemas/Priority' }
+
+    BoardViewPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        shared: { type: boolean }
+        all_projects: { type: boolean }
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectKey' }
+        labels:
+          type: array
+          items: { $ref: '#/components/schemas/Label' }
+        assignees:
+          type: array
+          items: { $ref: '#/components/schemas/Assignee' }
+        priority_max: { $ref: '#/components/schemas/Priority' }
+
+    Board:
+      type: object
+      additionalProperties: false
+      required: [lanes, lane_total, projects_omitted]
+      properties:
+        view: { $ref: '#/components/schemas/BoardView' }
+        lanes:
+          type: array
+          items: { $ref: '#/components/schemas/BoardLane' }
+        lane_total: { type: integer, minimum: 0 }
+        projects_omitted: { type: boolean }
+
+    BoardLane:
+      type: object
+      additionalProperties: false
+      required: [project, columns]
+      properties:
+        project: { $ref: '#/components/schemas/Project' }
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/BoardColumn' }
+
+    BoardColumn:
+      type: object
+      additionalProperties: false
+      required: [status, issues, total]
+      properties:
+        status: { $ref: '#/components/schemas/Status' }
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/Issue' }
+        total: { type: integer, minimum: 0 }
+
     FacetReadiness:
       type: string
       enum: [ready, blocked]

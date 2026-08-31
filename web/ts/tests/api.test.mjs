@@ -92,6 +92,33 @@ test("project preferences use their dedicated recovery endpoints", async (t) => 
   assert.deepEqual(JSON.parse(calls[1].init.body), { ignored: true });
 });
 
+test("board views use stable encoded paths, ETags and paged board parameters", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    const body = calls.length === 3 ? { lanes: [], lane_total: 0, projects_omitted: false } : {
+      id: "view-aaaaaaaaaaaaaaaaaaaaaaaa", name: "Release", owner: "alex", shared: false,
+      all_projects: true, projects: [], labels: [], assignees: [], priority_max: 4,
+      created_at: "2026-09-01T00:00:00.000Z", updated_at: "2026-09-01T00:00:00.000Z",
+    };
+    return new Response(JSON.stringify(body), { status: 200, headers: { ETag: '"view-v1"' } });
+  });
+
+  await api.boardView("view-aaaaaaaaaaaaaaaaaaaaaaaa");
+  await api.updateBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa", { name: "Next" });
+  await api.board("view-aaaaaaaaaaaaaaaaaaaaaaaa", {
+    project: ["awb", "web"], status: "open", "lane-limit": 10, "card-offset": 8,
+  });
+
+  assert.equal(calls[0].path, "api/board-views/view-aaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"view-v1"');
+  const boardURL = new URL(calls[2].path, "https://example.test/");
+  assert.deepEqual(boardURL.searchParams.getAll("project"), ["awb", "web"]);
+  assert.equal(boardURL.searchParams.get("status"), "open");
+  assert.equal(boardURL.searchParams.get("lane-limit"), "10");
+  assert.equal(boardURL.searchParams.get("card-offset"), "8");
+});
+
 // Every listing is asked with the filters it accepts. Regression: the listing
 // view passed one filter object to all of them, so an assignee in the URL made
 // the ready listing a 400, include-closed did the same to blocked, and a sort

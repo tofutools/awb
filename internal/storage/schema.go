@@ -26,6 +26,48 @@ var migrations = [][]string{
 	schemaV7,
 	schemaV8,
 	schemaV9,
+	schemaV10,
+}
+
+// schemaV10 stores owner-scoped board filters. The owner is deliberately not
+// a foreign key: an open database has a fixed identity but no user rows. A
+// trigger still removes views with an account on authenticated installations.
+var schemaV10 = []string{
+	`CREATE TABLE board_views (
+		id           TEXT PRIMARY KEY,
+		name         TEXT NOT NULL,
+		owner        TEXT NOT NULL,
+		shared       INTEGER NOT NULL DEFAULT 0,
+		all_projects INTEGER NOT NULL DEFAULT 1,
+		priority_max INTEGER NOT NULL DEFAULT 4,
+		created_at   TEXT NOT NULL,
+		updated_at   TEXT NOT NULL,
+		CHECK (id GLOB 'view-[0-9a-f]*' AND length(id) = 29),
+		CHECK (name <> ''),
+		CHECK (owner <> ''),
+		CHECK (shared IN (0, 1)),
+		CHECK (all_projects IN (0, 1)),
+		CHECK (priority_max BETWEEN 0 AND 4)
+	) STRICT`,
+	`CREATE INDEX idx_board_views_owner ON board_views (owner, name, id)`,
+	`CREATE TABLE board_view_projects (
+		view    TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		project TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+		PRIMARY KEY (view, project)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TABLE board_view_labels (
+		view  TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		label TEXT NOT NULL,
+		PRIMARY KEY (view, label)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TABLE board_view_assignees (
+		view     TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		assignee TEXT NOT NULL,
+		PRIMARY KEY (view, assignee)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TRIGGER users_board_views_ad AFTER DELETE ON users BEGIN
+		DELETE FROM board_views WHERE owner = old.name;
+	END`,
 }
 
 // schemaV9 stores the projects each user has chosen to hide. Both foreign keys

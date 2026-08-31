@@ -15,6 +15,7 @@ test("issue listing tabs preserve selected projects only", () => {
   assert.equal(projectScopedHref("issues", current), "#/issues?project=awb&project=other%2Fteam");
   assert.equal(projectScopedHref("projects", current), "#/projects?project=awb&project=other%2Fteam");
   assert.equal(projectScopedHref("blocked", new URLSearchParams()), "#/blocked");
+  assert.equal(projectScopedHref("boards", current), "#/boards?project=awb&project=other%2Fteam");
 });
 
 test("active navigation ignores preserved project filters", () => {

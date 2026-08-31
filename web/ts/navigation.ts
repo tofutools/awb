@@ -1,6 +1,6 @@
 import { listingFilterMaxLength } from "./listings.js";
 
-type ProjectScopedView = "ready" | "issues" | "blocked" | "projects";
+type ProjectScopedView = "ready" | "issues" | "blocked" | "boards" | "projects";
 
 export interface NamedDestination {
   id: string;
@@ -16,6 +16,7 @@ export const namedDestinations: readonly NamedDestination[] = [
   { id: "ready", label: "Ready", path: "#/ready", keywords: "board unassigned available", projectScoped: "ready" },
   { id: "issues", label: "Issues", path: "#/issues", keywords: "tickets work items", projectScoped: "issues" },
   { id: "blocked", label: "Blocked", path: "#/blocked", keywords: "dependencies waiting", projectScoped: "blocked" },
+  { id: "boards", label: "Boards", path: "#/boards", keywords: "kanban scrum swimlanes views", projectScoped: "boards" },
   { id: "projects", label: "Projects", path: "#/projects", keywords: "boards workspaces", projectScoped: "projects" },
   { id: "users", label: "Users", path: "#/users", keywords: "people members accounts" },
 ];

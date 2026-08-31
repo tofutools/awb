@@ -13,14 +13,15 @@ import (
 // the one field meant to hold prose, is bounded in bytes instead, because that
 // is the size that matters for a blob nobody counts characters in.
 const (
-	MaxTitleLen        = 500
-	MaxCloseReasonLen  = 500
-	MaxProjectNameLen  = 500
-	MaxUserFullNameLen = 500
-	MaxSearchTermLen   = 500
-	MaxLabelLen        = 64
-	MaxAssigneeLen     = 64
-	MaxProjectKeyLen   = 16
+	MaxTitleLen         = 500
+	MaxCloseReasonLen   = 500
+	MaxProjectNameLen   = 500
+	MaxUserFullNameLen  = 500
+	MaxSearchTermLen    = 500
+	MaxLabelLen         = 64
+	MaxAssigneeLen      = 64
+	MaxProjectKeyLen    = 16
+	MaxBoardViewNameLen = 100
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
 	MaxDescriptionBytes = 64 * 1024
@@ -35,6 +36,26 @@ func checkUTF8(field, s string) error {
 		return awberr.Usagef("%s is not valid UTF-8", field)
 	}
 	return nil
+}
+
+// ValidateBoardViewName applies the title-like rules to a saved board view's
+// display name. It is trimmed, required and kept deliberately short because it
+// appears in a compact selector rather than as prose.
+func ValidateBoardViewName(s string) (string, error) {
+	if err := checkUTF8("board view name", s); err != nil {
+		return "", err
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", awberr.Usagef("board view name must not be empty")
+	}
+	if err := checkNoControls("board view name", s); err != nil {
+		return "", err
+	}
+	if err := checkMaxRunes("board view name", s, MaxBoardViewNameLen); err != nil {
+		return "", err
+	}
+	return s, nil
 }
 
 // checkNoControls rejects any rune in general category Cc — the C0 range, DEL

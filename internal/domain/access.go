@@ -236,6 +236,12 @@ func (c Caller) MayManageProjects() bool { return c.Unrestricted || c.ProjectAdm
 // users.
 func (c Caller) MayManageUsers() bool { return c.Unrestricted || c.UserAdmin }
 
+// MayManageBoardView keeps a personal view personal: administrative flags do
+// not confer ownership of another user's saved workflow.
+func (c Caller) MayManageBoardView(owner string) bool {
+	return c.Unrestricted || c.Name == owner
+}
+
 // MaySeeUser reports whether the caller may read one user's account. A user
 // may always read their own, which is how anybody without the flag learns what
 // they are permitted to do.

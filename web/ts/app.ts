@@ -10,6 +10,9 @@ import {
   readyFilters,
   type Attachment,
   type Activity,
+  type Board,
+  type BoardView,
+  type BoardViewCreate,
   type Facet,
   type Filters,
   type DirectoryUser,
@@ -62,6 +65,7 @@ import {
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
+import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -163,7 +167,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "attachment" | "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "relation" | "search" | "tag" | "users";
+type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "relation" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -171,6 +175,7 @@ function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
     attachment: '<path d="m21.4 11.6-8.5 8.5a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path>',
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
+    boards: '<rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="11" rx="1"></rect><rect x="17" y="4" width="4" height="14" rx="1"></rect>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
     info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
@@ -955,6 +960,239 @@ async function viewListing(
       pagination(route, page.total),
     ),
   ));
+  return view;
+}
+
+const boardLanePageSize = 10;
+const boardCardPageSize = 8;
+function boardStatusLabel(status: BoardStatus): string {
+  if (status === "in_progress") return "In progress";
+  return status[0].toUpperCase() + status.slice(1);
+}
+
+async function moveBoardIssue(host: HTMLElement, issue: Issue, target: BoardStatus): Promise<void> {
+  if (target === issue.status) return;
+  if (!legalBoardTargets(issue, identity).includes(target)) {
+    mutationError(host, new Error("This move would release somebody else's assignment."));
+    return;
+  }
+  if (target === "closed" && !confirm(`Close ${issue.id}?`)) return;
+  host.classList.add("moving");
+  try {
+    if (issue.status === "closed" && target === "open") await api.reopenIssue(issue.id);
+    else if (target === "in_progress") await api.claimIssue(issue.id);
+    else if (target === "open") await api.releaseIssue(issue.id);
+    else await api.closeIssue(issue.id);
+    await render();
+  } catch (error) {
+    host.classList.remove("moving");
+    mutationError(host, error);
+    const control = host.querySelector<HTMLSelectElement>(".board-card-move select");
+    if (control !== null) control.value = issue.status;
+  }
+}
+
+function boardCard(issue: Issue): HTMLElement {
+  const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
+  card.draggable = matchMedia("(min-width: 721px)").matches;
+  card.dataset.issue = issue.id;
+  const address = nameLink(`#/issues/${encodeURIComponent(issue.id)}`, issue.id, issue.title);
+  card.append(address, issueBadges(issue));
+  const move = element("label", "board-card-move");
+  move.append(document.createTextNode("Move"));
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", `Move ${issue.id}`);
+  for (const status of legalBoardTargets(issue, identity)) {
+    const option = document.createElement("option");
+    option.value = status;
+    option.textContent = status === "closed" && status !== issue.status ? "Closed…" : boardStatusLabel(status);
+    option.selected = status === issue.status;
+    select.append(option);
+  }
+  select.addEventListener("change", () => void moveBoardIssue(card, issue, select.value as BoardStatus));
+  move.append(select);
+  card.append(move);
+  card.addEventListener("dragstart", (event) => {
+    event.dataTransfer?.setData("text/plain", issue.id);
+    if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+  });
+  return card;
+}
+
+function boardColumn(
+  ref: string,
+  project: string,
+  column: Board["lanes"][number]["columns"][number],
+  issuesByID: Map<string, Issue>,
+): HTMLElement {
+  const host = element("section", "board-column");
+  host.dataset.status = column.status;
+  const heading = element("header");
+  heading.append(element("span", "", boardStatusLabel(column.status)), element("span", "board-column-count", String(column.total)));
+  host.append(heading);
+  const cards = element("div", "board-cards");
+  const append = (issues: Issue[]): void => {
+    for (const issue of issues) {
+      issuesByID.set(issue.id, issue);
+      cards.append(boardCard(issue));
+    }
+  };
+  append(column.issues);
+  if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
+  host.append(cards);
+  if (column.issues.length < column.total) {
+    const more = button(`Load ${column.total - column.issues.length} more`, "secondary-button board-column-more");
+    more.addEventListener("click", () => {
+      more.disabled = true;
+      void api.board(ref, {
+        project: [project], status: column.status, "lane-limit": 1,
+        "card-limit": boardCardPageSize, "card-offset": cards.querySelectorAll(".board-card").length,
+      }).then((page) => {
+        const next = page.lanes[0]?.columns[0]?.issues ?? [];
+        append(next);
+        const loaded = cards.querySelectorAll(".board-card").length;
+        if (loaded >= column.total) more.remove();
+        else { more.disabled = false; more.textContent = `Load ${column.total - loaded} more`; }
+      }).catch((error) => { more.disabled = false; mutationError(host, error); });
+    });
+    host.append(more);
+  }
+  host.addEventListener("dragover", (event) => {
+    const issue = issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
+    if (issue !== undefined && legalBoardTargets(issue, identity).includes(column.status)) event.preventDefault();
+  });
+  host.addEventListener("drop", (event) => {
+    const issue = issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
+    if (issue === undefined) return;
+    event.preventDefault();
+    void moveBoardIssue(host, issue, column.status);
+  });
+  return host;
+}
+
+function boardLane(ref: string, lane: Board["lanes"][number], issuesByID: Map<string, Issue>): HTMLElement {
+  const host = element("section", "board-lane");
+  const heading = element("header", "board-lane-heading");
+  const name = element("div");
+  name.append(element("code", "", lane.project.key), element("strong", "", lane.project.name));
+  const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
+  heading.append(name, element("span", "", `${total} issue${total === 1 ? "" : "s"}`));
+  const columns = element("div", "board-columns");
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.project.key, column, issuesByID));
+  host.append(heading, columns);
+  return host;
+}
+
+async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route): Promise<void> {
+  let preferences: ProjectPreference[] = [];
+  try { preferences = await api.projectPreferences(); } catch {
+    const projects = await api.projects();
+    preferences = projects.rows.map((project) => ({ project, ignored: false }));
+  }
+  const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
+  const form = element("form", "board-view-form") as HTMLFormElement;
+  form.method = "dialog";
+  form.append(element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view"));
+  const name = document.createElement("input");
+  name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
+  form.append(field("Name", name));
+  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && (source?.shared ?? false);
+  const sharedLabel = element("label", "board-view-check"); sharedLabel.append(shared, document.createTextNode("Anyone with the link can open this view"));
+  form.append(sharedLabel);
+  const all = document.createElement("input"); all.type = "checkbox"; all.checked = source?.all_projects ?? route.query.getAll("project").length === 0;
+  const allLabel = element("label", "board-view-check"); allLabel.append(all, document.createTextNode("All visible projects")); form.append(allLabel);
+  const selected = new Set(source?.projects ?? route.query.getAll("project"));
+  const projects = element("fieldset", "board-view-projects"); projects.append(element("legend", "", "Selected projects"));
+  for (const preference of preferences) {
+    const row = element("label"); const input = document.createElement("input"); input.type = "checkbox"; input.value = preference.project.key; input.checked = selected.has(preference.project.key);
+    row.append(input, document.createTextNode(`${preference.project.key} — ${preference.project.name}${preference.ignored ? " (ignored)" : ""}`)); projects.append(row);
+  }
+  projects.hidden = all.checked; all.addEventListener("change", () => { projects.hidden = all.checked; }); form.append(projects);
+  const labels = document.createElement("input"); labels.value = source?.labels.join(", ") ?? ""; labels.placeholder = "release, frontend"; form.append(field("Labels (any)", labels));
+  const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam"; form.append(field("Assignees (any)", assignees));
+  const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4)); form.append(field("Maximum priority", priority));
+  const error = element("p", "edit-error");
+  const actions = element("div", "board-view-dialog-actions");
+  const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
+  const save = element("button", "primary-button", source === null ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
+  actions.append(cancel);
+  if (source !== null && !duplicate && source.owner === identity) {
+    const remove = button("Delete", "danger-button");
+    remove.addEventListener("click", () => {
+      if (!confirm(`Delete board view “${source.name}”?`)) return;
+      remove.disabled = true;
+      void api.deleteBoardView(source.id).then(() => { dialog.close(); location.hash = "#/boards"; }).catch((reason) => { remove.disabled = false; error.textContent = String(reason); });
+    });
+    actions.append(remove);
+  }
+  actions.append(save); form.append(error, actions); dialog.append(form); document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  form.addEventListener("submit", (event) => {
+    event.preventDefault(); save.disabled = true; error.textContent = "";
+    const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_projects: all.checked,
+      projects: all.checked ? [] : [...projects.querySelectorAll<HTMLInputElement>('input:checked')].map((input) => input.value),
+      labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4 };
+    const operation = source !== null && !duplicate
+      ? api.updateBoardView(source.id, body)
+      : api.createBoardView(body);
+    void operation.then((view) => { dialog.close(); location.hash = `#/boards/${view.id}`; }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
+  });
+  dialog.showModal(); name.focus();
+}
+
+async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
+  const ref = route.path[1] ?? "default";
+  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize, "card-limit": boardCardPageSize };
+  if (ref === "default") {
+    const projects = route.query.getAll("project"); if (projects.length > 0) filters.project = projects;
+  }
+  const [board, owned] = await Promise.all([api.board(ref, filters, signal), api.boardViews()]);
+  const view = element("div", "board-page");
+  const heading = element("div", "board-heading");
+  const title = element("div"); title.append(element("h1", "", "Boards"), element("p", "lede", "Move work through the existing awb workflow."));
+  const actions = element("div", "board-view-actions");
+  const pickerLabel = element("label"); pickerLabel.append(element("span", "", "View"));
+  const picker = document.createElement("select"); picker.setAttribute("aria-label", "Board view");
+  const option = (id: string, label: string): void => { const item = document.createElement("option"); item.value = id; item.textContent = label; item.selected = id === ref; picker.append(item); };
+  option("default", "Default board"); for (const item of owned) option(item.id, item.name);
+  if (board.view !== undefined && !owned.some((item) => item.id === board.view?.id)) option(board.view.id, board.view.name);
+  picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
+  const saved = board.view;
+  if (saved === undefined) {
+    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(null, false, route)); actions.append(save);
+  } else if (saved.owner === identity) {
+    const edit = button("Edit view"); edit.addEventListener("click", () => void api.boardView(saved.id).then((full) => openBoardViewEditor(full, false, route))); actions.append(edit);
+  } else {
+    const duplicate = button("Duplicate"); duplicate.addEventListener("click", () => void openBoardViewEditor(saved, true, route)); actions.append(duplicate);
+  }
+  if (saved?.shared) {
+    const share = button("Copy link", "primary-button");
+    share.addEventListener("click", () => { void navigator.clipboard.writeText(location.href).then(() => { share.textContent = "Copied"; }); }); actions.append(share);
+  }
+  heading.append(title, actions); view.append(heading);
+  if (saved !== undefined) {
+    const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
+    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_projects ? "All projects" : `${saved.projects.length} projects`));
+    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`)); summary.append(owner, chips); view.append(summary);
+  }
+  view.append(element("p", board.projects_omitted ? "board-scope-note warning" : "board-scope-note", board.projects_omitted
+    ? "Some lanes are hidden by your access or ignored-project settings."
+    : "Project access and your ignored-project settings always apply to this view."));
+  const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
+  for (const lane of board.lanes) lanes.append(boardLane(ref, lane, issuesByID));
+  if (board.lane_total === 0) lanes.append(element("p", "empty", saved === undefined ? "No visible projects." : "No projects match this view."));
+  view.append(lanes);
+  if (board.lanes.length < board.lane_total) {
+    const more = button(`Load more projects · ${board.lanes.length} of ${board.lane_total}`, "secondary-button board-lanes-more");
+    more.addEventListener("click", () => {
+      more.disabled = true; const nextFilters = { ...filters, "lane-offset": lanes.querySelectorAll(".board-lane").length };
+      void api.board(ref, nextFilters).then((page) => {
+        for (const lane of page.lanes) lanes.append(boardLane(ref, lane, issuesByID));
+        const loaded = lanes.querySelectorAll(".board-lane").length;
+        if (loaded >= board.lane_total) more.remove(); else { more.disabled = false; more.textContent = `Load more projects · ${loaded} of ${board.lane_total}`; }
+      }).catch((error) => { more.disabled = false; mutationError(view, error); });
+    }); view.append(more);
+  }
   return view;
 }
 
@@ -2108,6 +2346,7 @@ function chrome(): HTMLElement {
   nav.append(navLink(projectScopedHref("ready", route.query), "Ready", "ready"));
   nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
   nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
+  nav.append(navLink(projectScopedHref("boards", route.query), "Boards", "boards"));
   nav.append(navLink(projectScopedHref("projects", route.query), "Projects", "projects"));
   nav.append(navLink("#/users", "Users", "users"));
   const brand = link("#/ready", "", "brand");
@@ -2456,6 +2695,8 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
       return route.path.length > 1 ? viewIssue(route.path[1]) : viewListing(route, "issues", signal);
     case "blocked":
       return viewListing(route, "blocked", signal);
+    case "boards":
+      return viewBoards(route, signal);
     case "projects":
       return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route, signal);
     case "profile":
