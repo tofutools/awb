@@ -830,15 +830,18 @@ func (e *env) printUsers(users []domain.User) error {
 // userCols is the user listing, printed or scrolled.
 func userCols(t *theme, users []domain.User) []col {
 	names := make([]string, len(users))
+	fullNames := make([]string, len(users))
 	flags := make([]string, len(users))
 	projects := make([]string, len(users))
 	for i := range users {
 		names[i] = users[i].Name
+		fullNames[i] = users[i].FullName
 		flags[i] = adminFlags(&users[i])
 		projects[i] = memberships(&users[i])
 	}
 	return []col{
 		{header: "NAME", cells: names, paint: always(t.id)},
+		{header: "FULL NAME", cells: fullNames},
 		{header: "ADMIN", cells: flags, floor: adminFloor},
 		{header: "PROJECTS", cells: projects, floor: labelsFloor},
 	}
@@ -883,6 +886,7 @@ func (e *env) printUser(user *domain.User) error {
 	default:
 		t := e.theme()
 		e.writeHeading(t, user.Name, adminTitle(user))
+		e.field(t, "Full name", user.FullName)
 		e.field(t, "Created", user.CreatedAt)
 		e.field(t, "Updated", user.UpdatedAt)
 		e.field(t, "Projects", memberships(user))

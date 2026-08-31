@@ -24,6 +24,13 @@ var migrations = [][]string{
 	schemaV5,
 	schemaV6,
 	schemaV7,
+	schemaV8,
+}
+
+// schemaV8 adds the optional descriptive name of a user. The empty default
+// preserves every existing account as one whose full name has not been set.
+var schemaV8 = []string{
+	`ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''`,
 }
 
 // schemaV7 makes assignment a one-to-many relation and removes the old scalar

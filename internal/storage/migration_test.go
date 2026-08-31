@@ -76,6 +76,27 @@ func openAtVersion(t *testing.T, path string, version int) *sql.DB {
 	return raw
 }
 
+func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 7)
+	_, err := raw.ExecContext(t.Context(), `
+		INSERT INTO users (name, password_hash, created_at, updated_at)
+		VALUES ('alice', 'hash', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		user, readErr := tx.GetUser("alice")
+		require.NoError(t, readErr)
+		assert.Empty(t, user.FullName)
+		return nil
+	}))
+}
+
 // A real version-4 shape is built from the historical batches, populated, and
 // then opened by current code. This pins the lossless part of removing the
 // close_reason column: the reason becomes a typed comment and every table that

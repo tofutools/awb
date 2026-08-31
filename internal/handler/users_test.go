@@ -26,12 +26,13 @@ func (a *api) createUser(body string) domain.User {
 func TestCreateUser(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodPost, "/api/users",
-		`{"name":"alice","password":"hunter2","user_admin":true}`)
+		`{"name":"alice","full_name":"Alice Andersson","password":"hunter2","user_admin":true}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
 	assert.Equal(t, "alice", user.Name)
+	assert.Equal(t, "Alice Andersson", user.FullName)
 	assert.True(t, user.UserAdmin)
 	assert.False(t, user.ProjectAdmin)
 	assert.Empty(t, user.Projects)
@@ -116,12 +117,13 @@ func TestUpdateUser(t *testing.T) {
 	a := newAPI(t)
 	created := a.createUser(`{"name":"alice","password":"hunter2"}`)
 
-	resp, payload := a.do(http.MethodPatch, "/api/users/alice", `{"user_admin":true}`)
+	resp, payload := a.do(http.MethodPatch, "/api/users/alice", `{"full_name":"Alice Andersson","user_admin":true}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
 	assert.True(t, user.UserAdmin)
+	assert.Equal(t, "Alice Andersson", user.FullName)
 	assert.Greater(t, user.UpdatedAt, created.UpdatedAt)
 
 	// An empty patch succeeds and changes nothing.
@@ -130,7 +132,7 @@ func TestUpdateUser(t *testing.T) {
 
 	// The object it read, sent back with one field changed.
 	round, err := json.Marshal(map[string]any{
-		"name": "alice", "user_admin": false, "project_admin": user.ProjectAdmin,
+		"name": "alice", "full_name": "Alice Berg", "user_admin": false, "project_admin": user.ProjectAdmin,
 		"projects": user.Projects, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
 	})
 	require.NoError(t, err)
@@ -138,6 +140,7 @@ func TestUpdateUser(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
 	assert.False(t, user.UserAdmin)
+	assert.Equal(t, "Alice Berg", user.FullName)
 
 	// But a name that differs from the path is refused rather than ignored.
 	resp, _ = a.do(http.MethodPatch, "/api/users/alice", `{"name":"bob"}`)

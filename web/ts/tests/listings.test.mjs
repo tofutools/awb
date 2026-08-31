@@ -139,17 +139,18 @@ test("project filtering includes key, name and description", () => {
 test("user filtering includes names, roles and visible projects", () => {
   const rows = [
     {
-      name: "alice", project_admin: false, user_admin: false,
+      name: "alice", full_name: "Alice Andersson", project_admin: false, user_admin: false,
       projects: [{ project: "awb", user: "alice", access: "regular" }],
       activity_projects: ["archive"],
     },
     {
-      name: "dana", project_admin: false, user_admin: true,
+      name: "dana", full_name: "Dana Doe", project_admin: false, user_admin: true,
       projects: [],
       activity_projects: [],
     },
   ];
   assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
+  assert.deepEqual(filterUsers(rows, "andersson").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "archive").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
   assert.equal(filterUsers(rows, "hidden-project").length, 0);

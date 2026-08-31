@@ -505,6 +505,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .user-table th:last-child { width: 24%; }
 .user-name { display: inline-flex; gap: 0.5rem; align-items: center; font-weight: 600; }
 .user-name .avatar { width: 1.8rem; height: 1.8rem; }
+.user-identity { display: inline-flex; flex-direction: column; }
+.user-identity .muted { font-size: 0.82rem; font-weight: 400; }
 .user-projects, .user-roles { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 
 .pagination {

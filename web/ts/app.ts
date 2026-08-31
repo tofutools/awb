@@ -1035,7 +1035,10 @@ function userTable(users: DirectoryUser[]): HTMLElement {
     const userCell = document.createElement("td");
     userCell.dataset.label = "User";
     const name = element("span", "user-name");
-    name.append(avatar(user.name), document.createTextNode(user.name));
+    const identityText = element("span", "user-identity");
+    identityText.append(element("span", "user-full-name", user.full_name || user.name));
+    if (user.full_name !== "") identityText.append(element("span", "muted", `@${user.name}`));
+    name.append(avatar(user.name), identityText);
     userCell.append(name);
     row.append(userCell);
 
@@ -1884,7 +1887,10 @@ async function viewProfile(): Promise<HTMLElement> {
   const heading = element("div", "profile-heading");
   heading.append(avatar(user.name, "profile-avatar"));
   const title = element("div");
-  title.append(element("h1", "", `@${user.name}`), element("p", "lede", "Your account and access"));
+  title.append(
+    element("h1", "", user.full_name || `@${user.name}`),
+    element("p", "lede", user.full_name === "" ? "Your account and access" : `@${user.name} · Your account and access`),
+  );
   heading.append(title);
   view.append(heading);
 
@@ -1897,6 +1903,7 @@ async function viewProfile(): Promise<HTMLElement> {
     facts.append(element("dt", "", label), element("dd", "", value));
   };
   fact("Username", user.name);
+  fact("Full name", user.full_name || "—");
   fact("Created", user.created_at);
   fact("Updated", user.updated_at);
   details.append(facts);

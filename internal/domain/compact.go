@@ -103,7 +103,9 @@ func CompactActivityLine(a *Activity) string {
 //
 //	alice +project-admin awb:admin web:regular
 //
-// The line begins with the one mandatory field, the username. Any further
+// The line begins with the one mandatory field, the username. The descriptive
+// full name is deliberately absent: adding free text would make existing
+// compact consumers parse a new token shape. Any further
 // field is optional and identified by its shape rather than its position, and
 // they appear in this fixed order when present: "+project-admin",
 // "+user-admin", and one "<project>:<access>" per membership, in project

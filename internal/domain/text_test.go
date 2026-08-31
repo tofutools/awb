@@ -152,6 +152,19 @@ func TestValidateProjectName(t *testing.T) {
 	assertUsage(t, err)
 }
 
+func TestValidateUserFullName(t *testing.T) {
+	for _, name := range []string{"", "Mikael Ståldal", "  spaced  "} {
+		got, err := domain.ValidateUserFullName(name)
+		require.NoError(t, err)
+		assert.Equal(t, name, got, "stored byte for byte")
+	}
+
+	for _, name := range []string{"line\nbreak", strings.Repeat("x", domain.MaxUserFullNameLen+1)} {
+		_, err := domain.ValidateUserFullName(name)
+		assert.Error(t, err)
+	}
+}
+
 func TestValidateSearchTerm(t *testing.T) {
 	for _, s := range []string{"parser", "hello world", "3", "naïve", "日本語"} {
 		_, err := domain.ValidateSearchTerm(s)
