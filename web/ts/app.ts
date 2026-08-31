@@ -46,7 +46,7 @@ import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import { navigationPath, projectScopedHref } from "./navigation.js";
-import { accountRoles } from "./profile.js";
+import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import {
   formatUpdated,
   readUpdatedDisplay,
@@ -1997,18 +1997,17 @@ function fullNameForm(user: User, onUpdated: (updated: User) => void): HTMLFormE
     message.className = "profile-form-message";
     submit.disabled = true;
     message.textContent = "";
-    try {
-      const updated = await api.updateUser(user.name, { full_name: input.value });
-      Object.assign(user, updated);
-      input.value = updated.full_name;
-      onUpdated(updated);
-      message.textContent = "Full name saved.";
-    } catch (error) {
+    const result = await saveProfileFullName(user, input.value, api.updateUser);
+    if (result.ok) {
+      Object.assign(user, result.user);
+      input.value = result.user.full_name;
+      onUpdated(result.user);
+      message.textContent = result.message;
+    } else {
       message.classList.add("form-error");
-      message.textContent = error instanceof ApiError ? error.message : String(error);
-    } finally {
-      submit.disabled = false;
+      message.textContent = result.message;
     }
+    submit.disabled = false;
   });
   return form;
 }
@@ -2023,10 +2022,9 @@ async function viewProfile(): Promise<HTMLElement> {
   const titleName = element("h1");
   const titleDetail = element("p", "lede");
   const showIdentity = (current: User): void => {
-    titleName.textContent = current.full_name || `@${current.name}`;
-    titleDetail.textContent = current.full_name === ""
-      ? "Your account and access"
-      : `@${current.name} · Your account and access`;
+    const shown = profileIdentity(current);
+    titleName.textContent = shown.heading;
+    titleDetail.textContent = shown.detail;
   };
   showIdentity(user);
   title.append(titleName, titleDetail);
@@ -2052,7 +2050,7 @@ async function viewProfile(): Promise<HTMLElement> {
   const profile = element("section", "profile-card");
   profile.append(element("h2", "", "Profile"), fullNameForm(user, (updated) => {
     showIdentity(updated);
-    if (updatedValue !== undefined) updatedValue.textContent = updated.updated_at;
+    if (updatedValue !== undefined) updatedValue.textContent = profileIdentity(updated).updated;
   }));
   const access = element("section", "profile-card");
   access.append(element("h2", "", "Project access"), profileProjectList(user, projects.rows));
