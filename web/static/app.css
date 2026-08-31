@@ -188,6 +188,19 @@ h2 { font-size: 1rem; margin: 1.75rem 0 0.5rem; color: var(--muted); font-weight
 .profile-roles { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
 .profile-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }
 .profile-facts dt { color: var(--muted); }
+.settings-heading { margin-bottom: 1.5rem; }
+.settings-heading .lede { margin: 0; }
+.settings-preference {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding-block: 0.35rem;
+  cursor: pointer;
+}
+.settings-preference input { margin-top: 0.2rem; accent-color: var(--accent); }
+.settings-preference-copy { display: grid; gap: 0.2rem; }
+.settings-preference-title { font-weight: 600; }
+.settings-preference-description { color: var(--muted); font-size: 0.88em; }
 .profile-facts dd { margin: 0; overflow-wrap: anywhere; }
 .profile-projects { display: grid; gap: 0.4rem; }
 .profile-project {
