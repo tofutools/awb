@@ -512,7 +512,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   flex-wrap: wrap;
   gap: 0.2rem;
   align-items: center;
-  margin-top: 0.65rem;
+  margin: 0 0 0.65rem;
   color: var(--muted);
   font-size: 0.82em;
 }

@@ -29,7 +29,10 @@ import {
   pageNumber,
   pageSizeFrom,
   pageSizes,
+  pageSizeStorage,
   pageWindow,
+  rememberedPageSize,
+  rememberPageSize,
   sortState,
   withPage,
   withPageSize,
@@ -64,6 +67,11 @@ const app = document.getElementById("app") as HTMLElement;
 let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
+const paginationStorage = pageSizeStorage(window);
+
+function listingPageSize(query: URLSearchParams): number {
+  return pageSizeFrom(query, rememberedPageSize(paginationStorage));
+}
 
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
@@ -631,7 +639,7 @@ function includeClosedControl(route: Route): HTMLElement {
 /** pagination renders links over the backend page. Sorting and selection stay
  * in the URL, while page one remains the canonical form without ?page=1. */
 function pagination(route: Route, total: number): HTMLElement {
-  const size = pageSizeFrom(route.query);
+  const size = listingPageSize(route.query);
   const window = pageWindow(total, pageNumber(route.query), size);
 
   const nav = element("div", "pagination");
@@ -669,7 +677,9 @@ function pagination(route: Route, total: number): HTMLElement {
     select.append(option);
   }
   select.addEventListener("change", () => {
-    location.hash = routeHref(route, withPageSize(route.query, Number(select.value))).slice(1);
+    const selectedSize = Number(select.value);
+    rememberPageSize(paginationStorage, selectedSize);
+    location.hash = routeHref(route, withPageSize(route.query, selectedSize)).slice(1);
   });
   sizeControl.append(select);
 
@@ -679,7 +689,7 @@ function pagination(route: Route, total: number): HTMLElement {
 
 function normalizePageRoute(route: Route, total: number): number {
   const requested = pageNumber(route.query);
-  const normalized = pageWindow(total, requested, pageSizeFrom(route.query)).page;
+  const normalized = pageWindow(total, requested, listingPageSize(route.query)).page;
   if (normalized !== requested) {
     route.query = withPage(route.query, normalized);
     history.replaceState(null, "", routeHref(route, route.query));
@@ -736,8 +746,7 @@ function issueList(
     kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
   ));
   if (facets !== null) section.append(facets);
-  section.append(tableHost);
-  section.append(pagination(route, total));
+  section.append(pagination(route, total), tableHost);
   return section;
 }
 
@@ -757,7 +766,7 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
     .flatMap((key) => [key, `-${key}`]);
   if (allowRelevance) apiSorts.push("relevance", "-relevance");
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
-  const size = pageSizeFrom(query);
+  const size = listingPageSize(query);
   filters.limit = size;
   filters.offset = (pageNumber(query) - 1) * size;
   return filters;
@@ -845,7 +854,7 @@ async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): 
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
   ]);
   const normalized = normalizePageRoute(route, page.total);
-  const size = pageSizeFrom(route.query);
+  const size = listingPageSize(route.query);
   if ((filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
     page = await load();
@@ -967,7 +976,7 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
 
 async function viewProjects(route: Route): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
-  const size = pageSizeFrom(route.query);
+  const size = listingPageSize(route.query);
   const filters: ProjectFilters = {
     limit: size,
     offset: (requested - 1) * size,
@@ -1011,8 +1020,8 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     page.total,
     update,
     listingActions,
-  ), host);
-  listing.append(pagination(route, page.total));
+  ));
+  listing.append(pagination(route, page.total), host);
   view.append(listing);
   return view;
 }
@@ -1078,7 +1087,7 @@ function userTable(users: DirectoryUser[]): HTMLElement {
 
 async function viewUsers(route: Route): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
-  const size = pageSizeFrom(route.query);
+  const size = listingPageSize(route.query);
   const filters: UserFilters = {
     limit: size,
     offset: (requested - 1) * size,
@@ -1104,8 +1113,11 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
     }
     return rows.length;
   };
-  listing.append(listingFilter(route, "Filter this page of users…", "user", page.total, update), host);
-  listing.append(pagination(route, page.total));
+  listing.append(
+    listingFilter(route, "Filter this page of users…", "user", page.total, update),
+    pagination(route, page.total),
+    host,
+  );
   view.append(listing);
   return view;
 }
@@ -1704,7 +1716,7 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     api.projects(),
   ]);
   const normalized = normalizePageRoute(route, page.total);
-  const size = pageSizeFrom(route.query);
+  const size = listingPageSize(route.query);
   if ((filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
     page = await api.search(filters);
