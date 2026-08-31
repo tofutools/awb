@@ -47,6 +47,7 @@ import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import { navigationPath, projectScopedHref } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
+import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -1407,13 +1408,21 @@ function relationEditor(issueID: string): HTMLFormElement {
   other.placeholder = "Other issue ID";
   other.setAttribute("aria-label", "Other issue ID");
   other.required = true;
+  const otherAutocomplete = attachAutocomplete(other, async (query, signal) => {
+    const page = await api.issueSuggestions(query, signal);
+    return page.rows.filter((candidate) => candidate.id !== issueID).map((candidate) => ({
+      value: candidate.id,
+      label: candidate.id,
+      detail: candidate.title,
+    }));
+  });
   const forceLabel = element("label", "check-field");
   const force = document.createElement("input");
   force.type = "checkbox";
   forceLabel.append(force, document.createTextNode("Replace parent"));
   const add = element("button", "primary-button", "Add relation") as HTMLButtonElement;
   add.type = "submit";
-  form.append(type, other, forceLabel, add);
+  form.append(type, otherAutocomplete, forceLabel, add);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [add], () => api.addRelation(issueID, {
@@ -1515,23 +1524,35 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   add("Assignees", text(issue.assignees.map((name) => `@${name}`).join(", ")));
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
-  aside.append(facts, labelEditor(issue.id), lifecycleEditor(issue));
+  aside.append(facts, labelEditor(issue), lifecycleEditor(issue));
   drawToggle();
   return [aside, toggle];
 }
 
-function labelEditor(issueID: string): HTMLFormElement {
+function matchingValues(values: string[], query: string, excluded: string[] = []): Suggestion[] {
+  const needle = query.trim().toLocaleLowerCase();
+  const hidden = new Set(excluded);
+  return values.filter((value) => !hidden.has(value) && value.toLocaleLowerCase().includes(needle))
+    .slice(0, 8)
+    .map((value) => ({ value, label: value }));
+}
+
+function labelEditor(issue: Issue): HTMLFormElement {
   const form = element("form", "sidebar-editor label-editor sidebar-edit-control") as HTMLFormElement;
   const input = document.createElement("input");
   input.placeholder = "Add label";
   input.setAttribute("aria-label", "Label");
   input.required = true;
+  const autocomplete = attachAutocomplete(input, async (query, signal) => {
+    const page = await api.labels({}, signal);
+    return matchingValues(page.rows.map((facet) => facet.value), query, issue.labels);
+  });
   const add = element("button", "primary-button", "Add") as HTMLButtonElement;
   add.type = "submit";
-  form.append(input, add);
+  form.append(autocomplete, add);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [add], () => api.addLabel(issueID, input.value));
+    void mutate(form, [add], () => api.addLabel(issue.id, input.value));
   });
   return form;
 }
@@ -1546,6 +1567,10 @@ function lifecycleEditor(issue: Issue): HTMLElement {
   const assignee = document.createElement("input");
   assignee.placeholder = identity === "" ? "Assignee" : `Assignee (default: ${identity})`;
   assignee.setAttribute("aria-label", "Assignee");
+  const assigneeAutocomplete = attachAutocomplete(assignee, async (query, signal) => {
+    const page = await api.projectMembers(issue.project, signal);
+    return matchingValues(page.rows.map((member) => member.user), query, issue.assignees);
+  });
   const forceLabel = element("label", "check-field");
   const force = document.createElement("input");
   force.type = "checkbox";
@@ -1556,7 +1581,7 @@ function lifecycleEditor(issue: Issue): HTMLElement {
     issue.assignees.length === 0 ? "Claim" : "Add assignee",
   ) as HTMLButtonElement;
   claimButton.type = "submit";
-  claim.append(assignee, forceLabel, claimButton);
+  claim.append(assigneeAutocomplete, forceLabel, claimButton);
   claim.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(section, [claimButton], () => api.claimIssue(issue.id, {

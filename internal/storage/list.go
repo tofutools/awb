@@ -183,6 +183,29 @@ func (t *Tx) ListIssues(f *domain.Filter) (issues []domain.Issue, total int, err
 	return issues, total, err
 }
 
+// SuggestIssues finds visible issues by a literal fragment of their ID or
+// title. It is separate from full-text search: reference fields need partial
+// IDs, while search deliberately uses whole tokens and also reads descriptions.
+func (t *Tx) SuggestIssues(query string, limit *int) (issues []domain.Issue, total int, err error) {
+	c := t.selection(&domain.Filter{IncludeClosed: true})
+	match := `(instr(lower(i.id), lower(?)) > 0 OR instr(lower(i.title), lower(?)) > 0)`
+	c.add(match, query, query)
+	if err := t.q.QueryRowContext(t.ctx,
+		`SELECT count(*) FROM issues i WHERE `+c.where(), c.args...).Scan(&total); err != nil {
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count issue suggestions")
+	}
+
+	order := ` ORDER BY CASE
+		WHEN lower(i.id) = lower(?) THEN 0
+		WHEN instr(lower(i.id), lower(?)) = 1 THEN 1
+		WHEN instr(lower(i.title), lower(?)) = 1 THEN 2
+		ELSE 3 END, i.id ASC`
+	args := append(append([]any{}, c.args...), query, query, query)
+	issues, err = t.queryIssues(`SELECT `+issueColumns+` FROM issues i WHERE `+c.where()+
+		order+limitOffsetClause(limit, nil), args)
+	return issues, total, err
+}
+
 // searchIssues is ListIssues over the full text index.
 //
 // Each term is wrapped in double quotes, with any double quote inside it

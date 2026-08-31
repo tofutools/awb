@@ -144,6 +144,20 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 	return backend.IssuePage{Issues: issues, Total: totalCount(header, len(issues))}, nil
 }
 
+func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssuePage, error) {
+	params := url.Values{"q": []string{query}}
+	if limit != nil {
+		params.Set("limit", strconv.Itoa(*limit))
+	}
+	issues := []domain.Issue{}
+	header, err := b.call(ctx, http.MethodGet,
+		b.endpoint("/api/issues/suggestions", params), nil, "", &issues)
+	if err != nil {
+		return backend.IssuePage{}, err
+	}
+	return backend.IssuePage{Issues: issues, Total: totalCount(header, len(issues))}, nil
+}
+
 // filterQuery renders a filter as query parameters. A repeatable filter is
 // repeated rather than comma-separated, exactly as on the command line.
 //
