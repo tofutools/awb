@@ -334,8 +334,29 @@ on the default port, `--port 8080` moves the port and leaves the binding alone.
 **The database decides whether the server authenticates.** One holding no user
 authenticates nobody, and any client that can reach the port has full read and
 write access — which is why the default binds loopback. Adding the first user
-turns authentication on, from the next request onwards; deleting the last turns
-it off again.
+turns authentication on, from the next request onwards.
+
+Deleting the last user does not turn it off again. The server answers nothing —
+`503`, with no challenge, because no credentials could open a server with no
+accounts — until a user is added, which again takes effect from the next
+request. That a database has had users is recorded in the database itself, so
+it holds whether or not a server was running or watching at the time; turning a
+guarded database back into an open one takes saying so.
+
+Which is what `--no-auth` is. A server started with it authenticates nobody
+whatever the database holds — it consults no users at all, so adding one does
+not close the door either — and taking it back is a restart without the flag.
+
+A server started over a database whose users are already gone starts locked and
+says so in its log, rather than refusing: it answers nothing to anybody, so it
+exposes nothing wherever it is bound, and it recovers from the next
+`awb user add` without a further restart. What refuses to start is a server
+that would authenticate nobody where that looks like a mistake: one over a
+database that never held a user, and either bound to something other than
+loopback, or given `--public-url`, `--https` or `--basic-auth-realm`. The
+binding is what other machines can reach; those three reach nothing by
+themselves, and each describes a deployment published beyond this machine,
+which is the intention the refusal is about.
 
 ```console
 $ echo hunter2 | awb user add alice --user-admin --project-admin
@@ -460,7 +481,7 @@ $ task run ADDR=0.0.0.0
 $ task watch ADDR=0.0.0.0 PORT=8080
 ```
 
-This exposes the server without authentication unless the database holds a
-user.
+That reaches other machines, so it needs a database that holds a user — or
+`task run ADDR=0.0.0.0 -- --no-auth` to serve one that does not.
 
 [License](LICENSE) (MIT)

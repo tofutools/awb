@@ -113,7 +113,7 @@ func TestCreateIssue(t *testing.T) {
 	// 201 carries the new object and a Location header naming it.
 	assert.Equal(t, "/api/issues/"+issue.ID, resp.Header.Get("Location"))
 	// Every response whose body is one Issue carries the ETag for that version.
-	assert.Equal(t, local.ETag(issue.UpdatedAt), resp.Header.Get("ETag"))
+	assert.Equal(t, backend.ETag(issue.UpdatedAt), resp.Header.Get("ETag"))
 	// No response under /api/ is cacheable.
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 }
@@ -266,7 +266,7 @@ func TestConditionalEdit(t *testing.T) {
 	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"third"}`, "If-Match", fresh)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
-	// Omitting it is last-write-wins, which is what the CLI always does.
+	// Omitting it is last-write-wins.
 	resp, _ = a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"fourth"}`)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -277,7 +277,7 @@ func TestETagSurvivesARelation(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t"}`)
 	other := a.createIssue(`{"project":"awb","title":"other"}`)
-	tag := local.ETag(issue.UpdatedAt)
+	tag := backend.ETag(issue.UpdatedAt)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/relations",
 		`{"type":"blocked-by","other":"`+other.ID+`"}`)
@@ -286,6 +286,22 @@ func TestETagSurvivesARelation(t *testing.T) {
 	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"renamed"}`, "If-Match", tag)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload,
 		"the tag guards the issue's own stored fields")
+}
+
+// A comment is issue activity and moves updated_at, so a form based on the
+// previous version must reload before it edits the issue.
+func TestCommentInvalidatesIssueETag(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	tag := backend.ETag(issue.UpdatedAt)
+
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
+		`{"body":"new information"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"title":"renamed"}`, "If-Match", tag)
+	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode, payload)
 }
 
 // A tree aggregates many issues and no one version tags it.

@@ -10,7 +10,6 @@ import (
 
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
-	"github.com/tofutools/awb/internal/local"
 )
 
 // createUser posts a user and returns it.
@@ -38,7 +37,7 @@ func TestCreateUser(t *testing.T) {
 	assert.Empty(t, user.Projects)
 
 	assert.Equal(t, "/api/users/alice", resp.Header.Get("Location"))
-	assert.Equal(t, local.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
+	assert.Equal(t, backend.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
 
 	// The response says nothing about the credential, in either form.
 	assert.NotContains(t, payload, "password")
@@ -103,7 +102,7 @@ func TestGetAndListUsers(t *testing.T) {
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
 	assert.True(t, user.ProjectAdmin)
-	assert.Equal(t, local.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
+	assert.Equal(t, backend.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
 
 	resp, _ = a.do(http.MethodGet, "/api/users/nobody", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -148,7 +147,7 @@ func TestUpdateUser(t *testing.T) {
 func TestUpdateUserPrecondition(t *testing.T) {
 	a := newAPI(t)
 	user := a.createUser(`{"name":"alice","password":"hunter2"}`)
-	stale := local.ETag(user.UpdatedAt)
+	stale := backend.ETag(user.UpdatedAt)
 
 	resp, _ := a.do(http.MethodPatch, "/api/users/alice", `{"user_admin":true}`,
 		"If-Match", stale)

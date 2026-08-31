@@ -570,6 +570,96 @@ func TestDescriptionFlagsAreMutuallyExclusive(t *testing.T) {
 	assert.Equal(t, 2, code)
 }
 
+func TestFetchedIssueDescriptionUpdateUsesReceipt(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("t", "--project", "awb", "--description", "old\n")
+	file := filepath.Join(h.dir, "issue.md")
+
+	assert.Empty(t, h.mustRun("description", "get", id, "--output", file))
+	content, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, "old\n", string(content))
+	_, err = os.Stat(file + ".awb-receipt.json")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(file, []byte("new\n"), 0o600))
+	h.mustRun("update", id, "--description-file", file)
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, "new\n", issue.Description)
+}
+
+func TestDescriptionUpdateRequiresReceiptUnlessForced(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("t", "--project", "awb")
+	file := filepath.Join(h.dir, "issue.md")
+	require.NoError(t, os.WriteFile(file, []byte("replacement"), 0o600))
+
+	_, stderr, code := h.run("update", id, "--description-file", file)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "description must be fetched")
+	assert.Contains(t, stderr, "--force")
+
+	h.mustRun("update", id, "--description-file", file, "--force")
+	_, stderr, code = h.run("update", id, "--description", "again")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--force")
+	h.mustRun("update", id, "--description", "again", "--force")
+}
+
+func TestDescriptionReceiptRejectsWrongEntityAndBackend(t *testing.T) {
+	h := newHarness(t)
+	first := h.create("first", "--project", "awb", "--description", "one")
+	second := h.create("second", "--project", "awb", "--description", "two")
+	file := filepath.Join(h.dir, "issue.md")
+	h.mustRun("description", "get", first, "--output", file)
+	require.NoError(t, os.WriteFile(file, []byte("replacement"), 0o600))
+
+	_, stderr, code := h.run("update", second, "--description-file", file)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "receipt is for issue "+first)
+
+	otherDB := filepath.Join(h.root(), "other.db")
+	h.mustRun("--db", otherDB, "init")
+	h.mustRun("--db", otherDB, "project", "create", "awb")
+	other := strings.TrimSpace(h.mustRun("--db", otherDB, "create", "other", "--project", "awb"))
+	_, stderr, code = h.run("--db", otherDB, "update", other, "--description-file", file)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "another backend")
+}
+
+func TestStaleDescriptionReceiptTellsCallerToFetchAgain(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("t", "--project", "awb", "--description", "old")
+	file := filepath.Join(h.dir, "issue.md")
+	h.mustRun("description", "get", id, "--output", file)
+	h.mustRun("update", id, "--title", "changed meanwhile")
+	require.NoError(t, os.WriteFile(file, []byte("replacement"), 0o600))
+
+	_, stderr, code := h.run("update", id, "--description-file", file)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "receipt is stale")
+	assert.Contains(t, stderr, "fetch the description again")
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, "old", issue.Description)
+}
+
+func TestFetchedProjectDescriptionUpdateUsesReceipt(t *testing.T) {
+	h := newHarness(t)
+	file := filepath.Join(h.dir, "project.md")
+	h.mustRun("project", "description", "get", "awb", "--output", file)
+	require.NoError(t, os.WriteFile(file, []byte("project body\n"), 0o600))
+	h.mustRun("project", "update", "awb", "--description-file", file)
+
+	var project domain.Project
+	require.NoError(t, json.Unmarshal(
+		[]byte(h.mustRun("project", "show", "awb", "--json")), &project))
+	assert.Equal(t, "project body\n", project.Description)
+}
+
 // An issue is reachable by any unambiguous prefix, and by a bare hash.
 func TestIssueReferences(t *testing.T) {
 	h := newHarness(t)
@@ -589,6 +679,7 @@ func TestAgentGuide(t *testing.T) {
 	guide := h.mustRun("agent-guide")
 	assert.Contains(t, guide, "awb ready --compact")
 	assert.Contains(t, guide, "Quoted `\\n` sequences")
+	assert.Contains(t, guide, "awb project description get <key> --output project.md")
 	assert.Contains(t, guide, "awb project update <key> --description-file project.md")
 	assert.Contains(t, guide, "`--json` selects an output format")
 	assert.Contains(t, guide, "Exit codes")
@@ -736,7 +827,7 @@ func TestProjectRemovalWithoutCascade(t *testing.T) {
 func TestProjectShow(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun("project", "update", "awb",
-		"--description", "The **board** itself.\n")
+		"--description", "The **board** itself.\n", "--force")
 	h.create("open one", "--project", "awb")
 
 	out := h.mustRun("project", "show", "awb")
@@ -1129,6 +1220,47 @@ func TestServeChecksItsFlagsBeforeItOpensAnything(t *testing.T) {
 	_, stderr, code := h.run("serve", "--public-url", "//example.com/awb")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "--public-url")
+}
+
+// A database with no user serves everybody who reaches the port, so a flag
+// that says this server is meant to be reached from somewhere other than this
+// machine is refused rather than obeyed.
+func TestServeRefusesToOpenADatabaseWithNoUsers(t *testing.T) {
+	h := newHarness(t)
+
+	for _, args := range [][]string{
+		{"--public-url", "https://example.com/awb/"},
+		{"--https"},
+		{"--basic-auth-realm", "awb"},
+		{"--addr", "0.0.0.0"},
+		{"--addr", "192.0.2.10"},
+		{"--addr", ""},
+	} {
+		_, stderr, code := h.run(append([]string{"serve"}, args...)...)
+		assert.Equal(t, 2, code, args)
+		assert.Contains(t, stderr, args[0], args)
+		assert.Contains(t, stderr, "--no-auth", args)
+	}
+}
+
+// A server that authenticates nobody presents no realm, so asking for one says
+// two contradictory things about the same server.
+func TestNoAuthAndABasicAuthRealmContradictEachOther(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--no-auth", "--basic-auth-realm", "awb")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--no-auth")
+}
+
+// Proxy mode opens no database of its own, so it has no users to serve without.
+func TestNoAuthIsNotAProxyModeFlag(t *testing.T) {
+	h := newHarness(t)
+
+	_, stderr, code := h.run("serve", "--no-auth", "--proxy-to", "https://example.com/awb/")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--no-auth")
+	assert.Contains(t, stderr, "--proxy-to")
 }
 
 // A --public-url that cannot be a base is refused at startup rather than

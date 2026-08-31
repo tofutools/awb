@@ -100,8 +100,7 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 }
 
 // checkIfMatch enforces the optional conditional-edit precondition. An empty
-// ifMatch means no precondition, which is what the CLI always sends and what
-// gives it last-write-wins.
+// ifMatch means no precondition and gives the caller last-write-wins.
 //
 // The tag is a strong one over the entity's own stored fields, so it is
 // compared exactly.
@@ -109,21 +108,11 @@ func checkIfMatch(ifMatch, updatedAt, what string) error {
 	if ifMatch == "" {
 		return nil
 	}
-	if ifMatch != ETag(updatedAt) {
+	if ifMatch != backend.ETag(updatedAt) {
 		return awberr.PreconditionFailed(what)
 	}
 	return nil
 }
-
-// ETag is the entity tag: the entity's updated_at in quotes.
-//
-// What makes it reliable is not the millisecond resolution of updated_at but
-// its being strictly increasing per row, so the tag identifies a version
-// rather than an instant. It is a strong tag, because If-Match is compared
-// strongly and a weak validator would never match, and it therefore says
-// exactly what it guards: the entity's own stored fields, which are what a
-// form edits.
-func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 
 // authorize resolves who is acting and restricts the transaction to what they
 // may see. It is the one place either is decided, and every operation of this

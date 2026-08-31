@@ -7,7 +7,6 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
-	"github.com/tofutools/awb/internal/local"
 )
 
 // projectResponse is issueResponse for a project, whose tag is built from its
@@ -16,7 +15,7 @@ import (
 // an issue's.
 func projectResponse(project *domain.Project) *api.ProjectHeaders {
 	return &api.ProjectHeaders{
-		Etag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Etag:     api.NewOptString(backend.ETag(project.UpdatedAt)),
 		Response: toProject(project),
 	}
 }
@@ -44,7 +43,7 @@ func (h *Handler) CreateProject(ctx context.Context, req *api.ProjectCreate) (
 		return nil, err
 	}
 	return &api.ProjectCreatedHeaders{
-		Etag:     api.NewOptString(local.ETag(project.UpdatedAt)),
+		Etag:     api.NewOptString(backend.ETag(project.UpdatedAt)),
 		Location: api.NewOptString("/api/projects/" + project.Key),
 		Response: toProject(project),
 	}, nil

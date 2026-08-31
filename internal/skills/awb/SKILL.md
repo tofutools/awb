@@ -33,22 +33,24 @@ awb activity <id> --compact            # comments and recorded changes
 
 ```
 awb create "Title" --description-file description.md
-awb update <id> --description "A short **Markdown** description."
+awb description get <id> --output description.md
 awb update <id> --description-file description.md
 awb project create <key> --description-file project.md
+awb project description get <key> --output project.md
 awb project update <key> --description-file project.md
-awb update <id> --description-file - <<'EOF'
+awb update <id> --description-file - --force <<'EOF'
 First paragraph.
 
 Second paragraph.
 EOF
 ```
 
-Issue and project descriptions are stored exactly as received. For multiline
-text, prefer `--description-file` with a file or stdin. Quoted `\n` sequences
-are not converted to line breaks by the CLI or most shells; they are stored
-literally. `--json` selects an output format and is not an issue or project
-input format.
+Issue and project descriptions are stored exactly as received. Fetching writes
+a receipt beside the file, and update uses it to refuse overwriting a concurrent
+change. `--force` is the explicit escape hatch for a deliberate blind
+replacement, including one read from stdin. Quoted `\n` sequences are not
+converted to line breaks by the CLI or most shells; they are stored literally.
+`--json` selects an output format and is not an issue or project input format.
 
 **Look things up:**
 

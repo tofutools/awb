@@ -28,6 +28,10 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, body, comment.Body, "comment bytes round-trip unchanged")
 	assert.Equal(t, "mikael", comment.Actor)
+	commented, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Greater(t, commented.UpdatedAt, issue.UpdatedAt,
+		"a comment counts as new issue activity")
 
 	title := "new title"
 	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Title: &title}, "")
@@ -42,6 +46,27 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 		Field: "title", From: json.RawMessage(`"old title"`), To: json.RawMessage(`"new title"`),
 	}}, page.Activity[0].Changes)
 	assert.Greater(t, page.Activity[0].ID, page.Activity[1].ID)
+}
+
+func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {
+	b, ctx := newBackend(t)
+	commented := create(t, b, ctx, "commented")
+	other := create(t, b, ctx, "other")
+
+	// A second comment guarantees this issue's per-row timestamp has advanced
+	// past another issue created in the same clock tick.
+	_, err := b.AddComment(ctx, commented.ID, "first")
+	require.NoError(t, err)
+	_, err = b.AddComment(ctx, commented.ID, "second")
+	require.NoError(t, err)
+
+	page, err := b.ListIssues(ctx, &domain.Filter{
+		Sort: domain.Sort{Key: domain.SortUpdated, Desc: true},
+	})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 2)
+	assert.Equal(t, commented.ID, page.Issues[0].ID)
+	assert.Equal(t, other.ID, page.Issues[1].ID)
 }
 
 func TestNoOpAndFailedMutationsProduceNoActivity(t *testing.T) {

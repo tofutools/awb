@@ -23,19 +23,20 @@ var migrations = [][]string{
 	schemaV4,
 	schemaV5,
 	schemaV6,
+	schemaV7,
 }
 
-// schemaV6 makes assignment a one-to-many relation and removes the old scalar
+// schemaV7 makes assignment a one-to-many relation and removes the old scalar
 // column. The dependent tables are rebuilt for the same reason as in schemaV5:
 // dropping issues while they still reference it would cascade their rows away.
-var schemaV6 = []string{
-	`CREATE TEMP TABLE migration_v6_assignees AS
+var schemaV7 = []string{
+	`CREATE TEMP TABLE migration_v7_assignees AS
 		SELECT id AS issue, assignee FROM issues WHERE assignee <> ''`,
-	`CREATE TEMP TABLE migration_v6_labels AS SELECT issue, label FROM issue_labels`,
-	`CREATE TEMP TABLE migration_v6_relations AS SELECT subject, type, other FROM relations`,
-	`CREATE TEMP TABLE migration_v6_attachments AS
+	`CREATE TEMP TABLE migration_v7_labels AS SELECT issue, label FROM issue_labels`,
+	`CREATE TEMP TABLE migration_v7_relations AS SELECT subject, type, other FROM relations`,
+	`CREATE TEMP TABLE migration_v7_attachments AS
 		SELECT issue, name, content_type, size, sha256, created_at FROM attachments`,
-	`CREATE TEMP TABLE migration_v6_activity AS
+	`CREATE TEMP TABLE migration_v7_activity AS
 		SELECT id, issue, kind, actor, body, action, changes, created_at FROM issue_activity`,
 
 	`DROP TABLE issue_labels`,
@@ -95,7 +96,7 @@ var schemaV6 = []string{
 		CHECK (position >= 0)
 	) STRICT, WITHOUT ROWID`,
 	`INSERT INTO issue_assignees (issue, assignee, position)
-		SELECT issue, assignee, 0 FROM migration_v6_assignees`,
+		SELECT issue, assignee, 0 FROM migration_v7_assignees`,
 	`CREATE INDEX idx_issue_assignees_assignee ON issue_assignees (assignee, issue)`,
 
 	`CREATE TABLE issue_labels (
@@ -103,7 +104,7 @@ var schemaV6 = []string{
 		label TEXT NOT NULL,
 		PRIMARY KEY (issue, label)
 	) STRICT, WITHOUT ROWID`,
-	`INSERT INTO issue_labels SELECT issue, label FROM migration_v6_labels`,
+	`INSERT INTO issue_labels SELECT issue, label FROM migration_v7_labels`,
 	`CREATE INDEX idx_issue_labels_label ON issue_labels (label)`,
 	`CREATE TABLE relations (
 		subject TEXT NOT NULL REFERENCES issues (id) ON DELETE CASCADE,
@@ -113,7 +114,7 @@ var schemaV6 = []string{
 		CHECK (type IN ('blocked-by', 'has-parent', 'discovered-from', 'related')),
 		CHECK (subject <> other)
 	) STRICT, WITHOUT ROWID`,
-	`INSERT INTO relations SELECT subject, type, other FROM migration_v6_relations`,
+	`INSERT INTO relations SELECT subject, type, other FROM migration_v7_relations`,
 	`CREATE INDEX idx_relations_other ON relations (type, other)`,
 	`CREATE UNIQUE INDEX idx_relations_one_parent
 		ON relations (subject) WHERE type = 'has-parent'`,
@@ -131,7 +132,7 @@ var schemaV6 = []string{
 		CHECK (length(sha256) = 64)
 	) STRICT, WITHOUT ROWID`,
 	`INSERT INTO attachments
-		SELECT issue, name, content_type, size, sha256, created_at FROM migration_v6_attachments`,
+		SELECT issue, name, content_type, size, sha256, created_at FROM migration_v7_attachments`,
 	`CREATE INDEX idx_attachments_order ON attachments (issue, created_at, name)`,
 	`CREATE INDEX idx_attachments_sha256 ON attachments (sha256)`,
 	`CREATE TABLE issue_activity (
@@ -149,15 +150,37 @@ var schemaV6 = []string{
 		CHECK (json_valid(changes) AND json_type(changes) = 'array')
 	) STRICT`,
 	`INSERT INTO issue_activity (id, issue, kind, actor, body, action, changes, created_at)
-		SELECT id, issue, kind, actor, body, action, changes, created_at FROM migration_v6_activity`,
+		SELECT id, issue, kind, actor, body, action, changes, created_at FROM migration_v7_activity`,
 	`CREATE INDEX idx_issue_activity_order
 		ON issue_activity (issue, created_at DESC, id DESC)`,
 
-	`DROP TABLE migration_v6_assignees`,
-	`DROP TABLE migration_v6_labels`,
-	`DROP TABLE migration_v6_relations`,
-	`DROP TABLE migration_v6_attachments`,
-	`DROP TABLE migration_v6_activity`,
+	`DROP TABLE migration_v7_assignees`,
+	`DROP TABLE migration_v7_labels`,
+	`DROP TABLE migration_v7_relations`,
+	`DROP TABLE migration_v7_attachments`,
+	`DROP TABLE migration_v7_activity`,
+}
+
+// schemaV6 records that a database has had a user, which is what stops
+// deleting the last one from turning a running server's authentication off.
+//
+// The fact has to outlive the rows, and it has to live here rather than in the
+// server's memory. Users are added and deleted by a command line holding the
+// file, which a running server learns about only by looking; one that looked
+// before the first user was added and again after the last was deleted would
+// see the same empty table twice and go back to serving everybody. That is the
+// accident this table exists to prevent, and only something the deletion
+// cannot remove can prevent it.
+//
+// It is one row that exists or does not, written by the insert that creates a
+// user and never deleted. A database that already holds users is marked as the
+// migration runs, because its authentication is already on.
+var schemaV6 = []string{
+	`CREATE TABLE user_history (
+		one INTEGER PRIMARY KEY CHECK (one = 1)
+	) STRICT`,
+
+	`INSERT INTO user_history (one) SELECT 1 WHERE EXISTS (SELECT 1 FROM users)`,
 }
 
 // schemaV4 adds the append-only issue activity stream. Changes are JSON text

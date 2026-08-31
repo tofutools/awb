@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -87,8 +88,18 @@ type serveOptions struct {
 	https          bool
 	corsOrigins    []string
 	basicAuthRealm string
-	proxyTo        string
+	// realmGiven says --basic-auth-realm was typed rather than defaulted,
+	// which is what makes it evidence of an intention to authenticate.
+	realmGiven bool
+	noAuth     bool
+	proxyTo    string
 }
+
+// defaultBasicAuthRealm is what a client that supplies no credentials is asked
+// in the name of. It is resolved here rather than by a default tag, because
+// the flag's presence is itself an answer and a filled-in default would hide
+// it; see exposure.
+const defaultBasicAuthRealm = "awb"
 
 // listenAddr is the host:port to bind. An empty --addr means every interface.
 func (o serveOptions) listenAddr() string {
@@ -127,7 +138,51 @@ func (o serveOptions) validate() error {
 			"--https says a proxy terminates TLS, and --public-url %s says it does not",
 			o.publicURL)
 	}
+	// A realm is the name a server authenticates in, and a server started with
+	// --no-auth never asks anybody for anything. The two describe different
+	// servers.
+	if o.noAuth && o.realmGiven {
+		return awberr.Usagef(
+			"--no-auth serves without authentication, so there is no realm to present in")
+	}
 	return nil
+}
+
+// exposure says why this server looks like one meant to be reached from
+// somewhere other than this machine, or is empty when it does not.
+//
+// Each of the four is a statement about a deployment: a public URL and TLS
+// termination describe a reverse proxy publishing it, a realm is the name it
+// authenticates in, and a binding that is not loopback lets other machines
+// reach the port. On a database that holds no user, any of them is a server
+// that would hand full read and write access to whoever arrives, which is
+// close enough to a mistake that it is refused rather than served.
+func (o serveOptions) exposure() string {
+	switch {
+	case o.publicURL != "":
+		return "--public-url says a reverse proxy publishes this server"
+	case o.https:
+		return "--https says a reverse proxy terminates TLS in front of this server"
+	case o.realmGiven:
+		return "--basic-auth-realm names the realm this server authenticates in"
+	case o.addr == "":
+		return "--addr is empty, which binds every interface"
+	case !isLoopbackAddr(o.addr):
+		return fmt.Sprintf("--addr %s is not a loopback address", o.addr)
+	}
+	return ""
+}
+
+// isLoopbackAddr reports whether binding this --addr keeps the port on this
+// machine. The name resolves to a loopback address on every system awb runs
+// on; any other name is a claim about DNS that cannot be checked here, and is
+// treated as reaching further than this machine.
+func isLoopbackAddr(addr string) bool {
+	if strings.EqualFold(addr, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(addr)
+	return ip != nil && ip.IsLoopback()
 }
 
 // serverOrigin is the origin a browser names when it reaches this server, which
@@ -165,14 +220,20 @@ type serveParams struct {
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
-	BasicAuthRealm string   `long:"basic-auth-realm" default:"awb" optional:"true" help:"realm presented to clients that supply no credentials"`
+	BasicAuthRealm *string  `long:"basic-auth-realm" help:"realm presented to clients that supply no credentials (default awb)"`
+	NoAuth         bool     `long:"no-auth" optional:"true" help:"authenticate nobody, whatever the database holds; every client that reaches the port has full access"`
 	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying API requests to this awb server"`
 }
 
 func (p *serveParams) options() serveOptions {
+	realm := defaultBasicAuthRealm
+	if p.BasicAuthRealm != nil {
+		realm = *p.BasicAuthRealm
+	}
 	return serveOptions{
 		addr: p.Addr, port: p.Port, publicURL: p.PublicURL, https: p.HTTPS,
-		corsOrigins: p.CORSOrigins, basicAuthRealm: p.BasicAuthRealm,
+		corsOrigins: p.CORSOrigins, basicAuthRealm: realm,
+		realmGiven: p.BasicAuthRealm != nil, noAuth: p.NoAuth,
 		proxyTo: p.ProxyTo,
 	}
 }
@@ -192,7 +253,19 @@ func newServeCommand(e *env) *cobra.Command {
 			"user at all authenticates nobody, and any client that can reach the port has\n" +
 			"full read and write access, which is why the default binds loopback.\n\n" +
 			"Which of the two it is, is decided per request rather than at startup, so\n" +
-			"adding the first user closes the door without a restart.\n\n" +
+			"adding the first user closes the door without a restart. The door does not\n" +
+			"open again by itself: deleting the last user leaves the server answering\n" +
+			"nothing until a user is added again, rather than serving everybody.\n\n" +
+			"A server over a database whose users are all gone starts, and refuses every\n" +
+			"request until one is added; it is recovered without a restart, exactly as a\n" +
+			"running one is. What refuses to start is a server that would authenticate\n" +
+			"nobody where that looks like a mistake: one over a database that never held\n" +
+			"a user, bound to anything but loopback, or given --public-url, --https or\n" +
+			"--basic-auth-realm, each of which describes a deployment published beyond\n" +
+			"this machine.\n\n" +
+			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
+			"no users at all, so adding one does not close the door either. Taking it\n" +
+			"back is a restart without the flag.\n\n" +
 			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
@@ -211,6 +284,12 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			if opts.proxyTo != "" && len(opts.corsOrigins) > 0 {
 				return awberr.Usagef("--cors-origin cannot be used with --proxy-to")
+			}
+			// Proxy mode opens no database, so it has no users to serve
+			// without: whether the installation it forwards to authenticates
+			// is that installation's answer, not this flag's.
+			if opts.proxyTo != "" && opts.noAuth {
+				return awberr.Usagef("--no-auth cannot be used with --proxy-to")
 			}
 			if err := checkIdentityFlag(p.Identity); err != nil {
 				return err
@@ -243,24 +322,28 @@ func newServeCommand(e *env) *cobra.Command {
 			}
 			defer db.Close() //nolint:errcheck // closing on the way out
 
+			// What the database says about users decides both what this server
+			// may be started as and what an unauthenticated request would be
+			// attributed to, so it is asked once, here, and both demands are
+			// made at startup rather than on the first request.
+			users, err := readUserState(cmd.Context(), db)
+			if err != nil {
+				return err
+			}
+			if err := checkAuthentication(opts, users); err != nil {
+				return err
+			}
+
 			// The fixed identity is what an unauthenticated request is
-			// attributed to, and is therefore only required while the database
-			// holds no user. Whether it does is asked here so the demand is
-			// made at startup rather than on the first request that needs one.
+			// attributed to, and is therefore only required on a server that
+			// would answer one: one over a database that has never held a user,
+			// or one told to authenticate nobody. A server that authenticates
+			// every request never uses the value, and neither does a locked one,
+			// which answers none; demanding one there would be asking the
+			// operator to name somebody who stands for nobody.
 			fixedIdentity, missing := resolveServerIdentity(cfg, p.Identity)
-			if missing != nil {
-				// Only a server that would answer an unauthenticated request
-				// needs one, so whether this is fatal is the database's answer.
-				// A server that authenticates every request never uses the
-				// value, and demanding one there would be asking the operator
-				// to name somebody who stands for nobody.
-				open, err := serverIsOpen(cmd.Context(), db)
-				if err != nil {
-					return err
-				}
-				if open {
-					return missing
-				}
+			if missing != nil && (opts.noAuth || !users.any && !users.existed) {
+				return missing
 			}
 
 			// serve is the one command that runs until it is stopped rather
@@ -270,11 +353,34 @@ func newServeCommand(e *env) *cobra.Command {
 			// redirecting the command's output still captures all of it.
 			logger := log.New(e.stderr, "", log.LstdFlags)
 
+			// --no-auth is not a weaker authenticator, it is none: the whole
+			// point of typing it is a server that does not consult the users
+			// table, so adding one to a server started with it does not close
+			// the door either. Taking it back is a restart without the flag.
+			var credentials *authenticator
+			if !opts.noAuth {
+				credentials = &authenticator{db: db, realm: opts.basicAuthRealm}
+			}
+
 			base := local.New(db, storage.NewBlobs(cfg.Attachments), fixedIdentity)
-			httpHandler, err := buildHandler(base, e.openAPI,
-				&authenticator{db: db, realm: opts.basicAuthRealm}, opts, logger)
+			httpHandler, err := buildHandler(base, e.openAPI, credentials, opts, logger)
 			if err != nil {
 				return err
+			}
+
+			// What this server does about authentication is worth one line,
+			// because both of these are states an operator may not know they
+			// are in: one is a server that refuses everybody until they act,
+			// and the other is one that asks nobody for anything.
+			switch {
+			case opts.noAuth:
+				logger.Printf(
+					"serving without authentication: every client that reaches the port " +
+						"has full read and write access")
+			case !users.any && users.existed:
+				logger.Printf(
+					"this database has had users and holds none: every request is refused " +
+						"until one is added with \"awb user add\"")
 			}
 
 			return runServer(cmd.Context(), logger, opts, httpHandler)
@@ -282,17 +388,62 @@ func newServeCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-// serverIsOpen reports whether the database holds no user, which is the case
-// in which an unauthenticated request can arrive and a fixed identity is
-// therefore needed.
-func serverIsOpen(ctx context.Context, db *storage.DB) (bool, error) {
-	open := false
+// checkAuthentication decides whether a server that would authenticate nobody
+// may be started.
+//
+// Only one server would: the one over a database that has never held a user,
+// which serves everybody who can reach the port. That is the right answer for
+// a local tracker on loopback and the wrong one everywhere else, so a flag
+// saying this deployment is somewhere else refuses to start rather than
+// opening the door. --no-auth is the operator saying it was meant.
+//
+// A database that has had users and holds none is not that server. It is a
+// locked one, which answers nothing to anybody and so exposes nothing wherever
+// it is bound, and it starts: refusing would only move the same state from the
+// port into a command that failed, and would take the recovery with it. A
+// running server recovers from the next "awb user add" without a restart, and
+// so must one that was restarted in that state — an operator whose service is
+// supervised should not have to time account creation against a restart. The
+// state is announced in the log instead; see runServer.
+func checkAuthentication(opts serveOptions, users userState) error {
+	if opts.noAuth || users.any || users.existed {
+		return nil
+	}
+	if why := opts.exposure(); why != "" {
+		return awberr.Usagef(
+			"%s, and this database holds no user: the server would authenticate nobody, "+
+				"and every client that reached it would have full read and write access; "+
+				"add a user with \"awb user add\", or pass --no-auth to serve without "+
+				"authentication anyway", why)
+	}
+	return nil
+}
+
+// userState is what the database says about users at startup: whether it holds
+// any, and whether it ever has. The second is what tells a local tracker apart
+// from a server whose accounts have all been deleted.
+type userState struct {
+	any     bool
+	existed bool
+}
+
+// readUserState asks both questions in one read transaction, so the answers
+// cannot come from two different moments.
+func readUserState(ctx context.Context, db *storage.DB) (userState, error) {
+	var users userState
 	err := db.Read(ctx, func(tx *storage.Tx) error {
 		any, err := tx.AnyUsers()
-		open = !any
-		return err
+		if err != nil {
+			return err
+		}
+		existed, err := tx.UsersHaveExisted()
+		if err != nil {
+			return err
+		}
+		users = userState{any: any, existed: existed}
+		return nil
 	})
-	return open, err
+	return users, err
 }
 
 // checkIdentityFlag applies the assignee vocabulary to an explicit --identity,
@@ -509,6 +660,10 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
 	// behind it. Whether it asks for anything is the database's answer, given
 	// per request; see authenticator.
+	//
+	// There is no authenticator at all in proxy mode, which opens no database
+	// to authenticate against, or under --no-auth, which is an operator saying
+	// this server authenticates nobody whatever the database holds.
 	if credentials != nil {
 		chain = credentials.Middleware(logger)(chain)
 	}

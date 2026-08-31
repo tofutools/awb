@@ -25,7 +25,8 @@ func newUserCommand(e *env) *cobra.Command {
 			"is created, and how an instance whose last administrator is gone is\n"+
 			"recovered.\n\n"+
 			"A database holding no user is a server without authentication. Adding the\n"+
-			"first one turns it on, from the next request onwards.",
+			"first one turns it on, from the next request onwards, and deleting them all\n"+
+			"does not turn it off again: that takes awb serve --no-auth.",
 		newUserAddCommand(e),
 		newUserUpdateCommand(e),
 		newUserShowCommand(e),
@@ -318,7 +319,10 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
-			"Deleting the last user turns a server's authentication off again.",
+			"Deleting the last user does not turn a server's authentication off again:\n" +
+			"the server answers nothing until a user is added back, rather than serving\n" +
+			"everybody, and one started afterwards starts in that state rather than\n" +
+			"open. Serving such a database openly is awb serve --no-auth.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {
