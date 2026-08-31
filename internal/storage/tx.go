@@ -3,9 +3,14 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"time"
 
 	"github.com/tofutools/awb/internal/awberr"
 )
+
+const transactionCleanupTimeout = 5 * time.Second
 
 // queryer is the part of database/sql that the query helpers use, so the same
 // code runs on a pooled handle and on the dedicated connection a transaction
@@ -37,7 +42,7 @@ type Tx struct {
 //
 // A transaction that cannot take the lock within the busy timeout fails rather
 // than being retried in a loop.
-func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
+func (d *DB) Write(ctx context.Context, fn func(*Tx) error) (retErr error) {
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
@@ -50,7 +55,7 @@ func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
 	committed := false
 	defer func() {
 		if !committed {
-			_, _ = conn.ExecContext(ctx, "ROLLBACK")
+			retErr = joinTransactionError(retErr, rollback(conn))
 		}
 	}()
 
@@ -68,7 +73,7 @@ func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
 // Read runs fn inside a deferred transaction, so a composite read — an issue
 // with its labels, relations and blockers — sees one consistent snapshot. In
 // WAL mode a reader never blocks a writer.
-func (d *DB) Read(ctx context.Context, fn func(*Tx) error) error {
+func (d *DB) Read(ctx context.Context, fn func(*Tx) error) (retErr error) {
 	conn, err := d.db.Conn(ctx)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
@@ -78,7 +83,34 @@ func (d *DB) Read(ctx context.Context, fn func(*Tx) error) error {
 	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
-	defer func() { _, _ = conn.ExecContext(ctx, "ROLLBACK") }()
+	defer func() { retErr = joinTransactionError(retErr, rollback(conn)) }()
 
 	return fn(&Tx{ctx: ctx, q: conn})
+}
+
+// rollback uses neither the request's cancellation nor an unbounded context:
+// a cancelled HTTP request must still end the transaction before its connection
+// can return to the pool. If ending it cannot be confirmed, ErrBadConn is the
+// database/sql-supported way to discard the connection rather than pool it in
+// an unknown transactional state.
+func rollback(conn *sql.Conn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), transactionCleanupTimeout)
+	defer cancel()
+
+	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		return err
+	}
+	return nil
+}
+
+func joinTransactionError(operationErr, rollbackErr error) error {
+	if rollbackErr == nil {
+		return operationErr
+	}
+	cleanupErr := awberr.Wrap(awberr.Runtime, rollbackErr, "rollback transaction")
+	if operationErr == nil {
+		return cleanupErr
+	}
+	return errors.Join(operationErr, cleanupErr)
 }
