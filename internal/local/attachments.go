@@ -71,24 +71,24 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 		Sha256:      staged.Sha256,
 	}
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		issueID, err := resolve(tx, issueRef)
+		issue, err := load(tx, issueRef)
 		if err != nil {
 			return err
 		}
-		attachment.Issue = issueID
+		attachment.Issue = issue.ID
 
 		// The row goes in first: if it fails — because the name is taken, most
 		// likely — the transaction rolls back and nothing has been written to the
 		// store either. The content is placed before the commit, so a committed
 		// row never names a file that is not there.
-		if err := tx.InsertAttachment(attachment); err != nil {
+		if err := tx.InsertAttachment(issue, attachment); err != nil {
 			return err
 		}
 		if err := b.blobs.Place(staged); err != nil {
 			return err
 		}
 		placed = true
-		return recordChange(tx, caller, issueID, "attachment_added", []domain.ActivityChange{{
+		return recordChange(tx, caller, issue.ID, "attachment_added", []domain.ActivityChange{{
 			Field: "attachment", From: activityJSON(nil), To: activityJSON(attachment),
 		}})
 	})
@@ -156,7 +156,11 @@ func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 		if err != nil {
 			return err
 		}
-		if err := tx.DeleteAttachment(attachment.Issue, attachment.Name); err != nil {
+		issue, err := tx.GetIssue(attachment.Issue)
+		if err != nil {
+			return err
+		}
+		if err := tx.DeleteAttachment(issue, attachment.Name); err != nil {
 			return err
 		}
 		deleted = attachment

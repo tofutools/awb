@@ -102,8 +102,7 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 // checkIfMatch enforces the optional conditional-edit precondition. An empty
 // ifMatch means no precondition and gives the caller last-write-wins.
 //
-// The tag is a strong one over the entity's own stored fields, so it is
-// compared exactly.
+// The tag is a strong one over the entity version, so it is compared exactly.
 func checkIfMatch(ifMatch, updatedAt, what string) error {
 	if ifMatch == "" {
 		return nil
