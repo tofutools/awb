@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
+	"github.com/tofutools/awb/internal/domain"
 )
 
 // The version-6 backfill is what carries an installation that already
@@ -93,6 +95,31 @@ func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
 		user, readErr := tx.GetUser("alice")
 		require.NoError(t, readErr)
 		assert.Empty(t, user.FullName)
+		return nil
+	}))
+}
+
+func TestV10AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 9)
+	_, err := raw.ExecContext(t.Context(), `INSERT INTO projects
+		(key, name, description, created_at, updated_at)
+		VALUES ('awb', 'AWB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
+		view := &domain.BoardView{ID: "view-aaaaaaaaaaaaaaaaaaaaaaaa", Name: "Release", Owner: "alice",
+			AllProjects: false, Projects: []string{"awb"}, PriorityMax: 4}
+		return tx.InsertBoardView(view)
+	}))
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, []string{"awb"}, view.Projects)
 		return nil
 	}))
 }

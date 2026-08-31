@@ -965,6 +965,7 @@ async function viewListing(
 
 const boardLanePageSize = 10;
 const boardCardPageSize = 8;
+let draggedBoardIssue: Issue | null = null;
 function boardStatusLabel(status: BoardStatus): string {
   if (status === "in_progress") return "In progress";
   return status[0].toUpperCase() + status.slice(1);
@@ -994,10 +995,21 @@ async function moveBoardIssue(host: HTMLElement, issue: Issue, target: BoardStat
 
 function boardCard(issue: Issue): HTMLElement {
   const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
-  card.draggable = matchMedia("(min-width: 721px)").matches;
   card.dataset.issue = issue.id;
+  const drag = element("span", "board-card-drag", "⠿");
+  drag.draggable = matchMedia("(min-width: 721px)").matches;
+  drag.setAttribute("aria-label", `Drag ${issue.id}`);
+  drag.title = "Drag to another status";
+  drag.addEventListener("dragstart", (event) => {
+    draggedBoardIssue = issue;
+    event.dataTransfer?.setData("text/plain", issue.id);
+    if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+  });
+  drag.addEventListener("dragend", () => { draggedBoardIssue = null; });
   const address = nameLink(`#/issues/${encodeURIComponent(issue.id)}`, issue.id, issue.title);
-  card.append(address, issueBadges(issue));
+  const top = element("div", "board-card-top");
+  top.append(address, drag);
+  card.append(top, issueBadges(issue));
   const move = element("label", "board-card-move");
   move.append(document.createTextNode("Move"));
   const select = document.createElement("select");
@@ -1012,10 +1024,6 @@ function boardCard(issue: Issue): HTMLElement {
   select.addEventListener("change", () => void moveBoardIssue(card, issue, select.value as BoardStatus));
   move.append(select);
   card.append(move);
-  card.addEventListener("dragstart", (event) => {
-    event.dataTransfer?.setData("text/plain", issue.id);
-    if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
-  });
   return card;
 }
 
@@ -1058,12 +1066,17 @@ function boardColumn(
     host.append(more);
   }
   host.addEventListener("dragover", (event) => {
-    const issue = issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
-    if (issue !== undefined && legalBoardTargets(issue, identity).includes(column.status)) event.preventDefault();
+    const issue = draggedBoardIssue;
+    if (issue !== null && legalBoardTargets(issue, identity).includes(column.status)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.dataTransfer?.types.includes("text/plain") === true) event.preventDefault();
   });
   host.addEventListener("drop", (event) => {
-    const issue = issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
-    if (issue === undefined) return;
+    const issue = draggedBoardIssue ?? issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
+    draggedBoardIssue = null;
+    if (issue === undefined || issue === null) return;
     event.preventDefault();
     void moveBoardIssue(host, issue, column.status);
   });

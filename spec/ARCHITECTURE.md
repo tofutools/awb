@@ -547,6 +547,24 @@ single recovery exception: they omit only the ignore condition while retaining
 ordinary authorization, so an ignored project is always available to re-enable
 and an inaccessible project is never disclosed by the editor.
 
+Named board views are stored beside that preference boundary but do not alter
+it. A view owns only reusable selection — projects, labels, assignees and a
+maximum priority — while each board read resolves its project swimlanes and
+status columns inside the viewer's normally scoped transaction. A shared URL
+can therefore render fewer lanes for a viewer with less access or a broader
+ignore set, and returns only those visible project keys in its response. A
+boolean can say that some configured lanes were omitted without naming one or
+distinguishing authorization from preference.
+
+Views are personal resources rather than project resources. Their owner alone
+may change or delete them; administrative flags do not imply ownership. A
+shared view is unlisted and readable by stable URL, while listing returns only
+the current identity's views. The virtual default board is not stored. Board
+reads page project lanes and cards independently and report unpaged totals at
+both levels, so the browser never has to fetch the whole issue collection.
+Moves use claim, release, close and reopen rather than a second status-update
+path, preserving the status/assignment invariant.
+
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
 in any visible project, including its retained assignments and activity, while

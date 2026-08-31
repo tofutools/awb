@@ -42,7 +42,8 @@ var schemaV10 = []string{
 		priority_max INTEGER NOT NULL DEFAULT 4,
 		created_at   TEXT NOT NULL,
 		updated_at   TEXT NOT NULL,
-		CHECK (id GLOB 'view-[0-9a-f]*' AND length(id) = 29),
+		CHECK (substr(id, 1, 5) = 'view-' AND length(id) = 29
+		       AND substr(id, 6) NOT GLOB '*[^0-9a-f]*'),
 		CHECK (name <> ''),
 		CHECK (owner <> ''),
 		CHECK (shared IN (0, 1)),
