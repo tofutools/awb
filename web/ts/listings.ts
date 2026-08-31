@@ -10,7 +10,14 @@ export interface SortState {
   explicit: boolean;
 }
 
-export const pageSize = 50;
+export const defaultPageSize = 50;
+export const pageSizes = [25, 50, 100] as const;
+
+/** pageSizeFrom reads one of the deliberately small set of UI page sizes. */
+export function pageSizeFrom(query: URLSearchParams): number {
+  const value = Number(query.get("size"));
+  return pageSizes.includes(value as typeof pageSizes[number]) ? value : defaultPageSize;
+}
 
 /** pageNumber reads the UI's one-based page parameter. Invalid values fall
  * back to the first page and never reach the API as an invalid offset. */
@@ -30,6 +37,16 @@ export function withPage(query: URLSearchParams, page: number): URLSearchParams 
   return next;
 }
 
+/** withPageSize changes the backend page size and returns to the first page,
+ * whose offset is the only one that remains meaningful for every size. */
+export function withPageSize(query: URLSearchParams, size: number): URLSearchParams {
+  const next = new URLSearchParams(query);
+  next.delete("page");
+  if (size === defaultPageSize) next.delete("size");
+  else next.set("size", String(size));
+  return next;
+}
+
 export interface PageWindow {
   page: number;
   pages: number;
@@ -38,7 +55,7 @@ export interface PageWindow {
 }
 
 /** pageWindow describes the range represented by a backend page. */
-export function pageWindow(total: number, requested: number, size = pageSize): PageWindow {
+export function pageWindow(total: number, requested: number, size = defaultPageSize): PageWindow {
   const pages = Math.max(1, Math.ceil(total / size));
   const page = Math.min(Math.max(1, requested), pages);
   const first = total === 0 ? 0 : (page - 1) * size + 1;

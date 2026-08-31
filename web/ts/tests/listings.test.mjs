@@ -8,10 +8,12 @@ import {
   filterUsers,
   nextSortValue,
   pageNumber,
+  pageSizeFrom,
   pageWindow,
   sortState,
   withClosedIssues,
   withPage,
+  withPageSize,
 } from "../../static/listings.js";
 
 test("empty applicable facet groups remain visible", () => {
@@ -82,8 +84,23 @@ test("backend pagination uses canonical one-based route state", () => {
   assert.equal(withPage(new URLSearchParams("project=awb"), 4).toString(), "project=awb&page=4");
 });
 
+test("page size is a fixed UI choice and changing it resets the page", () => {
+  assert.equal(pageSizeFrom(new URLSearchParams()), 50);
+  assert.equal(pageSizeFrom(new URLSearchParams("size=25")), 25);
+  assert.equal(pageSizeFrom(new URLSearchParams("size=37")), 50);
+  assert.equal(
+    withPageSize(new URLSearchParams("project=awb&page=4"), 100).toString(),
+    "project=awb&size=100",
+  );
+  assert.equal(
+    withPageSize(new URLSearchParams("project=awb&page=4&size=25"), 50).toString(),
+    "project=awb",
+  );
+});
+
 test("pagination ranges are clamped to the unpaged backend total", () => {
   assert.deepEqual(pageWindow(214, 2), { page: 2, pages: 5, first: 51, last: 100 });
+  assert.deepEqual(pageWindow(214, 2, 25), { page: 2, pages: 9, first: 26, last: 50 });
   assert.deepEqual(pageWindow(214, 99), { page: 5, pages: 5, first: 201, last: 214 });
   assert.deepEqual(pageWindow(0, 1), { page: 1, pages: 1, first: 0, last: 0 });
 });

@@ -26,10 +26,12 @@ import {
   filterUsers,
   nextSortValue,
   pageNumber,
-  pageSize,
+  pageSizeFrom,
+  pageSizes,
   pageWindow,
   sortState,
   withPage,
+  withPageSize,
   withClosedIssues,
   type SortDirection,
   type SortState,
@@ -627,43 +629,55 @@ function includeClosedControl(route: Route): HTMLElement {
 
 /** pagination renders links over the backend page. Sorting and selection stay
  * in the URL, while page one remains the canonical form without ?page=1. */
-function pagination(route: Route, total: number): HTMLElement | null {
-  const window = pageWindow(total, pageNumber(route.query));
-  if (window.pages <= 1) return null;
+function pagination(route: Route, total: number): HTMLElement {
+  const size = pageSizeFrom(route.query);
+  const window = pageWindow(total, pageNumber(route.query), size);
 
   const nav = element("div", "pagination");
   nav.setAttribute("role", "navigation");
   nav.setAttribute("aria-label", "Pagination");
-  const previous = link(
-    routeHref(route, withPage(route.query, window.page - 1)),
-    "Previous",
-    "pagination-link",
-  );
-  if (window.page === 1) {
-    previous.removeAttribute("href");
-    previous.setAttribute("aria-disabled", "true");
-  }
+
+  const pageLink = (label: string, page: number, disabled: boolean): HTMLAnchorElement => {
+    const anchor = link(routeHref(route, withPage(route.query, page)), label, "pagination-link");
+    if (disabled) {
+      anchor.removeAttribute("href");
+      anchor.setAttribute("aria-disabled", "true");
+    }
+    return anchor;
+  };
+  const first = pageLink("First", 1, window.page === 1);
+  const previous = pageLink("Previous", window.page - 1, window.page === 1);
   const status = element(
     "span",
     "pagination-status",
-    `${window.first}–${window.last} of ${total} · Page ${window.page} of ${window.pages}`,
+    total === 0 ? "Showing 0 of 0" : `Showing ${window.first}–${window.last} of ${total}`,
   );
-  const next = link(
-    routeHref(route, withPage(route.query, window.page + 1)),
-    "Next",
-    "pagination-link",
-  );
-  if (window.page === window.pages) {
-    next.removeAttribute("href");
-    next.setAttribute("aria-disabled", "true");
+  const atEnd = window.page === window.pages;
+  const next = pageLink("Next", window.page + 1, atEnd);
+  const last = pageLink("Last", window.pages, atEnd);
+
+  const sizeControl = element("label", "pagination-size", "Rows per page");
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Rows per page");
+  for (const optionSize of pageSizes) {
+    const option = document.createElement("option");
+    option.value = String(optionSize);
+    option.textContent = String(optionSize);
+    option.selected = optionSize === size;
+    select.append(option);
   }
-  nav.append(previous, status, next);
+  select.addEventListener("change", () => {
+    location.hash = routeHref(route, withPageSize(route.query, Number(select.value))).slice(1);
+  });
+  sizeControl.append(select);
+
+  nav.append(first, previous, status, next, last, sizeControl);
   return nav;
 }
 
 function normalizePageRoute(route: Route, total: number): number {
   const requested = pageNumber(route.query);
-  const normalized = pageWindow(total, requested).page;
+  const normalized = pageWindow(total, requested, pageSizeFrom(route.query)).page;
   if (normalized !== requested) {
     route.query = withPage(route.query, normalized);
     history.replaceState(null, "", routeHref(route, route.query));
@@ -721,8 +735,7 @@ function issueList(
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
-  const pager = pagination(route, total);
-  if (pager !== null) section.append(pager);
+  section.append(pagination(route, total));
   return section;
 }
 
@@ -742,8 +755,9 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
     .flatMap((key) => [key, `-${key}`]);
   if (allowRelevance) apiSorts.push("relevance", "-relevance");
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
-  filters.limit = pageSize;
-  filters.offset = (pageNumber(query) - 1) * pageSize;
+  const size = pageSizeFrom(query);
+  filters.limit = size;
+  filters.offset = (pageNumber(query) - 1) * size;
   return filters;
 }
 
@@ -829,8 +843,9 @@ async function viewListing(route: Route, kind: "issues" | "ready" | "blocked"): 
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters)),
   ]);
   const normalized = normalizePageRoute(route, page.total);
-  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
-    filters.offset = (normalized - 1) * pageSize;
+  const size = pageSizeFrom(route.query);
+  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
+    filters.offset = (normalized - 1) * size;
     page = await load();
   }
 
@@ -950,26 +965,23 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
 
 async function viewProjects(route: Route): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
+  const size = pageSizeFrom(route.query);
   const filters: ProjectFilters = {
-    limit: pageSize,
-    offset: (requested - 1) * pageSize,
+    limit: size,
+    offset: (requested - 1) * size,
   };
   const sort = route.query.get("sort");
   const apiSorts = projectSortKeys.flatMap((key) => [key, `-${key}`]);
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as ProjectFilters["sort"];
   let page = await api.projects(filters);
   const normalized = normalizePageRoute(route, page.total);
-  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
-    filters.offset = (normalized - 1) * pageSize;
+  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
+    filters.offset = (normalized - 1) * size;
     page = await api.projects(filters);
   }
 
   const view = element("div");
   view.append(element("h1", "", "Projects"));
-  if (page.total === 0) {
-    view.append(element("p", "empty", "No projects yet. Create one with: awb project create <key>"));
-    return view;
-  }
 
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
@@ -982,7 +994,11 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   const update = (query: string): number => {
     const rows = filterProjects(page.rows, query);
     clear(host);
-    if (rows.length === 0) host.append(element("p", "empty", "No projects match this filter."));
+    if (rows.length === 0) {
+      host.append(element("p", "empty", query.trim() === ""
+        ? "No projects yet. Create one with: awb project create <key>"
+        : "No projects match this filter."));
+    }
     else host.append(projectTable(route, rows, state));
     return rows.length;
   };
@@ -994,8 +1010,7 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
     update,
     listingActions,
   ), host);
-  const pager = pagination(route, page.total);
-  if (pager !== null) listing.append(pager);
+  listing.append(pagination(route, page.total));
   view.append(listing);
   return view;
 }
@@ -1052,14 +1067,15 @@ function userTable(users: User[]): HTMLElement {
 
 async function viewUsers(route: Route): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
+  const size = pageSizeFrom(route.query);
   const filters: UserFilters = {
-    limit: pageSize,
-    offset: (requested - 1) * pageSize,
+    limit: size,
+    offset: (requested - 1) * size,
   };
   let page = await api.users(filters);
   const normalized = normalizePageRoute(route, page.total);
-  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
-    filters.offset = (normalized - 1) * pageSize;
+  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
+    filters.offset = (normalized - 1) * size;
     page = await api.users(filters);
   }
   const view = element("div");
@@ -1078,8 +1094,7 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
     return rows.length;
   };
   listing.append(listingFilter(route, "Filter this page of users…", "user", page.total, update), host);
-  const pager = pagination(route, page.total);
-  if (pager !== null) listing.append(pager);
+  listing.append(pagination(route, page.total));
   view.append(listing);
   return view;
 }
@@ -1678,8 +1693,9 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
     api.projects(),
   ]);
   const normalized = normalizePageRoute(route, page.total);
-  if ((filters.offset ?? 0) !== (normalized - 1) * pageSize) {
-    filters.offset = (normalized - 1) * pageSize;
+  const size = pageSizeFrom(route.query);
+  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
+    filters.offset = (normalized - 1) * size;
     page = await api.search(filters);
   }
   const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
