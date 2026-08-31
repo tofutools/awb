@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/spf13/cobra"
@@ -29,11 +30,48 @@ func newProjectCommand(e *env) *cobra.Command {
 		newProjectListCommand(e),
 		newProjectArchiveCommand(e),
 		newProjectRestoreCommand(e),
+		newProjectActivityCommand(e),
 		newProjectDeleteCommand(e),
 		newProjectGrantCommand(e),
 		newProjectRevokeCommand(e),
 		newProjectMembersCommand(e),
 	)
+}
+
+func newProjectActivityCommand(e *env) *cobra.Command {
+	type params struct {
+		Key    string `positional:"true" required:"true"`
+		Limit  *int   `long:"limit" optional:"true" help:"cap the entries returned"`
+		Offset *int   `long:"offset" optional:"true" help:"skip this many entries"`
+	}
+	return boa.CmdT[params]{
+		Use: "activity", Short: "List a project's archive and restore history", ParamEnrich: boaParams,
+		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
+			if p.Limit != nil && *p.Limit < 0 {
+				return awberr.Usagef("--limit must not be negative")
+			}
+			if p.Offset != nil && *p.Offset < 0 {
+				return awberr.Usagef("--offset must not be negative")
+			}
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			page, err := be.ListProjectActivity(cmd.Context(), p.Key, p.Limit, p.Offset)
+			if err != nil {
+				return err
+			}
+			if e.json {
+				return e.writeJSON(page.Activity)
+			}
+			for i := range page.Activity {
+				if _, err := io.WriteString(e.stdout, domain.CompactProjectActivityLine(&page.Activity[i])+"\n"); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}.ToCobra()
 }
 
 type projectCreateParams struct {

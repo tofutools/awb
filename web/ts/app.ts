@@ -333,7 +333,10 @@ function button(text: string, className = "secondary-button"): HTMLButtonElement
 function mutationError(host: HTMLElement, error: unknown): void {
   host.querySelector(".edit-error")?.remove();
   const message = error instanceof ApiError ? error.message : String(error);
-  host.append(element("p", "edit-error", message));
+  const notice = element("p", "edit-error", message);
+  notice.setAttribute("role", "alert");
+  notice.setAttribute("aria-live", "assertive");
+  host.append(notice);
 }
 
 async function mutate(
@@ -1096,11 +1099,15 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   heading.append(element("h1", "", "Projects"));
   const create = button("New project", "primary-button") as HTMLButtonElement;
   const createForm = projectCreateForm();
+  createForm.id = "project-creator";
   createForm.hidden = true;
+  create.setAttribute("aria-controls", createForm.id);
+  create.setAttribute("aria-expanded", "false");
   if (await mayManageProjects()) {
     heading.append(create);
     create.addEventListener("click", () => {
       createForm.hidden = !createForm.hidden;
+      create.setAttribute("aria-expanded", String(!createForm.hidden));
       create.textContent = createForm.hidden ? "New project" : "Hide creator";
       if (!createForm.hidden) createForm.querySelector<HTMLInputElement>("input")?.focus();
     });
@@ -1108,7 +1115,6 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   view.append(heading, createForm);
 
   const tabs = element("div", "project-state-tabs");
-  tabs.setAttribute("role", "tablist");
   const tabHref = (state: "active" | "archived"): string => {
     const query = new URLSearchParams(route.query);
     query.delete("page");
@@ -1117,10 +1123,8 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   };
   const activeTab = link(tabHref("active"), "Active", lifecycle === "active" ? "active" : "");
   const archivedTab = link(tabHref("archived"), "Archived", lifecycle === "archived" ? "active" : "");
-  activeTab.setAttribute("role", "tab");
-  archivedTab.setAttribute("role", "tab");
-  activeTab.setAttribute("aria-selected", String(lifecycle === "active"));
-  archivedTab.setAttribute("aria-selected", String(lifecycle === "archived"));
+  if (lifecycle === "active") activeTab.setAttribute("aria-current", "page");
+  else archivedTab.setAttribute("aria-current", "page");
   tabs.append(activeTab, archivedTab);
   view.append(tabs);
 

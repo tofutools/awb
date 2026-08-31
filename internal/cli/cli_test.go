@@ -104,6 +104,8 @@ func TestProjectArchiveAndRestoreCommands(t *testing.T) {
 	h.mustRun("create", "retained", "--project", "awb")
 	archived := h.mustRun("project", "archive", "awb", "--json")
 	assert.Contains(t, archived, `"state": "archived"`)
+	activity := h.mustRun("project", "activity", "awb", "--compact")
+	assert.Contains(t, activity, " awb archived @mikael")
 	assert.JSONEq(t, `[]`, h.mustRun("project", "list", "--json"))
 	assert.Contains(t, h.mustRun("project", "list", "--archived", "--json"), `"key": "awb"`)
 	_, stderr, code := h.run("create", "blocked", "--project", "awb")
@@ -111,6 +113,10 @@ func TestProjectArchiveAndRestoreCommands(t *testing.T) {
 	assert.Contains(t, stderr, "archived")
 	restored := h.mustRun("project", "restore", "awb", "--json")
 	assert.Contains(t, restored, `"state": "active"`)
+	var audit []domain.ProjectActivity
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "activity", "awb", "--json")), &audit))
+	require.Len(t, audit, 2)
+	assert.Equal(t, "restored", audit[0].Action)
 	h.mustRun("create", "resumed", "--project", "awb")
 }
 

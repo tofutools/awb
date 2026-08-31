@@ -2230,11 +2230,6 @@ components:
         active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
-        state:
-          type: string
-          enum: [active, archived]
-        archived_at: { type: string }
-        archived_by: { type: string }
 
     UserCreate:
       type: object

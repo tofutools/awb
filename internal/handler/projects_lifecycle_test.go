@@ -13,6 +13,9 @@ func TestProjectLifecycleAPIUsesETagsAndExplicitArchiveListing(t *testing.T) {
 	get, _ := a.do(http.MethodGet, "/api/projects/awb", "")
 	etag := get.Header.Get("ETag")
 	require.NotEmpty(t, etag)
+	rejected, _ := a.do(http.MethodPatch, "/api/projects/awb", `{"state":"archived"}`, "If-Match", etag)
+	assert.Equal(t, http.StatusBadRequest, rejected.StatusCode,
+		"lifecycle changes use the explicit archive and restore operations")
 
 	archived, body := a.do(http.MethodPost, "/api/projects/awb/archive", "", "If-Match", etag)
 	require.Equal(t, http.StatusOK, archived.StatusCode, body)
