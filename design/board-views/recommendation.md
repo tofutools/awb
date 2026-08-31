@@ -159,4 +159,3 @@ and an empty status column.
 - `mock.html` is an interactive desktop/narrow proposal. The view picker,
   project swimlanes, responsive columns and card Move control are represented.
 - `desktop.png` and `narrow.png` are captures at reviewable viewports.
-

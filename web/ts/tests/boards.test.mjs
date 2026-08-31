@@ -15,4 +15,3 @@ test("saved-view text filters are trimmed and deduplicated", () => {
   assert.deepEqual(splitBoardFilter(" release, frontend  release\napi "), ["release", "frontend", "api"]);
   assert.deepEqual(splitBoardFilter(""), []);
 });
-

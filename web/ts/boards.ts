@@ -22,4 +22,3 @@ export function legalBoardTargets(issue: BoardIssueLike, identity: string): Boar
 export function splitBoardFilter(value: string): string[] {
   return [...new Set(value.split(/[\s,]+/).map((part) => part.trim()).filter((part) => part !== ""))];
 }
-
