@@ -41,7 +41,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut, inspectorDismissShortcut, issueEditorShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
 import {
   CommandPalette,
   CommandRegistry,
@@ -54,6 +54,7 @@ import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from
 import { namedDestinations, navigationPath, projectScopedHref } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
+import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -81,7 +82,7 @@ const app = document.getElementById("app") as HTMLElement;
 let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
-let inspectorEditorID = 0;
+let inspectorPopoverID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -1560,107 +1561,118 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const facts = element("dl", "issue-facts");
   aside.append(element("h2", "issue-sidebar-title", "Details"));
 
-  let activePanel: HTMLElement | undefined;
-  let activeTrigger: HTMLButtonElement | undefined;
-  const closeActivePanel = (): void => {
-    activePanel?.setAttribute("hidden", "");
-    activeTrigger?.setAttribute("aria-expanded", "false");
-    activePanel = undefined;
-    activeTrigger = undefined;
-  };
-
-  const add = (label: string, value: Node, editor?: HTMLElement): void => {
+  const add = (label: string, value: Node, popover?: HTMLElement): void => {
     const row = element("div", "issue-fact");
     row.append(element("dt", "", label));
     const detail = element("dd");
     detail.append(value);
     row.append(detail);
-    if (editor !== undefined) row.append(editor);
+    if (popover !== undefined) row.append(popover);
     facts.append(row);
   };
-  const editable = (
-    label: string,
-    value: Node,
-    editor: HTMLElement,
-    affordance = "⌄",
-    accessibleValue?: string,
-  ): void => {
-    const trigger = button("", "inspector-trigger");
-    const panelID = `inspector-editor-${++inspectorEditorID}`;
-    editor.id = panelID;
-    editor.classList.add("inspector-editor");
-    editor.hidden = true;
-    trigger.setAttribute("aria-controls", panelID);
-    trigger.setAttribute("aria-expanded", "false");
-    const currentValue = accessibleValue ?? (value.textContent?.trim() || "none");
-    trigger.setAttribute("aria-label", `${label}: ${currentValue}; edit`);
-    trigger.append(value, element("span", "inspector-affordance", affordance));
-    trigger.addEventListener("click", () => {
-      const opening = editor.hidden;
-      closeActivePanel();
-      if (!opening) return;
-      editor.hidden = false;
-      trigger.setAttribute("aria-expanded", "true");
-      activePanel = editor;
-      activeTrigger = trigger;
-      (editor.querySelector<HTMLElement>("input, select") ??
-        editor.querySelector<HTMLElement>("button"))?.focus();
-    });
-    editor.addEventListener("keydown", (event) => {
-      if (!inspectorDismissShortcut(event)) return;
-      event.preventDefault();
-      closeActivePanel();
-      trigger.focus();
-    });
-    add(label, trigger, editor);
-  };
-  const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
-
   add("ID", element("span", "id", issue.id));
   add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
   type.className = "sidebar-select";
-  type.setAttribute("aria-label", "Edit type");
+  type.setAttribute("aria-label", "Type");
   type.addEventListener("change", () => {
-    void mutate(aside, [type], () => api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
+    mutateInspectorSelect(aside, type, issue.type, () =>
+      api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
   });
-  const typeEditor = element("div");
-  typeEditor.append(type);
-  editable("Type", text(issue.type), typeEditor);
-  editable("Status", badge(`status status-${issue.status}`, issue.status), statusEditor(issue));
+  add("Type", type);
+
+  const status = select(["open", "in_progress", "closed"], issue.status);
+  status.className = "sidebar-select";
+  status.setAttribute("aria-label", "Status");
+  const closeEditor = statusEditor(issue);
+  const openCloseEditor = configureInspectorPopover(status, closeEditor, "Close issue", false);
+  status.addEventListener("change", () => {
+    const target = status.value as Issue["status"];
+    const action = inspectorStatusAction(issue.status, target);
+    if (action === "none") return;
+    if (action === "close") {
+      status.value = issue.status;
+      openCloseEditor();
+      return;
+    }
+    const operation = action === "claim"
+      ? () => api.claimIssue(issue.id, { force: issue.status === "closed" })
+      : action === "release"
+        ? () => api.releaseIssue(issue.id, { force: true })
+        : () => api.reopenIssue(issue.id);
+    mutateInspectorSelect(aside, status, issue.status, operation);
+  });
+  add("Status", status, closeEditor);
+
   const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
   priority.className = `sidebar-select priority p${issue.priority}`;
-  priority.setAttribute("aria-label", "Edit priority");
+  priority.setAttribute("aria-label", "Priority");
+  for (const option of priority.options) option.textContent = `P${option.value}`;
   priority.addEventListener("change", () => {
-    void mutate(aside, [priority], () => api.updateIssue(issue.id, { priority: Number(priority.value) }));
+    mutateInspectorSelect(aside, priority, String(issue.priority), () =>
+      api.updateIssue(issue.id, { priority: Number(priority.value) }));
   });
-  const priorityEditor = element("div");
-  priorityEditor.append(priority);
-  editable("Priority", element("span", `priority p${issue.priority}`, `P${issue.priority}`), priorityEditor);
+  add("Priority", priority);
   if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
 
-  const labels = element("span", "sidebar-labels");
-  if (issue.labels.length === 0) labels.append(text("—"));
-  for (const label of issue.labels) labels.append(badge("label", label));
-  editable(
-    "Labels",
-    labels,
-    labelInspector(issue),
-    "+",
-    issue.labels.length === 0 ? "none" : issue.labels.join(", "),
-  );
-  editable(
-    "Assignees",
-    text(issue.assignees.map((name) => `@${name}`).join(", ")),
-    assigneeEditor(issue),
-    "+",
-    issue.assignees.length === 0 ? "unassigned" : issue.assignees.join(", "),
-  );
+  const [labels, labelsPopover] = labelInspector(issue);
+  add("Labels", labels, labelsPopover);
+  const [assignees, assigneesPopover] = assigneeInspector(issue);
+  add("Assignees", assignees, assigneesPopover);
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
   aside.append(facts);
   drawToggle();
   return [aside, toggle];
+}
+
+function mutateInspectorSelect(
+  host: HTMLElement,
+  control: HTMLSelectElement,
+  storedValue: string,
+  operation: () => Promise<unknown>,
+): void {
+  void mutate(host, [control], operation).then(() => {
+    // A successful mutation rerenders and detaches this control. If it is still
+    // present, the request failed and the visible value must remain truthful.
+    if (control.isConnected) control.value = storedValue;
+  });
+}
+
+function configureInspectorPopover(
+  trigger: HTMLElement,
+  popover: HTMLElement,
+  label: string,
+  toggleOnClick = true,
+): () => void {
+  popover.id = `inspector-popover-${++inspectorPopoverID}`;
+  popover.classList.add("inspector-popover");
+  popover.setAttribute("popover", "auto");
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", label);
+  trigger.setAttribute("aria-controls", popover.id);
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-haspopup", "dialog");
+
+  const open = (): void => {
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    popover.showPopover();
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = popover.getBoundingClientRect();
+    const position = inspectorPopoverPosition(anchor, bounds, { width: innerWidth, height: innerHeight });
+    popover.style.left = `${position.left}px`;
+    popover.style.top = `${position.top}px`;
+    (popover.querySelector<HTMLElement>("input, select") ??
+      popover.querySelector<HTMLElement>("button"))?.focus();
+  };
+  if (toggleOnClick) trigger.addEventListener("click", open);
+  popover.addEventListener("toggle", () => {
+    trigger.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+  });
+  return open;
 }
 
 function matchingValues(values: string[], query: string, excluded: string[] = []): Suggestion[] {
@@ -1691,38 +1703,32 @@ function labelEditor(issue: Issue): HTMLFormElement {
   return form;
 }
 
-function labelInspector(issue: Issue): HTMLElement {
+function labelInspector(issue: Issue): [HTMLElement, HTMLElement] {
   const panel = element("div");
-  if (issue.labels.length > 0) {
-    const labels = element("div", "inspector-current-values");
-    for (const label of issue.labels) {
-      const chip = element("span", "editable-chip");
-      chip.append(badge("label", label));
-      const remove = button("×", "chip-remove");
-      remove.title = `Remove label ${label}`;
-      remove.setAttribute("aria-label", remove.title);
-      remove.addEventListener("click", () => {
-        void mutate(panel, [remove], () => api.removeLabel(issue.id, label));
-      });
-      chip.append(remove);
-      labels.append(chip);
-    }
-    panel.append(labels);
+  const labels = element("span", "inspector-values");
+  if (issue.labels.length === 0) labels.append(document.createTextNode("—"));
+  for (const label of issue.labels) {
+    const chip = element("span", "editable-chip");
+    chip.append(badge("label", label));
+    const remove = button("×", "chip-remove");
+    remove.title = `Remove label ${label}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      void mutate(labels, [remove], () => api.removeLabel(issue.id, label));
+    });
+    chip.append(remove);
+    labels.append(chip);
   }
+  const add = button("+", "inspector-add");
+  add.setAttribute("aria-label", "Add label");
+  labels.append(add);
   panel.append(labelEditor(issue));
-  return panel;
+  configureInspectorPopover(add, panel, "Edit labels");
+  return [labels, panel];
 }
 
 function statusEditor(issue: Issue): HTMLElement {
   const panel = element("div");
-  if (issue.status === "closed") {
-    const reopen = button("Reopen", "quiet-action");
-    reopen.addEventListener("click", () => {
-      void mutate(panel, [reopen], () => api.reopenIssue(issue.id));
-    });
-    panel.append(reopen);
-    return panel;
-  }
   const close = element("form", "close-editor") as HTMLFormElement;
   const reason = document.createElement("input");
   reason.placeholder = "Close reason (optional)";
@@ -1742,8 +1748,31 @@ function statusEditor(issue: Issue): HTMLElement {
   return panel;
 }
 
-function assigneeEditor(issue: Issue): HTMLElement {
+function assigneeInspector(issue: Issue): [HTMLElement, HTMLElement] {
   const panel = element("div");
+  const assignees = element("span", "inspector-values");
+  if (issue.assignees.length === 0) assignees.append(document.createTextNode("—"));
+  for (const name of issue.assignees) {
+    const chip = element("span", "editable-chip");
+    chip.append(badge(name === identity ? "assignee mine" : "assignee", `@${name}`));
+    if (issue.status === "in_progress") {
+      const remove = button("×", "chip-remove");
+      remove.title = `Release ${name}`;
+      remove.setAttribute("aria-label", remove.title);
+      remove.addEventListener("click", () => {
+        void mutate(assignees, [remove], () => api.releaseIssue(issue.id, {
+          assignee: name,
+          force: false,
+        }));
+      });
+      chip.append(remove);
+    }
+    assignees.append(chip);
+  }
+  const add = button("+", "inspector-add");
+  add.setAttribute("aria-label", issue.assignees.length === 0 ? "Claim issue" : "Add assignee");
+  assignees.append(add);
+
   const claim = element("form", "sidebar-editor") as HTMLFormElement;
   const assignee = document.createElement("input");
   assignee.placeholder = identity === "" ? "Assignee" : `Assignee (default: ${identity})`;
@@ -1787,29 +1816,15 @@ function assigneeEditor(issue: Issue): HTMLElement {
 
   const actions = element("div", "assignee-actions");
   if (issue.status === "in_progress") {
-    const releaseForm = element("form", "release-editor") as HTMLFormElement;
-    const releaseForceLabel = element("label", "check-field");
-    const releaseForce = document.createElement("input");
-    releaseForce.type = "checkbox";
-    releaseForceLabel.append(releaseForce, document.createTextNode("Release all"));
-    const release = element(
-      "button",
-      "quiet-action",
-      issue.assignees.includes(identity) ? "Release myself" : "Release",
-    ) as HTMLButtonElement;
-    release.type = "submit";
-    releaseForm.append(releaseForceLabel, release);
-    releaseForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void mutate(panel, [release], () => api.releaseIssue(issue.id, {
-        assignee: identity,
-        force: releaseForce.checked,
-      }));
+    const release = button("Release all", "quiet-action inspector-release-all");
+    release.addEventListener("click", () => {
+      void mutate(panel, [release], () => api.releaseIssue(issue.id, { force: true }));
     });
-    actions.append(releaseForm);
+    actions.append(release);
   }
   panel.append(actions);
-  return panel;
+  configureInspectorPopover(add, panel, "Manage assignees");
+  return [assignees, panel];
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {
