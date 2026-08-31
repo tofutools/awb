@@ -829,6 +829,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   outline-offset: 2px;
 }
+.inspector-add:disabled { opacity: 0.55; cursor: wait; }
 .inspector-popover {
   position: fixed;
   inset: auto;

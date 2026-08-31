@@ -1632,10 +1632,21 @@ function mutateInspectorSelect(
   storedValue: string,
   operation: () => Promise<unknown>,
 ): void {
-  void mutate(host, [control], operation).then(() => {
+  void mutateInspector(host, operation).then(() => {
     // A successful mutation rerenders and detaches this control. If it is still
     // present, the request failed and the visible value must remain truthful.
     if (control.isConnected) control.value = storedValue;
+  });
+}
+
+function mutateInspector(host: HTMLElement, operation: () => Promise<unknown>): Promise<void> {
+  const inspector = host.closest<HTMLElement>(".issue-sidebar") ?? host;
+  inspector.setAttribute("aria-busy", "true");
+  const controls = inspector.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>(
+    "button, input, select",
+  );
+  return mutate(host, controls, operation).finally(() => {
+    inspector.removeAttribute("aria-busy");
   });
 }
 
@@ -1698,7 +1709,7 @@ function labelEditor(issue: Issue): HTMLFormElement {
   form.append(autocomplete, add);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [add], () => api.addLabel(issue.id, input.value));
+    void mutateInspector(form, () => api.addLabel(issue.id, input.value));
   });
   return form;
 }
@@ -1714,7 +1725,7 @@ function labelInspector(issue: Issue): [HTMLElement, HTMLElement] {
     remove.title = `Remove label ${label}`;
     remove.setAttribute("aria-label", remove.title);
     remove.addEventListener("click", () => {
-      void mutate(labels, [remove], () => api.removeLabel(issue.id, label));
+      void mutateInspector(labels, () => api.removeLabel(issue.id, label));
     });
     chip.append(remove);
     labels.append(chip);
@@ -1739,7 +1750,7 @@ function statusEditor(issue: Issue): HTMLElement {
   close.append(reason, closeButton);
   close.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(panel, [closeButton], () => api.closeIssue(
+    void mutateInspector(panel, () => api.closeIssue(
       issue.id,
       reason.value === "" ? {} : { reason: reason.value },
     ));
@@ -1760,7 +1771,7 @@ function assigneeInspector(issue: Issue): [HTMLElement, HTMLElement] {
       remove.title = `Release ${name}`;
       remove.setAttribute("aria-label", remove.title);
       remove.addEventListener("click", () => {
-        void mutate(assignees, [remove], () => api.releaseIssue(issue.id, {
+        void mutateInspector(assignees, () => api.releaseIssue(issue.id, {
           assignee: name,
           force: false,
         }));
@@ -1807,7 +1818,7 @@ function assigneeInspector(issue: Issue): [HTMLElement, HTMLElement] {
   claim.append(assigneeAutocomplete, forceLabel, claimButton);
   claim.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(panel, [claimButton], () => api.claimIssue(issue.id, {
+    void mutateInspector(panel, () => api.claimIssue(issue.id, {
       assignee: assignee.value === "" ? undefined : assignee.value,
       force: force.checked,
     }));
@@ -1818,7 +1829,7 @@ function assigneeInspector(issue: Issue): [HTMLElement, HTMLElement] {
   if (issue.status === "in_progress") {
     const release = button("Release all", "quiet-action inspector-release-all");
     release.addEventListener("click", () => {
-      void mutate(panel, [release], () => api.releaseIssue(issue.id, { force: true }));
+      void mutateInspector(panel, () => api.releaseIssue(issue.id, { force: true }));
     });
     actions.append(release);
   }
