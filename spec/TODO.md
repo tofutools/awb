@@ -37,10 +37,10 @@ below.
 Each of these was considered and left out. They are recorded here so the
 reasoning is not lost and so they are not re-litigated by accident.
 
-* **A fully read/write web UI.** The API already has complete write coverage,
-  optimistic concurrency, paging, facet endpoints and a caller-identity
-  endpoint. The bundled UI can post issue comments, but editing issue state is
-  still a command-line operation.
+* **Creation, deletion and administration in the web UI.** The bundled UI edits
+  existing projects and issues, including lifecycle state, labels, relations,
+  attachments and comments. Creating or hard-deleting records and managing
+  users or project membership remain command-line operations.
 
 * **An MCP server.** The command line is the agent interface, and a second one
   would be a second surface to keep in step.

@@ -1,5 +1,5 @@
-// The bundled web UI: projects, issues, search, dependency trees and issue
-// comments, over the same HTTP API anything else would use.
+// The bundled web UI: projects, issues, search, dependency trees and editing,
+// over the same HTTP API anything else would use.
 
 import {
   api,
@@ -17,6 +17,7 @@ import {
   type ProjectFilters,
   type User,
   type UserFilters,
+  type Relation,
 } from "./api.js";
 import {
   emptyFacetLabel,
@@ -243,6 +244,51 @@ function mobileUpdatedDisplayControl(): HTMLElement {
 
 function clear(node: HTMLElement): void {
   node.replaceChildren();
+}
+
+function button(text: string, className = "secondary-button"): HTMLButtonElement {
+  const control = element("button", className, text) as HTMLButtonElement;
+  control.type = "button";
+  return control;
+}
+
+function mutationError(host: HTMLElement, error: unknown): void {
+  host.querySelector(".edit-error")?.remove();
+  const message = error instanceof ApiError ? error.message : String(error);
+  host.append(element("p", "edit-error", message));
+}
+
+async function mutate(
+  host: HTMLElement,
+  controls: Iterable<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>,
+  operation: () => Promise<unknown>,
+): Promise<void> {
+  for (const control of controls) control.disabled = true;
+  try {
+    await operation();
+    await render();
+  } catch (error) {
+    for (const control of controls) control.disabled = false;
+    mutationError(host, error);
+  }
+}
+
+function field(labelText: string, control: HTMLElement): HTMLLabelElement {
+  const label = element("label", "edit-field") as HTMLLabelElement;
+  label.append(element("span", "edit-field-label", labelText), control);
+  return label;
+}
+
+function select(values: readonly string[], current = ""): HTMLSelectElement {
+  const control = document.createElement("select");
+  for (const value of values) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    option.selected = value === current;
+    control.append(option);
+  }
+  return control;
 }
 
 function routeHref(route: Route, query: URLSearchParams): string {
@@ -875,7 +921,7 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
   const body = document.createElement("tbody");
   for (const project of projects) {
     const row = document.createElement("tr");
-    const href = `#/issues?project=${encodeURIComponent(project.key)}`;
+    const href = `#/projects/${encodeURIComponent(project.key)}`;
 
     const projectCell = document.createElement("td");
     projectCell.dataset.label = "Project";
@@ -1038,6 +1084,69 @@ async function viewUsers(route: Route): Promise<HTMLElement> {
   return view;
 }
 
+async function viewProject(key: string): Promise<HTMLElement> {
+  const project = await api.project(key);
+  const view = element("div", "project-view");
+  const heading = element("div", "detail-heading");
+  const title = element("div");
+  title.append(element("div", "issue-key", project.key), element("h1", "", project.name));
+  const edit = button("Edit project");
+  heading.append(title, edit);
+  view.append(heading);
+
+  const form = projectEditForm(project);
+  form.hidden = true;
+  edit.addEventListener("click", () => {
+    form.hidden = !form.hidden;
+    edit.textContent = form.hidden ? "Edit project" : "Hide editor";
+    if (!form.hidden) form.querySelector<HTMLInputElement>("input")?.focus();
+  });
+  view.append(form);
+
+  const description = element("section", "project-detail-description");
+  description.append(element("h2", "", "Description"));
+  if (project.description === "") description.append(element("p", "empty", "No description."));
+  else {
+    const body = element("div", "markdown");
+    body.innerHTML = renderMarkdown(project.description);
+    description.append(body);
+  }
+  view.append(description);
+  const facts = element("p", "project-facts");
+  facts.append(
+    document.createTextNode(`${project.active_issues} open issue${project.active_issues === 1 ? "" : "s"} · Updated `),
+    updatedTimeElement(project.updated_at),
+  );
+  view.append(facts, link(
+    `#/issues?project=${encodeURIComponent(project.key)}`,
+    "View this project's issues",
+    "action",
+  ));
+  return view;
+}
+
+function projectEditForm(project: Project): HTMLFormElement {
+  const form = element("form", "edit-panel") as HTMLFormElement;
+  form.append(element("h2", "", "Edit project"));
+  const name = document.createElement("input");
+  name.value = project.name;
+  name.maxLength = 500;
+  const description = document.createElement("textarea");
+  description.value = project.description;
+  description.rows = 10;
+  const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
+  save.type = "submit";
+  form.append(field("Name", name), field("Description (Markdown)", description), save);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(form, [save], () => api.updateProject(project.key, {
+      name: name.value,
+      description: description.value,
+    }));
+  });
+  return form;
+}
+
 async function viewIssue(id: string): Promise<HTMLElement> {
   const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
 
@@ -1045,9 +1154,20 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
   const content = element("div", "issue-content");
   const heading = element("div", "issue-heading");
-  heading.append(element("div", "issue-key", issue.id));
-  heading.append(element("h1", "", issue.title));
+  const headingText = element("div", "issue-heading-text");
+  headingText.append(element("div", "issue-key", issue.id), element("h1", "", issue.title));
+  const editButton = button("Edit issue");
+  heading.append(headingText, editButton);
   content.append(heading);
+
+  const editForm = issueEditForm(issue);
+  editForm.hidden = true;
+  editButton.addEventListener("click", () => {
+    editForm.hidden = !editForm.hidden;
+    editButton.textContent = editForm.hidden ? "Edit issue" : "Hide editor";
+    if (!editForm.hidden) editForm.querySelector<HTMLInputElement>("input")?.focus();
+  });
+  content.append(editForm);
 
   const description = element("section", "issue-description");
   description.append(element("h2", "", "Description"));
@@ -1081,9 +1201,10 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   if (issue.attachments.length > 0) {
     content.append(element("h2", "", "Attachments"));
     const list = element("ul", "attachments");
-    for (const attachment of issue.attachments) list.append(attachmentRow(attachment));
+    for (const attachment of issue.attachments) list.append(attachmentRow(attachment, true));
     content.append(list);
   }
+  content.append(attachmentEditor(issue.id));
 
   if (issue.relations.length > 0) {
     content.append(element("h2", "", "Relations"));
@@ -1097,16 +1218,104 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       row.append(link(`#/issues/${subject}`, subject, "id"));
       row.append(element("span", "relation-type", relation.type));
       row.append(link(`#/issues/${other}`, other, "id"));
+      const remove = button("Remove", "inline-button danger-button");
+      remove.addEventListener("click", () => {
+        const addressed = relation.direction === "in" ? relation.other : issue.id;
+        const addressedOther = relation.direction === "in" ? issue.id : relation.other;
+        void mutate(row, [remove], () => api.removeRelation(addressed, relation.type, addressedOther));
+      });
+      row.append(remove);
       list.append(row);
     }
     content.append(list);
   }
+  content.append(relationEditor(issue.id));
 
   content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
   return view;
+}
+
+function issueEditForm(issue: Issue): HTMLFormElement {
+  const form = element("form", "edit-panel issue-edit-form") as HTMLFormElement;
+  form.append(element("h2", "", "Edit issue"));
+
+  const title = document.createElement("input");
+  title.name = "title";
+  title.value = issue.title;
+  title.required = true;
+  title.maxLength = 500;
+
+  const description = document.createElement("textarea");
+  description.name = "description";
+  description.value = issue.description;
+  description.rows = 10;
+
+  const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
+  type.name = "type";
+  const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
+  priority.name = "priority";
+
+  const row = element("div", "edit-field-row");
+  row.append(field("Type", type), field("Priority", priority));
+  const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
+  save.type = "submit";
+  form.append(field("Title", title), field("Description (Markdown)", description), row, save);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(form, [save], () => api.updateIssue(issue.id, {
+      title: title.value,
+      description: description.value,
+      type: type.value as Issue["type"],
+      priority: Number(priority.value),
+    }));
+  });
+  return form;
+}
+
+function relationEditor(issueID: string): HTMLFormElement {
+  const form = element("form", "compact-editor") as HTMLFormElement;
+  const type = select(["blocked-by", "has-parent", "discovered-from", "related"]);
+  type.setAttribute("aria-label", "Relation type");
+  const other = document.createElement("input");
+  other.placeholder = "Other issue ID";
+  other.setAttribute("aria-label", "Other issue ID");
+  other.required = true;
+  const forceLabel = element("label", "check-field");
+  const force = document.createElement("input");
+  force.type = "checkbox";
+  forceLabel.append(force, document.createTextNode("Replace parent"));
+  const add = element("button", "primary-button", "Add relation") as HTMLButtonElement;
+  add.type = "submit";
+  form.append(type, other, forceLabel, add);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(form, [add], () => api.addRelation(issueID, {
+      type: type.value as Relation["type"],
+      other: other.value,
+      force: force.checked,
+    }));
+  });
+  return form;
+}
+
+function attachmentEditor(issueID: string): HTMLFormElement {
+  const form = element("form", "compact-editor attachment-editor") as HTMLFormElement;
+  const file = document.createElement("input");
+  file.type = "file";
+  file.required = true;
+  file.setAttribute("aria-label", "Attachment file");
+  const upload = element("button", "primary-button", "Attach file") as HTMLButtonElement;
+  upload.type = "submit";
+  form.append(file, upload);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (file.files?.[0] === undefined) return;
+    void mutate(form, [upload], () => api.addAttachment(issueID, file.files![0]));
+  });
+  return form;
 }
 
 function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButtonElement] {
@@ -1141,22 +1350,136 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
 
   add("ID", element("span", "id", issue.id));
-  add("Project", link(`#/issues?project=${encodeURIComponent(issue.project)}`, issue.project));
-  add("Type", badge("type", issue.type));
+  add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
+  const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
+  type.className = "sidebar-select";
+  type.setAttribute("aria-label", "Edit type");
+  type.addEventListener("change", () => {
+    void mutate(aside, [type], () => api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
+  });
+  add("Type", type);
   add("Status", badge(`status status-${issue.status}`, issue.status));
-  add("Priority", badge(`priority p${issue.priority}`, `P${issue.priority}`));
+  const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
+  priority.className = `sidebar-select priority p${issue.priority}`;
+  priority.setAttribute("aria-label", "Edit priority");
+  priority.addEventListener("change", () => {
+    void mutate(aside, [priority], () => api.updateIssue(issue.id, { priority: Number(priority.value) }));
+  });
+  add("Priority", priority);
   if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
 
   const labels = element("span", "sidebar-labels");
   if (issue.labels.length === 0) labels.append(text("—"));
-  for (const label of issue.labels) labels.append(badge("label", label));
+  for (const label of issue.labels) {
+    const chip = element("span", "editable-chip");
+    chip.append(badge("label", label));
+    const remove = button("×", "chip-remove");
+    remove.title = `Remove label ${label}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      void mutate(chip, [remove], () => api.removeLabel(issue.id, label));
+    });
+    chip.append(remove);
+    labels.append(chip);
+  }
   add("Labels", labels);
   add("Assignees", text(issue.assignees.map((name) => `@${name}`).join(", ")));
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
-  aside.append(facts);
+  aside.append(facts, labelEditor(issue.id), lifecycleEditor(issue));
   drawToggle();
   return [aside, toggle];
+}
+
+function labelEditor(issueID: string): HTMLFormElement {
+  const form = element("form", "sidebar-editor") as HTMLFormElement;
+  const input = document.createElement("input");
+  input.placeholder = "Add label";
+  input.setAttribute("aria-label", "Label");
+  input.required = true;
+  const add = element("button", "primary-button", "Add") as HTMLButtonElement;
+  add.type = "submit";
+  form.append(input, add);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(form, [add], () => api.addLabel(issueID, input.value));
+  });
+  return form;
+}
+
+function lifecycleEditor(issue: Issue): HTMLElement {
+  const section = element("section", "lifecycle-editor");
+  section.append(element("h2", "", "Status and assignees"));
+
+  const claim = element("form", "sidebar-editor") as HTMLFormElement;
+  const assignee = document.createElement("input");
+  assignee.placeholder = identity === "" ? "Assignee" : `Assignee (default: ${identity})`;
+  assignee.setAttribute("aria-label", "Assignee");
+  const forceLabel = element("label", "check-field");
+  const force = document.createElement("input");
+  force.type = "checkbox";
+  forceLabel.append(force, document.createTextNode("Force"));
+  const claimButton = element(
+    "button",
+    "primary-button",
+    issue.assignees.length === 0 ? "Claim" : "Add assignee",
+  ) as HTMLButtonElement;
+  claimButton.type = "submit";
+  claim.append(assignee, forceLabel, claimButton);
+  claim.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(section, [claimButton], () => api.claimIssue(issue.id, {
+      assignee: assignee.value === "" ? undefined : assignee.value,
+      force: force.checked,
+    }));
+  });
+  section.append(claim);
+
+  const actions = element("div", "lifecycle-actions");
+  if (issue.status === "in_progress") {
+    const releaseForm = element("form", "release-editor") as HTMLFormElement;
+    const releaseForceLabel = element("label", "check-field");
+    const releaseForce = document.createElement("input");
+    releaseForce.type = "checkbox";
+    releaseForceLabel.append(releaseForce, document.createTextNode("Force release"));
+    const release = element("button", "secondary-button", "Release") as HTMLButtonElement;
+    release.type = "submit";
+    releaseForm.append(releaseForceLabel, release);
+    releaseForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void mutate(section, [release], () => api.releaseIssue(issue.id, {
+        assignee: identity,
+        force: releaseForce.checked,
+      }));
+    });
+    actions.append(releaseForm);
+  }
+  if (issue.status === "closed") {
+    const reopen = button("Reopen");
+    reopen.addEventListener("click", () => {
+      void mutate(section, [reopen], () => api.reopenIssue(issue.id));
+    });
+    actions.append(reopen);
+  } else {
+    const close = element("form", "close-editor") as HTMLFormElement;
+    const reason = document.createElement("input");
+    reason.placeholder = "Close reason (optional)";
+    reason.maxLength = 500;
+    reason.setAttribute("aria-label", "Close reason");
+    const closeButton = element("button", "danger-button", "Close") as HTMLButtonElement;
+    closeButton.type = "submit";
+    close.append(reason, closeButton);
+    close.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void mutate(section, [closeButton], () => api.closeIssue(
+        issue.id,
+        reason.value === "" ? {} : { reason: reason.value },
+      ));
+    });
+    actions.append(close);
+  }
+  section.append(actions);
+  return section;
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {
@@ -1280,7 +1603,7 @@ function activityAction(action: string): string {
  * origin. The link is an ordinary one for the same reason: nothing here opens
  * the file in the page.
  */
-function attachmentRow(attachment: Attachment): HTMLElement {
+function attachmentRow(attachment: Attachment, editable = false): HTMLElement {
   const row = element("li");
   const href =
     `api/issues/${encodeURIComponent(attachment.issue)}` +
@@ -1288,6 +1611,13 @@ function attachmentRow(attachment: Attachment): HTMLElement {
   row.append(link(href, attachment.name));
   row.append(element("span", "size", formatSize(attachment.size)));
   row.append(element("span", "content-type", attachment.content_type));
+  if (editable) {
+    const remove = button("Remove", "inline-button danger-button");
+    remove.addEventListener("click", () => {
+      void mutate(row, [remove], () => api.removeAttachment(attachment.issue, attachment.name));
+    });
+    row.append(remove);
+  }
   return row;
 }
 
@@ -1584,7 +1914,7 @@ async function routeView(route: Route): Promise<HTMLElement> {
     case "blocked":
       return viewListing(route, "blocked");
     case "projects":
-      return viewProjects(route);
+      return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route);
     case "profile":
       return viewProfile();
     case "users":

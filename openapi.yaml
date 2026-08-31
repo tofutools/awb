@@ -7,8 +7,8 @@ info:
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
     complete enough to drive a fully functional read/write web UI. The bundled
-    UI reads the whole tracker and writes issue comments; other mutations remain
-    command-line operations.
+    UI reads and edits projects and issues through the same operations available
+    to API and CLI clients.
 
     The component schemas below are the domain fields in the CLI's `--json`
     structures. In remote mode the CLI adds navigation links derived from the
