@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -76,11 +77,16 @@ func (t *Tx) ProjectExists(key string) (bool, error) {
 
 // ListProjects returns projects in a total order. limit and offset page the
 // result; total is the unpaged count.
-func (t *Tx) ListProjects(sort domain.ProjectSort,
+func (t *Tx) ListProjects(filter string, sort domain.ProjectSort,
 	limit, offset *int) (projects []domain.Project, total int, err error) {
 	visible, args := t.visibleClause("p.key")
+	where := visible
+	for _, word := range strings.Fields(filter) {
+		where += ` AND instr(lower(p.key || ' ' || p.name || ' ' || p.description), lower(?)) > 0`
+		args = append(args, word)
+	}
 	if err := t.q.QueryRowContext(t.ctx,
-		`SELECT count(*) FROM projects p WHERE `+visible, args...).Scan(&total); err != nil {
+		`SELECT count(*) FROM projects p WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count projects")
 	}
 
@@ -105,7 +111,7 @@ func (t *Tx) ListProjects(sort domain.ProjectSort,
 		SELECT p.key, p.name, p.description, p.created_at, p.updated_at,
 		       ` + active + `
 		  FROM projects p
-		 WHERE ` + visible + `
+		 WHERE ` + where + `
 		 ORDER BY ` + order + limitOffsetClause(limit, offset)
 
 	rows, err := t.q.QueryContext(t.ctx, query, args...)

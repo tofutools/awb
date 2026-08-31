@@ -100,6 +100,13 @@ func TestGetAndListUsers(t *testing.T) {
 	assert.Equal(t, "bob", users[1].Name)
 	assert.Contains(t, payload, `"activity_projects":[]`)
 
+	resp, payload = a.do(http.MethodGet, "/api/users?filter=andersson&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &users))
+	require.Len(t, users, 1)
+	assert.Equal(t, "alice", users[0].Name)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+
 	resp, payload = a.do(http.MethodGet, "/api/users/alice", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var user domain.User

@@ -568,6 +568,51 @@ func TestSearch(t *testing.T) {
 	assert.Empty(t, search("parser", "nonexistent"))
 }
 
+func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	for range 12 {
+		add("ordinary work")
+	}
+	wanted := add("Needle in the final unfiltered page")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		issue, err := tx.GetIssue(wanted)
+		if err != nil {
+			return err
+		}
+		return tx.AddLabel(issue, "frontend")
+	}))
+
+	limit, offset := 10, 0
+	filter := &domain.Filter{
+		ListingFilter: "needle FRONT",
+		Limit:         &limit,
+		Offset:        &offset,
+		Sort:          domain.DefaultSort,
+	}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1, "a match beyond the first unfiltered page remains discoverable")
+	assert.Equal(t, wanted, issues[0].ID)
+	assert.Equal(t, 1, total, "the total is filtered before paging")
+
+	facets := read(t, db, func(tx *storage.Tx) ([]domain.Facet, error) {
+		return tx.LabelFacets(filter)
+	})
+	assert.Equal(t, []domain.Facet{{Value: "frontend", Count: 1}}, facets)
+
+	filter.ListingFilter = "missing"
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Empty(t, issues)
+	assert.Zero(t, total)
+
+	filter.ListingFilter = ""
+	_, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 13, total, "clearing restores the complete result set")
+}
+
 func TestSuggestIssuesByIDAndTitle(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
@@ -871,7 +916,7 @@ func TestProjects(t *testing.T) {
 		)
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error
-			ps, total, err = tx.ListProjects(domain.DefaultProjectSort, nil, nil)
+			ps, total, err = tx.ListProjects("", domain.DefaultProjectSort, nil, nil)
 			return err
 		})
 		return ps, total, err
@@ -890,7 +935,7 @@ func TestProjects(t *testing.T) {
 		)
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error
-			ps, total, err = tx.ListProjects(
+			ps, total, err = tx.ListProjects("",
 				domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}, nil, nil)
 			return err
 		})
@@ -906,6 +951,29 @@ func TestProjects(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
+}
+
+func TestProjectListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
+	db := newDB(t)
+	seed(t, db)
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertProject("cli", "Command tools", "remote clients"); err != nil {
+			return err
+		}
+		return tx.InsertProject("web", "Web console", "Agent issue tracking")
+	}))
+
+	limit, offset := 1, 0
+	var projects []domain.Project
+	var total int
+	require.NoError(t, db.Read(t.Context(), func(tx *storage.Tx) error {
+		var err error
+		projects, total, err = tx.ListProjects("agent TRACK", domain.DefaultProjectSort, &limit, &offset)
+		return err
+	}))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "web", projects[0].Key)
+	assert.Equal(t, 1, total)
 }
 
 // A project's updated_at does not move when an issue it holds changes:

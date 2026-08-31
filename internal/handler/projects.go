@@ -29,7 +29,7 @@ func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParam
 			return nil, err
 		}
 	}
-	page, err := h.backendFor(ctx).ListProjects(ctx, sort,
+	page, err := h.backendFor(ctx).ListProjects(ctx, params.Filter.Or(""), sort,
 		optInt(params.Limit), optInt(params.Offset))
 	if err != nil {
 		return nil, err

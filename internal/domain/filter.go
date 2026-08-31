@@ -176,6 +176,11 @@ type Filter struct {
 	// through and no input can produce a query syntax error.
 	Terms []string
 
+	// ListingFilter is the web listing's case-insensitive substring filter over
+	// displayed values. Whitespace-separated words must all match. It remains
+	// distinct from Terms, whose whole-token FTS semantics power search itself.
+	ListingFilter string
+
 	// Limit caps the results; nil means no cap, and zero returns none. Offset
 	// skips rows; it has no CLI flag and exists for the API's paging.
 	Limit  *int

@@ -41,10 +41,11 @@ test("values are escaped", () => {
 });
 
 test("several filters combine", () => {
-  const query = toQuery({ project: ["awb"], label: ["parser"], "include-closed": true });
+  const query = toQuery({ project: ["awb"], label: ["parser"], filter: "needle docs", "include-closed": true });
   const params = new URLSearchParams(query.slice(1));
   assert.deepEqual(params.getAll("project"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
+  assert.equal(params.get("filter"), "needle docs");
   assert.equal(params.get("include-closed"), "true");
 });
 
@@ -106,8 +107,9 @@ test("ready filters drop what that endpoint does not accept", () => {
       assignee: ["mikael"],
       unassigned: true,
       q: ["parser"],
+      filter: "needle",
     }),
-    { project: ["awb"], label: ["parser"], sort: "priority" },
+    { project: ["awb"], label: ["parser"], filter: "needle", sort: "priority" },
   );
 });
 
@@ -133,8 +135,8 @@ test("blocked filters drop the status set it fixes for itself", () => {
 
 test("facet filters drop the sort the row order fixes", () => {
   assert.deepEqual(
-    facetFilters({ label: ["parser"], status: ["open"], sort: "created", limit: 50, offset: 100 }),
-    { label: ["parser"], status: ["open"] },
+    facetFilters({ label: ["parser"], status: ["open"], filter: "needle", sort: "created", limit: 50, offset: 100 }),
+    { label: ["parser"], status: ["open"], filter: "needle" },
   );
 });
 

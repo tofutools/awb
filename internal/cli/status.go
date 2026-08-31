@@ -121,7 +121,7 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 		report.Connection.Database = ""
 	}
 
-	page, err := be.ListProjects(cmd.Context(), domain.DefaultProjectSort, nil, nil)
+	page, err := be.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, nil, nil)
 	if err != nil {
 		return nil, err
 	}

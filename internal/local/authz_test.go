@@ -81,7 +81,7 @@ func TestDirectModeIsUnauthorized(t *testing.T) {
 	// backend acting as bob does everything anyway.
 	direct := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
 
-	page, err := direct.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	page, err := direct.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, page.Projects, 2)
 
@@ -109,7 +109,7 @@ func TestVisibilityIsMembership(t *testing.T) {
 
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, projects.Projects, 1)
 	assert.Equal(t, "awb", projects.Projects[0].Key)
@@ -120,6 +120,16 @@ func TestVisibilityIsMembership(t *testing.T) {
 	require.Len(t, issues.Issues, 1)
 	assert.Equal(t, inAwb.ID, issues.Issues[0].ID)
 	assert.Equal(t, 1, issues.Total)
+
+	hiddenMatch, err := bob.ListIssues(ctx, &domain.Filter{ListingFilter: "Button drifts"})
+	require.NoError(t, err)
+	assert.Empty(t, hiddenMatch.Issues)
+	assert.Zero(t, hiddenMatch.Total, "the text filter narrows the authorized selection")
+
+	hiddenProject, err := bob.ListProjects(ctx, "web", domain.DefaultProjectSort, nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, hiddenProject.Projects)
+	assert.Zero(t, hiddenProject.Total)
 
 	// The visible one is readable and the invisible one is not there at all.
 	_, err = bob.GetIssue(ctx, inAwb.ID)
@@ -158,7 +168,7 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	assert.Equal(t, "web", preferences[1].Project.Key)
 	assert.True(t, preferences[1].Ignored)
 
-	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, projects.Total)
 	assert.Equal(t, "awb", projects.Projects[0].Key)
@@ -240,13 +250,41 @@ func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T)
 	_, err := admin.SetProjectIgnored(ctx, "web", true)
 	require.NoError(t, err)
 
-	page, err := admin.ListUsers(ctx, nil, nil)
+	page, err := admin.ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	require.Len(t, page.Users, 2, "user administration still sees the complete account directory")
 	for _, user := range page.Users {
 		require.Len(t, user.Projects, 1)
 		assert.Equal(t, "awb", user.Projects[0].Project)
 	}
+
+	page, err = admin.ListUsers(ctx, "web", nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, page.Users)
+	assert.Zero(t, page.Total, "an ignored membership cannot make an account match")
+
+	page, err = admin.ListUsers(ctx, "awb regular", nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, page.Users, 2)
+}
+
+func TestUserListingFilterCannotMatchUnauthorizedProjects(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "carol", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	grant(t, root, ctx, "awb", "carol", domain.AccessRegular)
+	grant(t, root, ctx, "web", "carol", domain.AccessAdmin)
+
+	page, err := root.WithUser("bob").ListUsers(ctx, "web", nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, page.Users)
+	assert.Zero(t, page.Total, "a hidden membership cannot make a visible user match")
+
+	page, err = root.WithUser("bob").ListUsers(ctx, "carol awb regular", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Users, 1)
+	assert.Equal(t, "carol", page.Users[0].Name)
 }
 
 func TestActivityUsesTheIssueProjectScope(t *testing.T) {
@@ -383,7 +421,7 @@ func TestAProjectAdministratorSeesEverything(t *testing.T) {
 	require.NoError(t, err)
 
 	alice := root.WithUser("alice")
-	projects, err := alice.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err := alice.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, projects.Projects, 2)
 
@@ -471,7 +509,7 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 	}
 
 	for name, be := range map[string]*local.Backend{"bob": bob, "alice": alice} {
-		users, err := be.ListUsers(ctx, nil, nil)
+		users, err := be.ListUsers(ctx, "", nil, nil)
 		require.NoError(t, err)
 		require.Len(t, users.Users, 1, "unrelated dormant accounts stay outside the directory")
 		assert.Equal(t, name, users.Users[0].Name)
@@ -479,12 +517,12 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 
 	_, err := dana.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
 	require.NoError(t, err)
-	users, err := dana.ListUsers(ctx, nil, nil)
+	users, err := dana.ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, users.Users, 4)
 
 	// Managing users confers no access to any project.
-	projects, err := dana.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err := dana.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, projects.Projects)
 }
@@ -515,7 +553,7 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	page, err := root.WithUser("alice").ListUsers(ctx, nil, nil)
+	page, err := root.WithUser("alice").ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	require.Len(t, page.Users, 4)
 	assert.Equal(t, 4, page.Total)
@@ -530,7 +568,7 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	assert.Equal(t, []string{"awb"}, page.Users[3].ActivityProjects)
 
 	// A user administrator retains the complete management listing.
-	all, err := root.WithUser("dana").ListUsers(ctx, nil, nil)
+	all, err := root.WithUser("dana").ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, all.Users, 5)
 	assert.Equal(t, 5, all.Total)
@@ -622,7 +660,7 @@ func TestAnUnknownCallerIsRefused(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 
 	ghost := root.WithUser("nobody")
-	_, err := ghost.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	_, err := ghost.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	forbidden(t, err)
 }
 
@@ -785,13 +823,13 @@ func TestPermissionsAreReadPerOperation(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, projects.Projects)
 
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	projects, err = bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	projects, err = bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
 }

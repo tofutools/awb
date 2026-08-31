@@ -506,6 +506,17 @@ func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Equal(t, 4, issues[0].Priority)
 	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?filter=high&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, "high", issues[0].Title)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?filter=missing", "")
+	assert.Equal(t, "0", resp.Header.Get("X-Total-Count"))
+	assert.Equal(t, "[]", payload)
 }
 
 func TestProjectPagingAppliesAfterSorting(t *testing.T) {
@@ -521,6 +532,13 @@ func TestProjectPagingAppliesAfterSorting(t *testing.T) {
 	require.Len(t, projects, 1)
 	assert.Equal(t, "awb", projects[0].Key)
 	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
+
+	resp, payload = a.do(http.MethodGet, "/api/projects?filter=web", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &projects))
+	require.Len(t, projects, 1)
+	assert.Equal(t, "web", projects[0].Key)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
 }
 
 // The endpoints that fix a filter for themselves reject the corresponding

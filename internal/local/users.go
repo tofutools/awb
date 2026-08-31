@@ -104,14 +104,14 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 // that share or have participated in projects they can see. Project
 // administrators see participation across every project, but not dormant
 // accounts that have never touched one.
-func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.UserPage, error) {
+func (b *Backend) ListUsers(ctx context.Context, filter string, limit, offset *int) (backend.UserPage, error) {
 	var page backend.UserPage
 	err := b.read(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		var err error
 		if caller.MayManageUsers() {
-			page.Users, page.Total, err = tx.ListUsers(limit, offset)
+			page.Users, page.Total, err = tx.ListUsers(filter, limit, offset)
 		} else {
-			page.Users, page.Total, err = tx.ListVisibleUsers(caller.Name, limit, offset)
+			page.Users, page.Total, err = tx.ListVisibleUsers(caller.Name, filter, limit, offset)
 		}
 		return err
 	})

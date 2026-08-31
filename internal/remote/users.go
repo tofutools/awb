@@ -58,10 +58,14 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 	return b.userCall(ctx, http.MethodGet, "/api/users/"+url.PathEscape(name), nil, "")
 }
 
-func (b *Backend) ListUsers(ctx context.Context, limit, offset *int) (backend.UserPage, error) {
+func (b *Backend) ListUsers(ctx context.Context, filter string, limit, offset *int) (backend.UserPage, error) {
 	entries := []directoryUser{}
+	query := pageQuery(limit, offset)
+	if filter != "" {
+		query.Set("filter", filter)
+	}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/users", pageQuery(limit, offset)), nil, "", &entries)
+		b.endpoint("/api/users", query), nil, "", &entries)
 	if err != nil {
 		return backend.UserPage{}, err
 	}

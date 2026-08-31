@@ -204,6 +204,9 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 	if filter.Parent != "" {
 		query.Set("parent", filter.Parent)
 	}
+	if filter.ListingFilter != "" {
+		query.Set("filter", filter.ListingFilter)
+	}
 	if filter.Limit != nil {
 		query.Set("limit", strconv.Itoa(*filter.Limit))
 	}
@@ -370,10 +373,13 @@ func pageQuery(limit, offset *int) url.Values {
 	return query
 }
 
-func (b *Backend) ListProjects(ctx context.Context, sort domain.ProjectSort,
+func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.ProjectSort,
 	limit, offset *int) (backend.ProjectPage, error) {
 	projects := []domain.Project{}
 	query := pageQuery(limit, offset)
+	if filter != "" {
+		query.Set("filter", filter)
+	}
 	if sort.Key != "" {
 		value := string(sort.Key)
 		if sort.Desc {
