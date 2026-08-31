@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -9,39 +10,23 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// The four transitions below are the only way status or assignee ever moves.
-// Keeping them out of update is what stops in_progress and an assignee from
-// drifting apart and stops a claim being taken silently.
+// The four transitions below are the only way status or assignees ever move.
+// Keeping them out of update is what stops in_progress and the assignment set
+// from drifting apart and stops a claim being taken silently.
 
-// Claim atomically sets the assignee and status to in_progress.
+// Claim atomically adds an assignee and sets status to in_progress.
 //
 // Claiming an issue you already hold succeeds; if it is already in_progress
-// nothing changes. It fails with a conflict if the issue is assigned to
-// someone else, blocked, or closed, and --force overrides all three.
+// nothing changes. Another claimant joins without replacing anyone. A blocked
+// or closed issue conflicts, and --force overrides those two refusals.
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
 	assignee, err := domain.ValidateAssignee(req.Assignee)
 	if err != nil {
 		return nil, err
 	}
-	if req.ExpectAssignee != nil && *req.ExpectAssignee != "" {
-		if _, err := domain.ValidateAssignee(*req.ExpectAssignee); err != nil {
-			return nil, err
-		}
-	}
-
 	return b.mutate(ctx, ref, ifMatch, "claimed", "", func(tx *storage.Tx, issue *domain.Issue) error {
-		// The compare-and-set, checked inside the write lock, so two agents racing
-		// for the same issue cannot both win.
-		if req.ExpectAssignee != nil && issue.Assignee != *req.ExpectAssignee {
-			return awberr.Conflictf("%s is assigned to %q, not to %q",
-				issue.ID, issue.Assignee, *req.ExpectAssignee)
-		}
-
 		if !req.Force {
-			if issue.Assignee != "" && issue.Assignee != assignee {
-				return awberr.Conflictf("%s is already held by %s", issue.ID, issue.Assignee)
-			}
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
 			}
@@ -51,13 +36,21 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		}
 
 		fields := storage.Fields(issue)
-		fields.Assignee = assignee
+		if req.Force && issue.Status == domain.StatusClosed {
+			// A closed issue's assignees are a historical record. Reclaiming it starts
+			// a new active assignment rather than reviving everyone who completed it.
+			fields.Assignees = nil
+		}
+		if !slices.Contains(fields.Assignees, assignee) {
+			fields.Assignees = append(fields.Assignees, assignee)
+		}
 		fields.Status = domain.StatusInProgress
 		return tx.UpdateIssue(issue, fields)
 	})
 }
 
-// Release clears the assignee and sets status back to open.
+// Release removes the caller from the assignees. The issue returns to open
+// only when no assignees remain; --force clears every assignee.
 //
 // Releasing an issue that is already open and unassigned succeeds and changes
 // nothing. It fails on a closed issue, or on one assigned to someone else,
@@ -80,14 +73,23 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
 			}
-			if issue.Assignee != "" && issue.Assignee != req.Assignee {
-				return awberr.Conflictf("%s is held by %s, not by you", issue.ID, issue.Assignee)
+			if len(issue.Assignees) > 0 && !slices.Contains(issue.Assignees, req.Assignee) {
+				return awberr.Conflictf("%s is held by %v, not by you", issue.ID, issue.Assignees)
 			}
 		}
 
 		fields := storage.Fields(issue)
-		fields.Assignee = ""
-		fields.Status = domain.StatusOpen
+		if req.Force {
+			fields.Assignees = nil
+		} else {
+			fields.Assignees = slices.DeleteFunc(fields.Assignees,
+				func(a string) bool { return a == req.Assignee })
+		}
+		if len(fields.Assignees) == 0 {
+			fields.Status = domain.StatusOpen
+		} else {
+			fields.Status = domain.StatusInProgress
+		}
 		return tx.UpdateIssue(issue, fields)
 	})
 }
@@ -95,7 +97,7 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 // CloseIssue sets status to closed and records a non-empty reason as a typed
 // comment on that same transition. Closing a closed issue succeeds and changes
 // nothing, so a reason can never become detached from the act of closing. The
-// assignee is left alone, since it records who did the work.
+// assignees are left alone, since they record who did the work.
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
 	reason := ""
@@ -114,7 +116,7 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 	})
 }
 
-// Reopen sets status to open and clears the assignee, so the issue returns to
+// Reopen sets status to open and clears the assignees, so the issue returns to
 // the pool awb ready draws from. Its close-reason comment remains in history.
 //
 // It acts only on a closed issue: on an issue that is not closed it succeeds
@@ -129,7 +131,7 @@ func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issu
 		}
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusOpen
-		fields.Assignee = ""
+		fields.Assignees = nil
 		return tx.UpdateIssue(issue, fields)
 	})
 }

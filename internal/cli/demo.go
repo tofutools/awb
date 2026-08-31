@@ -48,12 +48,12 @@ type demoIssue struct {
 	issueType   domain.Type
 	priority    int
 	labels      []string
-	// assignee makes creation an atomic create-and-claim, so the issue lands in
+	// assignees make creation an atomic create-and-claim, so the issue lands in
 	// in_progress rather than open.
-	assignee string
+	assignees []string
 	// closeReason, when set, closes the issue once it exists. Closing keeps the
-	// assignee, which is what records who did the work, so a closed issue with an
-	// assignee is created with one and then closed.
+	// assignees, which record who did the work, so a closed assigned issue is
+	// created with its assignees and then closed.
 	closeReason string
 
 	hasParent      string
@@ -91,7 +91,7 @@ var demoIssues = []demoIssue{{
 	issueType:   domain.TypeTask,
 	priority:    1,
 	labels:      []string{"backend"},
-	assignee:    "alice",
+	assignees:   []string{"alice"},
 	closeReason: "Schema reviewed and migrated",
 	description: "Tables for widgets, tags and the join between them.\n",
 	hasParent:   "release",
@@ -101,7 +101,7 @@ var demoIssues = []demoIssue{{
 	issueType:   domain.TypeFeature,
 	priority:    1,
 	labels:      []string{"catalogue", "frontend"},
-	assignee:    "alice",
+	assignees:   []string{"alice", "bob"},
 	description: "A paged list of widgets, newest first, with a detail page for each.\n",
 	hasParent:   "release",
 	// The blocker is already closed, so this shows a dependency that no longer
@@ -113,7 +113,7 @@ var demoIssues = []demoIssue{{
 	issueType:   domain.TypeTask,
 	priority:    3,
 	labels:      []string{"catalogue", "frontend"},
-	assignee:    "carol",
+	assignees:   []string{"carol"},
 	description: "Serve a 96×96 thumbnail per widget and lay the list out around it.\n",
 	// One level below a child of the epic, so the decomposition is two deep.
 	hasParent: "catalogue",
@@ -151,7 +151,7 @@ var demoIssues = []demoIssue{{
 	issueType:   domain.TypeBug,
 	priority:    0,
 	labels:      []string{"catalogue", "frontend"},
-	assignee:    "bob",
+	assignees:   []string{"bob"},
 	description: "Opening the catalogue with every widget filtered out renders a nil row.\n",
 	// Found while working on the feature, which is what discovered-from records.
 	discoveredFrom: []string{"catalogue"},
@@ -314,7 +314,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 			Description: d.description,
 			Type:        d.issueType,
 			Priority:    &priority,
-			Assignee:    d.assignee,
+			Assignees:   d.assignees,
 			Labels:      d.labels,
 			Relations:   relations,
 		})

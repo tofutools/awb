@@ -41,13 +41,11 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 	}
 
-	// Creating with an assignee is an atomic create-and-claim: the assignee also
-	// sets status to in_progress, so a new issue is never open and assigned at
-	// once.
-	if req.Assignee != "" {
-		if issue.Assignee, err = domain.ValidateAssignee(req.Assignee); err != nil {
-			return nil, err
-		}
+	// Creating with assignees is an atomic create-and-claim.
+	if issue.Assignees, err = validateAssignees(req.Assignees); err != nil {
+		return nil, err
+	}
+	if len(issue.Assignees) > 0 {
 		issue.Status = domain.StatusInProgress
 	}
 
@@ -106,6 +104,22 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 	return issue, nil
+}
+
+func validateAssignees(assignees []string) ([]string, error) {
+	validated := make([]string, 0, len(assignees))
+	seen := make(map[string]bool, len(assignees))
+	for _, assignee := range assignees {
+		valid, err := domain.ValidateAssignee(assignee)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[valid] {
+			seen[valid] = true
+			validated = append(validated, valid)
+		}
+	}
+	return validated, nil
 }
 
 func validateLabels(labels []string) ([]string, error) {
@@ -253,8 +267,8 @@ func checkUnchanged(issue *domain.Issue, req backend.IssuePatch) error {
 		return awberr.Usagef(
 			"status cannot be changed here: use claim, release, close or reopen")
 	}
-	if req.ExpectAssignee != nil && *req.ExpectAssignee != issue.Assignee {
-		return awberr.Usagef("assignee cannot be changed here: use claim or release")
+	if req.ExpectAssignees != nil && !slices.Equal(*req.ExpectAssignees, issue.Assignees) {
+		return awberr.Usagef("assignees cannot be changed here: use claim or release")
 	}
 	if req.ExpectLabels != nil {
 		// Compared as the sorted form, which is what a client read.
@@ -408,6 +422,7 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody
 		}
 		before := *issue
 		before.Labels = slices.Clone(issue.Labels)
+		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
 		if err := apply(tx, issue); err != nil {
 			return err

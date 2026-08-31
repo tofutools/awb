@@ -246,7 +246,7 @@ func TestPickerRunsAsAProgram(t *testing.T) {
 	assert.Equal(t, 2, chosen)
 
 	drawn := screen.String()
-	assert.Contains(t, drawn, issues[0].ID, "the listing was drawn")
+	assert.Contains(t, drawn, issues[chosen].ID, "the chosen row was drawn")
 	assert.Contains(t, drawn, "enter show", "under the line of help")
 }
 

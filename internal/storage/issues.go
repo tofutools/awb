@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
@@ -10,7 +11,7 @@ import (
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
 const issueColumns = `id, project, title, description, type, status, priority,
-	assignee, created_at, updated_at`
+	created_at, updated_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -19,7 +20,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.Assignee, &i.CreatedAt, &i.UpdatedAt)
+		&i.Priority, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +131,9 @@ func (t *Tx) hydrate(issues []*domain.Issue) error {
 		ids = append(ids, issue.ID)
 	}
 
+	if err := t.loadAssignees(ids, byID); err != nil {
+		return err
+	}
 	if err := t.loadLabels(ids, byID); err != nil {
 		return err
 	}
@@ -148,6 +152,23 @@ func (t *Tx) hydrate(issues []*domain.Issue) error {
 		issue.Normalize()
 	}
 	return nil
+}
+
+func (t *Tx) loadAssignees(ids []string, byID map[string]*domain.Issue) error {
+	rows, err := t.q.QueryContext(t.ctx, `SELECT issue, assignee FROM issue_assignees
+		WHERE issue IN (`+placeholders(len(ids))+`) ORDER BY issue, position`, anyArgs(ids)...)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read issue assignees")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var issue, assignee string
+		if err := rows.Scan(&issue, &assignee); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "read issue assignees")
+		}
+		byID[issue].Assignees = append(byID[issue].Assignees, assignee)
+	}
+	return rows.Err()
 }
 
 func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
@@ -246,6 +267,10 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	now := Now()
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
+	assignees := issue.Assignees
+	if err := validateAssignment(issue.Status, assignees); err != nil {
+		return err
+	}
 
 	for attempt := range maxAttempts {
 		salt, err := domain.NewSalt()
@@ -256,11 +281,18 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.Assignee,
-			issue.CreatedAt, issue.UpdatedAt)
+			issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
+			for position, assignee := range assignees {
+				if _, err := t.q.ExecContext(t.ctx,
+					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+					issue.ID, assignee, position); err != nil {
+					return awberr.Wrap(awberr.Runtime, err, "assign issue %s", issue.ID)
+				}
+			}
+			issue.Assignees = slices.Clone(assignees)
 			return nil
 		}
 		if isUniqueViolation(err) && attempt < maxAttempts-1 {
@@ -282,14 +314,14 @@ type IssueFields struct {
 	Type        domain.Type
 	Status      domain.Status
 	Priority    int
-	Assignee    string
+	Assignees   []string
 }
 
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignee: i.Assignee,
+		Priority: i.Priority, Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -297,7 +329,14 @@ func Fields(i *domain.Issue) IssueFields {
 // when something actually changed. A write that changes nothing leaves the
 // timestamp alone.
 func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
-	if Fields(issue) == fields {
+	if err := validateAssignment(fields.Status, fields.Assignees); err != nil {
+		return err
+	}
+	before := Fields(issue)
+	if before.Title == fields.Title && before.Description == fields.Description &&
+		before.Type == fields.Type && before.Status == fields.Status &&
+		before.Priority == fields.Priority &&
+		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
@@ -305,15 +344,25 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
 		   SET title = ?, description = ?, type = ?, status = ?, priority = ?,
-		       assignee = ?, updated_at = ?
+		       updated_at = ?
 		 WHERE id = ?`,
 		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority,
-		fields.Assignee, updated, issue.ID)
+		updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
 		}
 		return awberr.Wrap(awberr.Runtime, err, "update issue %s", issue.ID)
+	}
+	if _, err := t.q.ExecContext(t.ctx, `DELETE FROM issue_assignees WHERE issue = ?`, issue.ID); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "update assignees for %s", issue.ID)
+	}
+	for position, assignee := range fields.Assignees {
+		if _, err := t.q.ExecContext(t.ctx,
+			`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+			issue.ID, assignee, position); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "update assignees for %s", issue.ID)
+		}
 	}
 
 	issue.Title = fields.Title
@@ -321,9 +370,20 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
-	issue.Assignee = fields.Assignee
+	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil
+}
+
+func validateAssignment(status domain.Status, assignees []string) error {
+	switch {
+	case status == domain.StatusOpen && len(assignees) > 0:
+		return awberr.Runtimef("refusing to store an inconsistent issue: open issue has assignees")
+	case status == domain.StatusInProgress && len(assignees) == 0:
+		return awberr.Runtimef("refusing to store an inconsistent issue: in_progress issue has no assignees")
+	default:
+		return nil
+	}
 }
 
 // TouchIssue moves updated_at for issue activity that is not a change to a

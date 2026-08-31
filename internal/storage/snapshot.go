@@ -50,14 +50,23 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 		issueIDs := make(map[string]struct{}, len(snapshot.Issues))
 		for i := range snapshot.Issues {
 			issue := &snapshot.Issues[i]
+			if err := validateAssignment(issue.Status, issue.Assignees); err != nil {
+				return err
+			}
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issues (`+issueColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-				issue.Status, issue.Priority, issue.Assignee,
-				issue.CreatedAt, issue.UpdatedAt); err != nil {
+				issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt); err != nil {
 				return restoreError(err, "issue %s", issue.ID)
 			}
 			issueIDs[issue.ID] = struct{}{}
+			for position, assignee := range issue.Assignees {
+				if _, err := tx.q.ExecContext(ctx,
+					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+					issue.ID, assignee, position); err != nil {
+					return restoreError(err, "assignee %q of %s", assignee, issue.ID)
+				}
+			}
 
 			for _, label := range issue.Labels {
 				if _, err := tx.q.ExecContext(ctx,

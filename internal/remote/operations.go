@@ -23,7 +23,7 @@ type issueCreateBody struct {
 	Description string         `json:"description,omitempty"`
 	Type        domain.Type    `json:"type,omitempty"`
 	Priority    *int           `json:"priority,omitempty"`
-	Assignee    string         `json:"assignee,omitempty"`
+	Assignees   []string       `json:"assignees,omitempty"`
 	Labels      []string       `json:"labels,omitempty"`
 	Relations   []relationBody `json:"relations,omitempty"`
 }
@@ -43,15 +43,14 @@ type issuePatchBody struct {
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
 	// the only place the comparison means anything.
-	Labels   *[]string      `json:"labels,omitempty"`
-	Status   *domain.Status `json:"status,omitempty"`
-	Assignee *string        `json:"assignee,omitempty"`
+	Labels    *[]string      `json:"labels,omitempty"`
+	Status    *domain.Status `json:"status,omitempty"`
+	Assignees *[]string      `json:"assignees,omitempty"`
 }
 
 type claimBody struct {
-	Assignee       string  `json:"assignee,omitempty"`
-	ExpectAssignee *string `json:"expect_assignee,omitempty"`
-	Force          bool    `json:"force,omitempty"`
+	Assignee string `json:"assignee,omitempty"`
+	Force    bool   `json:"force,omitempty"`
 }
 
 type releaseBody struct {
@@ -93,7 +92,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		Description: req.Description,
 		Type:        req.Type,
 		Priority:    req.Priority,
-		Assignee:    req.Assignee,
+		Assignees:   req.Assignees,
 		Labels:      req.Labels,
 	}
 	for _, rel := range req.Relations {
@@ -219,9 +218,9 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Type:        req.Type,
 		Priority:    req.Priority,
 
-		Labels:   req.ExpectLabels,
-		Status:   req.ExpectStatus,
-		Assignee: req.ExpectAssignee,
+		Labels:    req.ExpectLabels,
+		Status:    req.ExpectStatus,
+		Assignees: req.ExpectAssignees,
 	}
 	return b.issueCall(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(ref), body, ifMatch)
 }
@@ -238,7 +237,7 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
-	body := claimBody{Assignee: req.Assignee, ExpectAssignee: req.ExpectAssignee, Force: req.Force}
+	body := claimBody{Assignee: req.Assignee, Force: req.Force}
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/claim", body, ifMatch)
 }
 

@@ -70,7 +70,7 @@ func TestInsertAndGetIssue(t *testing.T) {
 	assert.Equal(t, domain.TypeBug, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 1, issue.Priority)
-	assert.Empty(t, issue.Assignee)
+	assert.Empty(t, issue.Assignees)
 	assert.False(t, issue.Blocked)
 
 	// Derived fields are always present and never null.
@@ -98,9 +98,9 @@ func TestGetIssueNotFound(t *testing.T) {
 	assert.Equal(t, 3, exitOf(err))
 }
 
-// The CHECK constraints make the invalid states unrepresentable, so nothing
-// above the storage layer has to keep status and assignee in step.
-func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
+// Storage rejects a status and assignment set that disagree, whichever caller
+// constructs the write.
+func TestStatusAssigneeInvariantIsEnforcedByStorage(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	id := add("t")
@@ -110,12 +110,12 @@ func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
 		fields storage.IssueFields
 		ok     bool
 	}{
-		{"open with no assignee", fields(domain.StatusOpen, ""), true},
+		{"open with no assignee", fields(domain.StatusOpen), true},
 		{"open with an assignee", fields(domain.StatusOpen, "claude-1"), false},
 		{"in_progress with an assignee", fields(domain.StatusInProgress, "claude-1"), true},
-		{"in_progress with none", fields(domain.StatusInProgress, ""), false},
+		{"in_progress with none", fields(domain.StatusInProgress), false},
 		{"closed with an assignee", fields(domain.StatusClosed, "claude-1"), true},
-		{"closed with none", fields(domain.StatusClosed, ""), true},
+		{"closed with none", fields(domain.StatusClosed), true},
 	}
 
 	for _, tc := range cases {
@@ -136,10 +136,10 @@ func TestStatusAssigneeInvariantIsEnforcedByTheDatabase(t *testing.T) {
 	}
 }
 
-func fields(status domain.Status, assignee string) storage.IssueFields {
+func fields(status domain.Status, assignees ...string) storage.IssueFields {
 	return storage.IssueFields{
 		Title: "t", Type: domain.TypeTask, Priority: 2,
-		Status: status, Assignee: assignee,
+		Status: status, Assignees: assignees,
 	}
 }
 
@@ -740,7 +740,7 @@ func TestAssigneeFacetsHaveNoEmptyRow(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	assigned := add("a", func(i *domain.Issue) {
-		i.Assignee = "claude-1"
+		i.Assignees = []string{"claude-1", "claude-2"}
 		i.Status = domain.StatusInProgress
 	})
 	add("b")
@@ -748,7 +748,17 @@ func TestAssigneeFacetsHaveNoEmptyRow(t *testing.T) {
 	facets := read(t, db, func(tx *storage.Tx) ([]domain.Facet, error) {
 		return tx.AssigneeFacets(&domain.Filter{})
 	})
-	assert.Equal(t, []domain.Facet{{Value: "claude-1", Count: 1}}, facets)
+	assert.Equal(t, []domain.Facet{
+		{Value: "claude-1", Count: 1},
+		{Value: "claude-2", Count: 1},
+	}, facets)
+
+	issues := read(t, db, func(tx *storage.Tx) ([]domain.Issue, error) {
+		rows, _, err := tx.ListIssues(&domain.Filter{Assignees: []string{"claude-2"}})
+		return rows, err
+	})
+	require.Len(t, issues, 1)
+	assert.Equal(t, assigned, issues[0].ID)
 	assert.NotEmpty(t, assigned)
 }
 

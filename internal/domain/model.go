@@ -50,7 +50,7 @@ type Issue struct {
 	Status      Status       `json:"status"`
 	Priority    int          `json:"priority"`
 	Labels      []string     `json:"labels"`
-	Assignee    string       `json:"assignee"`
+	Assignees   []string     `json:"assignees"`
 	CreatedAt   string       `json:"created_at"`
 	UpdatedAt   string       `json:"updated_at"`
 	Blocked     bool         `json:"blocked"`
@@ -124,6 +124,9 @@ func (i *Issue) Normalize() {
 	slices.Sort(i.Blockers)
 	SortRelations(i.Relations)
 	SortAttachments(i.Attachments)
+	if i.Assignees == nil {
+		i.Assignees = []string{}
+	}
 	if i.Labels == nil {
 		i.Labels = []string{}
 	}

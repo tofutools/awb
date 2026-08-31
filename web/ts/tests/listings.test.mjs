@@ -28,7 +28,7 @@ function issue(overrides = {}) {
     status: "open",
     priority: 2,
     labels: ["frontend"],
-    assignee: "",
+    assignees: [],
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-02T00:00:00.000Z",
     blocked: false,
@@ -86,7 +86,7 @@ test("sort headers cycle ascending, descending, then natural order", () => {
 
 test("issue filtering matches every word across visible listing values", () => {
   const rows = [
-    issue({ id: "awb-one", title: "Sortable listings", assignee: "mikael" }),
+    issue({ id: "awb-one", title: "Sortable listings", assignees: ["mikael"] }),
     issue({ id: "cli-two", project: "cli", title: "Remote mode", labels: ["docs"] }),
   ];
   assert.deepEqual(filterIssues(rows, "sort mikael").map((row) => row.id), ["awb-one"]);
@@ -105,9 +105,9 @@ test("project filtering includes key, name and description", () => {
 
 test("issue sorting supports UI-only columns and keeps blank assignees last", () => {
   const rows = [
-    issue({ id: "awb-c", project: "zeta", assignee: "" }),
-    issue({ id: "awb-b", project: "alpha", assignee: "zoe" }),
-    issue({ id: "awb-a", project: "alpha", assignee: "anna" }),
+    issue({ id: "awb-c", project: "zeta" }),
+    issue({ id: "awb-b", project: "alpha", assignees: ["zoe", "mikael"] }),
+    issue({ id: "awb-a", project: "alpha", assignees: ["anna"] }),
   ];
   assert.deepEqual(
     sortIssues(rows, { key: "project", direction: "asc", explicit: true }).map((row) => row.id),

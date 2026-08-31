@@ -318,7 +318,7 @@ func TestRevokingAccessHidesTheProjectAndKeepsTheWork(t *testing.T) {
 
 	bob := root.WithUser("bob")
 	issue, err := bob.CreateIssue(ctx,
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignee: "bob"})
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
 	require.NoError(t, err)
 
 	_, err = root.RemoveMember(ctx, "awb", "bob")
@@ -329,7 +329,7 @@ func TestRevokingAccessHidesTheProjectAndKeepsTheWork(t *testing.T) {
 
 	kept, err := root.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "bob", kept.Assignee, "the record of who did the work outlives the access")
+	assert.Equal(t, []string{"bob"}, kept.Assignees, "the record of who did the work outlives the access")
 }
 
 // Managing users is the user_admin flag's, and neither flag implies the other.
@@ -422,7 +422,7 @@ func TestDeletingAUserTakesTheirMemberships(t *testing.T) {
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
 	issue, err := root.CreateIssue(ctx,
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignee: "bob"})
+		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
 	require.NoError(t, err)
 
 	deleted, err := root.DeleteUser(ctx, "bob", "")
@@ -435,7 +435,7 @@ func TestDeletingAUserTakesTheirMemberships(t *testing.T) {
 
 	kept, err := root.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "bob", kept.Assignee)
+	assert.Equal(t, []string{"bob"}, kept.Assignees)
 }
 
 // An account deleted between authentication and the operation cannot act.
@@ -500,10 +500,10 @@ func TestFacetsAreScoped(t *testing.T) {
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
 	_, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignee: "bob"})
+		Project: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignees: []string{"bob"}})
 	require.NoError(t, err)
 	_, err = root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "web", Title: "Button drifts", Labels: []string{"css"}, Assignee: "carol"})
+		Project: "web", Title: "Button drifts", Labels: []string{"css"}, Assignees: []string{"carol"}})
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")

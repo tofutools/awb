@@ -78,7 +78,7 @@ export function filterIssues(issues: Issue[], query: string): Issue[] {
     issue.type,
     issue.status,
     `P${issue.priority}`,
-    issue.assignee,
+    ...issue.assignees,
     ...issue.labels,
     ...issue.blockers,
   ].join(" "), query));
@@ -116,7 +116,7 @@ export function sortIssues(issues: Issue[], state: SortState): Issue[] {
       case "project": return issue.project;
       case "priority": return issue.priority;
       case "status": return issue.status;
-      case "assignee": return issue.assignee;
+      case "assignee": return issue.assignees.join(" ");
       case "created": return issue.created_at;
       case "updated": return issue.updated_at;
       case "type": return issue.type;

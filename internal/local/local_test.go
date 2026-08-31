@@ -50,7 +50,7 @@ func TestCreateIssueDefaults(t *testing.T) {
 	assert.Equal(t, domain.TypeTask, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 2, issue.Priority)
-	assert.Empty(t, issue.Assignee)
+	assert.Empty(t, issue.Assignees)
 	assert.True(t, issue.Ready())
 }
 
@@ -58,11 +58,21 @@ func TestCreateIssueDefaults(t *testing.T) {
 // never open and assigned at once.
 func TestCreateWithAssigneeIsAClaim(t *testing.T) {
 	b, ctx := newBackend(t)
-	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignee = "claude-1" })
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignees = []string{"claude-1"} })
 
 	assert.Equal(t, domain.StatusInProgress, issue.Status)
-	assert.Equal(t, "claude-1", issue.Assignee)
+	assert.Equal(t, []string{"claude-1"}, issue.Assignees)
 	assert.False(t, issue.Ready())
+}
+
+func TestCreateWithSeveralAssigneesIsAClaim(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"claude-1", "claude-2", "claude-1"}
+	})
+
+	assert.Equal(t, domain.StatusInProgress, issue.Status)
+	assert.Equal(t, []string{"claude-1", "claude-2"}, issue.Assignees)
 }
 
 func TestCreateWithLabelsAndRelationsInOneTransaction(t *testing.T) {
@@ -139,40 +149,17 @@ func TestClaim(t *testing.T) {
 	claimed, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-1"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusInProgress, claimed.Status)
-	assert.Equal(t, "claude-1", claimed.Assignee)
+	assert.Equal(t, []string{"claude-1"}, claimed.Assignees)
 
 	// Claiming an issue you already hold succeeds and changes nothing.
 	again, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-1"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, claimed.UpdatedAt, again.UpdatedAt)
 
-	// Somebody else's claim is refused.
-	_, err = b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2"}, "")
-	require.Error(t, err)
-	assert.Equal(t, 4, exitOf(err))
-
-	// --force takes it.
-	forced, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2", Force: true}, "")
+	// Somebody else joins without replacing the first assignee.
+	joined, err := b.Claim(ctx, issue.ID, backend.ClaimRequest{Assignee: "claude-2"}, "")
 	require.NoError(t, err)
-	assert.Equal(t, "claude-2", forced.Assignee)
-}
-
-// The compare-and-set: two agents racing for the same issue cannot both win.
-func TestClaimCompareAndSet(t *testing.T) {
-	b, ctx := newBackend(t)
-	issue := create(t, b, ctx, "t")
-
-	unassigned := ""
-	first, err := b.Claim(ctx, issue.ID,
-		backend.ClaimRequest{Assignee: "claude-1", ExpectAssignee: &unassigned}, "")
-	require.NoError(t, err)
-	assert.Equal(t, "claude-1", first.Assignee)
-
-	// The second agent expected it to still be unassigned, and it is not.
-	_, err = b.Claim(ctx, issue.ID,
-		backend.ClaimRequest{Assignee: "claude-2", ExpectAssignee: &unassigned}, "")
-	require.Error(t, err)
-	assert.Equal(t, 4, exitOf(err))
+	assert.Equal(t, []string{"claude-1", "claude-2"}, joined.Assignees)
 }
 
 func TestClaimRefusesBlockedAndClosed(t *testing.T) {
@@ -210,14 +197,28 @@ func TestClaimRefusesBlockedAndClosed(t *testing.T) {
 	assert.Equal(t, reason, activity.Activity[0].Body)
 }
 
+func TestForcedClaimOfClosedIssueStartsANewAssignmentSet(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "done", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"alice", "bob"}
+	})
+	_, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+
+	reclaimed, err := b.Claim(ctx, issue.ID,
+		backend.ClaimRequest{Assignee: "carol", Force: true}, "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"carol"}, reclaimed.Assignees)
+}
+
 func TestRelease(t *testing.T) {
 	b, ctx := newBackend(t)
-	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignee = "mikael" })
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignees = []string{"mikael"} })
 
 	released, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusOpen, released.Status)
-	assert.Empty(t, released.Assignee)
+	assert.Empty(t, released.Assignees)
 
 	// Releasing one that is already open and unassigned changes nothing.
 	again, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
@@ -233,18 +234,35 @@ func TestRelease(t *testing.T) {
 
 	forced, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Force: true}, "")
 	require.NoError(t, err)
-	assert.Empty(t, forced.Assignee)
+	assert.Empty(t, forced.Assignees)
+}
+
+func TestReleaseOneOfSeveralAssignees(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"mikael", "claude-1"}
+	})
+
+	released, err := b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusInProgress, released.Status)
+	assert.Equal(t, []string{"claude-1"}, released.Assignees)
+
+	released, err = b.Release(ctx, issue.ID, backend.ReleaseRequest{Assignee: "claude-1"}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusOpen, released.Status)
+	assert.Empty(t, released.Assignees)
 }
 
 func TestCloseAndReopen(t *testing.T) {
 	b, ctx := newBackend(t)
-	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignee = "mikael" })
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignees = []string{"mikael"} })
 
 	reason := "Guard against empty token stream"
 	closed, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{Reason: &reason}, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusClosed, closed.Status)
-	assert.Equal(t, "mikael", closed.Assignee, "the assignee records who did the work")
+	assert.Equal(t, []string{"mikael"}, closed.Assignees, "assignees record who did the work")
 
 	activity, err := b.ListActivity(ctx, issue.ID, "", nil, nil)
 	require.NoError(t, err)
@@ -275,7 +293,7 @@ func TestCloseAndReopen(t *testing.T) {
 	reopened, err := b.Reopen(ctx, issue.ID, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusOpen, reopened.Status)
-	assert.Empty(t, reopened.Assignee)
+	assert.Empty(t, reopened.Assignees)
 	assert.True(t, reopened.Ready())
 	comments, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindComment, nil, nil)
 	require.NoError(t, err)
@@ -287,12 +305,12 @@ func TestCloseAndReopen(t *testing.T) {
 // somebody who is working.
 func TestReopenLeavesLiveWorkAlone(t *testing.T) {
 	b, ctx := newBackend(t)
-	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignee = "claude-1" })
+	issue := create(t, b, ctx, "t", func(r *backend.IssueCreate) { r.Assignees = []string{"claude-1"} })
 
 	unchanged, err := b.Reopen(ctx, issue.ID, "")
 	require.NoError(t, err)
 	assert.Equal(t, domain.StatusInProgress, unchanged.Status)
-	assert.Equal(t, "claude-1", unchanged.Assignee)
+	assert.Equal(t, []string{"claude-1"}, unchanged.Assignees)
 	assert.Equal(t, issue.UpdatedAt, unchanged.UpdatedAt)
 }
 
@@ -489,7 +507,7 @@ func TestReadyAndBlockedListings(t *testing.T) {
 	blocked := create(t, b, ctx, "blocked", func(r *backend.IssueCreate) {
 		r.Relations = []backend.NewRelation{{Type: domain.RelBlockedBy, Other: blocker.ID}}
 	})
-	held := create(t, b, ctx, "held", func(r *backend.IssueCreate) { r.Assignee = "claude-1" })
+	held := create(t, b, ctx, "held", func(r *backend.IssueCreate) { r.Assignees = []string{"claude-1"} })
 
 	ready, err := b.ListIssues(ctx, &domain.Filter{
 		Readiness:  domain.ReadinessReady,

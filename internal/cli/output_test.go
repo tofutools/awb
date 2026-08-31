@@ -28,8 +28,8 @@ func sample() []domain.Issue {
 			Title:  "Ship the 1.0 release of the widget catalogue",
 			Labels: []string{"release"}},
 		{ID: "demo-992e3c", Priority: 0, Status: domain.StatusInProgress, Type: "bug",
-			Title:    "Catalogue page crashes on an empty result set",
-			Assignee: "bob", Labels: []string{"catalogue", "frontend"}},
+			Title:     "Catalogue page crashes on an empty result set",
+			Assignees: []string{"bob", "carol"}, Labels: []string{"catalogue", "frontend"}},
 		{ID: "demo-bff7dc", Priority: 2, Status: domain.StatusOpen, Type: "feature",
 			Title: "Search the catalogue by name and tag", Blocked: true,
 			Blockers: []string{"demo-bbd9d3"},
@@ -80,9 +80,10 @@ func TestListingWithoutATerminalIsPlainColumns(t *testing.T) {
 	}
 
 	head := lines(out)[0]
-	for _, header := range []string{"ID", "P", "STATUS", "TYPE", "TITLE", "ASSIGNEE", "LABELS"} {
+	for _, header := range []string{"ID", "P", "STATUS", "TYPE", "TITLE", "ASSIGNEES", "LABELS"} {
 		assert.Contains(t, head, header)
 	}
+	assert.Contains(t, out, "bob,carol")
 	// Every column is separated from the next, which is what was wrong before.
 	assert.NotContains(t, out, "demo-eeec94P0")
 	assert.Contains(t, lines(out)[1], "demo-eeec94  P0  open")

@@ -302,7 +302,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Status:      api.Status(issue.Status),
 		Priority:    api.Priority(issue.Priority),
 		Labels:      toLabels(issue.Labels),
-		Assignee:    issue.Assignee,
+		Assignees:   toAssignees(issue.Assignees),
 		CreatedAt:   api.Timestamp(issue.CreatedAt),
 		UpdatedAt:   api.Timestamp(issue.UpdatedAt),
 		Blocked:     issue.Blocked,
@@ -336,7 +336,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Status:      issue.Status,
 		Priority:    issue.Priority,
 		Labels:      issue.Labels,
-		Assignee:    issue.Assignee,
+		Assignees:   issue.Assignees,
 		CreatedAt:   issue.CreatedAt,
 		UpdatedAt:   issue.UpdatedAt,
 		Blocked:     issue.Blocked,
@@ -379,6 +379,22 @@ func toLabels(labels []string) []api.Label {
 	out := make([]api.Label, len(labels))
 	for i, label := range labels {
 		out[i] = api.Label(label)
+	}
+	return out
+}
+
+func toAssignees(assignees []string) []api.Assignee {
+	out := make([]api.Assignee, len(assignees))
+	for i := range assignees {
+		out[i] = api.Assignee(assignees[i])
+	}
+	return out
+}
+
+func fromAssignees(assignees []api.Assignee) []string {
+	out := make([]string, len(assignees))
+	for i := range assignees {
+		out[i] = string(assignees[i])
 	}
 	return out
 }

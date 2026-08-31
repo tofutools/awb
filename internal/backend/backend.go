@@ -219,11 +219,9 @@ type IssueCreate struct {
 	Description string
 	Type        domain.Type
 	Priority    *int
-	// A non-empty Assignee makes creation an atomic create-and-claim: it also
-	// sets status to in_progress, so a new issue is never open and assigned at
-	// once.
-	Assignee string
-	Labels   []string
+	// Assignees permits an atomic create-and-claim by several people.
+	Assignees []string
+	Labels    []string
 	// Relations are read with the new issue as the subject, exactly as awb
 	// create's relation flags are. At most one may be has-parent.
 	Relations []NewRelation
@@ -236,9 +234,9 @@ type NewRelation struct {
 }
 
 // IssuePatch is what awb update and PATCH /api/issues/{id} may change. It
-// cannot change status or assignee: the four transitions are the only way to
-// move either, which keeps in_progress and an assignee from drifting apart and
-// keeps a claim from being taken silently.
+// cannot change status or assignees: the four transitions are the only way to
+// move either, which keeps in_progress and the assignment set from drifting
+// apart and keeps a claim from being taken silently.
 //
 // A nil field is left alone; a non-nil one is written, so an empty string
 // clears an optional value.
@@ -248,7 +246,7 @@ type IssuePatch struct {
 	Type        *domain.Type
 	Priority    *int
 
-	// The four fields below may appear in a request but may not change: each
+	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,
 	// because labels are mutated individually and the transitions are their
 	// own operations. Together with the rule that derived fields are ignored,
@@ -259,9 +257,9 @@ type IssuePatch struct {
 	// comparison happens inside the same transaction as the write. Checking
 	// them beforehand would leave a window in which a concurrent transition
 	// could make a stale value pass.
-	ExpectLabels   *[]string
-	ExpectStatus   *domain.Status
-	ExpectAssignee *string
+	ExpectLabels    *[]string
+	ExpectStatus    *domain.Status
+	ExpectAssignees *[]string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.
@@ -283,11 +281,6 @@ type ClaimRequest struct {
 	// Assignee names who takes the issue. The CLI always states it explicitly, so
 	// that a remote claim records exactly what a local one would.
 	Assignee string
-	// ExpectAssignee is the compare-and-set: when non-nil the claim proceeds only
-	// if the current assignee is exactly that value, "" meaning unassigned, and
-	// otherwise conflicts. It is what stops two agents racing for the same issue
-	// from both winning.
-	ExpectAssignee *string
 	// Force overrides a refusal on an issue that is held by somebody else,
 	// blocked, or closed.
 	Force bool

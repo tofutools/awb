@@ -39,7 +39,7 @@ workflow engine, no custom fields and no reporting suite.
 A **project** is the top-level organising unit; every issue belongs to exactly
 one, and its key is the issue ID prefix and is immutable. An **issue** carries a
 title, an optional Markdown description, a type, a status, a priority, a set of
-labels and an assignee.
+labels and an ordered set of assignees.
 
 The description is the issue's editable free text. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
@@ -178,11 +178,13 @@ recorded state to disagree with the dependency graph. The same instinct appears
 throughout — `active_issues` on a project is counted, not maintained; the links
 in a description are parsed, not stored.
 
-**Status and assignee cannot drift apart either.** Four transitions — claim,
+**Status and assignees cannot drift apart either.** Four transitions — claim,
 release, close, reopen — are the only things that move either, and the general
-update operation can move neither. The pair is additionally constrained in the
-database itself, so an open-but-assigned issue is unrepresentable rather than
-merely unreachable.
+update operation can move neither. An issue is in progress while at least one
+person is assigned; claim joins the ordered set, release removes the caller,
+and the last release returns it to open. Assignment rows and status move in the
+same write transaction, and storage refuses a write where their emptiness and
+the requested status disagree.
 
 ### Readiness
 
@@ -193,7 +195,7 @@ and the whole dependency model exists to make its answer trustworthy.
 
 Readiness guides listings rather than enforcing workflow: a non-ready issue can
 still be closed, and closing never inspects related issues. The one exception is
-claiming, which refuses a blocked, closed or already-held issue unless forced.
+claiming, which refuses a blocked or closed issue unless forced.
 
 ## 3. Layering
 
@@ -280,9 +282,9 @@ by anyone with a SQLite shell. A binary refuses a database newer than it
 understands rather than operating on a schema it does not know.
 
 **Invariants live in the database where they can.** Constraints enforce the
-status/assignee pairing, the priority range, the enumerations and the
-at-most-one-parent rule. Whatever the layers above do, the file cannot hold a
-state the model forbids.
+priority range, the enumerations and the at-most-one-parent rule. The status and
+assignment set span two tables, so storage validates their pairing and
+transitions update both inside the same `BEGIN IMMEDIATE` transaction.
 
 Full text search is a SQLite full-text index over titles and descriptions, kept
 in sync by triggers. Search terms are always literal: no operator, wildcard or
@@ -462,9 +464,9 @@ for changing issue state.
 
 Two decisions there are worth stating. Status transitions are endpoints rather
 than fields in a general update, and labels are added and removed individually,
-both because a whole-object write would silently discard a concurrent edit. And
-a claim can carry the assignee it expects to replace, so two agents racing for
-one issue cannot both win.
+both because a whole-object write would silently discard a concurrent edit.
+Assignment is additive for the same reason: a claim joins without overwriting
+the current set, and `assignees` carries that complete set.
 
 ### Web UI
 

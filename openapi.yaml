@@ -161,11 +161,9 @@ paths:
     post:
       tags: [issues]
       operationId: claimIssue
-      summary: Atomically set the assignee and status to in_progress
+      summary: Atomically add an assignee and set status to in_progress
       description: |
-        A compare-and-set. `expect_assignee`, when present, makes the claim
-        proceed only if the current assignee is exactly that value, so two
-        agents racing for the same issue cannot both win.
+        Claim adds the named assignee and preserves everyone already assigned.
       requestBody:
         content:
           application/json:
@@ -181,7 +179,7 @@ paths:
     post:
       tags: [issues]
       operationId: releaseIssue
-      summary: Clear the assignee and set the status back to open
+      summary: Remove an assignee; open the issue when none remain
       requestBody:
         content:
           application/json:
@@ -213,7 +211,7 @@ paths:
     post:
       tags: [issues]
       operationId: reopenIssue
-      summary: Set the status to open and clear the assignee
+      summary: Set the status to open and clear every assignee
       description: |
         Acts only on a closed issue: on one that is not closed it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
@@ -910,7 +908,7 @@ paths:
         The authenticated username, or the fixed identity of a server that
         authenticates nobody. It is the one thing a browser UI cannot resolve
         for itself, and without it no UI could offer "my issues", show that an
-        issue is held by *this* user, or fill in `expect_assignee`.
+        issue is held by *this* user.
 
         It is read-only and says nothing about what the caller may do. That is
         `GET /api/users/{name}`, which a user may always call for themselves,
@@ -1269,8 +1267,8 @@ components:
     Status:
       type: string
       description: |
-        Changed only by creating with an assignee and by the claim, release,
-        close and reopen endpoints, so it never drifts from the assignee.
+        Changed only by creating with assignees and by the claim, release,
+        close and reopen endpoints, so it never drifts from the assignment set.
       enum: [open, in_progress, closed]
 
     Priority:
@@ -1536,7 +1534,7 @@ components:
       additionalProperties: false
       required:
         [id, project, title, description, type, status, priority, labels,
-         assignee, created_at, updated_at, blocked, blockers,
+         assignees, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
@@ -1562,9 +1560,10 @@ components:
           type: array
           description: Sorted.
           items: { $ref: '#/components/schemas/Label' }
-        assignee:
-          type: string
-          description: Empty means unassigned.
+        assignees:
+          type: array
+          description: The complete assignment set, in claim order.
+          items: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at:
           allOf: [$ref: '#/components/schemas/Timestamp']
@@ -1752,7 +1751,7 @@ components:
         Applied in one transaction, so the issue, its labels and its relations
         are created in a single call. Nothing beyond these fields is recognised:
         `id`, `status`, the timestamps and the derived fields
-        are rejected rather than ignored — `status` follows from `assignee` and
+        are rejected rather than ignored — `status` follows from assignment and
         the rest are the server's to assign.
 
         An omitted `type` is `task` and an omitted `priority` is `2`. Those
@@ -1768,11 +1767,11 @@ components:
         description: { type: string }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
-        assignee:
-          allOf: [$ref: '#/components/schemas/Assignee']
+        assignees:
+          type: array
           description: |
-            A non-empty assignee sets `status` to `in_progress`, making creation
-            an atomic create-and-claim.
+            Assign all of these people atomically at creation.
+          items: { $ref: '#/components/schemas/Assignee' }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1794,7 +1793,7 @@ components:
       description: |
         Takes only what `awb update` can change.
 
-        `labels`, `status` and `assignee` may appear but may not
+        `labels`, `status` and `assignees` may appear but may not
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
@@ -1820,7 +1819,9 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Label' }
         status: { $ref: '#/components/schemas/Status' }
-        assignee: { type: string }
+        assignees:
+          type: array
+          items: { $ref: '#/components/schemas/Assignee' }
         id: { type: string }
         project: { $ref: '#/components/schemas/ProjectKey' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -1838,18 +1839,13 @@ components:
         assignee:
           allOf: [$ref: '#/components/schemas/Assignee']
           description: |
-            Who takes the issue. May be omitted, in which case the request's
-            identity is used.
-        expect_assignee:
-          type: string
-          description: |
-            The compare-and-set. When present, the claim proceeds only if the
-            current assignee is exactly this value, `""` meaning unassigned, and
-            otherwise answers 409.
+            Who joins the issue. May be omitted, in which case the request's
+            identity is used. Claiming is idempotent and does not remove any
+            existing assignee.
         force:
           type: boolean
           default: false
-          description: Override a held, blocked or closed issue.
+          description: Override a blocked or closed issue.
 
     ReleaseRequest:
       type: object
@@ -1858,9 +1854,8 @@ components:
         assignee:
           allOf: [$ref: '#/components/schemas/Assignee']
           description: |
-            The caller's identity, and what the "assigned to someone else"
-            refusal compares against. May be omitted when `force` is true, that
-            refusal being the only thing it serves.
+            The assignee to remove. May be omitted when `force` is true;
+            forced release removes every assignee.
         force: { type: boolean, default: false }
 
     CloseRequest:

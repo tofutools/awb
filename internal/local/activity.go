@@ -85,7 +85,9 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("type", before.Type, after.Type)
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)
-	add("assignee", before.Assignee, after.Assignee)
+	if !slices.Equal(before.Assignees, after.Assignees) {
+		add("assignees", before.Assignees, after.Assignees)
+	}
 	if !slices.Equal(before.Labels, after.Labels) {
 		add("labels", before.Labels, after.Labels)
 	}

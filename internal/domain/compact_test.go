@@ -25,15 +25,15 @@ func TestCompactCloseReasonIncludesItsTransition(t *testing.T) {
 // The canonical compact line, for the issue the JSON shape documents.
 func TestCompactLineSpecExample(t *testing.T) {
 	issue := &domain.Issue{
-		ID:       "awb-5c1d84",
-		Title:    "Tokeniser drops the trailing newline",
-		Type:     domain.TypeBug,
-		Status:   domain.StatusInProgress,
-		Priority: 1,
-		Labels:   []string{"tokeniser"},
-		Assignee: "claude-1",
-		Blocked:  true,
-		Blockers: []string{"awb-9b2f60"},
+		ID:        "awb-5c1d84",
+		Title:     "Tokeniser drops the trailing newline",
+		Type:      domain.TypeBug,
+		Status:    domain.StatusInProgress,
+		Priority:  1,
+		Labels:    []string{"tokeniser"},
+		Assignees: []string{"claude-1"},
+		Blocked:   true,
+		Blockers:  []string{"awb-9b2f60"},
 	}
 
 	assert.Equal(t,
@@ -58,7 +58,7 @@ func TestCompactLineOptionalFieldsAndOrder(t *testing.T) {
 
 	t.Run("fixed order: assignee, labels, blocked, blockers", func(t *testing.T) {
 		i := base
-		i.Assignee = "claude-1"
+		i.Assignees = []string{"claude-1"}
 		i.Labels = []string{"x", "y"}
 		i.Blocked = true
 		i.Blockers = []string{"awb-b1", "awb-b2"}
@@ -70,6 +70,14 @@ func TestCompactLineOptionalFieldsAndOrder(t *testing.T) {
 			`awb-a1 P2 open task "T" @claude-1 #x #y !blocked blocked-by:awb-b1 blocked-by:awb-b2`,
 			domain.CompactLine(&i, true))
 	})
+}
+
+func TestCompactLineIncludesEveryAssignee(t *testing.T) {
+	issue := domain.Issue{ID: "awb-a1", Title: "Pair", Type: domain.TypeTask,
+		Status: domain.StatusInProgress, Priority: 2,
+		Assignees: []string{"alice", "bob"}}
+	assert.Equal(t, `awb-a1 P2 in_progress task "Pair" @alice @bob`,
+		domain.CompactLine(&issue, false))
 }
 
 // The title is the only field that may contain literal spaces after decoding,
