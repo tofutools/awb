@@ -8,6 +8,8 @@ import {
   isPaletteShortcut,
   navigationResultCommands,
   nextPaletteSelection,
+  paletteShortcutHint,
+  paletteTrigger,
   visiblePalettePageSize,
 } from "../../static/command-palette.js";
 
@@ -45,6 +47,14 @@ test("Ctrl-K off macOS and Cmd-K on macOS are claimed without accepting other ch
   assert.equal(isPaletteShortcut(event({ ctrlKey: true, shiftKey: true }), false), false);
   assert.equal(isPaletteShortcut(event({ ctrlKey: true, repeat: true }), false), false);
   assert.equal(isPaletteShortcut(event({ metaKey: true, isComposing: true }), true), false);
+});
+
+test("the header trigger advertises the palette shortcut accessibly on each platform", () => {
+  assert.equal(paletteTrigger.label, "Commands");
+  assert.equal(paletteTrigger.title, "Open command palette (Ctrl/Cmd+K)");
+  assert.equal(paletteTrigger.keyShortcuts, "Control+K Meta+K");
+  assert.equal(paletteShortcutHint(false), "Ctrl K");
+  assert.equal(paletteShortcutHint(true), "⌘K");
 });
 
 test("navigation results become keyboard commands with stable routes", () => {

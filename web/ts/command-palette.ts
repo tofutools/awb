@@ -12,6 +12,18 @@ export interface PaletteCommand {
 
 export type CommandProvider = () => PaletteCommand[];
 
+export const paletteTrigger = {
+  label: "Commands",
+  title: "Open command palette (Ctrl/Cmd+K)",
+  keyShortcuts: "Control+K Meta+K",
+} as const;
+
+export function paletteShortcutHint(
+  macOS = navigator.platform.toLocaleLowerCase().includes("mac"),
+): "⌘K" | "Ctrl K" {
+  return macOS ? "⌘K" : "Ctrl K";
+}
+
 /** CommandRegistry is the extension seam: features contribute commands while
  * one palette owns shortcut handling, ranking and accessible interaction. */
 export class CommandRegistry {
