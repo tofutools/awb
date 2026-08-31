@@ -65,6 +65,7 @@ import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
   mayManageProjectMembership,
+  membershipAdditionError,
   membershipChangeConfirmation,
   membershipSuggestions,
 } from "./membership.js";
@@ -1406,8 +1407,8 @@ function projectMembershipSection(project: Project, members: Membership[], curre
   heading.append(title, element("span", "membership-count", String(members.length)));
   section.append(heading);
 
-  const manageable = mayManageProjectMembership(identity, currentUser, project.key);
-  if (manageable) section.append(projectMembershipEditor(project, members, currentUser));
+  const manageable = mayManageProjectMembership(identity, currentUser, project.key, members);
+  if (manageable) section.append(projectMembershipEditor(project, members));
   else section.append(element("p", "membership-help", "Project administrators can change membership and access."));
 
   if (members.length === 0) {
@@ -1436,26 +1437,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
 
     const accessCell = document.createElement("td");
     accessCell.dataset.label = "Access";
-    if (manageable) {
-      const access = select(["regular", "admin"], member.access);
-      access.setAttribute("aria-label", `Access for @${member.user}`);
-      access.addEventListener("change", () => {
-        const next = access.value as Membership["access"];
-        if (next === member.access) return;
-        const confirmation = membershipChangeConfirmation(member, members, identity, next);
-        if (!window.confirm(confirmation)) {
-          access.value = member.access;
-          return;
-        }
-        void changeProjectMembership(
-          row,
-          [access],
-          () => api.setProjectMember(project.key, member.user, next),
-          `@${member.user} now has ${next} access to ${project.key}.`,
-        );
-      });
-      accessCell.append(access);
-    } else accessCell.append(element("span", "listing-badge", member.access));
+    accessCell.append(element("span", "listing-badge", member.access));
 
     const actions = document.createElement("td");
     actions.dataset.label = "Actions";
@@ -1484,7 +1466,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
   return section;
 }
 
-function projectMembershipEditor(project: Project, members: Membership[], currentUser: User | null): HTMLFormElement {
+function projectMembershipEditor(project: Project, members: Membership[]): HTMLFormElement {
   const form = element("form", "compact-editor membership-editor") as HTMLFormElement;
   const input = document.createElement("input");
   input.required = true;
@@ -1507,18 +1489,16 @@ function projectMembershipEditor(project: Project, members: Membership[], curren
     event.preventDefault();
     const user = input.value.trim();
     const next = access.value as Membership["access"];
-    const existing = members.find((member) => member.user === user);
-    if (existing !== undefined && existing.access !== next) {
-      if (!window.confirm(membershipChangeConfirmation(existing, members, identity, next))) return;
+    const duplicate = membershipAdditionError(user, members);
+    if (duplicate !== null) {
+      mutationError(form, new Error(duplicate));
+      return;
     }
-    const verb = existing === undefined ? "was added with" : "now has";
     void changeProjectMembership(
       form,
       [input, access, add],
       () => api.setProjectMember(project.key, user, next),
-      `@${user} ${verb} ${next} access to ${project.key}.`,
-      false,
-      user === identity && next !== "admin" && currentUser?.project_admin !== true,
+      `@${user} was added with ${next} access to ${project.key}.`,
     );
   });
   return form;
@@ -2650,7 +2630,7 @@ async function viewProfile(): Promise<HTMLElement> {
   return view;
 }
 
-function ignoredProjectsSettingsCard(projects: ProjectPreference[], currentUser: User): HTMLElement {
+function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement {
   const card = element("section", "profile-card ignored-projects-card");
   const heading = element("div", "ignored-projects-heading");
   const copy = element("div");
@@ -2702,13 +2682,11 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[], currentUser:
       ));
     });
     const actions = element("span", "project-preference-actions");
-    if (mayManageProjectMembership(identity, currentUser, preference.project.key)) {
-      actions.append(link(
-        `#/projects/${encodeURIComponent(preference.project.key)}/members`,
-        "Members",
-        "secondary-button project-preference-members",
-      ));
-    }
+    actions.append(link(
+      `#/projects/${encodeURIComponent(preference.project.key)}/members`,
+      "Members",
+      "secondary-button project-preference-members",
+    ));
     actions.append(action);
     row.append(name, state, actions);
     rows.set(preference, row);
@@ -2729,9 +2707,8 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[], currentUser:
 async function viewSettings(): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
   let projectPreferences: ProjectPreference[] | null = null;
-  let currentUser: User | null = null;
   try {
-    [projectPreferences, currentUser] = await Promise.all([api.projectPreferences(), api.user(identity)]);
+    projectPreferences = await api.projectPreferences();
   } catch (error) {
     // An open/no-auth server has an attribution identity but no account row,
     // and therefore no per-user preference owner. Its existing browser-local
@@ -2768,9 +2745,7 @@ async function viewSettings(): Promise<HTMLElement> {
   });
   card.append(preference);
   view.append(card);
-  if (projectPreferences !== null && currentUser !== null) {
-    view.append(ignoredProjectsSettingsCard(projectPreferences, currentUser));
-  }
+  if (projectPreferences !== null) view.append(ignoredProjectsSettingsCard(projectPreferences));
   return view;
 }
 

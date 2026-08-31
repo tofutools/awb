@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   mayManageProjectMembership,
+  membershipAdditionError,
   membershipChangeConfirmation,
   membershipSuggestions,
 } from "../../static/membership.js";
@@ -18,6 +19,11 @@ test("membership administration follows effective project access", () => {
   assert.equal(mayManageProjectMembership("alice", admin, "awb"), true);
   assert.equal(mayManageProjectMembership("alice", globalAdmin, "other"), true);
   assert.equal(mayManageProjectMembership("", null, "awb"), true);
+  assert.equal(
+    mayManageProjectMembership("alice", regular, "web", [membership("alice", "admin", "web")]),
+    true,
+    "the dedicated member list retains ignored-project administration",
+  );
 });
 
 test("scoped user suggestions omit members and preserve useful names", () => {
@@ -29,6 +35,16 @@ test("scoped user suggestions omit members and preserve useful names", () => {
   assert.deepEqual(membershipSuggestions(users, [membership("alice", "admin")]), [
     { value: "bob", label: "bob", detail: undefined },
   ]);
+});
+
+test("the add flow rejects duplicates and stale rows instead of restoring access", () => {
+  const renderedMembers = [membership("alice", "admin"), membership("bob", "regular")];
+
+  assert.equal(membershipAdditionError("carol", renderedMembers), null);
+  assert.equal(
+    membershipAdditionError("bob", renderedMembers),
+    "@bob already has regular access. Remove that membership before granting different access.",
+  );
 });
 
 test("self-removal and the last stored administrator get explicit warnings", () => {

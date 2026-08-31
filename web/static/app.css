@@ -1145,7 +1145,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .membership-editor { display: grid; grid-template-columns: minmax(12rem, 1fr) auto auto; }
 .membership-table th:first-child { width: 60%; }
 .membership-table th:last-child { width: 1%; }
-.membership-table select { min-width: 7rem; }
 .membership-remove { white-space: nowrap; }
 .app-notice {
   margin: 0 0 1rem;
