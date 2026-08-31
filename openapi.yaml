@@ -856,7 +856,9 @@ paths:
         Readable by any member of the workspace: knowing who else works on a
         board is part of working on it, and every one of those names is
         already visible as an assignee. A workspace the caller has no access to
-        is a `404`, as it is everywhere else.
+        is a `404`, as it is everywhere else. This dedicated administration
+        path bypasses the caller's ignored-workspace preference without
+        bypassing authorization, so an ignored workspace remains manageable.
       parameters:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -885,7 +887,9 @@ paths:
         is idempotent.
 
         Requires `admin` access to that workspace, which the compatibility field `project_admin`
-        also confers. Naming a user who does not exist is a `404`.
+        also confers. Naming a user who does not exist is a `404`. The
+        dedicated administration path remains available when the caller has
+        personally ignored the workspace.
 
         A membership carries no timestamps and no ETag, having one field; there
         is no `If-Match` here.
@@ -904,7 +908,8 @@ paths:
       description: |
         Requires `admin` access to that workspace. Withdrawing access nobody
         holds is a `404`, exactly as deleting an attachment that is not there
-        is.
+        is. The dedicated administration path remains available when the
+        caller has personally ignored the workspace.
       responses:
         '200':
           description: |

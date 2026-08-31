@@ -1,0 +1,49 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  mayManageProjectMembership,
+  membershipChangeConfirmation,
+  membershipSuggestions,
+} from "../../static/membership.js";
+
+const membership = (user, access, project = "awb") => ({ project, user, access });
+
+test("membership administration follows effective project access", () => {
+  const regular = { project_admin: false, projects: [membership("alice", "regular")] };
+  const admin = { project_admin: false, projects: [membership("alice", "admin")] };
+  const globalAdmin = { project_admin: true, projects: [] };
+
+  assert.equal(mayManageProjectMembership("alice", regular, "awb"), false);
+  assert.equal(mayManageProjectMembership("alice", admin, "awb"), true);
+  assert.equal(mayManageProjectMembership("alice", globalAdmin, "other"), true);
+  assert.equal(mayManageProjectMembership("", null, "awb"), true);
+});
+
+test("scoped user suggestions omit members and preserve useful names", () => {
+  const users = [
+    { name: "alice", full_name: "Alice Andersson" },
+    { name: "bob", full_name: "" },
+  ];
+
+  assert.deepEqual(membershipSuggestions(users, [membership("alice", "admin")]), [
+    { value: "bob", label: "bob", detail: undefined },
+  ]);
+});
+
+test("self-removal and the last stored administrator get explicit warnings", () => {
+  const alice = membership("alice", "admin");
+  const bob = membership("bob", "regular");
+
+  const lastAdmin = membershipChangeConfirmation(alice, [alice, bob], "alice", null);
+  assert.match(lastAdmin, /last stored project administrator/);
+  assert.match(lastAdmin, /lose access/);
+  assert.match(lastAdmin, /direct database access/);
+
+  const ordinaryRemoval = membershipChangeConfirmation(bob, [alice, bob], "alice", null);
+  assert.equal(ordinaryRemoval, "Do you want to remove @bob from this project?");
+
+  const twoAdmins = [alice, membership("carol", "admin")];
+  assert.match(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /may lose access/);
+  assert.doesNotMatch(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /last stored/);
+});

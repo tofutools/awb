@@ -250,7 +250,8 @@ func (b *Backend) DeleteUser(ctx context.Context, name, ifMatch string) (*backen
 //
 // Any member of the project may read it: knowing who else is on a board is
 // part of working on it, and every one of those names is already visible as an
-// assignee.
+// assignee. This dedicated administration read deliberately bypasses the
+// caller's ignored-project preference while retaining membership scope.
 func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset *int) (
 	backend.MemberPage, error) {
 	if _, err := domain.ValidateProjectKey(project); err != nil {
@@ -258,7 +259,7 @@ func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset
 	}
 
 	var page backend.MemberPage
-	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+	err := b.readIncludingIgnored(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		// Scoped, so a project the caller is not in is not found rather than
 		// empty.
 		if _, err := tx.GetProject(project); err != nil {
@@ -279,7 +280,9 @@ func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset
 
 // SetMember grants a user an access level in a project, replacing whatever
 // they held there before. Granting the level they already hold succeeds and
-// changes nothing.
+// changes nothing. Membership administration bypasses only the caller's
+// ignored-project preference so an authorized administrator cannot hide their
+// recovery path from themselves.
 func (b *Backend) SetMember(ctx context.Context, project, user string, access domain.Access) (
 	*domain.Membership, error) {
 	membership, err := validateMembership(project, user, access)
@@ -287,7 +290,7 @@ func (b *Backend) SetMember(ctx context.Context, project, user string, access do
 		return nil, err
 	}
 
-	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		if err := permitMembership(tx, caller, membership.Project); err != nil {
 			return err
 		}
@@ -325,7 +328,7 @@ func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*doma
 		return nil, err
 	}
 
-	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		if err := permitMembership(tx, caller, membership.Project); err != nil {
 			return err
 		}

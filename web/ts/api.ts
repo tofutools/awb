@@ -34,6 +34,7 @@ export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
 export type Membership = components["schemas"]["Membership"];
+export type MembershipAccess = Membership["access"];
 export type NavigationResults = components["schemas"]["NavigationResults"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
@@ -296,6 +297,19 @@ export const api = {
   },
   projectMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
+  setProjectMember: async (key: string, user: string, access: MembershipAccess) =>
+    getResponse<Membership>(await request(
+      `api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access }),
+      },
+    )),
+  removeProjectMember: (key: string, user: string) =>
+    deleteOne<Membership>(
+      `api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
+    ),
   users: (filters: UserFilters = {}, signal?: AbortSignal) =>
     getPage<DirectoryUser>(`api/users${toQuery(filters)}`, { signal }),
   project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
