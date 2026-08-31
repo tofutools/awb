@@ -886,9 +886,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-editing .sidebar-editor.sidebar-edit-control { display: flex; }
 .sidebar-editor > input, .sidebar-editor > .autocomplete { flex: 1 1 auto; width: 0; }
 .lifecycle-editor { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.lifecycle-editor summary { color: var(--muted); cursor: pointer; text-align: center; }
-.lifecycle-editor summary:hover { color: var(--accent); }
-.lifecycle-editor-body { padding-top: 0.5rem; }
 .lifecycle-editor h2 { margin-top: 0.75rem; color: var(--fg); font-size: 1rem; }
 .lifecycle-actions { display: grid; gap: 0.6rem; margin-top: 0.75rem; }
 .release-editor { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }

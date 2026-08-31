@@ -1607,10 +1607,8 @@ function labelEditor(issue: Issue): HTMLFormElement {
 }
 
 function lifecycleEditor(issue: Issue): HTMLElement {
-  const section = element("details", "lifecycle-editor") as HTMLDetailsElement;
-  section.append(element("summary", "", "More actions"));
-  const body = element("div", "lifecycle-editor-body");
-  body.append(element("h2", "", "Status and assignees"));
+  const section = element("section", "lifecycle-editor");
+  section.append(element("h2", "", "Status and assignees"));
 
   const claim = element("form", "sidebar-editor") as HTMLFormElement;
   const assignee = document.createElement("input");
@@ -1651,7 +1649,7 @@ function lifecycleEditor(issue: Issue): HTMLElement {
       force: force.checked,
     }));
   });
-  body.append(claim);
+  section.append(claim);
 
   const actions = element("div", "lifecycle-actions");
   if (issue.status === "in_progress") {
@@ -1696,8 +1694,7 @@ function lifecycleEditor(issue: Issue): HTMLElement {
     });
     actions.append(close);
   }
-  body.append(actions);
-  section.append(body);
+  section.append(actions);
   return section;
 }
 
