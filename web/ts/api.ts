@@ -251,7 +251,8 @@ export const api = {
   projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
   projectMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
-  users: (filters: UserFilters = {}) => getPage<DirectoryUser>(`api/users${toQuery(filters)}`),
+  users: (filters: UserFilters = {}, signal?: AbortSignal) =>
+    getPage<DirectoryUser>(`api/users${toQuery(filters)}`, { signal }),
   project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
   updateProject: (key: string, patch: ProjectPatch) =>
     patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),

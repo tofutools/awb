@@ -1568,8 +1568,21 @@ function lifecycleEditor(issue: Issue): HTMLElement {
   assignee.placeholder = identity === "" ? "Assignee" : `Assignee (default: ${identity})`;
   assignee.setAttribute("aria-label", "Assignee");
   const assigneeAutocomplete = attachAutocomplete(assignee, async (query, signal) => {
-    const page = await api.projectMembers(issue.project, signal);
-    return matchingValues(page.rows.map((member) => member.user), query, issue.assignees);
+    const [members, users] = await Promise.all([
+      api.projectMembers(issue.project, signal),
+      api.users({}, signal),
+    ]);
+    const memberNames = new Set(members.rows.map((member) => member.user));
+    const assigned = new Set(issue.assignees);
+    const needle = query.trim().toLocaleLowerCase();
+    return users.rows.filter((user) => memberNames.has(user.name) && !assigned.has(user.name)
+      && `${user.name} ${user.full_name}`.toLocaleLowerCase().includes(needle))
+      .slice(0, 8)
+      .map((user) => ({
+        value: user.name,
+        label: user.name,
+        detail: user.full_name === "" ? undefined : user.full_name,
+      }));
   });
   const forceLabel = element("label", "check-field");
   const force = document.createElement("input");
