@@ -109,9 +109,10 @@ harmless, and adopted by the next upload of the same bytes.
 
 An attachment is immutable. Nothing changes one, which is why it carries no
 update timestamp, no entity tag and no conditional edit: attach the file again
-and remove the old one. Attaching or removing one does not move the issue's own
-timestamp, exactly as a relation does not, because it is its own entity with
-its own lifecycle.
+and remove the old one. Attaching or removing one does move the issue's own
+timestamp, because the attachment array is part of the issue representation.
+That also invalidates an issue entity tag held before the attachment change and
+moves the issue in an updated-time listing.
 
 The content type is what the caller says it is, and what the first bytes say it
 is when the caller says nothing. It is sniffed from the content rather than
@@ -328,9 +329,9 @@ correctly without knowing what the work was.
 
 ### Timestamps as versions
 
-Update timestamps move only when a stored field actually changes, and are forced
-strictly upward when the clock is too coarse to distinguish two writes. Two
-versions of one row can therefore never carry the same timestamp.
+Update timestamps move only when the represented entity actually changes, and
+are forced strictly upward when the clock is too coarse to distinguish two
+writes. Two versions of one row can therefore never carry the same timestamp.
 
 That property — not the resolution — is what lets a timestamp serve as a version
 identifier for optimistic concurrency, and what would let a future mechanism

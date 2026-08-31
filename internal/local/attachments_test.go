@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -138,24 +139,48 @@ func TestAnIssueWithNoAttachmentsCarriesAnEmptyArray(t *testing.T) {
 	assert.Empty(t, issue.Attachments)
 }
 
-// Attaching does not move the issue's updated_at, exactly as adding a relation
-// does not: an attachment is its own entity with its own lifecycle.
-func TestAttachingDoesNotTouchTheIssue(t *testing.T) {
+// Adding and removing attachments are issue changes. Each one moves updated_at
+// strictly forward, even when several versions land inside one clock tick.
+func TestAttachmentsMoveIssueUpdatedAt(t *testing.T) {
 	b, ctx, _ := newBackendWithBlobs(t)
 	issue := create(t, b, ctx, "Parser crashes")
 
-	attachment := attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
+	previous := issue.UpdatedAt
+	for i := range 10 {
+		name := fmt.Sprintf("trace-%d.txt", i)
+		attachment := attach(t, b, ctx, issue.ID, name, "boom\n")
+		read, err := b.GetIssue(ctx, issue.ID)
+		require.NoError(t, err)
+		assert.Greater(t, read.UpdatedAt, previous)
+		previous = read.UpdatedAt
 
-	read, err := b.GetIssue(ctx, issue.ID)
-	require.NoError(t, err)
-	assert.Equal(t, issue.UpdatedAt, read.UpdatedAt)
+		_, err = b.DeleteAttachment(ctx, issue.ID, attachment.Name)
+		require.NoError(t, err)
+		read, err = b.GetIssue(ctx, issue.ID)
+		require.NoError(t, err)
+		assert.Greater(t, read.UpdatedAt, previous)
+		previous = read.UpdatedAt
+	}
+}
 
-	_, err = b.DeleteAttachment(ctx, issue.ID, attachment.Name)
+func TestAttachmentMovesIssueInUpdatedOrder(t *testing.T) {
+	b, ctx, _ := newBackendWithBlobs(t)
+	attached := create(t, b, ctx, "attached")
+	other := create(t, b, ctx, "other")
+
+	// Two attachment changes guarantee this issue's per-row timestamp has
+	// advanced past another issue created in the same clock tick.
+	attachment := attach(t, b, ctx, attached.ID, "trace.txt", "boom\n")
+	_, err := b.DeleteAttachment(ctx, attached.ID, attachment.Name)
 	require.NoError(t, err)
 
-	read, err = b.GetIssue(ctx, issue.ID)
+	page, err := b.ListIssues(ctx, &domain.Filter{
+		Sort: domain.Sort{Key: domain.SortUpdated, Desc: true},
+	})
 	require.NoError(t, err)
-	assert.Equal(t, issue.UpdatedAt, read.UpdatedAt)
+	require.Len(t, page.Issues, 2)
+	assert.Equal(t, attached.ID, page.Issues[0].ID)
+	assert.Equal(t, other.ID, page.Issues[1].ID)
 }
 
 // Two attachments of the same bytes are two attachments sharing one stored
