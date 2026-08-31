@@ -6,6 +6,7 @@ import {
   filterIssues,
   filterProjects,
   filterUsers,
+  lowestFacetGroup,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -23,6 +24,12 @@ test("empty applicable facet groups remain visible", () => {
   assert.equal(emptyFacetLabel([]), "none");
   assert.equal(emptyFacetLabel([{ value: "frontend", count: 1 }]), null);
   assert.equal(emptyFacetLabel(null), null, "inapplicable groups stay omitted");
+});
+
+test("pagination follows the lowest applicable facet row", () => {
+  assert.equal(lowestFacetGroup([], []), "assignee");
+  assert.equal(lowestFacetGroup([], null), "label");
+  assert.equal(lowestFacetGroup(null, null), "project");
 });
 
 function issue(overrides = {}) {

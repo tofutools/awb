@@ -95,6 +95,20 @@ export interface PageWindow {
   last: number;
 }
 
+export type FacetGroup = "project" | "label" | "assignee";
+
+/** lowestFacetGroup names the final applicable detail row above an issue
+ * listing. Pagination shares that row so it stays visually attached to the
+ * results even when some listing variants omit facets. */
+export function lowestFacetGroup(
+  labels: readonly unknown[] | null,
+  assignees: readonly unknown[] | null,
+): FacetGroup {
+  if (assignees !== null) return "assignee";
+  if (labels !== null) return "label";
+  return "project";
+}
+
 /** pageWindow describes the range represented by a backend page. */
 export function pageWindow(total: number, requested: number, size = defaultPageSize): PageWindow {
   const pages = Math.max(1, Math.ceil(total / size));
