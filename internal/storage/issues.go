@@ -45,7 +45,7 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 // than refused, exactly as such a project itself is: a caller who is not a
 // member is not told that the issue exists.
 func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
-	visible, args := t.visibleClause("project")
+	visible, args := t.visibleClause("issues.project")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
 		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
 		append([]any{id}, args...)...))
@@ -72,7 +72,7 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 // one invisible issue resolves, and uniqueness is uniqueness among what the
 // caller can see.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
-	visible, scopeArgs := t.visibleClause("project")
+	visible, scopeArgs := t.visibleClause("issues.project")
 	var (
 		rows *sql.Rows
 		err  error

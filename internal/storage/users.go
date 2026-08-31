@@ -174,7 +174,7 @@ func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, e
 // Only visible memberships are hydrated. A username may be shared across
 // projects without disclosing the names of projects the caller cannot see.
 func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
-	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleProject, visibleArgs := t.visibleClause("project_members.project")
 	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
@@ -227,7 +227,7 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 // SearchVisibleUsersForNavigation applies the directory visibility set before
 // matching, so autocomplete cannot disclose an otherwise hidden account.
 func (t *Tx) SearchVisibleUsersForNavigation(caller, query string, limit int) ([]domain.User, error) {
-	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleProject, visibleArgs := t.visibleClause("project_members.project")
 	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
@@ -342,7 +342,7 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	where := `user IN (` + placeholders(len(names)) + `)`
 	args := anyArgs(names)
 	if visibleOnly {
-		visible, visibleArgs := t.visibleClause("project")
+		visible, visibleArgs := t.visibleClause("project_members.project")
 		where += ` AND ` + visible
 		args = append(args, visibleArgs...)
 	}
@@ -376,9 +376,11 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 
 // membershipsOf reads one user's memberships, ordered by project ascending.
 func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
+	visible, visibleArgs := t.visibleClause("project_members.project")
+	args := append([]any{name}, visibleArgs...)
 	return t.scanMemberships(`
 		SELECT project, user, access FROM project_members
-		 WHERE user = ? ORDER BY project ASC`, []any{name})
+		 WHERE user = ? AND `+visible+` ORDER BY project ASC`, args)
 }
 
 // InsertUser stores a new user, and records that this database has had one.
