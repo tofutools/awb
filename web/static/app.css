@@ -680,6 +680,17 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .project-lifecycle-history { margin-bottom: 0; padding-left: 1.2rem; }
 .project-lifecycle-history li { padding: 0.25rem 0; }
 .issue-archive-banner { margin: 0 0 1rem; }
+.archived-project-issue .comment-composer,
+.archived-project-issue .inspector-add,
+.archived-project-issue .chip-remove { display: none; }
+.archived-project-issue .sidebar-select:disabled {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  opacity: 1;
+}
 
 .user-table th:first-child { width: 24%; }
 .user-table th:last-child { width: 24%; }

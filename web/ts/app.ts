@@ -1107,7 +1107,8 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   }
   view.append(heading, createForm);
 
-  const tabs = element("nav", "project-state-tabs");
+  const tabs = element("div", "project-state-tabs");
+  tabs.setAttribute("role", "tablist");
   const tabHref = (state: "active" | "archived"): string => {
     const query = new URLSearchParams(route.query);
     query.delete("page");
@@ -1116,6 +1117,10 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   };
   const activeTab = link(tabHref("active"), "Active", lifecycle === "active" ? "active" : "");
   const archivedTab = link(tabHref("archived"), "Archived", lifecycle === "archived" ? "active" : "");
+  activeTab.setAttribute("role", "tab");
+  archivedTab.setAttribute("role", "tab");
+  activeTab.setAttribute("aria-selected", String(lifecycle === "active"));
+  archivedTab.setAttribute("aria-selected", String(lifecycle === "archived"));
   tabs.append(activeTab, archivedTab);
   view.append(tabs);
 
@@ -1509,7 +1514,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     content.prepend(banner);
     editButton.remove();
     for (const control of view.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-      "form button, form input, form select, form textarea",
+      "form button, form input, form select, form textarea, .issue-sidebar button, .issue-sidebar input, .issue-sidebar select",
     )) control.disabled = true;
   }
   view.addEventListener("keydown", (event) => {
