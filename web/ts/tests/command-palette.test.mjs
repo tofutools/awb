@@ -87,11 +87,14 @@ test("page and boundary keys clamp across grouped static and dynamic results", (
   assert.equal(nextPaletteSelection("End", 1, commands.length, 3), 5);
 });
 
-test("page size comes from the visible result viewport and rendered options", () => {
-  const option = { offsetHeight: 36 };
-  const list = { clientHeight: 145, querySelector: () => option };
-  assert.equal(visiblePalettePageSize(list), 4);
-  assert.equal(visiblePalettePageSize({ clientHeight: 0, querySelector: () => null }), 1);
+test("page size comes from option positions in the grouped result viewport", () => {
+  // A group heading occupies the gap between the third and fourth options.
+  // Dividing the 120px viewport by the 40px row height would overcount it.
+  const options = [20, 60, 100, 160, 200].map((offsetTop) => ({ offsetTop }));
+  const list = { clientHeight: 120, querySelectorAll: () => options };
+  assert.equal(visiblePalettePageSize(list, 0, 1), 2);
+  assert.equal(visiblePalettePageSize(list, 4, -1), 2);
+  assert.equal(visiblePalettePageSize({ clientHeight: 0, querySelectorAll: () => [] }, 0, 1), 1);
 });
 
 test("navigation uses the refreshed backend result count", () => {

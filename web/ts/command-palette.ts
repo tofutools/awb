@@ -107,12 +107,22 @@ export function nextPaletteSelection(
   return Math.min(count - 1, Math.max(0, selected + direction * size));
 }
 
-/** Measure how many rendered options fit in the palette's result viewport.
- * Hidden or DOM-shimmed lists fall back to one useful step. */
-export function visiblePalettePageSize(list: HTMLElement): number {
-  const option = list.querySelector<HTMLElement>(".command-palette-option");
-  const optionHeight = option?.offsetHeight ?? 0;
-  return optionHeight > 0 ? Math.max(1, Math.floor(list.clientHeight / optionHeight)) : 1;
+/** Measure how many rendered options span one result viewport from the active
+ * option. Their positions include the group headings between them. */
+export function visiblePalettePageSize(list: HTMLElement, selected: number, direction: 1 | -1): number {
+  const options = [...list.querySelectorAll<HTMLElement>(".command-palette-option")];
+  const active = options[selected];
+  if (active === undefined || list.clientHeight <= 0) return 1;
+  const boundary = active.offsetTop + direction * list.clientHeight;
+  let target = selected;
+  for (let index = selected + direction; index >= 0 && index < options.length; index += direction) {
+    const withinViewport = direction > 0
+      ? options[index].offsetTop <= boundary
+      : options[index].offsetTop >= boundary;
+    if (!withinViewport) break;
+    target = index;
+  }
+  return Math.max(1, Math.abs(target - selected));
 }
 
 export class CommandPalette {
@@ -218,7 +228,7 @@ export class CommandPalette {
       event.preventDefault();
       if (this.commands.length === 0) return;
       const pageSize = event.key === "PageDown" || event.key === "PageUp"
-        ? visiblePalettePageSize(this.list)
+        ? visiblePalettePageSize(this.list, this.selected, event.key === "PageDown" ? 1 : -1)
         : 1;
       this.selected = nextPaletteSelection(
         event.key as PaletteNavigationKey,
