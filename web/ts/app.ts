@@ -48,6 +48,13 @@ import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from
 import { navigationPath, projectScopedHref } from "./navigation.js";
 import { accountRoles } from "./profile.js";
 import {
+  accountMenuItems,
+  preferenceStorage,
+  readPaginationAutoHide,
+  rememberPaginationAutoHide,
+  showPagination,
+} from "./preferences.js";
+import {
   formatUpdated,
   readUpdatedDisplay,
   rememberUpdatedDisplay,
@@ -67,6 +74,8 @@ const app = document.getElementById("app") as HTMLElement;
 let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
+const preferences = preferenceStorage(window);
+let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
 
 function listingPageSize(query: URLSearchParams): number {
@@ -655,6 +664,7 @@ function pagination(route: Route, total: number): HTMLElement {
   const nav = element("div", "pagination");
   nav.setAttribute("role", "navigation");
   nav.setAttribute("aria-label", "Pagination");
+  nav.hidden = !showPagination(total, paginationAutoHide);
 
   const pageLink = (label: string, page: number, disabled: boolean): HTMLAnchorElement => {
     const anchor = link(routeHref(route, withPage(route.query, page)), label, "pagination-link");
@@ -1855,9 +1865,11 @@ function accountMenu(): HTMLElement {
   const menu = element("div", "account-popover");
   menu.setAttribute("popover", "auto");
   menu.setAttribute("role", "menu");
-  const profile = link("#/profile", "Profile", "account-menu-item");
-  profile.setAttribute("role", "menuitem");
-  menu.append(profile);
+  for (const item of accountMenuItems) {
+    const anchor = link(item.href, item.label, "account-menu-item");
+    anchor.setAttribute("role", "menuitem");
+    menu.append(anchor);
+  }
 
   button.addEventListener("click", () => {
     if (menu.matches(":popover-open")) {
@@ -2010,6 +2022,38 @@ async function viewProfile(): Promise<HTMLElement> {
   return view;
 }
 
+function viewSettings(): HTMLElement {
+  if (identity === "") throw new Error("No authenticated user is available.");
+  const view = element("div", "profile-view settings-view");
+  const heading = element("div", "settings-heading");
+  heading.append(element("h1", "", "Settings"), element("p", "lede", "Your preferences for this browser"));
+  view.append(heading);
+
+  const card = element("section", "profile-card");
+  card.append(element("h2", "", "Listings"));
+  const preference = element("label", "settings-preference");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = paginationAutoHide;
+  const copy = element("span", "settings-preference-copy");
+  copy.append(
+    element("span", "settings-preference-title", "Automatically hide pagination"),
+    element(
+      "span",
+      "settings-preference-description",
+      "Hide pagination controls when a listing has fewer than 10 entries.",
+    ),
+  );
+  preference.append(checkbox, copy);
+  checkbox.addEventListener("change", () => {
+    paginationAutoHide = checkbox.checked;
+    rememberPaginationAutoHide(preferences, paginationAutoHide);
+  });
+  card.append(preference);
+  view.append(card);
+  return view;
+}
+
 async function render(): Promise<void> {
   const route = parseRoute();
   clear(app);
@@ -2044,6 +2088,8 @@ async function routeView(route: Route): Promise<HTMLElement> {
       return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route);
     case "profile":
       return viewProfile();
+    case "settings":
+      return viewSettings();
     case "users":
       return viewUsers(route);
     case "tree":
