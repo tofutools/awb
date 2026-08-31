@@ -293,7 +293,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 47)
+	require.Len(t, operations, 48)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -339,6 +339,7 @@ func TestOperations(t *testing.T) {
 	assert.Empty(t, names("getIssue"))
 
 	assert.True(t, operations["createIssue"].TakesBody)
+	assert.True(t, operations["addProjectMember"].DeclaresJSONBody())
 	assert.True(t, operations["addComment"].DeclaresJSONBody())
 	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
 	assert.False(t, operations["reopenIssue"].TakesBody)
