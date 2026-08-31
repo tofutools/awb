@@ -1546,6 +1546,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     value: Node,
     editor: HTMLElement,
     affordance = "⌄",
+    accessibleValue?: string,
   ): void => {
     const trigger = button("", "inspector-trigger");
     const panelID = `inspector-editor-${++inspectorEditorID}`;
@@ -1554,7 +1555,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     editor.hidden = true;
     trigger.setAttribute("aria-controls", panelID);
     trigger.setAttribute("aria-expanded", "false");
-    const currentValue = value.textContent?.trim() || "none";
+    const currentValue = accessibleValue ?? (value.textContent?.trim() || "none");
     trigger.setAttribute("aria-label", `${label}: ${currentValue}; edit`);
     trigger.append(value, element("span", "inspector-affordance", affordance));
     trigger.addEventListener("click", () => {
@@ -1604,12 +1605,19 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const labels = element("span", "sidebar-labels");
   if (issue.labels.length === 0) labels.append(text("—"));
   for (const label of issue.labels) labels.append(badge("label", label));
-  editable("Labels", labels, labelInspector(issue), "+");
+  editable(
+    "Labels",
+    labels,
+    labelInspector(issue),
+    "+",
+    issue.labels.length === 0 ? "none" : issue.labels.join(", "),
+  );
   editable(
     "Assignees",
     text(issue.assignees.map((name) => `@${name}`).join(", ")),
     assigneeEditor(issue),
     "+",
+    issue.assignees.length === 0 ? "unassigned" : issue.assignees.join(", "),
   );
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
