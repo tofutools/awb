@@ -1554,7 +1554,8 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     editor.hidden = true;
     trigger.setAttribute("aria-controls", panelID);
     trigger.setAttribute("aria-expanded", "false");
-    trigger.setAttribute("aria-label", `Edit ${label.toLocaleLowerCase()}`);
+    const currentValue = value.textContent?.trim() || "none";
+    trigger.setAttribute("aria-label", `${label}: ${currentValue}; edit`);
     trigger.append(value, element("span", "inspector-affordance", affordance));
     trigger.addEventListener("click", () => {
       const opening = editor.hidden;
