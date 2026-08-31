@@ -69,10 +69,15 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 // that are not closed.
 func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.ProjectSort,
 	limit, offset *int) (backend.ProjectPage, error) {
+	return b.ListProjectsByState(ctx, filter, domain.ProjectsActive, sort, limit, offset)
+}
+
+func (b *Backend) ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter, sort domain.ProjectSort,
+	limit, offset *int) (backend.ProjectPage, error) {
 	var page backend.ProjectPage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
-		page.Projects, page.Total, err = tx.ListProjects(filter, sort, limit, offset)
+		page.Projects, page.Total, err = tx.ListProjectsByState(filter, state, sort, limit, offset)
 		return err
 	})
 	if err != nil {
@@ -104,6 +109,9 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 		if !caller.MayManageProjects() {
 			return awberr.Forbiddenf("only a project administrator may change project %s", key)
 		}
+		if existing.State == domain.ProjectArchived {
+			return awberr.Conflictf("project %s is archived; restore it before changing it", key)
+		}
 		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
 			return err
 		}
@@ -134,6 +142,56 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 		return nil, err
 	}
 	return project, nil
+}
+
+func (b *Backend) setProjectState(ctx context.Context, key string, state domain.ProjectState,
+	ifMatch string) (*domain.Project, error) {
+	if _, err := domain.ValidateProjectKey(key); err != nil {
+		return nil, err
+	}
+	var project *domain.Project
+	err := b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		existing, err := tx.GetProject(key)
+		if err != nil {
+			return err
+		}
+		if !caller.MayManageProjects() {
+			return awberr.Forbiddenf("only a project administrator may change project %s lifecycle", key)
+		}
+		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
+			return err
+		}
+		if _, err := tx.SetProjectState(existing, state, caller.Name); err != nil {
+			return err
+		}
+		project, err = tx.GetProject(key)
+		return err
+	})
+	return project, err
+}
+
+func (b *Backend) ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.setProjectState(ctx, key, domain.ProjectArchived, ifMatch)
+}
+
+func (b *Backend) RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.setProjectState(ctx, key, domain.ProjectActive, ifMatch)
+}
+
+func (b *Backend) ListProjectActivity(ctx context.Context, key string, limit, offset *int) (backend.ProjectActivityPage, error) {
+	if _, err := domain.ValidateProjectKey(key); err != nil {
+		return backend.ProjectActivityPage{}, err
+	}
+	var page backend.ProjectActivityPage
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+		if _, err := tx.GetProject(key); err != nil {
+			return err
+		}
+		var err error
+		page.Activity, page.Total, err = tx.ListProjectActivity(key, limit, offset)
+		return err
+	})
+	return page, err
 }
 
 // DeleteProject deletes a project.

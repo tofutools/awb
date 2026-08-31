@@ -153,6 +153,9 @@ type Filter struct {
 	// IncludeClosed widens whatever status set is in force to include closed
 	// issues.
 	IncludeClosed bool
+	// IncludeArchived is reserved for explicit history/export paths. Ordinary
+	// listings and every target picker leave it false.
+	IncludeArchived bool
 
 	Types      []Type
 	Priorities []int

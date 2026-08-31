@@ -41,6 +41,15 @@ one, and its key is the issue ID prefix and is immutable. An **issue** carries a
 title, an optional Markdown description, a type, a status, a priority, a set of
 labels and an ordered set of assignees.
 
+A project is active or archived. Archiving is reversible retention, not
+deletion: the stable key, children, graph, blobs, membership and preferences do
+not move. Archived work remains readable through its stable URLs and an
+explicit history listing, while normal discovery and target pickers omit it and
+every work mutation touching it is refused. Membership remains administrable
+so access to history can still be corrected. One state intentionally covers
+both a temporary freeze and long-term retirement; two read-only states would
+duplicate the write rule without adding a useful invariant.
+
 The description is the issue's editable free text. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
 there is no link entity and no link records to keep in step with anything.
@@ -59,6 +68,11 @@ their before and after JSON values, while actions such as attaching a
 file are named explicitly. Entries are ordered newest first by creation time
 and then by their monotonically assigned id, so the order is total even when
 several writes share one millisecond.
+
+Projects have a smaller append-only lifecycle stream. Each actual archive or
+restore appends its actor and time inside the transition's transaction; an
+idempotent repeat appends nothing. It is deliberately not a general project
+version history.
 
 A non-empty close reason is represented by one comment entry whose stable
 action is `closed` and whose field changes include the status transition. It is
@@ -561,6 +575,14 @@ resolve to one. Forbidden is reserved for what a caller can see and may not
 change. Two flags stand outside the projects — one over projects, one over users
 — and neither implies the other.
 
+Lifecycle state is a second, orthogonal boundary on work rather than on
+visibility. Ordinary listings add active-project selection after authorization;
+direct historical reads do not. Archive and restore require the global project
+administrator flag and check the project's ETag inside the same writer turn as
+the state and audit insert. A project administrator's known-key lifecycle
+operation bypasses only their personal ignore preference, which cannot become a
+lockout mechanism for restoring retained work.
+
 **The graph is not scoped, and must not be.** A visible issue's relations and
 blockers may name issues the caller cannot fetch; an ignored counterpart is
 suppressed from presentation because the user asked it to disappear, while the
@@ -636,7 +658,10 @@ and offline replication; sprints, boards, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; custom fields
 and workflows; bulk import.
 
-**Nothing is ever archived or purged.** Closed issues stay queryable forever.
+**Nothing is purged by lifecycle management.** Closed issues and archived
+projects stay queryable through explicit history paths. The legacy hard-delete
+operations remain separate, deliberately destructive compatibility surfaces;
+the browser does not expose them.
 
 **Two invocations against unchanged data produce byte-identical output.** Every
 ordering is total, every derived array has a specified order, and this is

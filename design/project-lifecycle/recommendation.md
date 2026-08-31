@@ -45,10 +45,12 @@ when its project is archived. Keys are never renamed. Restoring returns the
 same project, URLs, issues, memberships, preferences, attachment metadata and
 blob references; it does not recreate or rewrite any child record.
 
-Personal ignore is independent from lifecycle. An authorized archived project
-appears in the explicit Archived view even if it is ignored, so there is always
-an administrative recovery path. Restoring preserves the preference: a user
-who ignored it before archival still ignores it afterward.
+Personal ignore is independent from lifecycle. An ignored archived project is
+recovered through the existing preference editor before it appears in the
+Archived view. Restoring preserves the preference: a user who ignored it
+before archival still ignores it afterward. A project administrator may still
+restore a known key through the lifecycle operation, which bypasses only their
+own presentation preference and never authorization.
 
 ## API and CLI shape
 
@@ -83,4 +85,3 @@ Lifecycle history appears on the project page with actor and time. Successful
 creation, archive, and restore operations navigate to the affected detail page
 and announce the result. `409`, `412`, and authorization failures preserve the
 form and display the server's exact error.
-

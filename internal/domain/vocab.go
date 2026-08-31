@@ -11,6 +11,41 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
+// ProjectState distinguishes current work from retained read-only history.
+// Archiving is deliberately the only inactive state: a second locked state
+// would carry the same write rules while making restoration ambiguous.
+type ProjectState string
+
+const (
+	ProjectActive   ProjectState = "active"
+	ProjectArchived ProjectState = "archived"
+)
+
+var ProjectStates = []ProjectState{ProjectActive, ProjectArchived}
+
+func ParseProjectState(s string) (ProjectState, error) {
+	if slices.Contains(ProjectStates, ProjectState(s)) {
+		return ProjectState(s), nil
+	}
+	return "", awberr.Usagef("invalid project state %q: must be one of %s", s, join(ProjectStates))
+}
+
+type ProjectStateFilter string
+
+const (
+	ProjectsActive   ProjectStateFilter = "active"
+	ProjectsArchived ProjectStateFilter = "archived"
+	ProjectsAll      ProjectStateFilter = "all"
+)
+
+func ParseProjectStateFilter(s string) (ProjectStateFilter, error) {
+	filter := ProjectStateFilter(s)
+	if filter == ProjectsActive || filter == ProjectsArchived || filter == ProjectsAll {
+		return filter, nil
+	}
+	return "", awberr.Usagef("invalid project state filter %q: must be active, archived or all", s)
+}
+
 // Type is an issue's kind. Nothing in awb treats any of them specially; an
 // epic is simply a large piece of work decomposed through has-parent.
 type Type string

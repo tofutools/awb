@@ -39,6 +39,20 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
+// IssueProjectState reads only the lifecycle guard for an already-resolved
+// endpoint. Relation maintenance may address an existing counterpart outside
+// the caller's scope (the visible relation already names it), so this check is
+// intentionally independent of presentation scope.
+func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
+	var state domain.ProjectState
+	err := t.q.QueryRowContext(t.ctx, `SELECT p.state FROM issues i
+		JOIN projects p ON p.key = i.project WHERE i.id = ?`, id).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", awberr.NotFoundf("no such issue: %s", id)
+	}
+	return state, awberr.Wrap(awberr.Runtime, err, "read project state of issue %s", id)
+}
+
 // getIssueRow reads the stored half of one issue by its exact ID.
 //
 // An issue in a project outside the transaction's scope is not found rather

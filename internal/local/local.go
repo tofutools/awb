@@ -115,6 +115,21 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 	return tx.GetIssue(id)
 }
 
+func ensureProjectActive(tx *storage.Tx, key string) error {
+	project, err := tx.GetProject(key)
+	if err != nil {
+		return err
+	}
+	if project.State == domain.ProjectArchived {
+		return awberr.Conflictf("project %s is archived and read-only", key)
+	}
+	return nil
+}
+
+func ensureIssueWritable(tx *storage.Tx, issue *domain.Issue) error {
+	return ensureProjectActive(tx, issue.Project)
+}
+
 // checkIfMatch enforces the optional conditional-edit precondition. An empty
 // ifMatch means no precondition and gives the caller last-write-wins.
 //
@@ -176,6 +191,16 @@ func (b *Backend) authorize(tx *storage.Tx, includeIgnored bool) (domain.Caller,
 func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
 	return b.db.Write(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, false)
+		if err != nil {
+			return err
+		}
+		return fn(tx, caller)
+	})
+}
+
+func (b *Backend) writeIncludingIgnored(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
+	return b.db.Write(ctx, func(tx *storage.Tx) error {
+		caller, err := b.authorize(tx, true)
 		if err != nil {
 			return err
 		}

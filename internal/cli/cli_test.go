@@ -99,6 +99,21 @@ func (h *harness) mustRun(args ...string) string {
 	return stdout
 }
 
+func TestProjectArchiveAndRestoreCommands(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("create", "retained", "--project", "awb")
+	archived := h.mustRun("project", "archive", "awb", "--json")
+	assert.Contains(t, archived, `"state": "archived"`)
+	assert.JSONEq(t, `[]`, h.mustRun("project", "list", "--json"))
+	assert.Contains(t, h.mustRun("project", "list", "--archived", "--json"), `"key": "awb"`)
+	_, stderr, code := h.run("create", "blocked", "--project", "awb")
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "archived")
+	restored := h.mustRun("project", "restore", "awb", "--json")
+	assert.Contains(t, restored, `"state": "active"`)
+	h.mustRun("create", "resumed", "--project", "awb")
+}
+
 // create makes an issue and returns its ID.
 func (h *harness) create(args ...string) string {
 	h.t.Helper()

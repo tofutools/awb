@@ -38,7 +38,11 @@ type Backend interface {
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)
 	ListProjects(ctx context.Context, filter string, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
+	ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
 	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
+	ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
+	RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
+	ListProjectActivity(ctx context.Context, key string, limit, offset *int) (ProjectActivityPage, error)
 	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
 	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
 	SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error)
@@ -130,6 +134,11 @@ type IssuePage struct {
 // ProjectPage is a project listing with its unpaged total.
 type ProjectPage struct {
 	Projects []domain.Project
+	Total    int
+}
+
+type ProjectActivityPage struct {
+	Activity []domain.ProjectActivity
 	Total    int
 }
 

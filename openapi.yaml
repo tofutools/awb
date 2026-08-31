@@ -87,6 +87,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -585,6 +586,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -645,6 +647,13 @@ paths:
       summary: List projects
       parameters:
         - $ref: '#/components/parameters/listingFilter'
+        - name: state
+          in: query
+          description: Lifecycle subset. Archived projects are omitted by default.
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
         - name: sort
           in: query
           description: |
@@ -723,6 +732,60 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/archive:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    post:
+      tags: [projects]
+      operationId: archiveProject
+      summary: Archive a project as retained read-only history
+      description: |
+        Requires the project_admin flag. Idempotent when already archived.
+        Existing records and stable URLs remain readable, while the project is
+        omitted from normal discovery and rejects work mutations.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/restore:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    post:
+      tags: [projects]
+      operationId: restoreProject
+      summary: Restore an archived project
+      description: Requires the project_admin flag and preserves every child record and preference.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/activity:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    get:
+      tags: [projects]
+      operationId: listProjectActivity
+      summary: List archive and restore audit entries, newest first
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/ProjectActivityList' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/preferences/projects:
@@ -970,6 +1033,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -1005,6 +1069,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -1120,6 +1185,11 @@ components:
       name: include-closed
       in: query
       description: Widen whatever status set is in force to include closed issues.
+      schema: { type: boolean, default: false }
+    includeArchived:
+      name: include-archived
+      in: query
+      description: Include retained archived project issues for explicit history or export.
       schema: { type: boolean, default: false }
     type:
       name: type
@@ -1295,6 +1365,15 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Project' }
+    ProjectActivityList:
+      description: Project lifecycle audit entries, newest first.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ProjectActivity' }
     FacetList:
       description: The distinct values in use, sorted by value ascending.
       headers:
@@ -1809,7 +1888,7 @@ components:
     Project:
       type: object
       additionalProperties: false
-      required: [key, name, description, active_issues, created_at, updated_at]
+      required: [key, name, description, state, archived_at, archived_by, active_issues, created_at, updated_at]
       properties:
         key: { $ref: '#/components/schemas/ProjectKey' }
         name:
@@ -1820,6 +1899,15 @@ components:
           minLength: 1
           maxLength: 500
         description: { type: string }
+        state:
+          type: string
+          enum: [active, archived]
+        archived_at:
+          type: string
+          description: Empty while active; otherwise the most recent archive time.
+        archived_by:
+          type: string
+          description: Empty while active; otherwise the actor who most recently archived it.
         active_issues:
           type: integer
           description: |
@@ -1828,6 +1916,19 @@ components:
           minimum: 0
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    ProjectActivity:
+      type: object
+      additionalProperties: false
+      required: [id, project, action, actor, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        action:
+          type: string
+          enum: [archived, restored]
+        actor: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
 
     ProjectPreference:
       type: object
@@ -2129,6 +2230,11 @@ components:
         active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+        state:
+          type: string
+          enum: [active, archived]
+        archived_at: { type: string }
+        archived_by: { type: string }
 
     UserCreate:
       type: object

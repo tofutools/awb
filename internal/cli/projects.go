@@ -27,6 +27,8 @@ func newProjectCommand(e *env) *cobra.Command {
 		newProjectDescriptionCommand(e),
 		newProjectShowCommand(e),
 		newProjectListCommand(e),
+		newProjectArchiveCommand(e),
+		newProjectRestoreCommand(e),
 		newProjectDeleteCommand(e),
 		newProjectGrantCommand(e),
 		newProjectRevokeCommand(e),
@@ -149,11 +151,19 @@ func newProjectShowCommand(e *env) *cobra.Command {
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
-	return boa.CmdT[InteractiveFlags]{
+	type params struct {
+		InteractiveFlags
+		Archived bool `long:"archived" optional:"true" help:"list archived projects instead of active projects"`
+		All      bool `long:"all" optional:"true" help:"list active and archived projects"`
+	}
+	return boa.CmdT[params]{
 		Use:         "list",
 		Short:       "List projects with counts of issues that are not closed",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
+			if p.Archived && p.All {
+				return awberr.Usagef("--archived and --all are mutually exclusive")
+			}
 			out, err := e.interactively(p.Interactive)
 			if err != nil {
 				return err
@@ -163,7 +173,13 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, nil, nil)
+			state := domain.ProjectsActive
+			if p.Archived {
+				state = domain.ProjectsArchived
+			} else if p.All {
+				state = domain.ProjectsAll
+			}
+			page, err := be.ListProjectsByState(cmd.Context(), "", state, domain.DefaultProjectSort, nil, nil)
 			if err != nil {
 				return err
 			}
@@ -171,6 +187,54 @@ func newProjectListCommand(e *env) *cobra.Command {
 				return e.pickProject(cmd.Context(), be, out, page.Projects)
 			}
 			return e.printProjects(page.Projects)
+		},
+	}.ToCobra()
+}
+
+func newProjectArchiveCommand(e *env) *cobra.Command {
+	type params struct {
+		Key string `positional:"true" required:"true"`
+	}
+	return boa.CmdT[params]{
+		Use:   "archive",
+		Short: "Archive a project as retained read-only history",
+		Long: "Archive a project without deleting anything. Its stable URLs and history remain\n" +
+			"readable, while normal listings and target pickers omit it and work mutations\n" +
+			"are refused. Repeating the command is idempotent.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			project, err := be.ArchiveProject(cmd.Context(), p.Key, "")
+			if err != nil {
+				return err
+			}
+			return e.mutatedProject(project)
+		},
+	}.ToCobra()
+}
+
+func newProjectRestoreCommand(e *env) *cobra.Command {
+	type params struct {
+		Key string `positional:"true" required:"true"`
+	}
+	return boa.CmdT[params]{
+		Use:         "restore",
+		Short:       "Restore an archived project",
+		Long:        "Restore the same project, including all of its retained records and stable URLs.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			project, err := be.RestoreProject(cmd.Context(), p.Key, "")
+			if err != nil {
+				return err
+			}
+			return e.mutatedProject(project)
 		},
 	}.ToCobra()
 }

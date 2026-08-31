@@ -193,9 +193,14 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	if err != nil {
 		return err
 	}
+	projectActivity, err := dumpProjectActivity(cmd, source, projects)
+	if err != nil {
+		return err
+	}
 
 	if err := db.RestoreSnapshot(cmd.Context(), storage.Snapshot{
 		Projects: projects, Issues: issues, Attachments: attachments, Activity: activity,
+		ProjectActivity: projectActivity,
 	}); err != nil {
 		return err
 	}
@@ -205,6 +210,39 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	dbOpen = false
 	complete = true
 	return nil
+}
+
+func dumpProjectActivity(cmd *cobra.Command, source backend.Backend,
+	projects []domain.Project) ([]domain.ProjectActivity, error) {
+	entries := []domain.ProjectActivity{}
+	for _, project := range projects {
+		total := -1
+		fetched := 0
+		seen := map[int64]struct{}{}
+		for total < 0 || fetched < total {
+			limit, offset := dumpPageSize, fetched
+			page, err := source.ListProjectActivity(cmd.Context(), project.Key, &limit, &offset)
+			if err != nil {
+				return nil, err
+			}
+			if total >= 0 && page.Total != total {
+				return nil, awberr.Runtimef("lifecycle of project %s changed while the dump was being read", project.Key)
+			}
+			total = page.Total
+			for _, entry := range page.Activity {
+				if _, duplicate := seen[entry.ID]; duplicate {
+					return nil, awberr.Runtimef("project activity %d appeared in more than one dump page", entry.ID)
+				}
+				seen[entry.ID] = struct{}{}
+				entries = append(entries, entry)
+			}
+			fetched += len(page.Activity)
+			if len(page.Activity) == 0 && fetched < total {
+				return nil, awberr.Runtimef("project activity pagination ended early for %s", project.Key)
+			}
+		}
+	}
+	return entries, nil
 }
 
 func dumpActivity(cmd *cobra.Command, source backend.Backend, issues []domain.Issue) (
@@ -411,7 +449,8 @@ func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project,
 	total := -1
 	for offset := 0; total < 0 || offset < total; offset = len(projects) {
 		limit, pageOffset := dumpPageSize, offset
-		page, err := source.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, &limit, &pageOffset)
+		page, err := source.ListProjectsByState(cmd.Context(), "", domain.ProjectsAll,
+			domain.DefaultProjectSort, &limit, &pageOffset)
 		if err != nil {
 			return nil, err
 		}
@@ -443,10 +482,10 @@ func dumpIssues(cmd *cobra.Command, source backend.Backend) ([]domain.Issue, err
 	for offset := 0; total < 0 || offset < total; offset = len(issues) {
 		limit, pageOffset := dumpPageSize, offset
 		page, err := source.ListIssues(cmd.Context(), &domain.Filter{
-			IncludeClosed: true,
-			Limit:         &limit,
-			Offset:        &pageOffset,
-			Sort:          domain.Sort{Key: domain.SortID},
+			IncludeClosed: true, IncludeArchived: true,
+			Limit:  &limit,
+			Offset: &pageOffset,
+			Sort:   domain.Sort{Key: domain.SortID},
 		})
 		if err != nil {
 			return nil, err

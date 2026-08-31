@@ -208,6 +208,9 @@ func (b *Backend) mutateRelation(ctx context.Context, ref, ifMatch, action strin
 		if err != nil {
 			return err
 		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
+			return err
+		}
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
 			return err
 		}
@@ -241,6 +244,13 @@ func (s relationSnapshots) capture(tx *storage.Tx) func(string) error {
 	return func(id string) error {
 		if _, ok := s[id]; ok {
 			return nil
+		}
+		state, err := tx.IssueProjectState(id)
+		if err != nil {
+			return err
+		}
+		if state == domain.ProjectArchived {
+			return awberr.Conflictf("the relation touches archived read-only project work")
 		}
 		relations, err := tx.IssueRelations(id)
 		if err != nil {

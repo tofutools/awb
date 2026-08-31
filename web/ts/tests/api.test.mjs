@@ -237,3 +237,30 @@ test("project edits patch the project resource with its ETag", async () => {
   assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"project-version"');
   assert.deepEqual(JSON.parse(requests[1].init.body), { name: "Web", description: "Markdown" });
 });
+
+test("project creation and lifecycle use stable paths and advance the project ETag", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify(calls.length === 5 ? [] : { key: "team/web" }), {
+      status: calls.length === 1 ? 201 : 200,
+      headers: { "Content-Type": "application/json", ETag: `"v${calls.length}"` },
+    });
+  });
+
+  await api.createProject({ key: "team/web", name: "Web" });
+  await api.updateProject("team/web", { description: "Client" });
+  await api.archiveProject("team/web");
+  await api.restoreProject("team/web");
+  await api.projectActivity("team/web");
+
+  assert.equal(calls[0].path, "api/projects");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[1].path, "api/projects/team%2Fweb");
+  assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"v1"');
+  assert.equal(calls[2].path, "api/projects/team%2Fweb/archive");
+  assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"v2"');
+  assert.equal(calls[3].path, "api/projects/team%2Fweb/restore");
+  assert.equal(new Headers(calls[3].init.headers).get("If-Match"), '"v3"');
+  assert.equal(calls[4].path, "api/projects/team%2Fweb/activity");
+});
