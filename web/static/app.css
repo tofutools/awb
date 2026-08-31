@@ -83,7 +83,6 @@ nav a.active::after {
 @media (min-width: 701px) {
   .app-header > * { height: var(--control-height); }
   nav a { box-sizing: border-box; height: 100%; }
-  .search input { box-sizing: border-box; height: 100%; }
   main > :not(.issue-view) { margin-inline: 1rem; }
 }
 
@@ -97,28 +96,6 @@ nav a.active::after {
   stroke-linejoin: round;
   stroke-width: 1.75;
 }
-
-.search { position: relative; margin-left: auto; }
-.search .icon {
-  position: absolute;
-  top: 50%;
-  left: 0.7rem;
-  width: 1.1rem;
-  height: 1.1rem;
-  color: var(--muted);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-.search input {
-  font: inherit;
-  padding: 0.38rem 0.65rem 0.38rem 2.1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: inherit;
-  width: 14rem;
-}
-.search input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
 
 .command-palette-button {
   display: inline-flex;
@@ -142,8 +119,6 @@ nav a.active::after {
   color: var(--muted);
   font: 0.72rem var(--mono);
 }
-.command-palette-button + .search { margin-left: 0; }
-
 .command-palette {
   width: min(40rem, calc(100vw - 2rem));
   max-height: min(38rem, calc(100vh - 4rem));
@@ -648,8 +623,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 700px) {
   #app { padding-inline: 0.8rem; }
   .app-header { align-items: flex-start; gap: 0.5rem 1rem; }
-  .app-header .search { order: 4; margin-left: 0; width: 100%; }
-  .app-header .search input { width: 100%; }
   .account-menu { margin-left: auto; }
   .identity-name { display: none; }
   nav { order: 3; width: 100%; gap: 0.15rem; padding-bottom: 0.5rem; overflow-x: auto; overflow-y: hidden; }

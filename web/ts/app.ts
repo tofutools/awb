@@ -45,11 +45,12 @@ import { commentSubmitShortcut, inspectorDismissShortcut, issueEditorShortcut } 
 import {
   CommandPalette,
   CommandRegistry,
+  paletteShortcutHint,
+  paletteTrigger,
   type PaletteCommand,
 } from "./command-palette.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
-import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import { namedDestinations, navigationPath, projectScopedHref } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
@@ -2028,27 +2029,6 @@ async function viewSearch(route: Route): Promise<HTMLElement> {
   return view;
 }
 
-/** searchBox is the global navigation control. */
-function searchBox(): HTMLElement {
-  const form = element("form", "search") as HTMLFormElement;
-  const input = document.createElement("input");
-  configureSearchBox(form, input);
-  input.value = parseRoute().query.getAll("q").join(" ");
-  form.append(svgIcon("search"), input);
-
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const query = new URLSearchParams();
-    // Each whitespace-separated word is one literal term, which is how the
-    // command line treats its positional arguments.
-    for (const term of input.value.split(/\s+/).filter((t) => t !== "")) {
-      query.append("q", term);
-    }
-    location.hash = `#/search?${query.toString()}`;
-  });
-  return form;
-}
-
 /** accountMenu makes the identity in the upper-right a real navigation
  * control while keeping the avatar and name as its accessible label. */
 function accountMenu(): HTMLElement {
@@ -2109,14 +2089,13 @@ function chrome(): HTMLElement {
   brand.append(mark, document.createTextNode("Agent Work Board"));
   header.append(brand);
   header.append(nav);
-  const commands = button("Commands", "command-palette-button");
-  commands.setAttribute("aria-keyshortcuts", "Control+K Meta+K");
-  commands.title = "Open command palette (Ctrl/Cmd+K)";
-  const shortcut = element("kbd", "", navigator.platform.toLocaleLowerCase().includes("mac") ? "⌘K" : "Ctrl K");
+  const commands = button(paletteTrigger.label, "command-palette-button");
+  commands.setAttribute("aria-keyshortcuts", paletteTrigger.keyShortcuts);
+  commands.title = paletteTrigger.title;
+  const shortcut = element("kbd", "", paletteShortcutHint());
   commands.append(shortcut);
   commands.addEventListener("click", () => commandPalette?.open());
   header.append(commands);
-  header.append(searchBox());
   if (identity !== "") header.append(accountMenu());
   return header;
 }
