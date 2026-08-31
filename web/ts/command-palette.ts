@@ -79,6 +79,42 @@ export function navigationResultCommands(results: NavigationResults, navigate: (
   ];
 }
 
+export type PaletteNavigationKey = "ArrowDown" | "ArrowUp" | "PageDown" | "PageUp" | "Home" | "End";
+
+export function isPlainPaletteBoundaryKey(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+): event is Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"> & { key: "Home" | "End" } {
+  return (event.key === "Home" || event.key === "End")
+    && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+}
+
+/** Return the next selected command for a keyboard navigation key. Arrow keys
+ * retain their wrapping behaviour, while viewport and boundary moves clamp. */
+export function nextPaletteSelection(
+  key: PaletteNavigationKey,
+  selected: number,
+  count: number,
+  pageSize: number,
+): number {
+  if (count === 0) return 0;
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    return nextActiveIndex(selected, count, key === "ArrowDown" ? 1 : -1);
+  }
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  const direction = key === "PageDown" ? 1 : -1;
+  const size = Math.max(1, Math.floor(pageSize) || 1);
+  return Math.min(count - 1, Math.max(0, selected + direction * size));
+}
+
+/** Measure how many rendered options fit in the palette's result viewport.
+ * Hidden or DOM-shimmed lists fall back to one useful step. */
+export function visiblePalettePageSize(list: HTMLElement): number {
+  const option = list.querySelector<HTMLElement>(".command-palette-option");
+  const optionHeight = option?.offsetHeight ?? 0;
+  return optionHeight > 0 ? Math.max(1, Math.floor(list.clientHeight / optionHeight)) : 1;
+}
+
 export class CommandPalette {
   private readonly dialog = document.createElement("dialog");
   private readonly input = document.createElement("input");
@@ -176,11 +212,20 @@ export class CommandPalette {
   }
 
   private onKeydown(event: KeyboardEvent): void {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const navigationKey = event.key === "ArrowDown" || event.key === "ArrowUp"
+      || event.key === "PageDown" || event.key === "PageUp" || isPlainPaletteBoundaryKey(event);
+    if (navigationKey) {
       event.preventDefault();
       if (this.commands.length === 0) return;
-      const delta = event.key === "ArrowDown" ? 1 : -1;
-      this.selected = nextActiveIndex(this.selected, this.commands.length, delta);
+      const pageSize = event.key === "PageDown" || event.key === "PageUp"
+        ? visiblePalettePageSize(this.list)
+        : 1;
+      this.selected = nextPaletteSelection(
+        event.key as PaletteNavigationKey,
+        this.selected,
+        this.commands.length,
+        pageSize,
+      );
       this.render();
     } else if (event.key === "Enter") {
       event.preventDefault();
