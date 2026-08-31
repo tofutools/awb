@@ -657,9 +657,10 @@ function pagination(route: Route, total: number): HTMLElement {
   const next = pageLink("Next", window.page + 1, atEnd);
   const last = pageLink("Last", window.pages, atEnd);
 
-  const sizeControl = element("label", "pagination-size", "Rows per page");
+  const sizeControl = element("label", "pagination-size");
   const select = document.createElement("select");
   select.setAttribute("aria-label", "Rows per page");
+  select.title = "Rows per page";
   for (const optionSize of pageSizes) {
     const option = document.createElement("option");
     option.value = String(optionSize);
