@@ -27,7 +27,6 @@ export type Attachment = components["schemas"]["Attachment"];
 export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
-export type User = components["schemas"]["User"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type UserPatch = components["schemas"]["UserPatch"];

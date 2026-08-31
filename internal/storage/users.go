@@ -161,15 +161,16 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 // projects without disclosing the names of projects the caller cannot see.
 func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
 	visibleProject, visibleArgs := t.visibleClause("project")
-	visibleIssueProject, visibleIssueArgs := t.visibleClause("i.project")
+	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
-	args = append(args, visibleIssueArgs...)
+	args = append(args, visibleAssignmentArgs...)
 	args = append(args, visibleActivityArgs...)
 	cte := `WITH visible_users(name) AS (
 		SELECT ?
 		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
-		UNION SELECT assignee FROM issues i WHERE assignee <> '' AND ` + visibleIssueProject + `
+		UNION SELECT assignee FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
+			WHERE ` + visibleAssignmentProject + `
 		UNION SELECT actor FROM issue_activity a JOIN issues i ON i.id = a.issue
 			WHERE actor <> '' AND ` + visibleActivityProject + `
 	)`
