@@ -18,3 +18,12 @@ export function issueEditorShortcut(
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) return "save";
   return undefined;
 }
+
+/** inspectorDismissShortcut leaves an inner control's Escape handling intact:
+ * autocomplete dismisses its suggestions first, then a second Escape closes
+ * the field editor. */
+export function inspectorDismissShortcut(
+  event: Pick<KeyboardEvent, "key" | "defaultPrevented">,
+): boolean {
+  return event.key === "Escape" && !event.defaultPrevented;
+}

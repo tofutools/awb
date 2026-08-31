@@ -41,7 +41,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, inspectorDismissShortcut, issueEditorShortcut } from "./keyboard.js";
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
@@ -76,6 +76,7 @@ const app = document.getElementById("app") as HTMLElement;
 let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
+let inspectorEditorID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -1547,58 +1548,105 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const facts = element("dl", "issue-facts");
   aside.append(element("h2", "issue-sidebar-title", "Details"));
 
-  const add = (label: string, value: Node): void => {
+  let activePanel: HTMLElement | undefined;
+  let activeTrigger: HTMLButtonElement | undefined;
+  const closeActivePanel = (): void => {
+    activePanel?.setAttribute("hidden", "");
+    activeTrigger?.setAttribute("aria-expanded", "false");
+    activePanel = undefined;
+    activeTrigger = undefined;
+  };
+
+  const add = (label: string, value: Node, editor?: HTMLElement): void => {
     const row = element("div", "issue-fact");
     row.append(element("dt", "", label));
     const detail = element("dd");
     detail.append(value);
     row.append(detail);
+    if (editor !== undefined) row.append(editor);
     facts.append(row);
+  };
+  const editable = (
+    label: string,
+    value: Node,
+    editor: HTMLElement,
+    affordance = "⌄",
+    accessibleValue?: string,
+  ): void => {
+    const trigger = button("", "inspector-trigger");
+    const panelID = `inspector-editor-${++inspectorEditorID}`;
+    editor.id = panelID;
+    editor.classList.add("inspector-editor");
+    editor.hidden = true;
+    trigger.setAttribute("aria-controls", panelID);
+    trigger.setAttribute("aria-expanded", "false");
+    const currentValue = accessibleValue ?? (value.textContent?.trim() || "none");
+    trigger.setAttribute("aria-label", `${label}: ${currentValue}; edit`);
+    trigger.append(value, element("span", "inspector-affordance", affordance));
+    trigger.addEventListener("click", () => {
+      const opening = editor.hidden;
+      closeActivePanel();
+      if (!opening) return;
+      editor.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      activePanel = editor;
+      activeTrigger = trigger;
+      (editor.querySelector<HTMLElement>("input, select") ??
+        editor.querySelector<HTMLElement>("button"))?.focus();
+    });
+    editor.addEventListener("keydown", (event) => {
+      if (!inspectorDismissShortcut(event)) return;
+      event.preventDefault();
+      closeActivePanel();
+      trigger.focus();
+    });
+    add(label, trigger, editor);
   };
   const text = (value: string): Text => document.createTextNode(value === "" ? "—" : value);
 
   add("ID", element("span", "id", issue.id));
   add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
-  type.className = "sidebar-select sidebar-edit-control";
+  type.className = "sidebar-select";
   type.setAttribute("aria-label", "Edit type");
   type.addEventListener("change", () => {
     void mutate(aside, [type], () => api.updateIssue(issue.id, { type: type.value as Issue["type"] }));
   });
-  const typeControl = element("span", "sidebar-value");
-  typeControl.append(element("span", "sidebar-readonly", issue.type), type);
-  add("Type", typeControl);
-  add("Status", badge(`status status-${issue.status}`, issue.status));
+  const typeEditor = element("div");
+  typeEditor.append(type);
+  editable("Type", text(issue.type), typeEditor);
+  editable("Status", badge(`status status-${issue.status}`, issue.status), statusEditor(issue));
   const priority = select(["0", "1", "2", "3", "4"], String(issue.priority));
-  priority.className = `sidebar-select sidebar-edit-control priority p${issue.priority}`;
+  priority.className = `sidebar-select priority p${issue.priority}`;
   priority.setAttribute("aria-label", "Edit priority");
   priority.addEventListener("change", () => {
     void mutate(aside, [priority], () => api.updateIssue(issue.id, { priority: Number(priority.value) }));
   });
-  const priorityControl = element("span", "sidebar-value");
-  priorityControl.append(element("span", `sidebar-readonly priority p${issue.priority}`, `P${issue.priority}`), priority);
-  add("Priority", priorityControl);
+  const priorityEditor = element("div");
+  priorityEditor.append(priority);
+  editable("Priority", element("span", `priority p${issue.priority}`, `P${issue.priority}`), priorityEditor);
   if (issue.blocked) add("Readiness", badge("blocked", "blocked"));
 
   const labels = element("span", "sidebar-labels");
   if (issue.labels.length === 0) labels.append(text("—"));
-  for (const label of issue.labels) {
-    const chip = element("span", "editable-chip");
-    chip.append(badge("label", label));
-    const remove = button("×", "chip-remove");
-    remove.title = `Remove label ${label}`;
-    remove.setAttribute("aria-label", remove.title);
-    remove.addEventListener("click", () => {
-      void mutate(chip, [remove], () => api.removeLabel(issue.id, label));
-    });
-    chip.append(remove);
-    labels.append(chip);
-  }
-  add("Labels", labels);
-  add("Assignees", text(issue.assignees.map((name) => `@${name}`).join(", ")));
+  for (const label of issue.labels) labels.append(badge("label", label));
+  editable(
+    "Labels",
+    labels,
+    labelInspector(issue),
+    "+",
+    issue.labels.length === 0 ? "none" : issue.labels.join(", "),
+  );
+  editable(
+    "Assignees",
+    text(issue.assignees.map((name) => `@${name}`).join(", ")),
+    assigneeEditor(issue),
+    "+",
+    issue.assignees.length === 0 ? "unassigned" : issue.assignees.join(", "),
+  );
   add("Created", timeElement(issue.created_at));
   add("Updated", timeElement(issue.updated_at));
-  aside.append(facts, labelEditor(issue), lifecycleEditor(issue));
+  aside.append(facts);
   drawToggle();
   return [aside, toggle];
 }
@@ -1612,7 +1660,7 @@ function matchingValues(values: string[], query: string, excluded: string[] = []
 }
 
 function labelEditor(issue: Issue): HTMLFormElement {
-  const form = element("form", "sidebar-editor label-editor sidebar-edit-control") as HTMLFormElement;
+  const form = element("form", "sidebar-editor label-editor") as HTMLFormElement;
   const input = document.createElement("input");
   input.placeholder = "Add label";
   input.setAttribute("aria-label", "Label");
@@ -1621,7 +1669,7 @@ function labelEditor(issue: Issue): HTMLFormElement {
     const page = await api.labels({}, signal);
     return matchingValues(page.rows.map((facet) => facet.value), query, issue.labels);
   });
-  const add = element("button", "primary-button", "Add") as HTMLButtonElement;
+  const add = element("button", "quiet-action", "Add") as HTMLButtonElement;
   add.type = "submit";
   form.append(autocomplete, add);
   form.addEventListener("submit", (event) => {
@@ -1631,12 +1679,59 @@ function labelEditor(issue: Issue): HTMLFormElement {
   return form;
 }
 
-function lifecycleEditor(issue: Issue): HTMLElement {
-  const section = element("details", "lifecycle-editor") as HTMLDetailsElement;
-  section.append(element("summary", "", "More actions"));
-  const body = element("div", "lifecycle-editor-body");
-  body.append(element("h2", "", "Status and assignees"));
+function labelInspector(issue: Issue): HTMLElement {
+  const panel = element("div");
+  if (issue.labels.length > 0) {
+    const labels = element("div", "inspector-current-values");
+    for (const label of issue.labels) {
+      const chip = element("span", "editable-chip");
+      chip.append(badge("label", label));
+      const remove = button("×", "chip-remove");
+      remove.title = `Remove label ${label}`;
+      remove.setAttribute("aria-label", remove.title);
+      remove.addEventListener("click", () => {
+        void mutate(panel, [remove], () => api.removeLabel(issue.id, label));
+      });
+      chip.append(remove);
+      labels.append(chip);
+    }
+    panel.append(labels);
+  }
+  panel.append(labelEditor(issue));
+  return panel;
+}
 
+function statusEditor(issue: Issue): HTMLElement {
+  const panel = element("div");
+  if (issue.status === "closed") {
+    const reopen = button("Reopen", "quiet-action");
+    reopen.addEventListener("click", () => {
+      void mutate(panel, [reopen], () => api.reopenIssue(issue.id));
+    });
+    panel.append(reopen);
+    return panel;
+  }
+  const close = element("form", "close-editor") as HTMLFormElement;
+  const reason = document.createElement("input");
+  reason.placeholder = "Close reason (optional)";
+  reason.maxLength = 500;
+  reason.setAttribute("aria-label", "Close reason");
+  const closeButton = element("button", "danger-button", "Close") as HTMLButtonElement;
+  closeButton.type = "submit";
+  close.append(reason, closeButton);
+  close.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutate(panel, [closeButton], () => api.closeIssue(
+      issue.id,
+      reason.value === "" ? {} : { reason: reason.value },
+    ));
+  });
+  panel.append(close);
+  return panel;
+}
+
+function assigneeEditor(issue: Issue): HTMLElement {
+  const panel = element("div");
   const claim = element("form", "sidebar-editor") as HTMLFormElement;
   const assignee = document.createElement("input");
   assignee.placeholder = identity === "" ? "Assignee" : `Assignee (default: ${identity})`;
@@ -1664,66 +1759,45 @@ function lifecycleEditor(issue: Issue): HTMLElement {
   forceLabel.append(force, document.createTextNode("Force"));
   const claimButton = element(
     "button",
-    "primary-button",
-    issue.assignees.length === 0 ? "Claim" : "Add assignee",
+    "quiet-action",
+    issue.assignees.length === 0 ? "Claim" : "Add",
   ) as HTMLButtonElement;
   claimButton.type = "submit";
   claim.append(assigneeAutocomplete, forceLabel, claimButton);
   claim.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(section, [claimButton], () => api.claimIssue(issue.id, {
+    void mutate(panel, [claimButton], () => api.claimIssue(issue.id, {
       assignee: assignee.value === "" ? undefined : assignee.value,
       force: force.checked,
     }));
   });
-  body.append(claim);
+  panel.append(claim);
 
-  const actions = element("div", "lifecycle-actions");
+  const actions = element("div", "assignee-actions");
   if (issue.status === "in_progress") {
     const releaseForm = element("form", "release-editor") as HTMLFormElement;
     const releaseForceLabel = element("label", "check-field");
     const releaseForce = document.createElement("input");
     releaseForce.type = "checkbox";
-    releaseForceLabel.append(releaseForce, document.createTextNode("Force release"));
-    const release = element("button", "secondary-button", "Release") as HTMLButtonElement;
+    releaseForceLabel.append(releaseForce, document.createTextNode("Release all"));
+    const release = element(
+      "button",
+      "quiet-action",
+      issue.assignees.includes(identity) ? "Release myself" : "Release",
+    ) as HTMLButtonElement;
     release.type = "submit";
     releaseForm.append(releaseForceLabel, release);
     releaseForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      void mutate(section, [release], () => api.releaseIssue(issue.id, {
+      void mutate(panel, [release], () => api.releaseIssue(issue.id, {
         assignee: identity,
         force: releaseForce.checked,
       }));
     });
     actions.append(releaseForm);
   }
-  if (issue.status === "closed") {
-    const reopen = button("Reopen");
-    reopen.addEventListener("click", () => {
-      void mutate(section, [reopen], () => api.reopenIssue(issue.id));
-    });
-    actions.append(reopen);
-  } else {
-    const close = element("form", "close-editor") as HTMLFormElement;
-    const reason = document.createElement("input");
-    reason.placeholder = "Close reason (optional)";
-    reason.maxLength = 500;
-    reason.setAttribute("aria-label", "Close reason");
-    const closeButton = element("button", "danger-button", "Close") as HTMLButtonElement;
-    closeButton.type = "submit";
-    close.append(reason, closeButton);
-    close.addEventListener("submit", (event) => {
-      event.preventDefault();
-      void mutate(section, [closeButton], () => api.closeIssue(
-        issue.id,
-        reason.value === "" ? {} : { reason: reason.value },
-      ));
-    });
-    actions.append(close);
-  }
-  body.append(actions);
-  section.append(body);
-  return section;
+  panel.append(actions);
+  return panel;
 }
 
 function activitySection(issueID: string, entries: Activity[]): HTMLElement {

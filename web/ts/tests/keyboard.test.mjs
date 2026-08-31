@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { commentSubmitShortcut, issueEditorShortcut } from "../../static/keyboard.js";
+import {
+  commentSubmitShortcut,
+  inspectorDismissShortcut,
+  issueEditorShortcut,
+} from "../../static/keyboard.js";
 
 function key(overrides = {}) {
   return {
@@ -35,4 +39,10 @@ test("plain keys and input-method composition do not control the issue editor", 
   assert.equal(issueEditorShortcut(key({ key: "Space", ctrlKey: true })), undefined);
   assert.equal(issueEditorShortcut(key({ key: "Escape", isComposing: true })), undefined);
   assert.equal(issueEditorShortcut(key({ ctrlKey: true, isComposing: true })), undefined);
+});
+
+test("Escape closes an inspector field only after an inner control has declined it", () => {
+  assert.equal(inspectorDismissShortcut({ key: "Escape", defaultPrevented: false }), true);
+  assert.equal(inspectorDismissShortcut({ key: "Escape", defaultPrevented: true }), false);
+  assert.equal(inspectorDismissShortcut({ key: "Enter", defaultPrevented: false }), false);
 });
