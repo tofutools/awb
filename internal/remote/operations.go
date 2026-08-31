@@ -207,6 +207,14 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 	if filter.ListingFilter != "" {
 		query.Set("filter", filter.ListingFilter)
 	}
+	if path == "/api/labels" || path == "/api/assignees" {
+		switch filter.Readiness {
+		case domain.ReadinessReady:
+			query.Set("readiness", "ready")
+		case domain.ReadinessBlocked:
+			query.Set("readiness", "blocked")
+		}
+	}
 	if filter.Limit != nil {
 		query.Set("limit", strconv.Itoa(*filter.Limit))
 	}

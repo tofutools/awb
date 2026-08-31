@@ -96,6 +96,7 @@ export function readyFacetFilters(filters: Filters): FacetFilters {
     ...facetFilters(readyFilters(filters)),
     status: ["open"],
     unassigned: true,
+    readiness: "ready",
   };
 }
 

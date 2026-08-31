@@ -318,7 +318,7 @@ func TestOperations(t *testing.T) {
 	}, names("listBlocked"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "project", "parent", "filter", "limit", "offset",
+		"assignee", "unassigned", "project", "parent", "filter", "readiness", "limit", "offset",
 	}, names("listLabels"))
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{

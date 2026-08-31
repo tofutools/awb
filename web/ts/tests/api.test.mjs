@@ -134,6 +134,7 @@ test("ready label facets keep the backend text filter and fixed selection", () =
     project: ["awb"],
     status: ["open"],
     unassigned: true,
+    readiness: "ready",
   });
 });
 

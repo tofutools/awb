@@ -34,6 +34,7 @@ type selection struct {
 	offset        api.OptInt
 	terms         []string
 	listingFilter string
+	readiness     api.OptFacetReadiness
 }
 
 // filter turns the selection into a domain filter. The values arrive already
@@ -84,6 +85,14 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 			return nil, err
 		}
 		filter.Projects = append(filter.Projects, valid)
+	}
+	if readiness, ok := s.readiness.Get(); ok {
+		switch readiness {
+		case api.FacetReadinessReady:
+			filter.Readiness = domain.ReadinessReady
+		case api.FacetReadinessBlocked:
+			filter.Readiness = domain.ReadinessBlocked
+		}
 	}
 
 	if limit, ok := s.limit.Get(); ok {
@@ -273,6 +282,7 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 		limit:         params.Limit,
 		offset:        params.Offset,
 		listingFilter: params.Filter.Or(""),
+		readiness:     params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -297,6 +307,7 @@ func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesPar
 		limit:         params.Limit,
 		offset:        params.Offset,
 		listingFilter: params.Filter.Or(""),
+		readiness:     params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err

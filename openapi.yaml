@@ -979,6 +979,7 @@ paths:
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
+        - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -1013,6 +1014,7 @@ paths:
         - $ref: '#/components/parameters/project'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
+        - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -1195,6 +1197,15 @@ components:
         listing. Whitespace-separated words must all match, and filtering is
         applied before counting, sorting and pagination.
       schema: { type: string, maxLength: 500 }
+    readiness:
+      name: readiness
+      in: query
+      description: |
+        Select the derived ready or blocked state. Facet clients combine
+        `ready` with `status=open` and `unassigned=true` to describe the exact
+        selection of `GET /api/ready`.
+      schema:
+        $ref: '#/components/schemas/FacetReadiness'
     sort:
       name: sort
       in: query
@@ -1387,6 +1398,9 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    FacetReadiness:
+      type: string
+      enum: [ready, blocked]
     NavigationResults:
       type: object
       required: [issues, projects, users]

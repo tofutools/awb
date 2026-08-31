@@ -625,7 +625,6 @@ func TestFacets(t *testing.T) {
 	a := newAPI(t)
 	a.createIssue(`{"project":"awb","title":"a","labels":["parser","frontend"]}`)
 	a.createIssue(`{"project":"awb","title":"b","labels":["parser"]}`)
-
 	resp, payload := a.do(http.MethodGet, "/api/labels", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.JSONEq(t, `[{"value":"frontend","count":1},{"value":"parser","count":2}]`, payload)
@@ -643,6 +642,20 @@ func TestFacets(t *testing.T) {
 	// There is no row for the empty assignee.
 	_, payload = a.do(http.MethodGet, "/api/assignees", "")
 	assert.Equal(t, "[]", payload)
+
+	ready := a.createIssue(`{"project":"awb","title":"Needle ready","labels":["ready-label"]}`)
+	blocked := a.createIssue(`{"project":"awb","title":"Needle blocked","labels":["blocked-label"]}`)
+	blocker := a.createIssue(`{"project":"awb","title":"Prerequisite"}`)
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+blocked.ID+"/relations",
+		`{"type":"blocked-by","other":"`+blocker.ID+`"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	resp, payload = a.do(http.MethodGet,
+		"/api/labels?filter=needle&status=open&unassigned=true&readiness=ready", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.JSONEq(t, `[{"value":"ready-label","count":1}]`, payload,
+		"a matching blocked issue does not contribute to Ready's facets")
+	assert.NotEmpty(t, ready.ID)
 }
 
 func TestIdentity(t *testing.T) {

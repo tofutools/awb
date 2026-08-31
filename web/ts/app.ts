@@ -93,6 +93,8 @@ const paginationStorage = pageSizeStorage(window);
 let commandPalette: CommandPalette | null = null;
 let activeListingFilter: BackendListingFilter<HTMLElement> | null = null;
 const listingFilterOwners = new WeakMap<HTMLElement, BackendListingFilter<HTMLElement>>();
+let activeRenderRequest: AbortController | null = null;
+let renderGeneration = 0;
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -2432,6 +2434,10 @@ async function viewSettings(): Promise<HTMLElement> {
 }
 
 async function render(): Promise<void> {
+  const generation = ++renderGeneration;
+  activeRenderRequest?.abort();
+  const request = new AbortController();
+  activeRenderRequest = request;
   activeListingFilter?.close();
   activeListingFilter = null;
   const route = parseRoute();
@@ -2443,14 +2449,17 @@ async function render(): Promise<void> {
   app.append(main);
 
   try {
-    const view = await routeView(route);
+    const view = await routeView(route, request.signal);
+    if (generation !== renderGeneration || request.signal.aborted) return;
     main.append(view);
     activateListingFilter(view);
   } catch (error) {
+    if (generation !== renderGeneration || request.signal.aborted) return;
     showRouteError(error, main);
   }
 
   markActiveNav(route);
+  if (activeRenderRequest === request) activeRenderRequest = null;
 }
 
 // View construction can finish after its request was aborted. Controller
