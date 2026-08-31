@@ -1,4 +1,4 @@
-// The bundled web UI: projects, issues, search, dependency trees and editing,
+// The bundled web UI: projects, issues, dependency trees and editing,
 // over the same HTTP API anything else would use.
 
 import {
@@ -53,7 +53,12 @@ import {
 import { renderMarkdown } from "./markdown.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
-import { namedDestinations, navigationPath, projectScopedHref } from "./navigation.js";
+import {
+  legacyIssueSearchHref,
+  namedDestinations,
+  navigationPath,
+  projectScopedHref,
+} from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
@@ -386,7 +391,7 @@ function issueBadges(issue: Issue): HTMLElement {
   return row;
 }
 
-type ListingKind = "issues" | "ready" | "blocked" | "search";
+type ListingKind = "issues" | "ready" | "blocked";
 
 interface SortChoice {
   key: string;
@@ -398,7 +403,7 @@ interface IssueColumn extends SortChoice {
 }
 
 const issueSortKeys = [
-  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers", "relevance",
+  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers",
 ] as const;
 
 function textCell(className: string, text: string): HTMLElement {
@@ -766,8 +771,8 @@ function issueList(
 ): HTMLElement {
   const section = element("div", "listing");
   const tableHost = element("div", "listing-host");
-  const defaultKey = kind === "search" ? "relevance" : "priority";
-  const defaultDirection: SortDirection = kind === "search" ? "desc" : "asc";
+  const defaultKey = "priority";
+  const defaultDirection: SortDirection = "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
   const mobileColumns = [...columns, { key: "created", label: "Created" }];
@@ -775,8 +780,7 @@ function issueList(
   listingActions.append(mobileSortControl(
     route,
     mobileColumns,
-    kind === "search" ? "Best match" : "Natural order",
-    kind === "search" ? [{ key: "-relevance", label: "Worst match" }] : [],
+    "Natural order",
   ));
   if (columns.some((column) => column.key === "updated")) {
     listingActions.append(mobileUpdatedDisplayControl());
@@ -790,11 +794,11 @@ function issueList(
 
   section.append(listingFilter(
     route,
-    `Filter all ${kind === "search" ? "results" : kind}…`,
+    `Filter all ${kind}…`,
     "issue",
     total,
     listingActions,
-    kind === "issues" || kind === "search" ? includeClosedControl(route) : null,
+    kind === "issues" ? includeClosedControl(route) : null,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -802,7 +806,7 @@ function issueList(
 }
 
 /** filtersFrom reads the filter parameters a listing route carries. */
-function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
+function filtersFrom(query: URLSearchParams): Filters {
   const filters: Filters = {};
   const project = query.getAll("project");
   if (project.length > 0) filters.project = project;
@@ -814,10 +818,7 @@ function filtersFrom(query: URLSearchParams, allowRelevance = false): Filters {
   const listingFilter = query.get("filter");
   if (listingFilter !== null && listingFilter !== "") filters.filter = listingFilter;
   const sort = query.get("sort");
-  const apiSorts: string[] = issueSortKeys
-    .filter((key) => key !== "relevance")
-    .flatMap((key) => [key, `-${key}`]);
-  if (allowRelevance) apiSorts.push("relevance", "-relevance");
+  const apiSorts: string[] = issueSortKeys.flatMap((key) => [key, `-${key}`]);
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
   const size = listingPageSize(query);
   filters.limit = size;
@@ -2057,46 +2058,6 @@ function treeNode(node: IssueTree, depth: number): HTMLElement {
   return list;
 }
 
-async function viewSearch(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
-  const terms = route.query.getAll("q").filter((term) => term !== "");
-
-  const view = element("div");
-  view.append(element("h1", "", "Search"));
-  view.append(
-    element("p", "lede", "Literal terms, whole-token matching. An issue matches when it contains all of them."),
-  );
-
-  if (terms.length === 0) {
-    view.append(element("p", "empty", "Type something to search for."));
-    return view;
-  }
-
-  const filters = { ...filtersFrom(route.query, true), q: terms };
-  let [page, projects] = await Promise.all([
-    api.search(filters, signal),
-    api.projects({}, signal),
-  ]);
-  const normalized = normalizePageRoute(route, page.total);
-  const size = listingPageSize(route.query);
-  if ((filters.offset ?? 0) !== (normalized - 1) * size) {
-    filters.offset = (normalized - 1) * size;
-    page = await api.search(filters, signal);
-  }
-  const bestMatch = route.query.get("sort") === null || route.query.get("sort") === "relevance"
-    ? element("span", "natural-order", "Best match")
-    : null;
-  if (bestMatch !== null) view.append(bestMatch);
-  view.append(issueList(
-    route,
-    page.rows,
-    page.total,
-    `Nothing matches ${terms.join(" ")}.`,
-    "search",
-    facetBar(route, projects.rows, null, null, pagination(route, page.total)),
-  ));
-  return view;
-}
-
 /** accountMenu makes the identity in the upper-right a real navigation
  * control while keeping the avatar and name as its accessible label. */
 function accountMenu(): HTMLElement {
@@ -2440,7 +2401,11 @@ async function render(): Promise<void> {
   activeRenderRequest = request;
   activeListingFilter?.close();
   activeListingFilter = null;
-  const route = parseRoute();
+  let route = parseRoute();
+  if (route.path[0] === "search") {
+    history.replaceState(null, "", legacyIssueSearchHref(route.query));
+    route = parseRoute();
+  }
   for (const popover of app.querySelectorAll<HTMLElement>(":popover-open")) popover.hidePopover();
   clear(app);
   app.append(chrome());
@@ -2501,8 +2466,6 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
       return viewUsers(route, signal);
     case "tree":
       return viewTree(route.path[1] ?? "");
-    case "search":
-      return viewSearch(route, signal);
     default: {
       const view = element("div", "error");
       view.append(element("h1", "", "No such page"));

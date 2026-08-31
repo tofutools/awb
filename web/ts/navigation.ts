@@ -1,3 +1,5 @@
+import { listingFilterMaxLength } from "./listings.js";
+
 type ProjectScopedView = "ready" | "issues" | "blocked" | "projects";
 
 export interface NamedDestination {
@@ -16,8 +18,29 @@ export const namedDestinations: readonly NamedDestination[] = [
   { id: "blocked", label: "Blocked", path: "#/blocked", keywords: "dependencies waiting", projectScoped: "blocked" },
   { id: "projects", label: "Projects", path: "#/projects", keywords: "boards workspaces", projectScoped: "projects" },
   { id: "users", label: "Users", path: "#/users", keywords: "people members accounts" },
-  { id: "search", label: "Issue search", path: "#/search", keywords: "full text find tickets" },
 ];
+
+/** The Issues tab supersedes the old full-text page. Keep its hashes useful by
+ * carrying their selection into the tab's ID/title-capable filter. A result
+ * page and relevance order belonged to the old result set, so neither can be
+ * retained coherently after the migration. */
+export function legacyIssueSearchHref(current: URLSearchParams): string {
+  const query = new URLSearchParams(current);
+  const terms = query.getAll("q").map((term) => term.trim()).filter((term) => term !== "");
+  const filter = [query.get("filter")?.trim() ?? "", ...terms]
+    .filter((term) => term !== "")
+    .join(" ")
+    .slice(0, listingFilterMaxLength);
+
+  query.delete("q");
+  query.delete("page");
+  if (query.get("sort") === "relevance" || query.get("sort") === "-relevance") query.delete("sort");
+  if (filter === "") query.delete("filter");
+  else query.set("filter", filter);
+
+  const suffix = query.toString();
+  return `#/issues${suffix === "" ? "" : `?${suffix}`}`;
+}
 
 /** Primary tabs retain project scope, but not each other's other filters. */
 export function projectScopedHref(view: ProjectScopedView, current: URLSearchParams): string {
