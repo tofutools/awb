@@ -391,6 +391,52 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 	}`, stdout.String())
 }
 
+func TestDescriptionReceiptWorkflowIsTheSameOverRemoteBackend(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	_, err := be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue, err := be.CreateIssue(t.Context(), backend.IssueCreate{
+		Project: "awb", Title: "remote", Description: "old",
+	})
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_USER", "")
+	t.Setenv("AWB_PASSWORD", "")
+	t.Setenv("AWB_IDENTITY", "mikael")
+	t.Setenv("AWB_CONFIG_FILE", "")
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	run := func(args ...string) (string, int) {
+		var stdout, stderr bytes.Buffer
+		code := Execute(t.Context(), "test", openapi.New(raw), args,
+			&stdout, &stderr, strings.NewReader(""))
+		return stderr.String(), code
+	}
+
+	file := filepath.Join(t.TempDir(), "issue.md")
+	stderr, code := run("description", "get", issue.ID, "--output", file)
+	require.Equal(t, 0, code, stderr)
+	require.NoError(t, os.WriteFile(file, []byte("new"), 0o600))
+	stderr, code = run("update", issue.ID, "--description-file", file)
+	require.Equal(t, 0, code, stderr)
+
+	stored, err := be.GetIssue(t.Context(), issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new", stored.Description)
+
+	// The successful mutation made the saved entity tag stale, just as it does
+	// in direct mode; reusing the old receipt is refused by HTTP If-Match.
+	require.NoError(t, os.WriteFile(file, []byte("lost update"), 0o600))
+	stderr, code = run("update", issue.ID, "--description-file", file)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "receipt is stale")
+}
+
 // The whole user and membership surface goes over the wire and behaves as it
 // does on a file, which is what one interface with two implementations buys.
 func TestRemoteModeManagesUsers(t *testing.T) {

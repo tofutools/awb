@@ -169,7 +169,14 @@ func (b *Backend) apiError(resp *http.Response) error {
 	var payload domain.APIError
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err := json.Unmarshal(body, &payload); err == nil && payload.Error != "" {
-		return &awberr.Error{Kind: kind, Msg: payload.Error}
+		remoteErr := &awberr.Error{Kind: kind, Msg: payload.Error}
+		// Preserve the conditional-edit sentinel across HTTP so the one CLI
+		// command shared by direct and remote mode can add actionable recovery
+		// guidance without inspecting transport details or error strings.
+		if resp.StatusCode == http.StatusPreconditionFailed {
+			remoteErr.Err = awberr.ErrPreconditionFailed
+		}
+		return remoteErr
 	}
 
 	message := strings.TrimSpace(string(body))

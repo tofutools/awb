@@ -338,6 +338,7 @@ type updateParams struct {
 	Title    *string `long:"title" help:"new title"`
 	Type     *string `long:"type" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
 	Priority *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
+	Force    bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
 func newUpdateCommand(e *env) *cobra.Command {
@@ -345,6 +346,9 @@ func newUpdateCommand(e *env) *cobra.Command {
 		Use:   "update",
 		Short: "Change an issue's fields",
 		Long: "Change the title, description, type or priority.\n\n" +
+			"A description file must first be fetched with awb description get, whose\n" +
+			"receipt prevents overwriting a concurrent edit. --force deliberately\n" +
+			"replaces a description without that precondition.\n\n" +
 			"update cannot change the status or the assignee: claim, release, close and\n" +
 			"reopen are the only transitions of either, which keeps in_progress and an\n" +
 			"assignee from drifting apart and keeps a claim from being taken silently.\n\n" +
@@ -365,9 +369,12 @@ func newUpdateCommand(e *env) *cobra.Command {
 			if p.Priority != nil {
 				patch.Priority = p.Priority
 			}
-			description, err := p.value(e)
+			description, ifMatch, err := p.valueForUpdate(e, "issue", p.ID, p.Force)
 			if err != nil {
 				return err
+			}
+			if p.Force && description == nil {
+				return awberr.Usagef("--force only applies when replacing a description")
 			}
 			patch.Description = description
 
@@ -375,9 +382,13 @@ func newUpdateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			issue, err := be.UpdateIssue(cmd.Context(), p.ID, patch, "")
+			issue, err := be.UpdateIssue(cmd.Context(), p.ID, patch, ifMatch)
 			if err != nil {
-				return err
+				file := ""
+				if p.File != nil {
+					file = *p.File
+				}
+				return descriptionPreconditionError(err, "issue", p.ID, file)
 			}
 			return e.mutated(issue)
 		},

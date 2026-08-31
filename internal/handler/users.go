@@ -7,7 +7,6 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
-	"github.com/tofutools/awb/internal/local"
 )
 
 // userResponse is projectResponse for a user, whose tag is built from their
@@ -15,7 +14,7 @@ import (
 // exactly as a new relation does not invalidate an issue's.
 func userResponse(user *domain.User) *api.UserHeaders {
 	return &api.UserHeaders{
-		Etag:     api.NewOptString(local.ETag(user.UpdatedAt)),
+		Etag:     api.NewOptString(backend.ETag(user.UpdatedAt)),
 		Response: toUser(user),
 	}
 }
@@ -45,7 +44,7 @@ func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate) (
 		return nil, err
 	}
 	return &api.UserCreatedHeaders{
-		Etag:     api.NewOptString(local.ETag(user.UpdatedAt)),
+		Etag:     api.NewOptString(backend.ETag(user.UpdatedAt)),
 		Location: api.NewOptString("/api/users/" + user.Name),
 		Response: toUser(user),
 	}, nil
