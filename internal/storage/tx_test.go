@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -63,6 +65,61 @@ func TestCancelledWriteAfterStatementFailureDoesNotPoisonConnection(t *testing.T
 	})
 	require.Error(t, err)
 	assertPoolRemainsUsable(t, db)
+}
+
+func TestCancelledHTTPRequestDoesNotPoisonConnection(t *testing.T) {
+	db := newTxTestDB(t)
+	transactionStarted := make(chan struct{})
+	requestFinished := make(chan error, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/cancel", func(_ http.ResponseWriter, r *http.Request) {
+		err := db.Read(r.Context(), func(*Tx) error {
+			close(transactionStarted)
+			<-r.Context().Done()
+			return r.Context().Err()
+		})
+		requestFinished <- err
+	})
+	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
+		if err := db.Write(r.Context(), func(tx *Tx) error {
+			return tx.InsertProject("healthy", "Healthy", "")
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := db.Read(r.Context(), func(tx *Tx) error {
+			_, err := tx.GetProject("healthy")
+			return err
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/cancel", nil)
+	require.NoError(t, err)
+	response := make(chan error, 1)
+	go func() {
+		resp, doErr := server.Client().Do(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		response <- doErr
+	}()
+	<-transactionStarted
+	cancel()
+	require.ErrorIs(t, <-response, context.Canceled)
+	require.ErrorIs(t, <-requestFinished, context.Canceled)
+
+	resp, err := server.Client().Get(server.URL + "/healthy")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func TestCommitFailureRollsBackConnection(t *testing.T) {
