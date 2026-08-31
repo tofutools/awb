@@ -829,6 +829,57 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .autocomplete-option-label { font-family: var(--mono); font-size: 0.85em; }
 .autocomplete-option-detail { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .autocomplete-status { padding: 0.55rem; color: var(--muted); font-size: 0.85em; }
+.attachment-editor, .relation-editor { display: block; margin: 0.25rem 0 0.75rem; }
+.attachment-picker, .relation-disclosure {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.attachment-picker:hover, .attachment-picker:focus-within,
+.relation-disclosure:hover, .relation-disclosure:focus-visible { color: var(--fg); }
+.attachment-picker:focus-within, .relation-disclosure:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.attachment-picker .icon, .relation-disclosure .icon { width: 1rem; height: 1rem; }
+.attachment-browse, .relation-disclosure { color: var(--accent); }
+.attachment-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.attachment-editor.drag-active .attachment-picker { color: var(--accent); }
+.relation-disclosure-row, .relation-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+.relation-disclosure-row[hidden], .relation-fields[hidden] { display: none; }
+.relation-hint { color: var(--muted); font-size: 0.85em; }
+.relation-fields { gap: 0.5rem; }
+.quiet-action {
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.quiet-action:hover { color: var(--fg); }
+.quiet-action:disabled { opacity: 0.55; cursor: wait; }
 .check-field { display: inline-flex; gap: 0.35rem; align-items: center; color: var(--muted); font-size: 0.85em; }
 .sidebar-editor { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
 .sidebar-editor.sidebar-edit-control { display: none; }
