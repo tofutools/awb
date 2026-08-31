@@ -14,6 +14,7 @@ import {
   type Issue,
   type IssueTree,
   type Project,
+  type User,
 } from "./api.js";
 import {
   emptyFacetLabel,
@@ -33,6 +34,7 @@ import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { configureSearchBox } from "./search.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import { navigationPath, projectScopedHref } from "./navigation.js";
+import { accountRoles } from "./profile.js";
 import {
   formatUpdated,
   readUpdatedDisplay,
@@ -1213,6 +1215,42 @@ function searchBox(): HTMLElement {
   return form;
 }
 
+/** accountMenu makes the identity in the upper-right a real navigation
+ * control while keeping the avatar and name as its accessible label. */
+function accountMenu(): HTMLElement {
+  const account = element("span", "account-menu");
+  const button = element("button", "identity") as HTMLButtonElement;
+  button.type = "button";
+  button.setAttribute("aria-label", `Open menu for @${identity}`);
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-haspopup", "menu");
+  button.append(avatar(identity), element("span", "identity-name", `@${identity}`));
+
+  const menu = element("div", "account-popover");
+  menu.setAttribute("popover", "auto");
+  menu.setAttribute("role", "menu");
+  const profile = link("#/profile", "Profile", "account-menu-item");
+  profile.setAttribute("role", "menuitem");
+  menu.append(profile);
+
+  button.addEventListener("click", () => {
+    if (menu.matches(":popover-open")) {
+      menu.hidePopover();
+      return;
+    }
+    menu.showPopover();
+    const anchor = button.getBoundingClientRect();
+    const bounds = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+    menu.style.top = `${anchor.bottom + 6}px`;
+  });
+  menu.addEventListener("toggle", () => {
+    button.setAttribute("aria-expanded", String(menu.matches(":popover-open")));
+  });
+  account.append(button, menu);
+  return account;
+}
+
 function chrome(): HTMLElement {
   const header = element("header", "app-header");
   const nav = element("nav");
@@ -1235,12 +1273,110 @@ function chrome(): HTMLElement {
   header.append(brand);
   header.append(nav);
   header.append(searchBox());
-  if (identity !== "") {
-    const account = element("span", "identity");
-    account.append(avatar(identity), element("span", "identity-name", `@${identity}`));
-    header.append(account);
-  }
+  if (identity !== "") header.append(accountMenu());
   return header;
+}
+
+function profileProjectList(user: User, projects: Project[]): HTMLElement {
+  const list = element("ul", "profile-projects");
+  const memberships = new Map(user.projects.map((membership) => [membership.project, membership.access]));
+  for (const project of projects) {
+    const item = element("li", "profile-project");
+    const query = new URLSearchParams({ project: project.key });
+    item.append(link(`#/issues?${query.toString()}`, project.key, "profile-project-name"));
+    if (project.name !== "") item.append(element("span", "profile-project-title", project.name));
+    const access = user.project_admin ? "admin" : memberships.get(project.key);
+    if (access !== undefined) item.append(element("span", "listing-badge", access));
+    list.append(item);
+  }
+  if (projects.length === 0) list.append(element("li", "empty", "No project access."));
+  return list;
+}
+
+function passwordForm(user: User): HTMLFormElement {
+  const form = element("form", "profile-password-form") as HTMLFormElement;
+  const passwordID = "profile-new-password";
+  const confirmationID = "profile-confirm-password";
+  const password = document.createElement("input");
+  password.id = passwordID;
+  password.type = "password";
+  password.name = "password";
+  password.required = true;
+  password.maxLength = 72;
+  password.autocomplete = "new-password";
+  const confirmation = password.cloneNode() as HTMLInputElement;
+  confirmation.id = confirmationID;
+  confirmation.name = "confirmation";
+  const submit = element("button", "profile-submit", "Change password") as HTMLButtonElement;
+  submit.type = "submit";
+  const message = element("p", "profile-form-message");
+  message.setAttribute("aria-live", "polite");
+  form.append(
+    element("label", "", "New password"),
+    password,
+    element("label", "", "Confirm new password"),
+    confirmation,
+    submit,
+    message,
+  );
+  (form.children[0] as HTMLLabelElement).htmlFor = passwordID;
+  (form.children[2] as HTMLLabelElement).htmlFor = confirmationID;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message.className = "profile-form-message";
+    if (password.value !== confirmation.value) {
+      message.classList.add("form-error");
+      message.textContent = "The passwords do not match.";
+      confirmation.focus();
+      return;
+    }
+    submit.disabled = true;
+    message.textContent = "";
+    try {
+      await api.updateUser(user.name, { password: password.value });
+      form.reset();
+      message.textContent = "Password changed.";
+    } catch (error) {
+      message.classList.add("form-error");
+      message.textContent = error instanceof ApiError ? error.message : String(error);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  return form;
+}
+
+async function viewProfile(): Promise<HTMLElement> {
+  if (identity === "") throw new Error("No authenticated user is available.");
+  const [user, projects] = await Promise.all([api.user(identity), api.projects()]);
+  const view = element("div", "profile-view");
+  const heading = element("div", "profile-heading");
+  heading.append(avatar(user.name, "profile-avatar"));
+  const title = element("div");
+  title.append(element("h1", "", `@${user.name}`), element("p", "lede", "Your account and access"));
+  heading.append(title);
+  view.append(heading);
+
+  const roles = element("div", "profile-roles");
+  for (const role of accountRoles(user)) roles.append(element("span", "listing-badge", role));
+  const details = element("section", "profile-card");
+  details.append(element("h2", "", "Account status"), roles);
+  const facts = element("dl", "profile-facts");
+  const fact = (label: string, value: string): void => {
+    facts.append(element("dt", "", label), element("dd", "", value));
+  };
+  fact("Username", user.name);
+  fact("Created", user.created_at);
+  fact("Updated", user.updated_at);
+  details.append(facts);
+
+  const access = element("section", "profile-card");
+  access.append(element("h2", "", "Project access"), profileProjectList(user, projects.rows));
+  const security = element("section", "profile-card");
+  security.append(element("h2", "", "Password"), passwordForm(user));
+  view.append(details, access, security);
+  return view;
 }
 
 async function render(): Promise<void> {
@@ -1275,6 +1411,8 @@ async function routeView(route: Route): Promise<HTMLElement> {
       return viewListing(route, "blocked");
     case "projects":
       return viewProjects(route);
+    case "profile":
+      return viewProfile();
     case "tree":
       return viewTree(route.path[1] ?? "");
     case "search":

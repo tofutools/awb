@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { blockedFilters, facetFilters, readyFilters, toQuery } from "../../static/api.js";
+import { api, blockedFilters, facetFilters, readyFilters, toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");
@@ -46,6 +46,26 @@ test("several filters combine", () => {
   assert.deepEqual(params.getAll("project"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
   assert.equal(params.get("include-closed"), "true");
+});
+
+test("the current user can read and update a safely encoded account path", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ name: "a/b" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  await api.user("a/b");
+  await api.updateUser("a/b", { password: "changed" });
+
+  assert.equal(calls[0].path, "api/users/a%2Fb");
+  assert.equal(calls[1].path, "api/users/a%2Fb");
+  assert.equal(calls[1].init.method, "PATCH");
+  assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
+  assert.equal(calls[1].init.body, JSON.stringify({ password: "changed" }));
 });
 
 // Every listing is asked with the filters it accepts. Regression: the listing
