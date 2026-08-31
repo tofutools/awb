@@ -180,9 +180,9 @@ in a description are parsed, not stored.
 release, close, reopen — are the only things that move either, and the general
 update operation can move neither. An issue is in progress while at least one
 person is assigned; claim joins the ordered set, release removes the caller,
-and the last release returns it to open. The database retains a scalar first
-assignee as a compatibility projection, constrained together with status, and
-the assignment rows and projection move in the same write transaction.
+and the last release returns it to open. Assignment rows and status move in the
+same write transaction, and storage refuses a write where their emptiness and
+the requested status disagree.
 
 ### Readiness
 
@@ -280,10 +280,9 @@ by anyone with a SQLite shell. A binary refuses a database newer than it
 understands rather than operating on a schema it does not know.
 
 **Invariants live in the database where they can.** Constraints enforce the
-status/first-assignee projection pairing, the priority range, the enumerations
-and the at-most-one-parent rule. The complete assignment set spans two tables,
-so transitions update its rows and scalar projection together inside the same
-`BEGIN IMMEDIATE` transaction.
+priority range, the enumerations and the at-most-one-parent rule. The status and
+assignment set span two tables, so storage validates their pairing and
+transitions update both inside the same `BEGIN IMMEDIATE` transaction.
 
 Full text search is a SQLite full-text index over titles and descriptions, kept
 in sync by triggers. Search terms are always literal: no operator, wildcard or
@@ -446,9 +445,7 @@ Two decisions there are worth stating. Status transitions are endpoints rather
 than fields in a general update, and labels are added and removed individually,
 both because a whole-object write would silently discard a concurrent edit.
 Assignment is additive for the same reason: a claim joins without overwriting
-the current set. The version 1 scalar `assignee` remains the first entry in JSON,
-while `assignees` carries the complete set; its optional compare-and-set keeps
-the old optimistic-concurrency contract available.
+the current set, and `assignees` carries that complete set.
 
 ### Web UI
 

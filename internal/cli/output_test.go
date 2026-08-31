@@ -28,7 +28,7 @@ func sample() []domain.Issue {
 			Title:  "Ship the 1.0 release of the widget catalogue",
 			Labels: []string{"release"}},
 		{ID: "demo-992e3c", Priority: 0, Status: domain.StatusInProgress, Type: "bug",
-			Title: "Catalogue page crashes on an empty result set", Assignee: "bob",
+			Title:     "Catalogue page crashes on an empty result set",
 			Assignees: []string{"bob", "carol"}, Labels: []string{"catalogue", "frontend"}},
 		{ID: "demo-bff7dc", Priority: 2, Status: domain.StatusOpen, Type: "feature",
 			Title: "Search the catalogue by name and tag", Blocked: true,

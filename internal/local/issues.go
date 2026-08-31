@@ -41,20 +41,11 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 	}
 
-	// Creating with assignees is an atomic create-and-claim. The version 1
-	// singular spelling remains accepted, but callers may not mix the forms.
-	if req.Assignee != "" && len(req.Assignees) > 0 {
-		return nil, awberr.Usagef("assignee and assignees are mutually exclusive")
-	}
-	requestedAssignees := req.Assignees
-	if req.Assignee != "" {
-		requestedAssignees = []string{req.Assignee}
-	}
-	if issue.Assignees, err = validateAssignees(requestedAssignees); err != nil {
+	// Creating with assignees is an atomic create-and-claim.
+	if issue.Assignees, err = validateAssignees(req.Assignees); err != nil {
 		return nil, err
 	}
 	if len(issue.Assignees) > 0 {
-		issue.Assignee = issue.Assignees[0]
 		issue.Status = domain.StatusInProgress
 	}
 
@@ -275,9 +266,6 @@ func checkUnchanged(issue *domain.Issue, req backend.IssuePatch) error {
 	if req.ExpectStatus != nil && *req.ExpectStatus != issue.Status {
 		return awberr.Usagef(
 			"status cannot be changed here: use claim, release, close or reopen")
-	}
-	if req.ExpectAssignee != nil && *req.ExpectAssignee != issue.Assignee {
-		return awberr.Usagef("assignee cannot be changed here: use claim or release")
 	}
 	if req.ExpectAssignees != nil && !slices.Equal(*req.ExpectAssignees, issue.Assignees) {
 		return awberr.Usagef("assignees cannot be changed here: use claim or release")

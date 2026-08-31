@@ -90,6 +90,7 @@ func TestV5MigratesCloseReasonsWithoutLosingData(t *testing.T) {
 	}
 	require.NoError(t, rows.Close())
 	assert.NotContains(t, columns, "close_reason")
+	assert.NotContains(t, columns, "assignee")
 
 	var kind, actor, body, action, changes, createdAt string
 	require.NoError(t, db.SQL().QueryRowContext(t.Context(),

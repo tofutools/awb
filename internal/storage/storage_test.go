@@ -70,7 +70,7 @@ func TestInsertAndGetIssue(t *testing.T) {
 	assert.Equal(t, domain.TypeBug, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 1, issue.Priority)
-	assert.Empty(t, issue.Assignee)
+	assert.Empty(t, issue.Assignees)
 	assert.False(t, issue.Blocked)
 
 	// Derived fields are always present and never null.
@@ -98,8 +98,8 @@ func TestGetIssueNotFound(t *testing.T) {
 	assert.Equal(t, 3, exitOf(err))
 }
 
-// Storage rejects a status, compatibility projection and assignment set that
-// disagree, whichever caller constructs the write.
+// Storage rejects a status and assignment set that disagree, whichever caller
+// constructs the write.
 func TestStatusAssigneeInvariantIsEnforcedByStorage(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
@@ -110,20 +110,12 @@ func TestStatusAssigneeInvariantIsEnforcedByStorage(t *testing.T) {
 		fields storage.IssueFields
 		ok     bool
 	}{
-		{"open with no assignee", fields(domain.StatusOpen, ""), true},
+		{"open with no assignee", fields(domain.StatusOpen), true},
 		{"open with an assignee", fields(domain.StatusOpen, "claude-1"), false},
 		{"in_progress with an assignee", fields(domain.StatusInProgress, "claude-1"), true},
-		{"in_progress with none", fields(domain.StatusInProgress, ""), false},
+		{"in_progress with none", fields(domain.StatusInProgress), false},
 		{"closed with an assignee", fields(domain.StatusClosed, "claude-1"), true},
-		{"closed with none", fields(domain.StatusClosed, ""), true},
-		{"projection differs from first assignee", storage.IssueFields{
-			Title: "t", Type: domain.TypeTask, Priority: 2, Status: domain.StatusInProgress,
-			Assignee: "claude-1", Assignees: []string{"claude-2"},
-		}, false},
-		{"projection exists without assignment rows", storage.IssueFields{
-			Title: "t", Type: domain.TypeTask, Priority: 2, Status: domain.StatusClosed,
-			Assignee: "claude-1",
-		}, false},
+		{"closed with none", fields(domain.StatusClosed), true},
 	}
 
 	for _, tc := range cases {
@@ -144,14 +136,10 @@ func TestStatusAssigneeInvariantIsEnforcedByStorage(t *testing.T) {
 	}
 }
 
-func fields(status domain.Status, assignee string) storage.IssueFields {
-	var assignees []string
-	if assignee != "" {
-		assignees = []string{assignee}
-	}
+func fields(status domain.Status, assignees ...string) storage.IssueFields {
 	return storage.IssueFields{
 		Title: "t", Type: domain.TypeTask, Priority: 2,
-		Status: status, Assignee: assignee, Assignees: assignees,
+		Status: status, Assignees: assignees,
 	}
 }
 
@@ -752,7 +740,6 @@ func TestAssigneeFacetsHaveNoEmptyRow(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	assigned := add("a", func(i *domain.Issue) {
-		i.Assignee = "claude-1"
 		i.Assignees = []string{"claude-1", "claude-2"}
 		i.Status = domain.StatusInProgress
 	})

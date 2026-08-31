@@ -163,11 +163,7 @@ paths:
       operationId: claimIssue
       summary: Atomically add an assignee and set status to in_progress
       description: |
-        A compare-and-set. `expect_assignee`, when present, makes the claim
-        proceed only if the current assignee is exactly that value, so two
-        agents racing on the compatibility projection can detect the change.
-        Without that precondition, claim adds the named assignee and preserves
-        everyone already assigned.
+        Claim adds the named assignee and preserves everyone already assigned.
       requestBody:
         content:
           application/json:
@@ -912,7 +908,7 @@ paths:
         The authenticated username, or the fixed identity of a server that
         authenticates nobody. It is the one thing a browser UI cannot resolve
         for itself, and without it no UI could offer "my issues", show that an
-        issue is held by *this* user, or fill in `expect_assignee`.
+        issue is held by *this* user.
 
         It is read-only and says nothing about what the caller may do. That is
         `GET /api/users/{name}`, which a user may always call for themselves,
@@ -1537,7 +1533,7 @@ components:
       additionalProperties: false
       required:
         [id, project, title, description, type, status, priority, labels,
-         assignee, assignees, created_at, updated_at, blocked, blockers,
+         assignees, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
@@ -1563,11 +1559,6 @@ components:
           type: array
           description: Sorted.
           items: { $ref: '#/components/schemas/Label' }
-        assignee:
-          type: string
-          description: |
-            Compatibility projection for version 1 clients: the first
-            assignee, or empty when unassigned. New clients use `assignees`.
         assignees:
           type: array
           description: The complete assignment set, in claim order.
@@ -1775,16 +1766,10 @@ components:
         description: { type: string }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
-        assignee:
-          allOf: [$ref: '#/components/schemas/Assignee']
-          description: |
-            A non-empty assignee sets `status` to `in_progress`, making creation
-            an atomic create-and-claim.
         assignees:
           type: array
           description: |
-            Assign all of these people atomically at creation. Mutually
-            exclusive with the singular compatibility field `assignee`.
+            Assign all of these people atomically at creation.
           items: { $ref: '#/components/schemas/Assignee' }
         labels:
           type: array
@@ -1807,7 +1792,7 @@ components:
       description: |
         Takes only what `awb update` can change.
 
-        `labels`, `status`, `assignee` and `assignees` may appear but may not
+        `labels`, `status` and `assignees` may appear but may not
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
@@ -1833,7 +1818,6 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Label' }
         status: { $ref: '#/components/schemas/Status' }
-        assignee: { type: string }
         assignees:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
@@ -1857,12 +1841,6 @@ components:
             Who joins the issue. May be omitted, in which case the request's
             identity is used. Claiming is idempotent and does not remove any
             existing assignee.
-        expect_assignee:
-          type: string
-          description: |
-            The compare-and-set. When present, the claim proceeds only if the
-            current assignee is exactly this value, `""` meaning unassigned, and
-            otherwise answers 409.
         force:
           type: boolean
           default: false

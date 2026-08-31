@@ -11,7 +11,7 @@ import (
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
 const issueColumns = `id, project, title, description, type, status, priority,
-	assignee, created_at, updated_at`
+	created_at, updated_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -20,7 +20,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.Assignee, &i.CreatedAt, &i.UpdatedAt)
+		&i.Priority, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -268,11 +268,7 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
 	assignees := issue.Assignees
-	if len(assignees) == 0 && issue.Assignee != "" {
-		// The singular form is the version 1 input representation.
-		assignees = []string{issue.Assignee}
-	}
-	if err := validateAssignment(issue.Status, issue.Assignee, assignees); err != nil {
+	if err := validateAssignment(issue.Status, assignees); err != nil {
 		return err
 	}
 
@@ -285,10 +281,9 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.Assignee,
-			issue.CreatedAt, issue.UpdatedAt)
+			issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
 			for position, assignee := range assignees {
 				if _, err := t.q.ExecContext(t.ctx,
@@ -319,7 +314,6 @@ type IssueFields struct {
 	Type        domain.Type
 	Status      domain.Status
 	Priority    int
-	Assignee    string
 	Assignees   []string
 }
 
@@ -327,7 +321,7 @@ type IssueFields struct {
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignee: i.Assignee, Assignees: slices.Clone(i.Assignees),
+		Priority: i.Priority, Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -335,13 +329,13 @@ func Fields(i *domain.Issue) IssueFields {
 // when something actually changed. A write that changes nothing leaves the
 // timestamp alone.
 func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
-	if err := validateAssignment(fields.Status, fields.Assignee, fields.Assignees); err != nil {
+	if err := validateAssignment(fields.Status, fields.Assignees); err != nil {
 		return err
 	}
 	before := Fields(issue)
 	if before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
-		before.Priority == fields.Priority && before.Assignee == fields.Assignee &&
+		before.Priority == fields.Priority &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
@@ -350,10 +344,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
 		   SET title = ?, description = ?, type = ?, status = ?, priority = ?,
-		       assignee = ?, updated_at = ?
+		       updated_at = ?
 		 WHERE id = ?`,
 		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority,
-		fields.Assignee, updated, issue.ID)
+		updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
@@ -376,18 +370,13 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
-	issue.Assignee = fields.Assignee
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil
 }
 
-func validateAssignment(status domain.Status, projection string, assignees []string) error {
+func validateAssignment(status domain.Status, assignees []string) error {
 	switch {
-	case len(assignees) == 0 && projection != "":
-		return awberr.Runtimef("refusing to store an inconsistent issue: assignee projection has no assignment row")
-	case len(assignees) > 0 && projection != assignees[0]:
-		return awberr.Runtimef("refusing to store an inconsistent issue: assignee projection is not the first assignment")
 	case status == domain.StatusOpen && len(assignees) > 0:
 		return awberr.Runtimef("refusing to store an inconsistent issue: open issue has assignees")
 	case status == domain.StatusInProgress && len(assignees) == 0:

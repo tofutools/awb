@@ -59,7 +59,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		c.add("i.priority <= ?", *f.PriorityMax)
 	}
 	if f.Unassigned {
-		c.add("i.assignee = ''")
+		c.add("NOT EXISTS (SELECT 1 FROM issue_assignees a WHERE a.issue = i.id)")
 	} else if len(f.Assignees) > 0 {
 		c.add(`i.id IN (SELECT issue FROM issue_assignees
 		                 WHERE assignee IN (`+placeholders(len(f.Assignees))+`))`,

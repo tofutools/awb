@@ -307,7 +307,7 @@ func TestJSONMutationsPrintTheObject(t *testing.T) {
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("claim", id, "--json")), &issue))
 	assert.Equal(t, domain.StatusInProgress, issue.Status)
-	assert.Equal(t, "mikael", issue.Assignee)
+	assert.Equal(t, []string{"mikael"}, issue.Assignees)
 
 	// A deleting command prints the object as it was immediately before deletion,
 	// relations included.
@@ -797,8 +797,8 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 		for _, label := range issue.Labels {
 			labels[label] = true
 		}
-		if issue.Assignee != "" {
-			assignees[issue.Assignee] = true
+		for _, assignee := range issue.Assignees {
+			assignees[assignee] = true
 		}
 		links += len(issue.Links)
 		// More than links: a description that exercises the Markdown a terminal

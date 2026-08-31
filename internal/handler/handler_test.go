@@ -219,7 +219,6 @@ func TestPatchIssue(t *testing.T) {
 	// And rejected when they differ.
 	for _, body := range []string{
 		`{"status":"closed"}`,
-		`{"assignee":"claude-1"}`,
 		`{"assignees":["claude-1"]}`,
 		`{"labels":["a"]}`,
 	} {
@@ -314,20 +313,6 @@ func TestDeleteCarriesNoETag(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-// The compare-and-set of claim: two agents racing cannot both win.
-func TestClaimCompareAndSet(t *testing.T) {
-	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
-
-	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
-		`{"assignee":"claude-1","expect_assignee":""}`)
-	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-
-	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
-		`{"assignee":"claude-2","expect_assignee":""}`)
-	assert.Equal(t, http.StatusConflict, resp.StatusCode, payload)
-}
-
 // assignee may be omitted, in which case the request's identity is used.
 func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 	a := newAPI(t)
@@ -338,13 +323,12 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 
 	var claimed domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &claimed))
-	assert.Equal(t, "mikael", claimed.Assignee)
+	assert.Equal(t, []string{"mikael"}, claimed.Assignees)
 }
 
 func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t","assignees":["alice","bob"]}`)
-	assert.Equal(t, "alice", issue.Assignee)
 	assert.Equal(t, []string{"alice", "bob"}, issue.Assignees)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
@@ -694,7 +678,7 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t","labels":["a","b"]}`)
 
-	// Claim it, so the stored status and assignee differ from what a client
+	// Claim it, so the stored status and assignees differ from what a client
 	// that read it earlier would send back.
 	_, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", `{"assignee":"claude-1"}`)
 	require.Contains(t, payload, "in_progress")
@@ -702,7 +686,7 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 	// A patch carrying the stale values is refused, not silently applied.
 	for _, body := range []string{
 		`{"title":"x","status":"open"}`,
-		`{"title":"x","assignee":""}`,
+		`{"title":"x","assignees":[]}`,
 		`{"title":"x","labels":["a"]}`,
 	} {
 		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
@@ -716,7 +700,7 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 
 	// Carrying the current values is fine, so a UI can send back what it read.
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
-		`{"title":"renamed","status":"in_progress","assignee":"claude-1","labels":["b","a"]}`)
+		`{"title":"renamed","status":"in_progress","assignees":["claude-1"],"labels":["b","a"]}`)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"title":"renamed"`)
 }
@@ -811,7 +795,7 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	// Nothing above changed the issue.
 	_, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
 	assert.Contains(t, payload, `"status":"closed"`)
-	assert.Contains(t, payload, `"assignee":""`)
+	assert.Contains(t, payload, `"assignees":[]`)
 }
 
 // A body that holds no JSON value is refused even where the body is optional:
@@ -831,7 +815,7 @@ func TestWhitespaceBodyIsRefusedWhereABodyIsOptional(t *testing.T) {
 
 	var claimed domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &claimed))
-	assert.Equal(t, "mikael", claimed.Assignee, "the request's identity, as with no body")
+	assert.Equal(t, []string{"mikael"}, claimed.Assignees, "the request's identity, as with no body")
 }
 
 // The attachment endpoints. The upload's body is the file's bytes and

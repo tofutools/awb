@@ -28,7 +28,6 @@ func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 		Description: req.Description.Or(""),
 		Type:        domain.Type(req.Type.Or("")),
 		Priority:    optPriority(req.Priority),
-		Assignee:    string(req.Assignee.Or("")),
 		Assignees:   fromAssignees(req.Assignees),
 		Labels:      fromLabels(req.Labels),
 	}
@@ -86,8 +85,7 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 		Type:        optType(req.Type),
 		Priority:    optPriority(req.Priority),
 
-		ExpectStatus:   optStatus(req.Status),
-		ExpectAssignee: optString(req.Assignee),
+		ExpectStatus: optStatus(req.Status),
 	}
 	if req.Assignees != nil {
 		assignees := fromAssignees(req.Assignees)
@@ -137,9 +135,8 @@ func (h *Handler) ClaimIssue(ctx context.Context, req api.OptClaimRequest,
 	}
 
 	issue, err := be.Claim(ctx, params.ID, backend.ClaimRequest{
-		Assignee:       assignee,
-		ExpectAssignee: optString(body.ExpectAssignee),
-		Force:          body.Force.Or(false),
+		Assignee: assignee,
+		Force:    body.Force.Or(false),
 	}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err

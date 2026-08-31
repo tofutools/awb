@@ -67,6 +67,13 @@ type demoIssue struct {
 	attachments []demoAttachment
 }
 
+func assigneeSlice(assignee string) []string {
+	if assignee == "" {
+		return nil
+	}
+	return []string{assignee}
+}
+
 // demoAttachment is one file of the demo data set. Its content type is left to
 // the sniffing rule, exactly as awb attach add without --content-type leaves
 // it, so the demo exercises that too.
@@ -314,7 +321,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 			Description: d.description,
 			Type:        d.issueType,
 			Priority:    &priority,
-			Assignee:    d.assignee,
+			Assignees:   assigneeSlice(d.assignee),
 			Labels:      d.labels,
 			Relations:   relations,
 		})

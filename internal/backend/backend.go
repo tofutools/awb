@@ -211,12 +211,7 @@ type IssueCreate struct {
 	Description string
 	Type        domain.Type
 	Priority    *int
-	// A non-empty Assignee makes creation an atomic create-and-claim: it also
-	// sets status to in_progress, so a new issue is never open and assigned at
-	// once.
-	Assignee string
-	// Assignees permits an atomic create-and-claim by several people. Assignee
-	// is the version 1 spelling for a single entry; callers give only one form.
+	// Assignees permits an atomic create-and-claim by several people.
 	Assignees []string
 	Labels    []string
 	// Relations are read with the new issue as the subject, exactly as awb
@@ -243,7 +238,7 @@ type IssuePatch struct {
 	Type        *domain.Type
 	Priority    *int
 
-	// The four fields below may appear in a request but may not change: each
+	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,
 	// because labels are mutated individually and the transitions are their
 	// own operations. Together with the rule that derived fields are ignored,
@@ -256,7 +251,6 @@ type IssuePatch struct {
 	// could make a stale value pass.
 	ExpectLabels    *[]string
 	ExpectStatus    *domain.Status
-	ExpectAssignee  *string
 	ExpectAssignees *[]string
 }
 
@@ -279,11 +273,6 @@ type ClaimRequest struct {
 	// Assignee names who takes the issue. The CLI always states it explicitly, so
 	// that a remote claim records exactly what a local one would.
 	Assignee string
-	// ExpectAssignee is the compare-and-set: when non-nil the claim proceeds only
-	// if the current assignee is exactly that value, "" meaning unassigned, and
-	// otherwise conflicts. It is what stops two agents racing for the same issue
-	// from both winning.
-	ExpectAssignee *string
 	// Force overrides a refusal on an issue that is held by somebody else,
 	// blocked, or closed.
 	Force bool

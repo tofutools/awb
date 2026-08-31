@@ -25,20 +25,7 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 	if err != nil {
 		return nil, err
 	}
-	if req.ExpectAssignee != nil && *req.ExpectAssignee != "" {
-		if _, err := domain.ValidateAssignee(*req.ExpectAssignee); err != nil {
-			return nil, err
-		}
-	}
-
 	return b.mutate(ctx, ref, ifMatch, "claimed", "", func(tx *storage.Tx, issue *domain.Issue) error {
-		// The compare-and-set, checked inside the write lock, so two agents racing
-		// for the same issue cannot both win.
-		if req.ExpectAssignee != nil && issue.Assignee != *req.ExpectAssignee {
-			return awberr.Conflictf("%s is assigned to %q, not to %q",
-				issue.ID, issue.Assignee, *req.ExpectAssignee)
-		}
-
 		if !req.Force {
 			if issue.Status == domain.StatusClosed {
 				return awberr.Conflictf("%s is closed", issue.ID)
@@ -52,14 +39,10 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 		if req.Force && issue.Status == domain.StatusClosed {
 			// A closed issue's assignees are a historical record. Reclaiming it starts
 			// a new active assignment rather than reviving everyone who completed it.
-			fields.Assignee = ""
 			fields.Assignees = nil
 		}
 		if !slices.Contains(fields.Assignees, assignee) {
 			fields.Assignees = append(fields.Assignees, assignee)
-		}
-		if fields.Assignee == "" {
-			fields.Assignee = assignee
 		}
 		fields.Status = domain.StatusInProgress
 		return tx.UpdateIssue(issue, fields)
@@ -103,10 +86,8 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 				func(a string) bool { return a == req.Assignee })
 		}
 		if len(fields.Assignees) == 0 {
-			fields.Assignee = ""
 			fields.Status = domain.StatusOpen
 		} else {
-			fields.Assignee = fields.Assignees[0]
 			fields.Status = domain.StatusInProgress
 		}
 		return tx.UpdateIssue(issue, fields)
@@ -150,7 +131,6 @@ func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issu
 		}
 		fields := storage.Fields(issue)
 		fields.Status = domain.StatusOpen
-		fields.Assignee = ""
 		fields.Assignees = nil
 		return tx.UpdateIssue(issue, fields)
 	})
