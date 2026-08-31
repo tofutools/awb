@@ -383,11 +383,17 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	// Carol's old assignment remains visible even though she has no current
 	// access to awb, as does Erin through the same multi-assignee issue. Carol's
 	// unrelated web membership must not come with it.
-	_, err := root.CreateIssue(ctx, backend.IssueCreate{
+	issue, err := root.CreateIssue(ctx, backend.IssueCreate{
 		Project: "awb", Title: "Parser crashes", Assignees: []string{"carol", "erin"},
 	})
 	require.NoError(t, err)
+	_, err = root.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
 	grant(t, root, ctx, "web", "carol", domain.AccessRegular)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{
+		Project: "web", Title: "Private redesign", Assignees: []string{"carol"},
+	})
+	require.NoError(t, err)
 
 	page, err := root.WithUser("alice").ListUsers(ctx, nil, nil)
 	require.NoError(t, err)
@@ -399,6 +405,9 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	require.Len(t, page.Users[1].Projects, 1)
 	assert.Equal(t, "awb", page.Users[1].Projects[0].Project)
 	assert.Empty(t, page.Users[2].Projects, "carol's hidden web membership is not disclosed")
+	assert.Equal(t, []string{"awb"}, page.Users[2].ActivityProjects,
+		"a closed issue remains activity history without disclosing hidden activity")
+	assert.Equal(t, []string{"awb"}, page.Users[3].ActivityProjects)
 
 	// A user administrator retains the complete management listing.
 	all, err := root.WithUser("dana").ListUsers(ctx, nil, nil)

@@ -29,6 +29,7 @@ export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
+export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
@@ -237,7 +238,7 @@ export const api = {
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: (filters: ProjectFilters = {}) => getPage<Project>(`api/projects${toQuery(filters)}`),
-  users: (filters: UserFilters = {}) => getPage<User>(`api/users${toQuery(filters)}`),
+  users: (filters: UserFilters = {}) => getPage<DirectoryUser>(`api/users${toQuery(filters)}`),
   project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
   updateProject: (key: string, patch: ProjectPatch) =>
     patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),

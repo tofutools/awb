@@ -11,6 +11,7 @@ import {
   type Activity,
   type Facet,
   type Filters,
+  type DirectoryUser,
   type Issue,
   type IssueTree,
   type Project,
@@ -1000,11 +1001,11 @@ async function viewProjects(route: Route): Promise<HTMLElement> {
   return view;
 }
 
-function userTable(users: User[]): HTMLElement {
+function userTable(users: DirectoryUser[]): HTMLElement {
   const table = element("table", "listing-table user-table") as HTMLTableElement;
   const head = document.createElement("thead");
   const heading = document.createElement("tr");
-  for (const label of ["User", "Projects", "Roles"]) {
+  for (const label of ["User", "Memberships", "Activity", "Roles"]) {
     const th = document.createElement("th");
     th.scope = "col";
     th.textContent = label;
@@ -1023,18 +1024,27 @@ function userTable(users: User[]): HTMLElement {
     userCell.append(name);
     row.append(userCell);
 
-    const projects = document.createElement("td");
-    projects.dataset.label = "Projects";
-    const projectList = element("div", "user-projects");
+    const memberships = document.createElement("td");
+    memberships.dataset.label = "Memberships";
+    const membershipList = element("div", "user-projects");
     for (const membership of user.projects) {
-      const project = link(`#/issues?project=${encodeURIComponent(membership.project)}`, membership.project,
-        "listing-badge user-project");
+      const project = element("span", "listing-badge user-project", membership.project);
       project.title = `${membership.access} access`;
-      projectList.append(project);
+      membershipList.append(project);
     }
-    if (user.projects.length === 0) projectList.append(element("span", "muted", "—"));
-    projects.append(projectList);
-    row.append(projects);
+    if (user.projects.length === 0) membershipList.append(element("span", "muted", "—"));
+    memberships.append(membershipList);
+    row.append(memberships);
+
+    const activity = document.createElement("td");
+    activity.dataset.label = "Activity";
+    const activityList = element("div", "user-projects");
+    for (const projectName of user.activity_projects) {
+      activityList.append(element("span", "listing-badge user-project", projectName));
+    }
+    if (user.activity_projects.length === 0) activityList.append(element("span", "muted", "—"));
+    activity.append(activityList);
+    row.append(activity);
 
     const roles = document.createElement("td");
     roles.dataset.label = "Roles";

@@ -529,7 +529,9 @@ The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
 in any visible project, including its retained assignments and activity, while
 memberships in other projects stay hidden. User administrators see the whole
-directory.
+directory. Its response keeps current memberships separate from the projects
+found in assignment and activity history; the latter has no status filter, so
+closing an issue does not erase the association.
 
 An invisible project is answered *not found* rather than *forbidden*, and so is
 every issue in it, and so is every spelling of an issue reference that would

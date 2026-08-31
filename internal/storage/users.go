@@ -148,6 +148,9 @@ func (t *Tx) ListUsers(limit, offset *int) (users []domain.User, total int, err 
 	if err := t.hydrateMemberships(users, false); err != nil {
 		return nil, 0, err
 	}
+	if err := t.hydrateActivityProjects(users, false); err != nil {
+		return nil, 0, err
+	}
 	return users, total, nil
 }
 
@@ -204,7 +207,61 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 	if err := t.hydrateMemberships(users, true); err != nil {
 		return nil, 0, err
 	}
+	if err := t.hydrateActivityProjects(users, true); err != nil {
+		return nil, 0, err
+	}
 	return users, total, nil
+}
+
+// hydrateActivityProjects fills the directory-only history for a page in one
+// query. Retained assignments and activity keep a project associated after an
+// issue closes or access is withdrawn. No status predicate means closed issues
+// count. Membership stays separate: it says what the account may access now.
+func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) error {
+	if len(users) == 0 {
+		return nil
+	}
+	names := make([]string, len(users))
+	byName := make(map[string]*domain.User, len(users))
+	for i := range users {
+		names[i] = users[i].Name
+		users[i].ActivityProjects = []string{}
+		byName[users[i].Name] = &users[i]
+	}
+
+	where := `p.user IN (` + placeholders(len(names)) + `)`
+	args := anyArgs(names)
+	if visibleOnly {
+		visible, visibleArgs := t.visibleClause("p.project")
+		where += ` AND ` + visible
+		args = append(args, visibleArgs...)
+	}
+	rows, err := t.q.QueryContext(t.ctx, `
+		WITH activity_projects (project, user) AS (
+			SELECT i.project, ia.assignee
+			  FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
+			UNION SELECT i.project, a.actor
+			  FROM issue_activity a JOIN issues i ON i.id = a.issue
+			 WHERE a.actor <> ''
+		)
+		SELECT p.project, p.user FROM activity_projects p
+		 WHERE `+where+`
+		 ORDER BY p.user ASC, p.project ASC`, args...)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read user project involvement")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var project, user string
+		if err := rows.Scan(&project, &user); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "read user project involvement")
+		}
+		if u := byName[user]; u != nil {
+			u.ActivityProjects = append(u.ActivityProjects, project)
+		}
+	}
+	return awberr.Wrap(awberr.Runtime, rows.Err(), "read user project involvement")
 }
 
 // hydrateMemberships fills in the Projects of a page of users in one query.

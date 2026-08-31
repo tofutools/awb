@@ -124,13 +124,16 @@ test("user filtering includes names, roles and visible projects", () => {
     {
       name: "alice", project_admin: false, user_admin: false,
       projects: [{ project: "awb", user: "alice", access: "regular" }],
+      activity_projects: ["archive"],
     },
     {
       name: "dana", project_admin: false, user_admin: true,
       projects: [],
+      activity_projects: [],
     },
   ];
   assert.deepEqual(filterUsers(rows, "alice awb").map((row) => row.name), ["alice"]);
+  assert.deepEqual(filterUsers(rows, "archive").map((row) => row.name), ["alice"]);
   assert.deepEqual(filterUsers(rows, "user administrator").map((row) => row.name), ["dana"]);
   assert.equal(filterUsers(rows, "hidden-project").length, 0);
 });
