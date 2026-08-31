@@ -36,26 +36,42 @@ type Backend struct {
 	// would be a suggestion rather than a control. It is switched on by awb
 	// serve, and only for a request it authenticated.
 	authorized bool
+	// userPreferences says the identity may own and apply ignored-project
+	// preferences. Direct CLI backends and authenticated requests do. An open
+	// HTTP server deliberately does not: --no-auth means its fixed identity is
+	// attribution only and the users table is never consulted on its behalf.
+	userPreferences bool
 }
 
 // New wraps an open database and the directory its attachment content lives
 // in.
 func New(db *storage.DB, blobs *storage.Blobs, identity string) *Backend {
-	return &Backend{db: db, blobs: blobs, identity: identity}
+	return &Backend{db: db, blobs: blobs, identity: identity, userPreferences: true}
 }
 
-// WithIdentity returns a copy attributing actions to a different identity, and
-// applying no authorization. It is what a server that authenticates nobody
-// gives every request.
+// WithIdentity returns a direct-mode copy attributing actions to a different
+// identity and applying no authorization. Its stored preferences still apply.
 func (b *Backend) WithIdentity(identity string) *Backend {
-	return &Backend{db: b.db, blobs: b.blobs, identity: identity}
+	return &Backend{
+		db: b.db, blobs: b.blobs, identity: identity, userPreferences: true,
+	}
+}
+
+// WithoutUserPreferences returns the backend an unauthenticated server gives
+// a request. Its fixed identity remains useful for activity attribution, but
+// cannot acquire per-user meaning merely because an account has the same name.
+func (b *Backend) WithoutUserPreferences() *Backend {
+	return &Backend{db: b.db, blobs: b.blobs, identity: b.identity}
 }
 
 // WithUser returns a copy acting as an authenticated user: attributing actions
 // to them and applying their permissions. The server uses it to give each
 // authenticated request its own caller, without reopening the database.
 func (b *Backend) WithUser(username string) *Backend {
-	return &Backend{db: b.db, blobs: b.blobs, identity: username, authorized: true}
+	return &Backend{
+		db: b.db, blobs: b.blobs, identity: username,
+		authorized: true, userPreferences: true,
+	}
 }
 
 // DB exposes the underlying database, which awb serve needs in order to hand
@@ -126,9 +142,20 @@ func checkIfMatch(ifMatch, updatedAt, what string) error {
 // than at the moment the request arrived. A project administrator holds admin
 // access everywhere and is therefore left unrestricted too; everybody else
 // sees the projects they are a member of.
-func (b *Backend) authorize(tx *storage.Tx) (domain.Caller, error) {
+func (b *Backend) authorize(tx *storage.Tx, includeIgnored bool) (domain.Caller, error) {
 	if !b.authorized {
-		return domain.Caller{Name: b.identity, Unrestricted: true}, nil
+		caller := domain.Caller{Name: b.identity, Unrestricted: true}
+		if includeIgnored || b.identity == "" || !b.userPreferences {
+			return caller, nil
+		}
+		exists, err := tx.UserExists(b.identity)
+		if err != nil {
+			return domain.Caller{}, err
+		}
+		if exists {
+			tx.Restrict(storage.Everything().HideIgnoredBy(b.identity))
+		}
+		return caller, nil
 	}
 	caller, err := tx.Caller(b.identity)
 	if err != nil {
@@ -136,6 +163,9 @@ func (b *Backend) authorize(tx *storage.Tx) (domain.Caller, error) {
 	}
 	if !caller.ProjectAdmin {
 		tx.Restrict(storage.VisibleTo(caller.Name))
+	}
+	if !includeIgnored {
+		tx.Restrict(tx.Scope().HideIgnoredBy(caller.Name))
 	}
 	return caller, nil
 }
@@ -145,7 +175,7 @@ func (b *Backend) authorize(tx *storage.Tx) (domain.Caller, error) {
 // inside that same transaction, so the derived fields reflect the change.
 func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
 	return b.db.Write(ctx, func(tx *storage.Tx) error {
-		caller, err := b.authorize(tx)
+		caller, err := b.authorize(tx, false)
 		if err != nil {
 			return err
 		}
@@ -156,7 +186,7 @@ func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller)
 // read runs one read-only operation as the caller and with their scope.
 func (b *Backend) read(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
 	return b.db.Read(ctx, func(tx *storage.Tx) error {
-		caller, err := b.authorize(tx)
+		caller, err := b.authorize(tx, false)
 		if err != nil {
 			return err
 		}

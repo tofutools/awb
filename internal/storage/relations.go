@@ -255,7 +255,7 @@ func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 // subtree below it. A tree is therefore what the caller can see of a
 // decomposition, not a claim that it is the whole of one.
 func (t *Tx) Children(id string) ([]*domain.Issue, error) {
-	visible, scopeArgs := t.visibleClause("project")
+	visible, scopeArgs := t.visibleClause("issues.project")
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT `+issueColumns+`
 		  FROM issues

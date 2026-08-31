@@ -15,6 +15,7 @@ import {
   type Issue,
   type IssueTree,
   type Project,
+  type ProjectPreference,
   type ProjectFilters,
   type User,
   type UserFilters,
@@ -61,7 +62,9 @@ import {
   preferenceStorage,
   readPaginationAutoHide,
   rememberPaginationAutoHide,
+  filterProjectPreferences,
   showPagination,
+  projectPreferenceSummary,
 } from "./preferences.js";
 import {
   formatUpdated,
@@ -469,7 +472,10 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
       {
         key: "blockers",
         label: "Blocked by",
-        render: (row) => textCell("blocker-list", row.blockers.join(", ")),
+        render: (row) => textCell(
+          "blocker-list",
+          row.blockers.length === 0 && row.blocked ? "hidden work" : row.blockers.join(", "),
+        ),
       },
     ];
   }
@@ -2307,11 +2313,87 @@ async function viewProfile(): Promise<HTMLElement> {
   return view;
 }
 
-function viewSettings(): HTMLElement {
+function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement {
+  const card = element("section", "profile-card ignored-projects-card");
+  const heading = element("div", "ignored-projects-heading");
+  const copy = element("div");
+  copy.append(
+    element("h2", "", "Ignored projects"),
+    element(
+      "p",
+      "",
+      "Ignored projects are hidden from listings, search, counts, and navigation. " +
+        "They always remain available here so you can re-enable them.",
+    ),
+  );
+  const summary = element("span", "ignored-summary", projectPreferenceSummary(projects));
+  heading.append(copy, summary);
+
+  const filterLabel = element("label", "project-preference-filter");
+  filterLabel.append(element("span", "visually-hidden", "Find a project"));
+  const filter = document.createElement("input");
+  filter.type = "search";
+  filter.placeholder = "Find a project by name or key";
+  filterLabel.append(filter);
+
+  const list = element("ul", "project-preference-list");
+  const rows = new Map<ProjectPreference, HTMLElement>();
+  for (const preference of projects) {
+    const row = element("li", `project-preference-row${preference.ignored ? " ignored" : ""}`);
+    const name = element("span", "project-preference-identity");
+    name.append(
+      element("code", "", preference.project.key),
+      element("span", "", preference.project.name),
+    );
+    const state = element(
+      "span",
+      `project-preference-state ${preference.ignored ? "ignored-state" : "active-state"}`,
+      preference.ignored ? "Ignored" : "Active",
+    );
+    const action = element(
+      "button",
+      "secondary-button project-preference-action",
+      preference.ignored ? "Re-enable" : "Ignore",
+    ) as HTMLButtonElement;
+    action.type = "button";
+    action.addEventListener("click", () => {
+      void mutate(row, [action], () => api.setProjectIgnored(
+        preference.project.key, !preference.ignored,
+      ));
+    });
+    row.append(name, state, action);
+    rows.set(preference, row);
+    list.append(row);
+  }
+  const empty = element("p", "project-preference-empty empty", "No authorized projects match your search.");
+  empty.hidden = projects.length !== 0;
+  const refresh = (): void => {
+    const visible = new Set(filterProjectPreferences(projects, filter.value));
+    for (const [preference, row] of rows) row.hidden = !visible.has(preference);
+    empty.hidden = visible.size !== 0;
+  };
+  filter.addEventListener("input", refresh);
+  card.append(heading, filterLabel, list, empty);
+  return card;
+}
+
+async function viewSettings(): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
+  let projectPreferences: ProjectPreference[] | null = null;
+  try {
+    projectPreferences = await api.projectPreferences();
+  } catch (error) {
+    // An open/no-auth server has an attribution identity but no account row,
+    // and therefore no per-user preference owner. Its existing browser-local
+    // settings remain available without pretending the identity is a user.
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+  }
   const view = element("div", "profile-view settings-view");
   const heading = element("div", "settings-heading");
-  heading.append(element("h1", "", "Settings"), element("p", "lede", "Your preferences for this browser"));
+  heading.append(
+    element("h1", "", "Settings"),
+    element("p", "lede", "Your preferences across Agent Work Board"),
+  );
   view.append(heading);
 
   const card = element("section", "profile-card");
@@ -2326,7 +2408,7 @@ function viewSettings(): HTMLElement {
     element(
       "span",
       "settings-preference-description",
-      "Hide pagination controls when a listing has fewer than 10 entries.",
+      "Hide pagination controls when a listing has fewer than 10 entries. Saved in this browser.",
     ),
   );
   preference.append(checkbox, copy);
@@ -2336,6 +2418,7 @@ function viewSettings(): HTMLElement {
   });
   card.append(preference);
   view.append(card);
+  if (projectPreferences !== null) view.append(ignoredProjectsSettingsCard(projectPreferences));
   return view;
 }
 

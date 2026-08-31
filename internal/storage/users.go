@@ -174,7 +174,7 @@ func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, e
 // Only visible memberships are hydrated. A username may be shared across
 // projects without disclosing the names of projects the caller cannot see.
 func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain.User, total int, err error) {
-	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleProject, visibleArgs := t.visibleClause("project_members.project")
 	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
@@ -227,7 +227,7 @@ func (t *Tx) ListVisibleUsers(caller string, limit, offset *int) (users []domain
 // SearchVisibleUsersForNavigation applies the directory visibility set before
 // matching, so autocomplete cannot disclose an otherwise hidden account.
 func (t *Tx) SearchVisibleUsersForNavigation(caller, query string, limit int) ([]domain.User, error) {
-	visibleProject, visibleArgs := t.visibleClause("project")
+	visibleProject, visibleArgs := t.visibleClause("project_members.project")
 	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
 	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
 	args := append([]any{caller}, visibleArgs...)
@@ -277,9 +277,11 @@ func (t *Tx) navigationUsers(rows *sql.Rows, visibleOnly bool, err error) ([]dom
 }
 
 // hydrateActivityProjects fills the directory-only history for a page in one
-// query. Retained assignments and activity keep a project associated after an
-// issue closes or access is withdrawn. No status predicate means closed issues
-// count. Membership stays separate: it says what the account may access now.
+// query. Both forms omit ignored projects; visibleOnly also applies ordinary
+// project authorization. Retained assignments and activity keep a project
+// associated after an issue closes or access is withdrawn. No status predicate
+// means closed issues count. Membership stays separate: it says what the account
+// may access now.
 func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) error {
 	if len(users) == 0 {
 		return nil
@@ -294,11 +296,15 @@ func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) erro
 
 	where := `p.user IN (` + placeholders(len(names)) + `)`
 	args := anyArgs(names)
+	var visible string
+	var visibleArgs []any
 	if visibleOnly {
-		visible, visibleArgs := t.visibleClause("p.project")
-		where += ` AND ` + visible
-		args = append(args, visibleArgs...)
+		visible, visibleArgs = t.visibleClause("p.project")
+	} else {
+		visible, visibleArgs = t.notIgnoredClause("p.project")
 	}
+	where += ` AND ` + visible
+	args = append(args, visibleArgs...)
 	rows, err := t.q.QueryContext(t.ctx, `
 		WITH activity_projects (project, user) AS (
 			SELECT i.project, ia.assignee
@@ -328,6 +334,9 @@ func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) erro
 }
 
 // hydrateMemberships fills in the Projects of a page of users in one query.
+// Both forms omit ignored projects; visibleOnly additionally applies ordinary
+// project authorization for the collaborative directory, while a user
+// administrator's complete directory deliberately does not.
 func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	if len(users) == 0 {
 		return nil
@@ -341,11 +350,15 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 
 	where := `user IN (` + placeholders(len(names)) + `)`
 	args := anyArgs(names)
+	var visible string
+	var visibleArgs []any
 	if visibleOnly {
-		visible, visibleArgs := t.visibleClause("project")
-		where += ` AND ` + visible
-		args = append(args, visibleArgs...)
+		visible, visibleArgs = t.visibleClause("project_members.project")
+	} else {
+		visible, visibleArgs = t.notIgnoredClause("project_members.project")
 	}
+	where += ` AND ` + visible
+	args = append(args, visibleArgs...)
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT project, user, access FROM project_members
 		 WHERE `+where+`
@@ -376,9 +389,11 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 
 // membershipsOf reads one user's memberships, ordered by project ascending.
 func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
+	visible, visibleArgs := t.visibleClause("project_members.project")
+	args := append([]any{name}, visibleArgs...)
 	return t.scanMemberships(`
 		SELECT project, user, access FROM project_members
-		 WHERE user = ? ORDER BY project ASC`, []any{name})
+		 WHERE user = ? AND `+visible+` ORDER BY project ASC`, args)
 }
 
 // InsertUser stores a new user, and records that this database has had one.

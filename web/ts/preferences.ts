@@ -51,3 +51,26 @@ export function rememberPaginationAutoHide(
 export function showPagination(total: number, autoHide: boolean): boolean {
   return !autoHide || total >= 10;
 }
+
+export interface ProjectPreferenceLike {
+  readonly project: { readonly key: string; readonly name: string };
+  readonly ignored: boolean;
+}
+
+/** The recovery editor searches both active and ignored projects. Filtering is
+ * deliberately local over the dedicated endpoint's authorization-safe result. */
+export function filterProjectPreferences<T extends ProjectPreferenceLike>(
+  preferences: readonly T[], query: string,
+): T[] {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter((term) => term !== "");
+  if (terms.length === 0) return [...preferences];
+  return preferences.filter(({ project }) => {
+    const value = `${project.key} ${project.name}`.toLocaleLowerCase();
+    return terms.every((term) => value.includes(term));
+  });
+}
+
+export function projectPreferenceSummary(preferences: readonly ProjectPreferenceLike[]): string {
+  const ignored = preferences.filter((preference) => preference.ignored).length;
+  return `${preferences.length - ignored} active · ${ignored} ignored`;
+}

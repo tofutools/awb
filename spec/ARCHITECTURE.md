@@ -524,7 +524,8 @@ that never held a user, and either bound off loopback or carrying
 anywhere; the three flags are statements of intent, and an intention to publish
 is what the refusal is about. `--no-auth` is the operator saying it was meant,
 and means it: that server consults no users at all, so adding one does not
-close the door either.
+close the door either. Its fixed identity is attribution, not a preference
+owner, even when an account with the same name happens to exist.
 
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
@@ -536,6 +537,15 @@ condition on a project key, carried by the transaction rather than passed to
 each query, because a read that forgets it does not fail — it leaks. There is
 one place a transaction is restricted, one place the caller's permissions are
 read, and every query consults the transaction it is running in.
+
+A stored per-user ignore set narrows that same transaction scope after
+authorization. It is a preference rather than a permission, but applying it at
+the same boundary keeps listings, searches, suggestions, facets and their
+counts consistent, and makes direct and remote backends agree when their
+identity names the same stored user. The project-preferences operations are the
+single recovery exception: they omit only the ignore condition while retaining
+ordinary authorization, so an ignored project is always available to re-enable
+and an inaccessible project is never disclosed by the editor.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
@@ -552,11 +562,14 @@ change. Two flags stand outside the projects — one over projects, one over use
 — and neither implies the other.
 
 **The graph is not scoped, and must not be.** A visible issue's relations and
-blockers may name issues the caller cannot fetch; the derived `blocked` state,
-and the relation rules that refuse a cycle or an inverted decomposition, are
-computed over the whole graph. A rule answered over half a graph is not the
-rule, and readiness computed over half a graph is a lie that sends somebody to
-start blocked work. What that costs is a name, and a name is all it costs.
+blockers may name issues the caller cannot fetch; an ignored counterpart is
+suppressed from presentation because the user asked it to disappear, while the
+same suppression is applied to historical relation snapshots in activity. The
+derived `blocked` state, and the relation rules that refuse a cycle or an
+inverted decomposition, are computed over the whole graph. A rule answered
+over half a graph is not the rule, and readiness computed over half a graph is
+a lie that sends somebody to start blocked work. What that costs is a name,
+and a name is all it costs.
 
 **Both live in the same transaction as the write they guard.** The permissions
 are read from the user row inside the operation's own `BEGIN IMMEDIATE`, so they

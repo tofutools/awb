@@ -559,6 +559,36 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 		"--no-auth means it: the users are simply not consulted")
 }
 
+func TestNoAuthServerDoesNotUseAStoredIdentityPreference(t *testing.T) {
+	h, be := newServeHandlerAuthenticating(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, noAuth: true,
+	}, false)
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{
+		Name: "mikael", Password: "hunter2", ProjectAdmin: true,
+	})
+	require.NoError(t, err)
+	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web"})
+	require.NoError(t, err)
+	_, err = be.WithUser("mikael").SetProjectIgnored(t.Context(), "web", true)
+	require.NoError(t, err)
+
+	resp, _ := get(t, h, http.MethodGet, "/api/projects/web")
+	assert.Equal(t, http.StatusOK, resp.StatusCode,
+		"the fixed identity is attribution, not a stored preference owner")
+	resp, _ = get(t, h, http.MethodGet, "/api/preferences/projects")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+		"an open server has no per-user preference recovery endpoint")
+	resp, _ = send(t, h, http.MethodPut, "/api/preferences/projects/web",
+		`{"ignored":false}`, "Content-Type", "application/json")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	preferences, err := be.WithUser("mikael").ListProjectPreferences(t.Context())
+	require.NoError(t, err)
+	require.Len(t, preferences, 1)
+	assert.True(t, preferences[0].Ignored,
+		"the no-auth request must not mutate the matching stored user's preference")
+}
+
 // --https and --public-url describe one deployment, so they cannot disagree
 // about whether it is behind TLS: a browser ignores Strict-Transport-Security
 // received over plain HTTP, so the pair would leave the operator believing in a

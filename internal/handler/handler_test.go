@@ -139,6 +139,33 @@ func TestSearchNavigation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 }
 
+func TestProjectPreferencesRecoverIgnoredProjects(t *testing.T) {
+	a := newAPI(t)
+	_, err := a.be.CreateUser(t.Context(), backend.UserCreate{Name: "mikael", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = a.be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web", Name: "Web UI"})
+	require.NoError(t, err)
+
+	resp, payload := a.do(http.MethodPut, "/api/preferences/projects/web", `{"ignored":true}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"ignored":true`)
+
+	resp, payload = a.do(http.MethodGet, "/api/projects/web", "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
+	resp, payload = a.do(http.MethodGet, "/api/preferences/projects", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var preferences []domain.ProjectPreference
+	require.NoError(t, json.Unmarshal([]byte(payload), &preferences))
+	require.Len(t, preferences, 2)
+	assert.Equal(t, "web", preferences[1].Project.Key)
+	assert.True(t, preferences[1].Ignored)
+
+	resp, payload = a.do(http.MethodPut, "/api/preferences/projects/web", `{"ignored":false}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	resp, payload = a.do(http.MethodGet, "/api/projects/web", "")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
+}
+
 // Nothing beyond the recognised fields is accepted: they are rejected rather
 // than ignored.
 func TestCreateIssueRejectsUnknownFields(t *testing.T) {

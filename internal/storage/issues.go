@@ -45,7 +45,7 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 // than refused, exactly as such a project itself is: a caller who is not a
 // member is not told that the issue exists.
 func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
-	visible, args := t.visibleClause("project")
+	visible, args := t.visibleClause("issues.project")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
 		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
 		append([]any{id}, args...)...))
@@ -72,7 +72,7 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 // one invisible issue resolves, and uniqueness is uniqueness among what the
 // caller can see.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
-	visible, scopeArgs := t.visibleClause("project")
+	visible, scopeArgs := t.visibleClause("issues.project")
 	var (
 		rows *sql.Rows
 		err  error
@@ -199,15 +199,21 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 // both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
-	args := append(anyArgs(ids), anyArgs(ids)...)
+	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.project")
+	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.project")
+	args := append(anyArgs(ids), visibleOutArgs...)
+	args = append(args, anyArgs(ids)...)
+	args = append(args, visibleInArgs...)
 
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT subject AS viewed, type, other AS counterpart, 'out' AS direction
-		  FROM relations WHERE subject IN (`+in+`)
+		SELECT r.subject AS viewed, r.type, r.other AS counterpart, 'out' AS direction
+		  FROM relations r JOIN issues counterpart ON counterpart.id = r.other
+		 WHERE r.subject IN (`+in+`) AND `+visibleOut+`
 		UNION ALL
-		SELECT other AS viewed, type, subject AS counterpart,
-		       CASE WHEN type = 'related' THEN 'out' ELSE 'in' END AS direction
-		  FROM relations WHERE other IN (`+in+`)`, args...)
+		SELECT r.other AS viewed, r.type, r.subject AS counterpart,
+		       CASE WHEN r.type = 'related' THEN 'out' ELSE 'in' END AS direction
+		  FROM relations r JOIN issues counterpart ON counterpart.id = r.subject
+		 WHERE r.other IN (`+in+`) AND `+visibleIn, args...)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read relations")
 	}
@@ -233,15 +239,17 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 // whatever its blocked-by relations still say, which is what makes it
 // impossible for the recorded state to disagree with the dependency graph.
 func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
+	notIgnored, ignoredArgs := t.notIgnoredClause("other.project")
+	args := append(ignoredArgs, anyArgs(ids)...)
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT r.subject, r.other
+		SELECT r.subject, r.other, `+notIgnored+` AS show_name
 		  FROM relations r
 		  JOIN issues subject ON subject.id = r.subject
 		  JOIN issues other   ON other.id   = r.other
 		 WHERE r.type = 'blocked-by'
 		   AND r.subject IN (`+placeholders(len(ids))+`)
 		   AND subject.status <> 'closed'
-		   AND other.status   <> 'closed'`, anyArgs(ids)...)
+		   AND other.status   <> 'closed'`, args...)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read blockers")
 	}
@@ -249,11 +257,14 @@ func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
 
 	for rows.Next() {
 		var subject, other string
-		if err := rows.Scan(&subject, &other); err != nil {
+		var showName bool
+		if err := rows.Scan(&subject, &other, &showName); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "read blockers")
 		}
 		if issue := byID[subject]; issue != nil {
-			issue.Blockers = append(issue.Blockers, other)
+			if showName {
+				issue.Blockers = append(issue.Blockers, other)
+			}
 			issue.Blocked = true
 		}
 	}

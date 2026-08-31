@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ignored projects settings mock · Agent Work Board</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../../web/static/app.css">
+  <link rel="stylesheet" href="mock.css">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <a class="brand" href="#">
+        <img class="brand-mark" src="../../web/static/awb-mark.png" alt="">
+        Agent Work Board
+      </a>
+      <nav aria-label="Primary">
+        <a href="#">Ready</a>
+        <a href="#">Issues</a>
+        <a href="#">Blocked</a>
+        <a href="#">Projects</a>
+        <a href="#">Users</a>
+      </nav>
+      <button class="command-palette-button" type="button">Commands <kbd>Ctrl K</kbd></button>
+      <form class="search"><span class="mock-search-icon" aria-hidden="true">⌕</span><input type="search" placeholder="Search issues"></form>
+      <span class="account-menu">
+        <button class="identity" type="button" aria-label="Open menu for @alex">
+          <span class="avatar">A</span><span class="identity-name">@alex</span>
+        </button>
+      </span>
+    </header>
+
+    <main>
+      <div class="profile-view settings-view">
+        <div class="settings-heading">
+          <h1>Settings</h1>
+          <p class="lede">Your preferences across Agent Work Board</p>
+        </div>
+
+        <section class="profile-card">
+          <h2>Listings</h2>
+          <label class="settings-preference">
+            <input type="checkbox" checked>
+            <span class="settings-preference-copy">
+              <span class="settings-preference-title">Automatically hide pagination</span>
+              <span class="settings-preference-description">Hide pagination controls when a listing has fewer than 10 entries. Saved in this browser.</span>
+            </span>
+          </label>
+        </section>
+
+        <section class="profile-card ignored-projects-card">
+          <div class="ignored-projects-heading">
+            <div>
+              <h2>Ignored projects</h2>
+              <p>Ignored projects are hidden from listings, search, counts, and navigation. They always remain available here so you can re-enable them.</p>
+            </div>
+            <span class="ignored-summary" aria-live="polite">3 active · 1 ignored</span>
+          </div>
+
+          <label class="project-filter">
+            <span class="visually-hidden">Find a project</span>
+            <input id="project-filter" type="search" placeholder="Find a project by name or key">
+          </label>
+
+          <ul class="ignored-project-list" aria-label="Projects available to @alex">
+            <li class="ignored-project-row" data-project="Agent Work Board awb active">
+              <span class="ignored-project-identity"><code>awb</code><span>Agent Work Board</span></span>
+              <span class="ignored-project-state active-state">Active</span>
+              <button class="secondary-button project-action" type="button">Ignore</button>
+            </li>
+            <li class="ignored-project-row ignored" data-project="Archive migration archive ignored">
+              <span class="ignored-project-identity"><code>archive</code><span>Archive migration</span></span>
+              <span class="ignored-project-state ignored-state">Ignored</span>
+              <button class="secondary-button project-action" type="button">Re-enable</button>
+            </li>
+            <li class="ignored-project-row" data-project="Client applications clients active">
+              <span class="ignored-project-identity"><code>clients</code><span>Client applications</span></span>
+              <span class="ignored-project-state active-state">Active</span>
+              <button class="secondary-button project-action" type="button">Ignore</button>
+            </li>
+            <li class="ignored-project-row" data-project="Documentation docs active">
+              <span class="ignored-project-identity"><code>docs</code><span>Documentation</span></span>
+              <span class="ignored-project-state active-state">Active</span>
+              <button class="secondary-button project-action" type="button">Ignore</button>
+            </li>
+          </ul>
+          <p class="project-filter-empty" hidden>No authorized projects match your search.</p>
+          <p class="ignored-feedback" aria-live="polite"></p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const rows = [...document.querySelectorAll(".ignored-project-row")];
+    const filter = document.querySelector("#project-filter");
+    const empty = document.querySelector(".project-filter-empty");
+    const summary = document.querySelector(".ignored-summary");
+    const feedback = document.querySelector(".ignored-feedback");
+
+    function refreshSummary() {
+      const ignored = rows.filter((row) => row.classList.contains("ignored")).length;
+      summary.textContent = `${rows.length - ignored} active · ${ignored} ignored`;
+    }
+
+    filter.addEventListener("input", () => {
+      const query = filter.value.trim().toLocaleLowerCase();
+      let visible = 0;
+      for (const row of rows) {
+        row.hidden = !row.dataset.project.toLocaleLowerCase().includes(query);
+        if (!row.hidden) visible += 1;
+      }
+      empty.hidden = visible !== 0;
+    });
+
+    for (const row of rows) {
+      row.querySelector(".project-action").addEventListener("click", () => {
+        const ignored = row.classList.toggle("ignored");
+        const key = row.querySelector("code").textContent;
+        const state = row.querySelector(".ignored-project-state");
+        const action = row.querySelector(".project-action");
+        state.className = `ignored-project-state ${ignored ? "ignored-state" : "active-state"}`;
+        state.textContent = ignored ? "Ignored" : "Active";
+        action.textContent = ignored ? "Re-enable" : "Ignore";
+        feedback.textContent = ignored
+          ? `${key} is now ignored. It remains available on this page.`
+          : `${key} is active again and will appear throughout Agent Work Board.`;
+        refreshSummary();
+      });
+    }
+  </script>
+</body>
+</html>

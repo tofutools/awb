@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -127,6 +128,125 @@ func TestVisibilityIsMembership(t *testing.T) {
 	notFound(t, err)
 	_, err = bob.GetProject(ctx, "web")
 	notFound(t, err)
+}
+
+func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	grant(t, root, ctx, "web", "bob", domain.AccessRegular)
+
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Visible parser"})
+	require.NoError(t, err)
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Hidden parser"})
+	require.NoError(t, err)
+	_, err = root.AddLabel(ctx, hidden.ID, "hidden-label", "")
+	require.NoError(t, err)
+	_, err = root.AddRelation(ctx, visible.ID, backend.RelationRequest{
+		Type: domain.RelBlockedBy, Other: hidden.ID,
+	}, "")
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	preference, err := bob.SetProjectIgnored(ctx, "web", true)
+	require.NoError(t, err)
+	assert.True(t, preference.Ignored)
+
+	preferences, err := bob.ListProjectPreferences(ctx)
+	require.NoError(t, err)
+	require.Len(t, preferences, 2, "the recovery path retains the ignored project")
+	assert.Equal(t, "web", preferences[1].Project.Key)
+	assert.True(t, preferences[1].Ignored)
+
+	projects, err := bob.ListProjects(ctx, domain.DefaultProjectSort, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, projects.Total)
+	assert.Equal(t, "awb", projects.Projects[0].Key)
+	account, err := bob.GetUser(ctx, "bob")
+	require.NoError(t, err)
+	require.Len(t, account.Projects, 1)
+	assert.Equal(t, "awb", account.Projects[0].Project)
+	issues, err := bob.ListIssues(ctx, &domain.Filter{Terms: []string{"parser"}})
+	require.NoError(t, err)
+	require.Len(t, issues.Issues, 1)
+	assert.Equal(t, visible.ID, issues.Issues[0].ID)
+	assert.True(t, issues.Issues[0].Blocked, "the complete graph still drives readiness")
+	assert.Empty(t, issues.Issues[0].Blockers, "an ignored connection is not presented")
+	assert.Empty(t, issues.Issues[0].Relations)
+	activity, err := bob.ListActivity(ctx, visible.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	encodedActivity, err := json.Marshal(activity.Activity)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encodedActivity), hidden.ID,
+		"historical relation snapshots must obey the current ignore boundary")
+
+	labels, err := bob.LabelFacets(ctx, &domain.Filter{})
+	require.NoError(t, err)
+	assert.Empty(t, labels.Facets)
+	navigation, err := bob.SearchNavigation(ctx, "hidden", 6)
+	require.NoError(t, err)
+	assert.Empty(t, navigation.Issues)
+	assert.Empty(t, navigation.Projects)
+	_, err = bob.GetProject(ctx, "web")
+	notFound(t, err)
+	_, err = bob.GetIssue(ctx, hidden.ID)
+	notFound(t, err)
+	_, err = bob.AddRelation(ctx, visible.ID, backend.RelationRequest{
+		Type: domain.RelRelated, Other: hidden.ID,
+	}, "")
+	notFound(t, err)
+
+	preference, err = bob.SetProjectIgnored(ctx, "web", false)
+	require.NoError(t, err)
+	assert.False(t, preference.Ignored)
+	_, err = bob.GetIssue(ctx, hidden.ID)
+	require.NoError(t, err)
+	activity, err = bob.ListActivity(ctx, visible.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	encodedActivity, err = json.Marshal(activity.Activity)
+	require.NoError(t, err)
+	assert.Contains(t, string(encodedActivity), hidden.ID,
+		"re-enabling restores the historical relation snapshot")
+}
+
+func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "web", "bob", domain.AccessRegular)
+	bob := root.WithUser("bob")
+	_, err := bob.SetProjectIgnored(ctx, "web", true)
+	require.NoError(t, err)
+
+	directBob := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
+	_, err = directBob.GetProject(ctx, "web")
+	notFound(t, err)
+
+	// An identity without an account has no per-user preference and remains
+	// unrestricted, as direct mode was before preferences existed.
+	directOperator := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "operator")
+	_, err = directOperator.GetProject(ctx, "web")
+	require.NoError(t, err)
+}
+
+func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "admin", false, true)
+	addUser(t, root, ctx, "bob", false, false)
+	for _, user := range []string{"admin", "bob"} {
+		grant(t, root, ctx, "awb", user, domain.AccessRegular)
+		grant(t, root, ctx, "web", user, domain.AccessRegular)
+	}
+	admin := root.WithUser("admin")
+	_, err := admin.SetProjectIgnored(ctx, "web", true)
+	require.NoError(t, err)
+
+	page, err := admin.ListUsers(ctx, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Users, 2, "user administration still sees the complete account directory")
+	for _, user := range page.Users {
+		require.Len(t, user.Projects, 1)
+		assert.Equal(t, "awb", user.Projects[0].Project)
+	}
 }
 
 func TestActivityUsesTheIssueProjectScope(t *testing.T) {

@@ -607,11 +607,15 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// and may do exactly what that user may. A request that authenticated
 	// nobody, on a database that holds no user, acts as the server's fixed
 	// identity with no authorization at all — which is what version 1 was.
+	// A fixed server identity attributes anonymous work; it is not a user. In
+	// particular, --no-auth must not start consulting or changing a stored
+	// account's preferences just because the two names happen to match.
+	withoutUser := base.WithoutUserPreferences()
 	backendFor := func(ctx context.Context) backend.Backend {
 		if username, ok := auth.UsernameFromContext(ctx); ok {
 			return base.WithUser(username)
 		}
-		return base
+		return withoutUser
 	}
 
 	// What each operation accepts is read from the document rather than
