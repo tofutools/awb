@@ -490,11 +490,16 @@ before the first was added and again after the last was deleted would see the
 same empty table twice; no amount of memory can tell those two apart, and the
 window is as wide as the gap between two requests.
 
-Only saying so gets the door open again. `awb serve` refuses to start over a
-database whose users are gone, and refuses to start an open server that looks
-published — one with `--public-url`, `--https` or `--basic-auth-realm`, or
-bound off loopback. `--no-auth` is the operator saying it, and means it: that
-server consults no users at all, so adding one does not close the door either.
+Only saying so gets the door open again. A restart does not: a server over a
+database whose users are gone starts locked, because it answers nothing to
+anybody and so exposes nothing wherever it is bound, and because an operator
+whose service is supervised should not have to time creating an account against
+a restart — it recovers from the next one added, as a running server does. What
+`awb serve` refuses is an open server that looks published: one over a database
+that never held a user, with `--public-url`, `--https` or `--basic-auth-realm`,
+or bound off loopback. `--no-auth` is the operator saying it was meant, and
+means it: that server consults no users at all, so adding one does not close
+the door either.
 
 An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the

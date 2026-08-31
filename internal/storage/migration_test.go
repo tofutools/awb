@@ -11,6 +11,71 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// The version-6 backfill is what carries an installation that already
+// authenticates over the change: its accounts are what says its authentication
+// is on, and a migration that only created the table would leave every
+// existing server one deletion away from serving everybody again.
+//
+// The other half matters as much: a database that has never held a user must
+// still say so, because that is what a local tracker is and it is what every
+// version 1 database still is.
+func TestV6RecordsUsersThatAlreadyExist(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		user    bool
+		existed bool
+	}{
+		{name: "a server that authenticates", user: true, existed: true},
+		{name: "a local tracker", user: false, existed: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "awb.db")
+			raw := openAtVersion(t, path, 5)
+			if tc.user {
+				_, err := raw.ExecContext(t.Context(),
+					`INSERT INTO users (name, password_hash, created_at, updated_at)
+					 VALUES ('alice', 'hash', ?, ?)`,
+					"2026-01-01T10:00:00.000000Z", "2026-01-01T10:00:00.000000Z")
+				require.NoError(t, err)
+			}
+			require.NoError(t, raw.Close())
+
+			db, err := Open(t.Context(), path)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+
+			require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+				existed, err := tx.UsersHaveExisted()
+				require.NoError(t, err)
+				assert.Equal(t, tc.existed, existed)
+				return nil
+			}))
+		})
+	}
+}
+
+// openAtVersion builds a real historical database shape from the batches that
+// made it, so a migration is tested against what it will actually meet rather
+// than against current code with a pragma set.
+func openAtVersion(t *testing.T, path string, version int) *sql.DB {
+	t.Helper()
+	raw, err := sql.Open("sqlite", dsn(path))
+	require.NoError(t, err)
+
+	for i, batch := range migrations[:version] {
+		tx, txErr := raw.BeginTx(t.Context(), nil)
+		require.NoError(t, txErr)
+		for _, statement := range batch {
+			_, txErr = tx.ExecContext(t.Context(), statement)
+			require.NoError(t, txErr, "migration %d: %s", i+1, statement)
+		}
+		_, txErr = tx.ExecContext(t.Context(), fmt.Sprintf("PRAGMA user_version = %d", i+1))
+		require.NoError(t, txErr)
+		require.NoError(t, tx.Commit())
+	}
+	return raw
+}
+
 // A real version-4 shape is built from the historical batches, populated, and
 // then opened by current code. This pins the lossless part of removing the
 // close_reason column: the reason becomes a typed comment and every table that

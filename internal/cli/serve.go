@@ -256,10 +256,12 @@ func newServeCommand(e *env) *cobra.Command {
 			"adding the first user closes the door without a restart. The door does not\n" +
 			"open again by itself: deleting the last user leaves the server answering\n" +
 			"nothing until a user is added again, rather than serving everybody.\n\n" +
-			"A server that would authenticate nobody refuses to start where that looks\n" +
-			"like a mistake: over a database whose users have all been deleted, or, on\n" +
-			"one that never had any, with --public-url, --https or --basic-auth-realm, or\n" +
-			"bound to anything but loopback.\n\n" +
+			"A server over a database whose users are all gone starts, and refuses every\n" +
+			"request until one is added; it is recovered without a restart, exactly as a\n" +
+			"running one is. What refuses to start is a server that would authenticate\n" +
+			"nobody where that looks like a mistake: over a database that never held a\n" +
+			"user, with --public-url, --https or --basic-auth-realm, or bound to anything\n" +
+			"but loopback.\n\n" +
 			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
 			"no users at all, so adding one does not close the door either. Taking it\n" +
 			"back is a restart without the flag.\n\n" +
@@ -333,12 +335,13 @@ func newServeCommand(e *env) *cobra.Command {
 
 			// The fixed identity is what an unauthenticated request is
 			// attributed to, and is therefore only required on a server that
-			// would answer one: one over a database with no user, or one told
-			// to authenticate nobody. A server that authenticates every request
-			// never uses the value, and demanding one there would be asking the
+			// would answer one: one over a database that has never held a user,
+			// or one told to authenticate nobody. A server that authenticates
+			// every request never uses the value, and neither does a locked one,
+			// which answers none; demanding one there would be asking the
 			// operator to name somebody who stands for nobody.
 			fixedIdentity, missing := resolveServerIdentity(cfg, p.Identity)
-			if missing != nil && (opts.noAuth || !users.any) {
+			if missing != nil && (opts.noAuth || !users.any && !users.existed) {
 				return missing
 			}
 
@@ -364,6 +367,21 @@ func newServeCommand(e *env) *cobra.Command {
 				return err
 			}
 
+			// What this server does about authentication is worth one line,
+			// because both of these are states an operator may not know they
+			// are in: one is a server that refuses everybody until they act,
+			// and the other is one that asks nobody for anything.
+			switch {
+			case opts.noAuth:
+				logger.Printf(
+					"serving without authentication: every client that reaches the port " +
+						"has full read and write access")
+			case !users.any && users.existed:
+				logger.Printf(
+					"this database has had users and holds none: every request is refused " +
+						"until one is added with \"awb user add\"")
+			}
+
 			return runServer(cmd.Context(), logger, opts, httpHandler)
 		},
 	}.ToCobra()
@@ -372,29 +390,23 @@ func newServeCommand(e *env) *cobra.Command {
 // checkAuthentication decides whether a server that would authenticate nobody
 // may be started.
 //
-// A database with no user serves everybody who can reach the port. That is the
-// right answer for a local tracker on loopback and the wrong one everywhere
-// else, so a flag that says this deployment is somewhere else refuses to start
-// rather than opening the door.
+// Only one server would: the one over a database that has never held a user,
+// which serves everybody who can reach the port. That is the right answer for
+// a local tracker on loopback and the wrong one everywhere else, so a flag
+// saying this deployment is somewhere else refuses to start rather than
+// opening the door. --no-auth is the operator saying it was meant.
 //
-// A database that has had users and holds none is not that server at all: its
-// authentication was turned on and its accounts are gone, so it would answer
-// nothing whatever it were bound to, and starting one to serve 503 to every
-// request would only move the failure. It is refused where the mistake is, and
-// what recovers it is what a running server would have needed anyway.
-//
-// --no-auth answers both, being an operator saying an open server is what they
-// meant. It is the only thing that does, because it is the only thing that
-// says so.
+// A database that has had users and holds none is not that server. It is a
+// locked one, which answers nothing to anybody and so exposes nothing wherever
+// it is bound, and it starts: refusing would only move the same state from the
+// port into a command that failed, and would take the recovery with it. A
+// running server recovers from the next "awb user add" without a restart, and
+// so must one that was restarted in that state — an operator whose service is
+// supervised should not have to time account creation against a restart. The
+// state is announced in the log instead; see runServer.
 func checkAuthentication(opts serveOptions, users userState) error {
-	switch {
-	case opts.noAuth || users.any:
+	if opts.noAuth || users.any || users.existed {
 		return nil
-	case users.existed:
-		return awberr.Usagef(
-			"this database has had users and holds none now, so the server would " +
-				"authenticate nobody after having authenticated everybody; add one with " +
-				"\"awb user add\", or pass --no-auth to serve it without authentication")
 	}
 	if why := opts.exposure(); why != "" {
 		return awberr.Usagef(

@@ -137,6 +137,32 @@ func TestTheLockCoversEverythingTheServerServes(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
+// --no-auth is not a weaker authenticator, it is none: the users table is not
+// consulted at all, so a database that holds accounts is served openly and
+// adding one to such a server does not close the door either. That is what the
+// flag was asked to mean, and taking it back is a restart without it.
+func TestNoAuthConsultsNoUsers(t *testing.T) {
+	opts := serveOptions{addr: "127.0.0.1", port: 7777, noAuth: true}
+	h, be := newServeHandlerAuthenticating(t, opts, false)
+
+	resp, body := get(t, h, http.MethodGet, "/api/identity")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, body, "mikael", "the fixed identity stands in for a caller")
+
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+
+	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "the first user does not close this door")
+	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
+
+	// Nor does deleting it lock one, there being nothing to lock.
+	_, err = be.DeleteUser(t.Context(), "alice", "")
+	require.NoError(t, err)
+	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 // A wrong password and an unknown username are the same answer, and neither is
 // distinguishable from the other in what the server says.
 func TestWrongCredentialsSayNothingAboutTheAccount(t *testing.T) {

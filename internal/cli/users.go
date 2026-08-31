@@ -320,8 +320,9 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
 			"Deleting the last user does not turn a server's authentication off again:\n" +
-			"a running server that has authenticated answers nothing until a user is\n" +
-			"added back, rather than serving everybody.",
+			"the server answers nothing until a user is added back, rather than serving\n" +
+			"everybody, and one started afterwards starts in that state rather than\n" +
+			"open. Serving such a database openly is awb serve --no-auth.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {

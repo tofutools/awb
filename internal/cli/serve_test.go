@@ -68,6 +68,14 @@ func newProxyServeHandler(t *testing.T, proxyTo string) http.Handler {
 // so a test can add the user that turns authentication on.
 func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Backend) {
 	t.Helper()
+	return newServeHandlerAuthenticating(t, opts, true)
+}
+
+// newServeHandlerAuthenticating builds one with or without an authenticator,
+// which is the whole of what --no-auth decides; see the serve command.
+func newServeHandlerAuthenticating(t *testing.T, opts serveOptions, authenticates bool) (
+	http.Handler, *local.Backend) {
+	t.Helper()
 	dir := t.TempDir()
 	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
@@ -76,9 +84,12 @@ func newServeHandlerOn(t *testing.T, opts serveOptions) (http.Handler, *local.Ba
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 
+	var credentials *authenticator
+	if authenticates {
+		credentials = &authenticator{db: db, realm: opts.basicAuthRealm}
+	}
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	h, err := buildHandler(be, openapi.New(raw),
-		&authenticator{db: db, realm: opts.basicAuthRealm}, opts, log.New(io.Discard, "", 0))
+	h, err := buildHandler(be, openapi.New(raw), credentials, opts, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 	return h, be
 }
@@ -534,8 +545,12 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 		"reaching other machines with nobody to authenticate is the accident")
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, none))
 
-	assert.Error(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, deleted),
-		"a server whose accounts are gone would answer nothing, wherever it is bound")
+	// A locked server answers nothing to anybody, so it exposes nothing
+	// wherever it is bound and none of those flags says anything about it. It
+	// starts, and recovers from the next "awb user add" as a running one does.
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, deleted))
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, deleted))
+	assert.NoError(t, checkAuthentication(serveOptions{https: true}, deleted))
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1", noAuth: true}, deleted))
 
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),

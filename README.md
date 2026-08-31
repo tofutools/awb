@@ -347,9 +347,12 @@ Which is what `--no-auth` is. A server started with it authenticates nobody
 whatever the database holds — it consults no users at all, so adding one does
 not close the door either — and taking it back is a restart without the flag.
 
-Without it, a server that would authenticate nobody refuses to start where that
-looks like a mistake: over a database whose users have all been deleted, or,
-over one that never had any, with `--public-url`, `--https` or
+A server started over a database whose users are already gone starts locked and
+says so in its log, rather than refusing: it answers nothing to anybody, so it
+exposes nothing wherever it is bound, and it recovers from the next
+`awb user add` without a further restart. What refuses to start is a server
+that would authenticate nobody where that looks like a mistake — over a
+database that never held a user, with `--public-url`, `--https` or
 `--basic-auth-realm`, each of which describes a server published to more than
 this machine, or bound to anything but loopback.
 
