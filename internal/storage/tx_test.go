@@ -13,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/tofutools/awb/internal/domain"
 )
 
 func newTxTestDB(t *testing.T) *DB {
@@ -69,6 +71,11 @@ func TestCancelledWriteAfterStatementFailureDoesNotPoisonConnection(t *testing.T
 
 func TestCancelledHTTPRequestDoesNotPoisonConnection(t *testing.T) {
 	db := newTxTestDB(t)
+	passwordHash, err := domain.HashPassword("hunter2")
+	require.NoError(t, err)
+	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
+		return tx.InsertUser("alice", "Alice", passwordHash, false, false)
+	}))
 	transactionStarted := make(chan struct{})
 	requestFinished := make(chan error, 1)
 
@@ -89,8 +96,17 @@ func TestCancelledHTTPRequestDoesNotPoisonConnection(t *testing.T) {
 			return
 		}
 		if err := db.Read(r.Context(), func(tx *Tx) error {
-			_, err := tx.GetProject("healthy")
-			return err
+			if _, err := tx.GetProject("healthy"); err != nil {
+				return err
+			}
+			hash, found, err := tx.PasswordHash("alice")
+			if err != nil {
+				return err
+			}
+			if !found || !domain.CheckPassword(hash, "hunter2") {
+				return errors.New("subsequent authentication failed")
+			}
+			return nil
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
