@@ -93,7 +93,7 @@ whatever is under the key is meant.
 | `awb ready` | Open, unblocked, unassigned issues, highest priority first. |
 | `awb list` / `blocked` / `search` | The other listings. |
 | `awb show <id>` | One issue: relations, blockers and the links found in its description. |
-| `awb claim` / `release` / `close` / `reopen` | The only four ways status or assignees ever move. Claim joins; release leaves. |
+| `awb claim` / `release` / `close` / `reopen` | The only post-creation ways status or assignees move. Claim joins; release leaves. |
 | `awb update <id>` | Title, description, type, priority — and nothing else. |
 | `awb label add\|rm <id> <label>` | One label per invocation. |
 | `awb dep add\|rm <id> --<relation> <id>` | Relations. |

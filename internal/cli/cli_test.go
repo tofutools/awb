@@ -783,7 +783,7 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	relations := map[domain.RelationType]bool{}
 	labels := map[string]bool{}
 	assignees := map[string]bool{}
-	var links, structured, closeReasons, severalBlockers int
+	var links, structured, closeReasons, severalBlockers, severalAssignees int
 
 	var epic string
 	for i := range issues {
@@ -799,6 +799,9 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 		}
 		for _, assignee := range issue.Assignees {
 			assignees[assignee] = true
+		}
+		if len(issue.Assignees) > 1 {
+			severalAssignees++
 		}
 		links += len(issue.Links)
 		// More than links: a description that exercises the Markdown a terminal
@@ -837,6 +840,7 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 
 	assert.Greater(t, len(labels), 1, "more than one label, so the label facets say something")
 	assert.Greater(t, len(assignees), 1, "more than one assignee")
+	assert.NotZero(t, severalAssignees, "an issue with several assignees")
 	assert.NotZero(t, links, "a description with Markdown links, so the derived link list is not empty")
 	assert.NotZero(t, structured,
 		"a description written as Markdown, so the rendered description has something to show")
