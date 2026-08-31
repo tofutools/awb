@@ -1,5 +1,6 @@
 import type { NavigationResults } from "./api.js";
 import { nextActiveIndex, SuggestionSearch, type SuggestionState } from "./autocomplete.js";
+import { attachSearchClear, type SearchClearControl } from "./search-control.js";
 
 export interface PaletteCommand {
   id: string;
@@ -142,6 +143,7 @@ export class CommandPalette {
   private readonly input = document.createElement("input");
   private readonly list = document.createElement("div");
   private readonly status = document.createElement("div");
+  private readonly clear: SearchClearControl;
   private commands: PaletteCommand[] = [];
   private selected = 0;
   private restoreFocus: HTMLElement | null = null;
@@ -157,7 +159,6 @@ export class CommandPalette {
     const title = document.createElement("h2");
     title.id = "command-palette-title";
     title.textContent = "Go to";
-    this.input.type = "search";
     this.input.placeholder = "Search issues, projects, users, and views…";
     this.input.autocomplete = "off";
     this.input.setAttribute("role", "combobox");
@@ -169,9 +170,13 @@ export class CommandPalette {
     this.list.setAttribute("role", "listbox");
     this.status.className = "command-palette-status";
     this.status.setAttribute("aria-live", "polite");
+    this.clear = attachSearchClear(this.input);
+    const inputControl = document.createElement("div");
+    inputControl.className = "search-control command-palette-search";
+    inputControl.append(this.input, this.clear.button);
     const help = document.createElement("footer");
     help.innerHTML = "<span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span>";
-    this.dialog.append(title, this.input, this.list, this.status, help);
+    this.dialog.append(title, inputControl, this.list, this.status, help);
     document.body.append(this.dialog);
 
     // The issue editor and palette share one debounce, abort and stale-response
@@ -202,6 +207,7 @@ export class CommandPalette {
     if (this.dialog.open) return;
     this.restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     this.input.value = "";
+    this.clear.sync();
     this.status.textContent = "";
     this.commands = this.registry.commands();
     this.selected = 0;
