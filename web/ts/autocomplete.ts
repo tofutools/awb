@@ -22,8 +22,8 @@ export function autocompleteKeyAction(
   active: number,
   count: number,
 ): AutocompleteKeyAction {
-  if (key === "ArrowDown" && count > 0) return "next";
-  if (key === "ArrowUp" && count > 0) return "previous";
+  if (key === "ArrowDown" && open && count > 0) return "next";
+  if (key === "ArrowUp" && open && count > 0) return "previous";
   if (key === "Enter") return open && active >= 0 ? "select" : "submit";
   if (key === "Escape" && open) return "dismiss";
   return "none";
@@ -200,7 +200,10 @@ export function attachAutocomplete(
   });
   host.addEventListener("focusout", () => {
     setTimeout(() => {
-      if (!host.contains(document.activeElement)) setOpen(false);
+      if (!host.contains(document.activeElement)) {
+        search.close();
+        setOpen(false);
+      }
     });
   });
   return host;

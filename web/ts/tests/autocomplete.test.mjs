@@ -68,6 +68,16 @@ test("empty and failed backend results have distinct visible states", async () =
   assert.equal(states.at(-1), "error");
 });
 
+test("closing cancels a pending lookup so focus departure cannot reopen suggestions", async () => {
+  const states = [];
+  const search = new SuggestionSearch(async () => [{ value: "late", label: "late" }],
+    (state) => states.push(state));
+  search.query("late");
+  search.close();
+  await wait(autocompleteDebounceMs + 20);
+  assert.deepEqual(states, ["loading"]);
+});
+
 test("keyboard navigation wraps and Enter only selects an active suggestion", () => {
   assert.equal(nextActiveIndex(-1, 3, 1), 0);
   assert.equal(nextActiveIndex(2, 3, 1), 0);
@@ -75,6 +85,8 @@ test("keyboard navigation wraps and Enter only selects an active suggestion", ()
   assert.equal(autocompleteKeyAction("ArrowDown", true, -1, 3), "next");
   assert.equal(autocompleteKeyAction("Enter", true, 1, 3), "select");
   assert.equal(autocompleteKeyAction("Escape", true, -1, 0), "dismiss");
+  assert.equal(autocompleteKeyAction("ArrowDown", false, -1, 3), "none",
+    "dismissed suggestions do not capture input arrow keys");
   assert.equal(autocompleteKeyAction("Enter", false, -1, 0), "submit",
     "manual entry keeps the form's normal submission path");
 });
