@@ -1302,7 +1302,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
   view.addEventListener("keydown", (event) => {
-    if (!view.classList.contains("issue-editing") || issueEditorShortcut(event) !== "hide") return;
+    if (event.defaultPrevented ||
+        !view.classList.contains("issue-editing") || issueEditorShortcut(event) !== "hide") return;
     event.preventDefault();
     showEditor(false);
     editButton.focus();
