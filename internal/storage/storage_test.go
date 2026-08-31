@@ -574,7 +574,7 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 	for range 12 {
 		add("ordinary work")
 	}
-	wanted := add("Needle in the final unfiltered page")
+	wanted := add("MÜLLER Needle in the final unfiltered page")
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 		issue, err := tx.GetIssue(wanted)
 		if err != nil {
@@ -585,7 +585,7 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 
 	limit, offset := 10, 0
 	filter := &domain.Filter{
-		ListingFilter: "needle FRONT",
+		ListingFilter: "müller needle FRONT",
 		Limit:         &limit,
 		Offset:        &offset,
 		Sort:          domain.DefaultSort,
@@ -960,7 +960,7 @@ func TestProjectListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
 		if err := tx.InsertProject("cli", "Command tools", "remote clients"); err != nil {
 			return err
 		}
-		return tx.InsertProject("web", "Web console", "Agent issue tracking")
+		return tx.InsertProject("web", "Web console", "MÜLLER Agent issue tracking")
 	}))
 
 	limit, offset := 1, 0
@@ -968,7 +968,7 @@ func TestProjectListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
 	var total int
 	require.NoError(t, db.Read(t.Context(), func(tx *storage.Tx) error {
 		var err error
-		projects, total, err = tx.ListProjects("agent TRACK", domain.DefaultProjectSort, &limit, &offset)
+		projects, total, err = tx.ListProjects("müller agent TRACK", domain.DefaultProjectSort, &limit, &offset)
 		return err
 	}))
 	require.Len(t, projects, 1)

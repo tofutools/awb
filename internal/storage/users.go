@@ -248,12 +248,12 @@ func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) 
 			activityScope, activityScopeArgs = t.notIgnoredClause("ap.project")
 		}
 		clauses = append(clauses, `(
-			instr(lower(u.name || ' ' || u.full_name ||
+			instr(awb_casefold(u.name || ' ' || u.full_name ||
 				CASE WHEN u.project_admin THEN ' project administrator' ELSE '' END ||
-				CASE WHEN u.user_admin THEN ' user administrator' ELSE '' END), lower(?)) > 0
+				CASE WHEN u.user_admin THEN ' user administrator' ELSE '' END), awb_casefold(?)) > 0
 			OR EXISTS (SELECT 1 FROM project_members pm
 			            WHERE pm.user = u.name AND `+membershipScope+`
-			              AND instr(lower(pm.project || ' ' || pm.access), lower(?)) > 0)
+			              AND instr(awb_casefold(pm.project || ' ' || pm.access), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM (
 				SELECT i.project, ia.assignee AS user
 				  FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
@@ -261,7 +261,7 @@ func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) 
 				  FROM issue_activity a JOIN issues i ON i.id = a.issue
 				 WHERE a.actor <> ''
 			) ap WHERE ap.user = u.name AND `+activityScope+`
-			  AND instr(lower(ap.project), lower(?)) > 0)
+			  AND instr(awb_casefold(ap.project), awb_casefold(?)) > 0)
 		)`)
 		args = append(args, word)
 		args = append(args, membershipScopeArgs...)

@@ -268,6 +268,21 @@ func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T)
 	assert.Len(t, page.Users, 2)
 }
 
+func TestUserListingFilterIsUnicodeCaseInsensitive(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "admin", false, true)
+	addUser(t, root, ctx, "bob", false, false)
+	fullName := "Bob MÜLLER"
+	_, err := root.UpdateUser(ctx, "bob", backend.UserPatch{FullName: &fullName}, "")
+	require.NoError(t, err)
+
+	page, err := root.WithUser("admin").ListUsers(ctx, "müller", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Users, 1)
+	assert.Equal(t, "bob", page.Users[0].Name)
+	assert.Equal(t, 1, page.Total)
+}
+
 func TestUserListingFilterCannotMatchUnauthorizedProjects(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)

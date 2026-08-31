@@ -82,7 +82,7 @@ func (t *Tx) ListProjects(filter string, sort domain.ProjectSort,
 	visible, args := t.visibleClause("p.key")
 	where := visible
 	for _, word := range strings.Fields(filter) {
-		where += ` AND instr(lower(p.key || ' ' || p.name || ' ' || p.description), lower(?)) > 0`
+		where += ` AND instr(awb_casefold(p.key || ' ' || p.name || ' ' || p.description), awb_casefold(?)) > 0`
 		args = append(args, word)
 	}
 	if err := t.q.QueryRowContext(t.ctx,

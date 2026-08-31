@@ -100,16 +100,16 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	// describe the same authorized result set.
 	for _, word := range strings.Fields(f.ListingFilter) {
 		c.add(`(
-			instr(lower(i.id || ' ' || i.project || ' ' || i.title || ' ' ||
-				i.type || ' ' || i.status || ' P' || i.priority), lower(?)) > 0
+			instr(awb_casefold(i.id || ' ' || i.project || ' ' || i.title || ' ' ||
+				i.type || ' ' || i.status || ' P' || i.priority), awb_casefold(?)) > 0
 			OR EXISTS (SELECT 1 FROM issue_assignees a
-			            WHERE a.issue = i.id AND instr(lower(a.assignee), lower(?)) > 0)
+			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM issue_labels l
-			            WHERE l.issue = i.id AND instr(lower(l.label), lower(?)) > 0)
+			            WHERE l.issue = i.id AND instr(awb_casefold(l.label), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM relations r JOIN issues b ON b.id = r.other
 			            WHERE r.subject = i.id AND r.type = 'blocked-by'
 			              AND i.status <> 'closed' AND b.status <> 'closed'
-			              AND instr(lower(r.other), lower(?)) > 0)
+			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
 		)`, word, word, word, word)
 	}
 
