@@ -6,6 +6,7 @@ import {
   ApiError,
   blockedFilters,
   facetFilters,
+  readyFacetFilters,
   readyFilters,
   type Attachment,
   type Activity,
@@ -25,6 +26,7 @@ import {
   BackendListingFilter,
   emptyFacetLabel,
   lowestFacetGroup,
+  listingFilterMaxLength,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -90,6 +92,7 @@ let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
 let commandPalette: CommandPalette | null = null;
 let activeListingFilter: BackendListingFilter<HTMLElement> | null = null;
+const listingFilterOwners = new WeakMap<HTMLElement, BackendListingFilter<HTMLElement>>();
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -108,10 +111,16 @@ const issueEditDrafts = new Map<string, IssueEditDraft>();
 function parseRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, "");
   const [path, query] = hash.split("?", 2);
-  return {
+  const route = {
     path: path.split("/").filter((segment) => segment !== ""),
     query: new URLSearchParams(query ?? ""),
   };
+  const filter = route.query.get("filter");
+  if (filter !== null && filter.length > listingFilterMaxLength) {
+    route.query.set("filter", filter.slice(0, listingFilterMaxLength));
+    history.replaceState(null, "", routeHref(route, route.query));
+  }
+  return route;
 }
 
 function link(href: string, text: string, className = ""): HTMLAnchorElement {
@@ -614,6 +623,7 @@ function listingFilter(
   const control = element("div", "listing-filter");
   const input = document.createElement("input");
   input.type = "search";
+  input.maxLength = listingFilterMaxLength;
   input.placeholder = placeholder;
   input.setAttribute("aria-label", placeholder);
   input.value = route.query.get("filter") ?? "";
@@ -634,6 +644,7 @@ function listingFilter(
       if (main === null) return;
       clear(main);
       main.append(view);
+      activateListingFilter(view);
       markActiveNav(route);
       const next = main.querySelector<HTMLInputElement>(".listing-filter input");
       next?.focus();
@@ -641,7 +652,7 @@ function listingFilter(
     },
     (error) => showRouteError(error),
   );
-  activeListingFilter = search;
+  listingFilterOwners.set(bar, search);
 
   const refresh = (immediate = false): void => {
     const query = new URLSearchParams(route.query);
@@ -914,7 +925,7 @@ async function viewListing(
   let [page, projects, labels, assignees] = await Promise.all([
     load(),
     api.projects({}, signal),
-    api.labels(kind === "ready" ? {} : facetFilters(filters), signal),
+    api.labels(kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters), signal),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters), signal),
   ]);
   const normalized = normalizePageRoute(route, page.total);
@@ -2432,12 +2443,24 @@ async function render(): Promise<void> {
   app.append(main);
 
   try {
-    main.append(await routeView(route));
+    const view = await routeView(route);
+    main.append(view);
+    activateListingFilter(view);
   } catch (error) {
     showRouteError(error, main);
   }
 
   markActiveNav(route);
+}
+
+// View construction can finish after its request was aborted. Controller
+// ownership changes only when a generation-guarded view is actually mounted,
+// so a detached stale view cannot steal cancellation from the live route.
+function activateListingFilter(view: HTMLElement): void {
+  const tools = view.querySelector<HTMLElement>(".listing-tools");
+  const next = tools === null ? undefined : listingFilterOwners.get(tools);
+  activeListingFilter?.close();
+  activeListingFilter = next ?? null;
 }
 
 function showRouteError(error: unknown, host = app.querySelector("main")): void {

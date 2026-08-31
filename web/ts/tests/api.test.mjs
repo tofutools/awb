@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { api, blockedFilters, facetFilters, readyFilters, toQuery } from "../../static/api.js";
+import { api, blockedFilters, facetFilters, readyFacetFilters, readyFilters, toQuery } from "../../static/api.js";
 
 test("empty filters produce no query string", () => {
   assert.equal(toQuery({}), "");
@@ -118,6 +118,22 @@ test("ready filters keep an already narrow selection whole", () => {
   assert.deepEqual(readyFilters({ parent: "awb-a1b2c3", limit: 10 }), {
     parent: "awb-a1b2c3",
     limit: 10,
+  });
+});
+
+test("ready label facets keep the backend text filter and fixed selection", () => {
+  assert.deepEqual(readyFacetFilters({
+    filter: "needle",
+    project: ["awb"],
+    assignee: ["somebody"],
+    "include-closed": true,
+    sort: "priority",
+    limit: 10,
+  }), {
+    filter: "needle",
+    project: ["awb"],
+    status: ["open"],
+    unassigned: true,
   });
 });
 

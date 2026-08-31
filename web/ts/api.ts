@@ -88,6 +88,17 @@ export function facetFilters(filters: Filters): FacetFilters {
   return accepted;
 }
 
+/** Ready's label facets accept its ordinary selection plus the status and
+ * empty-assignee constraints the listing fixes for itself. Derived readiness
+ * has no facet parameter, but the shared text filter must still narrow them. */
+export function readyFacetFilters(filters: Filters): FacetFilters {
+  return {
+    ...facetFilters(readyFilters(filters)),
+    status: ["open"],
+    unassigned: true,
+  };
+}
+
 /** A listing together with the unpaged total X-Total-Count carries. */
 export interface Page<T> {
   rows: T[];

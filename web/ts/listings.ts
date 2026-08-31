@@ -10,6 +10,11 @@ export interface SortState {
   explicit: boolean;
 }
 
+// openapi.yaml caps every listing's shared filter at the same length. The UI
+// enforces it before a request so an invalid pasted URL cannot strand the tab
+// on an error page without its clear control.
+export const listingFilterMaxLength = 500;
+
 /** Runs one debounced listing request at a time. Aborting saves backend work;
  * the generation guard also rejects a stale transport completion. */
 export class BackendListingFilter<T> {

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   BackendListingFilter,
   emptyFacetLabel,
+  listingFilterMaxLength,
   lowestFacetGroup,
   nextSortValue,
   pageNumber,
@@ -20,6 +21,10 @@ import {
 import { autocompleteDebounceMs } from "../../static/autocomplete.js";
 
 const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+
+test("listing filter length mirrors the OpenAPI contract", () => {
+  assert.equal(listingFilterMaxLength, 500);
+});
 
 test("empty applicable facet groups remain visible", () => {
   assert.equal(emptyFacetLabel([]), "none");
