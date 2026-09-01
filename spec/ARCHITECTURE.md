@@ -485,6 +485,11 @@ Its frontend is compiled ahead of time and embedded, so the shipped artifact
 stays one file. Third-party browser code is committed pre-built; no package
 manager runs at build time.
 
+Issue and project descriptions use the same CodeMirror 6 Markdown editor. Its
+browser bundle is vendored alongside the rendering libraries, and a hidden
+textarea mirrors the document so the surrounding forms retain ordinary form
+semantics.
+
 The command palette is an extensible registry of named destinations and
 backend-provided record results. The browser debounces its requests and aborts
 or ignores stale ones; the palette owns focus and listbox keyboard interaction,

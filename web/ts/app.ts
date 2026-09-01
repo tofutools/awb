@@ -51,6 +51,7 @@ import {
   type PaletteCommand,
 } from "./command-palette.js";
 import { renderMarkdown } from "./markdown.js";
+import { createMarkdownEditor } from "./markdown-editor.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import {
@@ -1248,17 +1249,15 @@ function projectEditForm(project: Project): HTMLFormElement {
   const name = document.createElement("input");
   name.value = project.name;
   name.maxLength = 500;
-  const description = document.createElement("textarea");
-  description.value = project.description;
-  description.rows = 10;
+  const description = createMarkdownEditor(project.description, undefined, "Project description (Markdown)");
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
-  form.append(field("Name", name), field("Description (Markdown)", description), save);
+  form.append(field("Name", name), field("Description (Markdown)", description.element), save);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [save], () => api.updateProject(project.key, {
       name: name.value,
-      description: description.value,
+      description: description.textarea.value,
     }));
   });
   return form;
@@ -1426,10 +1425,11 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
   title.required = true;
   title.maxLength = 500;
 
-  const description = document.createElement("textarea");
-  description.name = "description";
-  description.value = draft?.description ?? issue.description;
-  description.rows = 10;
+  const description = createMarkdownEditor(
+    draft?.description ?? issue.description,
+    "description",
+    "Issue description (Markdown)",
+  );
 
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
@@ -1438,18 +1438,18 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
     save,
   );
-  form.append(field("Title", title), field("Description (Markdown)", description), actions);
+  form.append(field("Title", title), field("Description (Markdown)", description.element), actions);
   const rememberDraft = (): void => {
-    issueEditDrafts.set(issue.id, { title: title.value, description: description.value });
+    issueEditDrafts.set(issue.id, { title: title.value, description: description.textarea.value });
   };
   title.addEventListener("input", rememberDraft);
-  description.addEventListener("input", rememberDraft);
+  description.textarea.addEventListener("input", rememberDraft);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [save], async () => {
       const updated = await api.updateIssue(issue.id, {
         title: title.value,
-        description: description.value,
+        description: description.textarea.value,
       });
       issueEditDrafts.delete(issue.id);
       return updated;
