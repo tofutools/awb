@@ -17,6 +17,23 @@ async function bareDragPoint(source) {
   }, dragInteractionSelector);
 }
 
+async function bareDropPoint(target, below) {
+  return target.evaluate((element, { interactiveSelector, below }) => {
+    const bounds = element.getBoundingClientRect();
+    const midpoint = bounds.top + bounds.height / 2;
+    const start = below ? bounds.bottom - 8 : bounds.top + 8;
+    const end = below ? midpoint : midpoint;
+    const step = below ? -4 : 4;
+    for (let y = start; below ? y >= end : y <= end; y += step) {
+      for (let x = bounds.left + 8; x < bounds.right - 8; x += 4) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit !== null && element.contains(hit) && hit.closest(interactiveSelector) === null) return { x, y };
+      }
+    }
+    throw new Error("drop target has no bare point in the requested half");
+  }, { interactiveSelector: dragInteractionSelector, below });
+}
+
 async function pointerDrag(page, source, target, below = false) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -31,14 +48,26 @@ async function pointerDrag(page, source, target, below = false) {
   await page.mouse.down();
   await page.mouse.move(dragPoint.x + 8, dragPoint.y + 8);
   await expect(source).toHaveClass(/dragging/);
+  expect(await source.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0.6);
   await target.scrollIntoViewIfNeeded();
-  const targetBox = await target.boundingBox();
-  expect(targetBox).not.toBeNull();
+  const positionalTarget = await target.evaluate((element) => element.classList.contains("board-card") || element instanceof HTMLTableRowElement);
+  const targetBox = positionalTarget ? null : await target.boundingBox();
+  if (!positionalTarget) expect(targetBox).not.toBeNull();
+  const targetPoint = positionalTarget
+    ? await bareDropPoint(target, below)
+    : {
+        x: targetBox.x + targetBox.width / 2,
+        y: targetBox.y + (below ? targetBox.height * 0.8 : targetBox.height * 0.2),
+      };
   await page.mouse.move(
-    targetBox.x + targetBox.width / 2,
-    targetBox.y + (below ? targetBox.height * 0.8 : targetBox.height * 0.2),
+    targetPoint.x,
+    targetPoint.y,
     { steps: 12 },
   );
+  await expect(source).toHaveClass(/dragging/);
+  if (positionalTarget) {
+    await expect(target).toHaveClass(below ? /drop-after/ : /drop-before/);
+  }
   await page.mouse.up();
 }
 
@@ -51,6 +80,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "No epic" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /demo Ship the 1.0 release/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Open" }).first()).toBeVisible();
+  const hoverCard = page.locator(".board-card").first();
+  const idleBackground = await hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor);
+  await hoverCard.hover();
+  await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await releaseLane.getByRole("button", { name: /Collapse Ship the 1.0 release.*swimlane/ }).click();
@@ -112,6 +145,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // used as the drop target; that card represents a different issue.
   const failedMoveSource = page.locator(".board-card", { hasText: "Build the full text search index" });
   const failedMoveTarget = page.locator(".board-card", { hasText: "Browse the widget catalogue" });
+  const assignedIssueID = await failedMoveTarget.getAttribute("data-issue");
+  expect(assignedIssueID).toBeTruthy();
   const targetStatus = failedMoveTarget.getByLabel(/Status for demo-/);
   await expect(targetStatus).toHaveValue("in_progress");
   await page.route("**/api/issues/*/move", async (route) => {
@@ -122,6 +157,29 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await failedMoveTarget.dispatchEvent("drop", { dataTransfer: failedTransfer });
   await expect(failedMoveTarget.locator(".edit-error")).toBeVisible();
   await expect(targetStatus).toHaveValue("in_progress");
+
+  // Opening assigned work is allowed for every assignee set, but the UI must
+  // make the automatic unassignment explicit before sending the move.
+  await targetStatus.selectOption("open");
+  let openDialog = page.getByRole("dialog", { name: "Move issue to Open?" });
+  await expect(openDialog).toContainText("This will unassign alice, bob.");
+  await openDialog.getByRole("button", { name: "No" }).click();
+  await expect(targetStatus).toHaveValue("in_progress");
+  await targetStatus.selectOption("open");
+  openDialog = page.getByRole("dialog", { name: "Move issue to Open?" });
+  await openDialog.getByRole("button", { name: "Yes" }).click();
+  await expect.poll(() => page.evaluate(async (id) => {
+    const issue = await (await fetch(`api/issues/${id}`)).json();
+    return { status: issue.status, assignees: issue.assignees };
+  }, assignedIssueID)).toEqual({ status: "open", assignees: [] });
+  await page.locator(".board-card", { hasText: "Browse the widget catalogue" }).getByLabel(/Status for demo-/).selectOption("in_progress");
+  await expect.poll(() => page.locator(".board-card", { hasText: "Browse the widget catalogue" }).getByText(/@/).count()).toBe(1);
+
+  // Restarting closed work is a new claim by the caller, regardless of who
+  // completed it previously.
+  const closedCard = page.locator(".board-card", { hasText: "Design the catalogue database schema" });
+  await closedCard.getByLabel(/Status for demo-/).selectOption("in_progress");
+  await expect.poll(() => page.locator(".board-card", { hasText: "Design the catalogue database schema" }).getByText(/@/).count()).toBe(1);
 
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
@@ -144,7 +202,14 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // immutable demo workspace while status and sparse position move atomically.
   const openCard = page.locator(".board-card", { hasText: "Build the full text search index" });
   const platformLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Platform epic/ }) });
-  await pointerDrag(page, openCard, platformLane.locator(".board-column[data-status='open']"));
+  const emptyPlatformColumn = platformLane.locator(".board-column[data-status='open']");
+  const emptyTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await openCard.dispatchEvent("dragstart", { dataTransfer: emptyTransfer });
+  await emptyPlatformColumn.dispatchEvent("dragover", { dataTransfer: emptyTransfer });
+  await expect(emptyPlatformColumn).toHaveClass(/drop-empty/);
+  await expect.poll(() => emptyPlatformColumn.locator(".board-cards").evaluate((cards) => getComputedStyle(cards, "::before").height)).toBe("3px");
+  await openCard.dispatchEvent("dragend", { dataTransfer: emptyTransfer });
+  await pointerDrag(page, openCard, emptyPlatformColumn);
   await expect(platformLane.locator(".board-column[data-status='open']", { hasText: "Build the full text search index" })).toBeVisible();
 
   const noEpicLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) });
@@ -157,12 +222,28 @@ test("save, share and work from a responsive board", async ({ page }) => {
     currentReleaseLane.locator(".board-column[data-status='in_progress']"));
   await expect(currentReleaseLane.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
 
-  // The same gesture reorders within one epic/status cell.
-  const movedCard = page.locator(".board-card", { hasText: "Build the full text search index" });
-  const destinationCard = page.locator(".board-card", { hasText: "Browse the widget catalogue" });
-  await pointerDrag(page, movedCard, destinationCard);
-  const releaseTitles = await currentReleaseLane.locator(".board-column[data-status='in_progress'] .board-card .name .title").allTextContents();
-  expect(releaseTitles.indexOf("Build the full text search index")).toBeLessThan(releaseTitles.indexOf("Browse the widget catalogue"));
+  // The same gesture reorders within one epic/status cell. Each half of the
+  // target card exposes, and applies, its corresponding insertion edge.
+  await pointerDrag(
+    page,
+    page.locator(".board-card", { hasText: "Build the full text search index" }),
+    page.locator(".board-card", { hasText: "Browse the widget catalogue" }),
+    true,
+  );
+  const releaseTitles = () => currentReleaseLane.locator(".board-column[data-status='in_progress'] .board-card .name .title").allTextContents();
+  await expect.poll(async () => {
+    const titles = await releaseTitles();
+    return titles.indexOf("Build the full text search index") > titles.indexOf("Browse the widget catalogue");
+  }).toBe(true);
+  await pointerDrag(
+    page,
+    page.locator(".board-card", { hasText: "Build the full text search index" }),
+    page.locator(".board-card", { hasText: "Browse the widget catalogue" }),
+  );
+  await expect.poll(async () => {
+    const titles = await releaseTitles();
+    return titles.indexOf("Build the full text search index") < titles.indexOf("Browse the widget catalogue");
+  }).toBe(true);
 
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);

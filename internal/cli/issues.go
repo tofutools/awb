@@ -402,8 +402,8 @@ func newMoveCommand(e *env) *cobra.Command {
 	return boa.CmdT[moveParams]{
 		Use: "move", Short: "Move and manually position an issue atomically",
 		Long: "Move an issue to a workflow status and optionally a same-workspace epic.\n\n" +
-			"The workspace and ID never change. Status moves preserve the same assignment\n" +
-			"safety rules as claim, release, close and reopen.",
+			"The workspace and ID never change. Moving to open clears assignees; moving\n" +
+			"from closed to in_progress assigns you and starts a new active assignment.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
 			anchors := 0

@@ -733,13 +733,13 @@ function issueTable(
       row.addEventListener("dragover", (event) => {
         if (draggedListIssue === null || draggedListIssue.id === issue.id || draggedListIssue.workspace !== issue.workspace) return;
         event.preventDefault();
+        clearDropPositions();
         const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
         before = below ? "" : issue.id;
         after = below ? issue.id : "";
         row.classList.toggle("drop-after", below);
         row.classList.toggle("drop-before", !below);
       });
-      row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
       row.addEventListener("drop", (event) => {
         const moving = draggedListIssue;
         row.classList.remove("drop-before", "drop-after");
@@ -1114,8 +1114,14 @@ function restoreDragSurface(): void {
 }
 
 function clearDragFeedback(): void {
-  for (const target of document.querySelectorAll(".drop-target, .drop-before, .drop-after")) {
-    target.classList.remove("drop-target", "drop-before", "drop-after");
+  for (const target of document.querySelectorAll(".drop-target, .drop-before, .drop-after, .drop-empty, .drop-append")) {
+    target.classList.remove("drop-target", "drop-before", "drop-after", "drop-empty", "drop-append");
+  }
+}
+
+function clearDropPositions(): void {
+  for (const target of document.querySelectorAll(".drop-before, .drop-after")) {
+    target.classList.remove("drop-before", "drop-after");
   }
 }
 
@@ -1172,6 +1178,16 @@ function saveCollapsedBoardLanes(ref: string, workspaces: Set<string>): void {
   try { localStorage.setItem(boardLaneCollapseKey(ref), JSON.stringify([...workspaces].sort())); } catch { /* presentation state is best-effort */ }
 }
 
+function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
+  if (issue.status === "open" || issue.assignees.length === 0) return Promise.resolve(true);
+  return confirmMutation(
+    "Move issue to Open?",
+    `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+    host,
+    true,
+  );
+}
+
 async function moveBoardIssue(
   host: HTMLElement,
   issue: Issue,
@@ -1180,14 +1196,18 @@ async function moveBoardIssue(
   before = "",
   after = "",
 ): Promise<void> {
-	const movedCardStatus = (): HTMLSelectElement | null =>
-		host.classList.contains("board-card") && host.dataset.issue === issue.id
-			? host.querySelector<HTMLSelectElement>(".board-status-select")
-			: null;
+  const movedCardStatus = (): HTMLSelectElement | null =>
+    host.classList.contains("board-card") && host.dataset.issue === issue.id
+      ? host.querySelector<HTMLSelectElement>(".board-status-select")
+      : null;
   if (target === issue.status && (before === issue.id || after === issue.id)) return;
-  if (!legalBoardTargets(issue, identity).includes(target)) {
-    mutationError(host, new Error("This move would release somebody else's assignment."));
-    return;
+  if (target === "open") {
+    const confirmed = await confirmMoveToOpen(issue, host);
+    if (!confirmed) {
+      const control = movedCardStatus();
+      if (control !== null) control.value = issue.status;
+      return;
+    }
   }
   if (target === "closed" && issue.status !== "closed") {
     const confirmed = await confirmMutation(
@@ -1197,7 +1217,7 @@ async function moveBoardIssue(
       true,
     );
     if (!confirmed) {
-		const control = movedCardStatus();
+      const control = movedCardStatus();
       if (control !== null) control.value = issue.status;
       return;
     }
@@ -1214,7 +1234,7 @@ async function moveBoardIssue(
   } catch (error) {
     host.classList.remove("moving");
     mutationError(host, error);
-		const control = movedCardStatus();
+    const control = movedCardStatus();
     if (control !== null) control.value = issue.status;
   }
 }
@@ -1253,7 +1273,7 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
   const select = document.createElement("select");
   select.className = "board-status-select";
   select.setAttribute("aria-label", `Status for ${issue.id}`);
-  for (const status of legalBoardTargets(issue, identity)) {
+  for (const status of legalBoardTargets()) {
     const option = document.createElement("option");
     option.value = status;
     option.textContent = status === "closed" && status !== issue.status ? "Closed…" : boardStatusLabel(status);
@@ -1265,28 +1285,35 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
   statusLabel.append(select);
   move.append(epicLabel, statusLabel);
   card.append(move);
+  let dropAfter = false;
   card.addEventListener("dragover", (event) => {
     const moving = draggedBoardIssue;
-    if (moving !== null && moving.id !== issue.id && moving.workspace === issue.workspace && legalBoardTargets(moving, identity).includes(status)) {
+    if (moving !== null && moving.id !== issue.id && moving.workspace === issue.workspace && legalBoardTargets().includes(status)) {
       event.preventDefault();
       event.stopPropagation();
-      card.classList.add("drop-before");
+      clearDropPositions();
+      const bounds = card.getBoundingClientRect();
+      const below = event.clientY >= bounds.top + bounds.height / 2;
+      dropAfter = below;
+      card.classList.toggle("drop-after", below);
+      card.classList.toggle("drop-before", !below);
     }
   });
-  card.addEventListener("dragleave", () => card.classList.remove("drop-before"));
-	card.addEventListener("drop", (event) => {
-		const moving = draggedBoardIssue;
-		card.classList.remove("drop-before");
-		if (moving === null || moving.id === issue.id) return;
-		event.preventDefault();
-		event.stopPropagation();
-		draggedBoardIssue = null;
-		if (moving.workspace !== issue.workspace) {
-			mutationError(card, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
-			return;
-		}
-		void moveBoardIssue(card, moving, epic, status, issue.id);
-	});
+  card.addEventListener("drop", (event) => {
+    const moving = draggedBoardIssue;
+    const after = dropAfter;
+    dropAfter = false;
+    card.classList.remove("drop-before", "drop-after");
+    if (moving === null || moving.id === issue.id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    draggedBoardIssue = null;
+    if (moving.workspace !== issue.workspace) {
+      mutationError(card, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
+      return;
+    }
+    void moveBoardIssue(card, moving, epic, status, after ? "" : issue.id, after ? issue.id : "");
+  });
   return card;
 }
 
@@ -1370,19 +1397,25 @@ function boardColumn(
     host.append(more);
   }
   host.addEventListener("dragover", (event) => {
+    if (event.target instanceof Element && event.target.closest(".board-card") !== null) return;
     const issue = draggedBoardIssue;
-    if (issue !== null && (epic === null || issue.workspace === epic.workspace) && legalBoardTargets(issue, identity).includes(column.status)) {
+    if (issue !== null) clearDropPositions();
+    if (issue !== null && (epic === null || issue.workspace === epic.workspace) && legalBoardTargets().includes(column.status)) {
       event.preventDefault();
       host.classList.add("drop-target");
+      host.classList.toggle("drop-empty", loadedIDs.size === 0);
+      host.classList.toggle("drop-append", loadedIDs.size > 0);
       return;
     }
     if (event.dataTransfer?.types.includes("text/plain") === true) event.preventDefault();
   });
   host.addEventListener("dragleave", (event) => {
-    if (!(event.relatedTarget instanceof Node) || !host.contains(event.relatedTarget)) host.classList.remove("drop-target");
+    if (!(event.relatedTarget instanceof Node) || !host.contains(event.relatedTarget)) {
+      host.classList.remove("drop-target", "drop-empty", "drop-append");
+    }
   });
   host.addEventListener("drop", (event) => {
-    host.classList.remove("drop-target");
+    host.classList.remove("drop-target", "drop-empty", "drop-append");
     const issue = draggedBoardIssue ?? issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
     draggedBoardIssue = null;
     if (issue === undefined || issue === null) return;
@@ -2963,20 +2996,28 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   const closeEditor = statusEditor(issue);
   const openCloseEditor = configureInspectorPopover(status, closeEditor, "Close issue", false);
   status.addEventListener("change", () => {
-    const target = status.value as Issue["status"];
-    const action = inspectorStatusAction(issue.status, target);
-    if (action === "none") return;
-    if (action === "close") {
-      status.value = issue.status;
-      openCloseEditor();
-      return;
-    }
-    const operation = action === "claim"
-      ? () => api.claimIssue(issue.id, { force: issue.status === "closed" })
-      : action === "release"
-        ? () => api.releaseIssue(issue.id, { force: true })
-        : () => api.reopenIssue(issue.id);
-    mutateInspectorSelect(aside, status, issue.status, operation);
+    void (async () => {
+      const target = status.value as Issue["status"];
+      const action = inspectorStatusAction(issue.status, target);
+      if (action === "none") return;
+      if (action === "close") {
+        status.value = issue.status;
+        openCloseEditor();
+        return;
+      }
+      if (target === "open" && issue.assignees.length > 0) {
+        status.value = issue.status;
+        const confirmed = await confirmMoveToOpen(issue, aside);
+        if (!confirmed) return;
+        status.value = target;
+      }
+      const operation = action === "claim"
+        ? () => api.claimIssue(issue.id, { force: issue.status === "closed" })
+        : action === "release"
+          ? () => api.releaseIssue(issue.id, { force: true })
+          : () => api.reopenIssue(issue.id);
+      mutateInspectorSelect(aside, status, issue.status, operation);
+    })();
   });
   add("Status", status, closeEditor);
 

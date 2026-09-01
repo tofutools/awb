@@ -281,8 +281,9 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 }
 
 // MoveIssue is the board/list drag operation. Status, optional same-workspace
-// epic membership, and sparse position are committed together. Workspace and ID
-// are immutable. Status moves preserve the named transition safety rules.
+// epic membership, and sparse position are committed together. Workspace and
+// ID are immutable. Moving to Open clears assignments; moving to In progress
+// assigns the caller, replacing a closed issue's historical assignees.
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
 	ifMatch string) (*domain.Issue, error) {
 	status, err := domain.ParseStatus(string(req.Status))
@@ -407,16 +408,15 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				return err
 			}
 			fields.Assignees = []string{assignee}
-		case issue.Status == domain.StatusInProgress && status == domain.StatusOpen:
-			if len(issue.Assignees) != 1 || issue.Assignees[0] != caller.Name {
-				return awberr.Conflictf("%s is held by %v, not solely by you", issue.ID, issue.Assignees)
-			}
-			fields.Assignees = nil
-		case issue.Status == domain.StatusClosed && status == domain.StatusOpen:
+		case status == domain.StatusOpen:
 			fields.Assignees = nil
 		case status == domain.StatusClosed:
 		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
-			return awberr.Conflictf("%s is closed; reopen it before claiming it", issue.ID)
+			assignee, err := domain.ValidateAssignee(caller.Name)
+			if err != nil {
+				return err
+			}
+			fields.Assignees = []string{assignee}
 		default:
 			return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
 		}
