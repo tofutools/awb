@@ -1400,8 +1400,8 @@ function restoreDragSurface(): void {
 }
 
 function clearDragFeedback(): void {
-  for (const target of document.querySelectorAll(".drop-target, .drop-before, .drop-after, .drop-empty, .drop-append")) {
-    target.classList.remove("drop-target", "drop-before", "drop-after", "drop-empty", "drop-append");
+  for (const target of document.querySelectorAll(".drop-target, .drop-before, .drop-after, .drop-empty")) {
+    target.classList.remove("drop-target", "drop-before", "drop-after", "drop-empty");
   }
 }
 
@@ -1577,7 +1577,7 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
     if (moving !== null && moving.id !== issue.id && moving.workspace === issue.workspace && legalBoardTargets().includes(status)) {
       event.preventDefault();
       event.stopPropagation();
-      clearDropPositions();
+      clearDragFeedback();
       const bounds = card.getBoundingClientRect();
       const below = event.clientY >= bounds.top + bounds.height / 2;
       dropAfter = below;
@@ -1657,6 +1657,28 @@ function boardColumn(
   host.append(heading);
   const cards = element("div", "board-cards");
   const loadedIDs = new Set<string>();
+  let columnBefore = "";
+  let columnAfter = "";
+  const positionColumnDrop = (clientY: number, movingID: string): void => {
+    columnBefore = "";
+    columnAfter = "";
+    const candidates = [...cards.querySelectorAll<HTMLElement>(".board-card")]
+      .filter((card) => card.dataset.issue !== movingID);
+    host.classList.toggle("drop-empty", candidates.length === 0);
+    if (candidates.length === 0) return;
+    const next = candidates.find((card) => {
+      const bounds = card.getBoundingClientRect();
+      return clientY < bounds.top + bounds.height / 2;
+    });
+    if (next !== undefined) {
+      next.classList.add("drop-before");
+      columnBefore = next.dataset.issue ?? "";
+      return;
+    }
+    const previous = candidates[candidates.length - 1];
+    previous.classList.add("drop-after");
+    columnAfter = previous.dataset.issue ?? "";
+  };
   const append = (issues: Issue[]): void => {
     for (const issue of issues) {
       if (loadedIDs.has(issue.id)) continue;
@@ -1701,23 +1723,28 @@ function boardColumn(
   host.addEventListener("dragover", (event) => {
     if (event.target instanceof Element && event.target.closest(".board-card") !== null) return;
     const issue = draggedBoardIssue;
-    if (issue !== null) clearDropPositions();
     if (issue !== null && (epic === null || issue.workspace === epic.workspace) && legalBoardTargets().includes(column.status)) {
       event.preventDefault();
+      clearDragFeedback();
       host.classList.add("drop-target");
-      host.classList.toggle("drop-empty", loadedIDs.size === 0);
-      host.classList.toggle("drop-append", loadedIDs.size > 0);
+      positionColumnDrop(event.clientY, issue.id);
       return;
     }
     if (event.dataTransfer?.types.includes("text/plain") === true) event.preventDefault();
   });
   host.addEventListener("dragleave", (event) => {
     if (!(event.relatedTarget instanceof Node) || !host.contains(event.relatedTarget)) {
-      host.classList.remove("drop-target", "drop-empty", "drop-append");
+      clearDragFeedback();
+      columnBefore = "";
+      columnAfter = "";
     }
   });
   host.addEventListener("drop", (event) => {
-    host.classList.remove("drop-target", "drop-empty", "drop-append");
+    const before = columnBefore;
+    const after = columnAfter;
+    columnBefore = "";
+    columnAfter = "";
+    clearDragFeedback();
     const issue = draggedBoardIssue ?? issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
     draggedBoardIssue = null;
     if (issue === undefined || issue === null) return;
@@ -1726,7 +1753,7 @@ function boardColumn(
       mutationError(host, new Error(`Issues cannot move out of workspace ${issue.workspace}.`));
       return;
     }
-    void moveBoardIssue(host, issue, epicID, column.status);
+    void moveBoardIssue(host, issue, epicID, column.status, before, after);
   });
   return host;
 }
