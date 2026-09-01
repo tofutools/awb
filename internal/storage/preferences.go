@@ -30,18 +30,18 @@ func (t *Tx) IgnoredProjects(user string) (map[string]bool, error) {
 	rows, err := t.q.QueryContext(t.ctx,
 		`SELECT project FROM ignored_projects WHERE user = ? ORDER BY project`, user)
 	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "list ignored projects of %s", user)
+		return nil, awberr.Wrap(awberr.Runtime, err, "list ignored workspaces of %s", user)
 	}
 	defer rows.Close()
 	result := map[string]bool{}
 	for rows.Next() {
 		var project string
 		if err := rows.Scan(&project); err != nil {
-			return nil, awberr.Wrap(awberr.Runtime, err, "read ignored project of %s", user)
+			return nil, awberr.Wrap(awberr.Runtime, err, "read ignored workspace of %s", user)
 		}
 		result[project] = true
 	}
-	return result, awberr.Wrap(awberr.Runtime, rows.Err(), "list ignored projects of %s", user)
+	return result, awberr.Wrap(awberr.Runtime, rows.Err(), "list ignored workspaces of %s", user)
 }
 
 // SetProjectIgnored idempotently changes one preference.
@@ -71,5 +71,5 @@ func (t *Tx) ForgetUnownedIgnoredProjects(user string) error {
 	_, err := t.q.ExecContext(t.ctx, `DELETE FROM ignored_projects
 		WHERE user = ? AND project NOT IN
 			(SELECT project FROM project_members WHERE user = ?)`, user, user)
-	return awberr.Wrap(awberr.Runtime, err, "forget inaccessible ignored projects of %s", user)
+	return awberr.Wrap(awberr.Runtime, err, "forget inaccessible ignored workspaces of %s", user)
 }

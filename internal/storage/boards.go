@@ -57,19 +57,30 @@ func (t *Tx) ListBoardViews(owner string) ([]domain.BoardView, error) {
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
 	}
-	defer rows.Close()
 	views := []domain.BoardView{}
 	for rows.Next() {
 		view, err := scanBoardView(rows)
 		if err != nil {
+			_ = rows.Close()
 			return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
-		}
-		if err := t.hydrateBoardView(view); err != nil {
-			return nil, err
 		}
 		views = append(views, *view)
 	}
-	return views, awberr.Wrap(awberr.Runtime, rows.Err(), "list board views")
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
+	}
+	if err := rows.Close(); err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
+	}
+	// Drain the metadata cursor before issuing the three child queries. This
+	// works with drivers that do not permit a second active result set.
+	for i := range views {
+		if err := t.hydrateBoardView(&views[i]); err != nil {
+			return nil, err
+		}
+	}
+	return views, nil
 }
 
 func (t *Tx) hydrateBoardView(view *domain.BoardView) error {
@@ -142,17 +153,17 @@ func (t *Tx) replaceBoardViewFilters(view *domain.BoardView) error {
 		}
 	}
 	for _, value := range view.Projects {
-		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_projects VALUES (?, ?)`, view.ID, value); err != nil {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_projects (view, project) VALUES (?, ?)`, view.ID, value); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "store board view project")
 		}
 	}
 	for _, value := range view.Labels {
-		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_labels VALUES (?, ?)`, view.ID, value); err != nil {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_labels (view, label) VALUES (?, ?)`, view.ID, value); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "store board view label")
 		}
 	}
 	for _, value := range view.Assignees {
-		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_assignees VALUES (?, ?)`, view.ID, value); err != nil {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_assignees (view, assignee) VALUES (?, ?)`, view.ID, value); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "store board view assignee")
 		}
 	}

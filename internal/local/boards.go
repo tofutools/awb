@@ -90,7 +90,7 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 			return err
 		}
 		for _, project := range view.Projects {
-			exists, err := tx.ProjectExists(project)
+			exists, err := tx.ActiveProjectExists(project)
 			if err != nil {
 				return err
 			}
@@ -178,7 +178,7 @@ func (b *Backend) GetBoardView(ctx context.Context, id string) (*domain.BoardVie
 func visibleViewProjects(tx *storage.Tx, projects []string) ([]string, bool, error) {
 	visible := []string{}
 	for _, project := range projects {
-		exists, err := tx.ProjectExists(project)
+		exists, err := tx.ActiveProjectExists(project)
 		if err != nil {
 			return nil, false, err
 		}
@@ -228,7 +228,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 			// longer access. Preserve those stored keys when replacing the
 			// visible set, otherwise an editor could silently delete them.
 			for _, project := range existing.Projects {
-				exists, err := tx.ProjectExists(project)
+				exists, err := tx.ActiveProjectExists(project)
 				if err != nil {
 					return err
 				}
@@ -253,7 +253,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		valid.ID, valid.Owner, valid.CreatedAt, valid.UpdatedAt = existing.ID, existing.Owner, existing.CreatedAt, existing.UpdatedAt
 		if req.Projects != nil {
 			for _, project := range *req.Projects {
-				exists, err := tx.ProjectExists(project)
+				exists, err := tx.ActiveProjectExists(project)
 				if err != nil {
 					return err
 				}

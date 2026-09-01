@@ -26,9 +26,15 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/board-views":
 			_, _ = w.Write([]byte("[" + view + "]"))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_projects":false,"projects":["awb"],"labels":null,"assignees":null,"priority_max":4}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"name":"Release"}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))

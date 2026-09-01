@@ -8,12 +8,12 @@ import {
   projectScopedHref,
 } from "../../static/navigation.js";
 
-test("issue listing tabs preserve selected projects only", () => {
+test("issue listing tabs preserve selected workspace filters using compatibility query names", () => {
   const current = new URLSearchParams("project=awb&project=other%2Fteam&label=frontend&sort=-updated");
 
   assert.equal(projectScopedHref("ready", current), "#/ready?project=awb&project=other%2Fteam");
   assert.equal(projectScopedHref("issues", current), "#/issues?project=awb&project=other%2Fteam");
-  assert.equal(projectScopedHref("projects", current), "#/projects?project=awb&project=other%2Fteam");
+  assert.equal(projectScopedHref("workspaces", current), "#/workspaces?project=awb&project=other%2Fteam");
   assert.equal(projectScopedHref("blocked", new URLSearchParams()), "#/blocked");
   assert.equal(projectScopedHref("boards", current), "#/boards?project=awb&project=other%2Fteam");
 });

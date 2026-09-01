@@ -7,9 +7,7 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// queryer is the part of database/sql that the query helpers use, so the same
-// code runs on a pooled handle and on the dedicated connection a transaction
-// holds.
+// queryer is the part of database/sql.Tx that the query helpers use.
 type queryer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -38,30 +36,22 @@ type Tx struct {
 // A transaction that cannot take the lock within the busy timeout fails rather
 // than being retried in a loop.
 func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
-	conn, err := d.db.Conn(ctx)
+	// The driver's _txlock=immediate setting makes every non-read-only
+	// transaction BEGIN IMMEDIATE; see dsn. Using database/sql's transaction
+	// type lets it own cancellation, rollback and the pooled connection state.
+	sqlTx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
-	}
-	defer conn.Close() //nolint:errcheck // returning the connection to the pool
-
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_, _ = conn.ExecContext(ctx, "ROLLBACK")
-		}
-	}()
+	defer sqlTx.Rollback() //nolint:errcheck // safe after Commit; database/sql owns cleanup
 
-	if err := fn(&Tx{ctx: ctx, q: conn}); err != nil {
+	if err := fn(&Tx{ctx: ctx, q: sqlTx}); err != nil {
 		return err
 	}
 
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := sqlTx.Commit(); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "commit transaction")
 	}
-	committed = true
 	return nil
 }
 
@@ -69,16 +59,13 @@ func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
 // with its labels, relations and blockers — sees one consistent snapshot. In
 // WAL mode a reader never blocks a writer.
 func (d *DB) Read(ctx context.Context, fn func(*Tx) error) error {
-	conn, err := d.db.Conn(ctx)
+	// modernc treats read-only transactions as deferred even when _txlock is
+	// immediate, so readers retain their WAL-mode non-blocking behaviour.
+	sqlTx, err := d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
-	}
-	defer conn.Close() //nolint:errcheck // returning the connection to the pool
-
-	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
-	defer func() { _, _ = conn.ExecContext(ctx, "ROLLBACK") }()
+	defer sqlTx.Rollback() //nolint:errcheck // database/sql owns cleanup
 
-	return fn(&Tx{ctx: ctx, q: conn})
+	return fn(&Tx{ctx: ctx, q: sqlTx})
 }

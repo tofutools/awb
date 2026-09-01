@@ -72,12 +72,26 @@ type IssueTree struct {
 // Project is the top-level organising unit. ActiveIssues counts the issues
 // that are not closed; it is derived and read-only, as are the two timestamps.
 type Project struct {
-	Key          string `json:"key"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	ActiveIssues int    `json:"active_issues"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	Key          string       `json:"key"`
+	Name         string       `json:"name"`
+	Description  string       `json:"description"`
+	State        ProjectState `json:"state"`
+	ArchivedAt   string       `json:"archived_at"`
+	ArchivedBy   string       `json:"archived_by"`
+	ActiveIssues int          `json:"active_issues"`
+	CreatedAt    string       `json:"created_at"`
+	UpdatedAt    string       `json:"updated_at"`
+}
+
+// ProjectActivity is the append-only audit trail of lifecycle transitions.
+// Metadata edits remain represented by the project's ETag/version; archive
+// and restore are retained because they change whether new work is permitted.
+type ProjectActivity struct {
+	ID        int64  `json:"id"`
+	Project   string `json:"project"`
+	Action    string `json:"action"`
+	Actor     string `json:"actor"`
+	CreatedAt string `json:"created_at"`
 }
 
 // ProjectPreference is one otherwise-visible project together with whether the

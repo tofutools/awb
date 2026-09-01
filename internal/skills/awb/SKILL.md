@@ -35,9 +35,9 @@ awb activity <id> --compact            # comments and recorded changes
 awb create "Title" --description-file description.md
 awb description get <id> --output description.md
 awb update <id> --description-file description.md
-awb project create <key> --description-file project.md
-awb project description get <key> --output project.md
-awb project update <key> --description-file project.md
+awb workspace create <key> --description-file workspace.md
+awb workspace description get <key> --output workspace.md
+awb workspace update <key> --description-file workspace.md
 awb update <id> --description-file - --force <<'EOF'
 First paragraph.
 
@@ -45,12 +45,12 @@ Second paragraph.
 EOF
 ```
 
-Issue and project descriptions are stored exactly as received. Fetching writes
+Issue and workspace descriptions are stored exactly as received. Fetching writes
 a receipt beside the file, and update uses it to refuse overwriting a concurrent
 change. `--force` is the explicit escape hatch for a deliberate blind
 replacement, including one read from stdin. Quoted `\n` sequences are not
 converted to line breaks by the CLI or most shells; they are stored literally.
-`--json` selects an output format and is not an issue or project input format.
+`--json` selects an output format and is not an issue or workspace input format.
 
 **Look things up:**
 
@@ -94,9 +94,10 @@ an entry never spans lines.
 **Exit codes:** `0` ok, `1` runtime error, `2` usage error, `3` not found,
 `4` constraint violation (a cycle, a duplicate, or an issue somebody else holds),
 `5` forbidden (against a server: your account may see it but may not do that;
-a project you have no access to is `3`, since it is not yours to know about).
+a workspace you have no access to is `3`, since it is not yours to know about).
 
-An issue ID is `<project>-<hash>`; any unambiguous prefix, or a bare hash, works.
+An issue ID is `<workspace>-<hash>`; any unambiguous prefix, or a bare hash, works.
+An issue cannot move between workspaces; its workspace-prefixed ID is stable.
 
 For commands not covered here, explore the command tree with `awb --help`, then
 use `awb <command> --help` or `awb <group> <command> --help` for details.

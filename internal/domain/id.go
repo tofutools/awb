@@ -141,7 +141,7 @@ func ParseIssueRef(s string) (IssueRef, error) {
 	project, hash, ok := SplitID(s)
 	if !ok || !IsHex(hash) {
 		return IssueRef{}, awberr.Usagef(
-			"invalid issue id %q: expected <project>-<hash> or a bare hash", raw)
+			"invalid issue id %q: expected <workspace>-<hash> or a bare hash", raw)
 	}
 	if _, err := ValidateProjectKey(project); err != nil {
 		return IssueRef{}, awberr.Usagef("invalid issue id %q: %s", raw, err.Error())

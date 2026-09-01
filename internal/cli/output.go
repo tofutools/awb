@@ -635,7 +635,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	t := e.theme()
 
 	e.writeHeading(t, e.issueLink(t, issue.ID), issue.Title)
-	e.field(t, "Project", e.projectLink(t, issue.Project))
+	e.field(t, "Workspace", e.projectLink(t, issue.Project))
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
@@ -843,7 +843,7 @@ func userCols(t *theme, users []domain.User) []col {
 		{header: "NAME", cells: names, paint: always(t.id)},
 		{header: "FULL NAME", cells: fullNames},
 		{header: "ADMIN", cells: flags, floor: adminFloor},
-		{header: "PROJECTS", cells: projects, floor: labelsFloor},
+		{header: "WORKSPACES", cells: projects, floor: labelsFloor},
 	}
 }
 
@@ -852,9 +852,9 @@ func userCols(t *theme, users []domain.User) []col {
 func adminFlags(user *domain.User) string {
 	switch {
 	case user.ProjectAdmin && user.UserAdmin:
-		return "projects, users"
+		return "workspaces, users"
 	case user.ProjectAdmin:
-		return "projects"
+		return "workspaces"
 	case user.UserAdmin:
 		return "users"
 	default:
@@ -889,7 +889,7 @@ func (e *env) printUser(user *domain.User) error {
 		e.field(t, "Full name", user.FullName)
 		e.field(t, "Created", user.CreatedAt)
 		e.field(t, "Updated", user.UpdatedAt)
-		e.field(t, "Projects", memberships(user))
+		e.field(t, "Workspaces", memberships(user))
 		return nil
 	}
 }
@@ -899,9 +899,9 @@ func (e *env) printUser(user *domain.User) error {
 func adminTitle(user *domain.User) string {
 	switch {
 	case user.ProjectAdmin && user.UserAdmin:
-		return "project and user administrator"
+		return "workspace and user administrator"
 	case user.ProjectAdmin:
-		return "project administrator"
+		return "workspace administrator"
 	case user.UserAdmin:
 		return "user administrator"
 	default:

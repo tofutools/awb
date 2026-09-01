@@ -68,12 +68,12 @@ var statusEnvironmentNames = []string{
 }
 
 func newStatusCommand(e *env) *cobra.Command {
-	return command("status", "Show the active connection, identity, configuration and project counts",
+	return command("status", "Show the active connection, identity, configuration and workspace counts",
 		"Show how this invocation is configured and what data source it is using.\n\n"+
 			"Local mode names the SQLite database and attachment directory. Remote mode\n"+
 			"names the awb server and asks it which identity it authenticated. Environment\n"+
 			"variables that are set are shown separately; password content is never shown.\n\n"+
-			"Each visible project includes exact issue counts by status.",
+			"Each visible workspace includes exact issue counts by status.",
 		func(cmd *cobra.Command, _ []string) error {
 			report, err := e.buildStatus(cmd)
 			if err != nil {
@@ -117,7 +117,7 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 	if cfg.Remote() {
 		report.Connection.Mode = "remote"
 		report.Connection.Server = cfg.DB
-		report.Connection.UI = cfg.RemoteURL.String() + "/#/projects"
+		report.Connection.UI = cfg.RemoteURL.String() + "/#/workspaces"
 		report.Connection.Database = ""
 	}
 
@@ -168,7 +168,7 @@ func (e *env) printStatus(report *statusReport) error {
 	_, _ = fmt.Fprintf(w, "Connection\n  Mode:\t%s\n", report.Connection.Mode)
 	if report.Connection.Mode == "remote" {
 		_, _ = fmt.Fprintf(w, "  Server:\t%s\n  Web UI:\t%s\n", report.Connection.Server,
-			e.entityLink(t, report.Connection.UI, "/projects"))
+			e.entityLink(t, report.Connection.UI, "/workspaces"))
 	} else {
 		_, _ = fmt.Fprintf(w, "  SQLite database:\t%s\n  Attachments:\t%s\n  Web UI:\t%s\n",
 			report.Connection.Database, report.Connection.Attachments, "(not available in local mode)")
@@ -181,7 +181,7 @@ func (e *env) printStatus(report *statusReport) error {
 		_, _ = fmt.Fprintf(w, "  User:\t%s\n  Password:\t%s\n", valueOrNone(c.User), setOrNot(c.PasswordSet))
 	}
 	_, _ = fmt.Fprintf(w,
-		"  Default project:\t%s\n  Context project:\t%s\n  Context label:\t%s\n"+
+		"  Default workspace:\t%s\n  Context workspace:\t%s\n  Context label:\t%s\n"+
 			"  User config:\t%s\n  Local config:\t%s\n  Color:\t%s\n",
 		valueOrNone(c.DefaultProject), valueOrNone(c.ContextProject), valueOrNone(c.ContextLabel),
 		valueOrNone(c.UserFile), valueOrNone(c.LocalFile), c.Color)
@@ -195,7 +195,7 @@ func (e *env) printStatus(report *statusReport) error {
 		}
 	}
 
-	_, _ = fmt.Fprintln(w, "\nProjects")
+	_, _ = fmt.Fprintln(w, "\nWorkspaces")
 	if len(report.Projects) == 0 {
 		_, _ = fmt.Fprintln(w, "  (none)")
 		_ = w.Flush()

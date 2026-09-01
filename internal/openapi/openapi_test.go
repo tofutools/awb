@@ -224,6 +224,16 @@ func TestUserSchemasAlwaysCarryTheFullName(t *testing.T) {
 	}
 }
 
+func TestIdentityCarriesEffectiveUserAdministration(t *testing.T) {
+	identity := schema(t, document(t), "Identity")
+	properties, ok := identity["properties"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, properties, "may_manage_users")
+	required, ok := identity["required"].([]any)
+	require.True(t, ok)
+	assert.Contains(t, required, "may_manage_users")
+}
+
 // The endpoints the CLI has no counterpart for still have to be declared.
 func TestPathsCoverTheWholeAPI(t *testing.T) {
 	paths, ok := document(t)["paths"].(map[string]any)
@@ -235,7 +245,9 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 		"/api/issues/{id}/labels", "/api/issues/{id}/relations",
 		"/api/issues/{id}/relations/{type}/{other}", "/api/issues/{id}/tree",
 		"/api/ready", "/api/blocked", "/api/search",
-		"/api/projects", "/api/projects/{key}",
+		"/api/projects", "/api/projects/{key}", "/api/projects/{key}/archive",
+		"/api/projects/{key}/restore", "/api/projects/{key}/activity",
+		"/api/users", "/api/users/{name}",
 		"/api/labels", "/api/assignees", "/api/identity",
 	} {
 		assert.Contains(t, paths, path)
@@ -292,7 +304,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 51)
+	require.Len(t, operations, 55)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -305,7 +317,7 @@ func TestOperations(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{
-		"status", "include-closed", "type", "priority", "priority-max", "label",
+		"status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
 		"assignee", "unassigned", "project", "parent", "filter", "sort", "limit", "offset",
 	}, names("listIssues"))
 	assert.ElementsMatch(t, []string{
@@ -317,15 +329,15 @@ func TestOperations(t *testing.T) {
 		"project", "parent", "filter", "sort", "limit", "offset",
 	}, names("listBlocked"))
 	assert.ElementsMatch(t, []string{
-		"q", "status", "include-closed", "type", "priority", "priority-max", "label",
+		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
 		"assignee", "unassigned", "project", "parent", "filter", "readiness", "limit", "offset",
 	}, names("listLabels"))
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{
-		"q", "status", "include-closed", "type", "priority", "priority-max", "label",
+		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
 		"assignee", "unassigned", "project", "parent", "filter", "sort", "limit", "offset",
 	}, names("searchIssues"))
-	assert.ElementsMatch(t, []string{"filter", "sort", "limit", "offset"}, names("listProjects"))
+	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listProjects"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))
 	assert.ElementsMatch(t, []string{
 		"lane-limit", "lane-offset", "card-limit", "card-offset", "project", "status", "epic",
@@ -341,6 +353,7 @@ func TestOperations(t *testing.T) {
 	assert.Empty(t, names("getIssue"))
 
 	assert.True(t, operations["createIssue"].TakesBody)
+	assert.True(t, operations["addProjectMember"].DeclaresJSONBody())
 	assert.True(t, operations["addComment"].DeclaresJSONBody())
 	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
 	assert.False(t, operations["reopenIssue"].TakesBody)

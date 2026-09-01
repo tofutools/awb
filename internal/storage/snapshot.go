@@ -13,10 +13,11 @@ import (
 // memberships are deliberately absent: a server never exposes password hashes,
 // and a database with no users is an unauthenticated local server.
 type Snapshot struct {
-	Projects    []domain.Project
-	Issues      []domain.Issue
-	Attachments []domain.Attachment
-	Activity    []domain.Activity
+	Projects        []domain.Project
+	Issues          []domain.Issue
+	Attachments     []domain.Attachment
+	Activity        []domain.Activity
+	ProjectActivity []domain.ProjectActivity
 }
 
 // RestoreSnapshot writes an API snapshot into a freshly initialized database,
@@ -39,11 +40,15 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 
 		for i := range snapshot.Projects {
 			p := &snapshot.Projects[i]
+			state := p.State
+			if state == "" {
+				state = domain.ProjectActive
+			}
 			if _, err := tx.q.ExecContext(ctx, `
-				INSERT INTO projects (key, name, description, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?)`,
-				p.Key, p.Name, p.Description, p.CreatedAt, p.UpdatedAt); err != nil {
-				return restoreError(err, "project %s", p.Key)
+				INSERT INTO projects (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				p.Key, p.Name, p.Description, state, p.ArchivedAt, p.ArchivedBy, p.CreatedAt, p.UpdatedAt); err != nil {
+				return restoreError(err, "workspace %s", p.Key)
 			}
 		}
 
@@ -127,6 +132,15 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				a.ID, a.Issue, a.Kind, a.Actor, a.Body, a.Action,
 				string(changes), a.CreatedAt); err != nil {
 				return restoreError(err, "activity %d of %s", a.ID, a.Issue)
+			}
+		}
+
+		for i := range snapshot.ProjectActivity {
+			a := &snapshot.ProjectActivity[i]
+			if _, err := tx.q.ExecContext(ctx, `INSERT INTO project_activity
+				(id, project, action, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
+				a.ID, a.Project, a.Action, a.Actor, a.CreatedAt); err != nil {
+				return restoreError(err, "workspace activity %d of %s", a.ID, a.Project)
 			}
 		}
 

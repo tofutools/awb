@@ -196,8 +196,11 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 	resp, payload = a.do(http.MethodGet, "/api/boards/"+view.ID+"?card-limit=51", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 
-	name := `{"name":"Renamed"}`
-	resp, payload = a.do(http.MethodPatch, "/api/board-views/"+view.ID, name, "If-Match", backend.ETag(view.UpdatedAt))
+	readBack := view
+	readBack.Name = "Renamed"
+	patch, err := json.Marshal(readBack)
+	require.NoError(t, err)
+	resp, payload = a.do(http.MethodPatch, "/api/board-views/"+view.ID, string(patch), "If-Match", backend.ETag(view.UpdatedAt))
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"name":"Renamed"`)
 }
@@ -719,7 +722,7 @@ func TestIdentity(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodGet, "/api/identity", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"identity":"mikael"}`, payload)
+	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 }
 
 func TestProjects(t *testing.T) {

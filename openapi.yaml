@@ -7,8 +7,14 @@ info:
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
     complete enough to drive a fully functional read/write web UI. The bundled
-    UI reads and edits projects and issues through the same operations available
+    UI reads and edits workspaces and issues through the same operations available
     to API and CLI clients.
+
+    The product calls its immutable top-level boundary a **workspace**. This
+    API retains the established `project` paths, operation IDs, schema names
+    and JSON fields for compatibility; they represent workspaces and are not a
+    second concept. An issue belongs to exactly one workspace and cannot be
+    transferred to another, so its workspace-prefixed ID remains stable.
 
     The component schemas below are the domain fields in the CLI's `--json`
     structures. In remote mode the CLI adds navigation links derived from the
@@ -25,22 +31,22 @@ info:
 
     **Authorization.** A server whose database holds at least one user
     authenticates every request and answers it with that user's permissions. A
-    user works in the projects they are a member of and sees nothing else: a
-    project they hold no access to, and every issue in it, is answered `404`
+    user works in the workspaces they are a member of and sees nothing else: a
+    workspace they hold no access to, and every issue in it, is answered `404`
     rather than `403`, and is absent from every listing, search, facet and
     tree, unpaged totals included. `403` is for something they can see and may
     not do. The user directory is the narrow exception: it includes current
-    accounts that participated in visible projects, but not their memberships
-    in any other project. A database holding no user at all is a server without
+    accounts that participated in visible workspaces, but not their memberships
+    in any other workspace. A database holding no user at all is a server without
     authentication, exactly as version 1 was, and applies none of this.
 
-    Two flags stand outside the projects: `project_admin` creates, changes and
-    deletes projects and holds `admin` access in every one of them, and
+    Two flags stand outside the workspaces: compatibility field `project_admin`
+    creates, changes and deletes workspaces and holds `admin` access in every one, and
     `user_admin` creates, changes and deletes users. Neither implies the other.
 
     Two things are deliberately *not* filtered, and both are about the graph
     rather than about the data. A visible issue's `relations` and `blockers`
-    may name issues in projects the caller has no access to: the issue is
+    may name issues in workspaces the caller has no access to: the issue is
     theirs to see and what it depends on is part of it. A name is all that is
     exposed — fetching one of those issues is a `404` like anything else. And
     `blocked`, with the `ready` and `blocked` listings that follow from it, is
@@ -88,6 +94,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -126,7 +133,7 @@ paths:
         Intended for reference fields such as a relation target. Matching is
         case-insensitive and includes closed issues. Exact IDs sort first,
         followed by ID prefixes, title prefixes and other matches. The usual
-        project visibility scope applies, so suggestions cannot disclose an
+        workspace visibility scope applies, so suggestions cannot disclose an
         issue the caller could not list.
       parameters:
         - name: q
@@ -611,6 +618,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -644,7 +652,7 @@ paths:
       operationId: searchNavigation
       summary: Search addressable records for keyboard navigation
       description: |
-        Case-insensitive substring matching over issue IDs and titles, project
+        Case-insensitive substring matching over issue IDs and titles, workspace
         keys and names, and usernames and full names. Each result kind is independently
         capped by `limit`, and normal visibility rules apply.
       parameters:
@@ -732,10 +740,12 @@ paths:
       operationId: getBoard
       summary: Read a bounded page of the default or a saved board
       description: |
-        `default` means all projects visible under the caller's normal scope.
+        `default` means all active workspaces visible under the caller's normal
+        scope. The compatibility-named `project` query selects workspaces.
         A saved view is evaluated under that same viewer-specific authorization
-        and ignored-project scope. Lane and card totals are calculated before
-        their respective offsets and limits.
+        and ignored-workspace scope. Archived selections remain stored but are
+        dormant until restored. Lane and card totals are calculated before their
+        respective offsets and limits.
       parameters:
         - name: ref
           in: path
@@ -779,9 +789,16 @@ paths:
     get:
       tags: [projects]
       operationId: listProjects
-      summary: List projects
+      summary: 'List workspaces (compatibility path: projects)'
       parameters:
         - $ref: '#/components/parameters/listingFilter'
+        - name: state
+          in: query
+          description: Lifecycle subset. Archived workspaces are omitted by default.
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
         - name: sort
           in: query
           description: |
@@ -799,7 +816,7 @@ paths:
     post:
       tags: [projects]
       operationId: createProject
-      summary: Create a project
+      summary: Create a workspace
       requestBody:
         required: true
         content:
@@ -818,7 +835,7 @@ paths:
     get:
       tags: [projects]
       operationId: getProject
-      summary: Read one project
+      summary: Read one workspace
       responses:
         '200': { $ref: '#/components/responses/Project' }
         default: { $ref: '#/components/responses/Error' }
@@ -826,7 +843,7 @@ paths:
     patch:
       tags: [projects]
       operationId: updateProject
-      summary: Change a project's name or description
+      summary: Change a workspace's name or description
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -840,41 +857,96 @@ paths:
     delete:
       tags: [projects]
       operationId: deleteProject
-      summary: Delete a project
+      summary: Delete a workspace
       description: |
-        Refuses while the project holds any issue at all, closed ones included,
+        Refuses while the workspace holds any issue at all, closed ones included,
         unless `cascade` is true — which deletes those issues and their
-        relations, including relations to issues in other projects, which may
+        relations, including relations to issues in other workspaces, which may
         unblock work elsewhere.
       parameters:
         - name: cascade
           in: query
-          description: Also delete the issues the project holds.
+          description: Also delete the issues the workspace holds.
           schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '200':
           description: |
-            The project as it was immediately before deletion. It carries no
+            The workspace as it was immediately before deletion. It carries no
             ETag: the version it describes is gone.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Project' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/projects/{key}/archive:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    post:
+      tags: [projects]
+      operationId: archiveProject
+      summary: Archive a workspace as retained read-only history
+      description: |
+        Requires the project_admin flag. Idempotent when already archived.
+        Existing records, workspace-prefixed issue IDs and stable URLs remain
+        readable. Nothing transfers to another workspace; the archived
+        workspace is omitted from normal discovery and rejects work mutations.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/restore:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    post:
+      tags: [projects]
+      operationId: restoreProject
+      summary: Restore an archived workspace
+      description: Requires the project_admin compatibility flag and preserves the same workspace boundary, every child record and every preference.
+      parameters:
+        - $ref: '#/components/parameters/ifMatch'
+      responses:
+        '200': { $ref: '#/components/responses/Project' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/projects/{key}/activity:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/ProjectKey' }
+    get:
+      tags: [projects]
+      operationId: listProjectActivity
+      summary: List archive and restore audit entries, newest first
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/ProjectActivityList' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/preferences/projects:
     get:
       tags: [users]
       operationId: listProjectPreferences
-      summary: List the current user's otherwise-visible projects and ignore state
+      summary: List the current user's otherwise-visible workspaces and ignore state
       description: |
-        This is the recovery path for ignored projects. It deliberately bypasses
-        only the current user's ignored-project filter while retaining ordinary
-        project authorization, so an ignored project can always be re-enabled
-        without disclosing any project the caller may not otherwise know about.
+        This is the recovery path for ignored workspaces. It deliberately bypasses
+        only the current user's ignored-workspace filter while retaining ordinary
+        workspace authorization, so an ignored workspace can always be re-enabled
+        without disclosing any workspace the caller may not otherwise know about.
       responses:
         '200':
-          description: The current user's project preferences, ordered by project key.
+          description: The current user's workspace preferences, ordered by workspace key.
           content:
             application/json:
               schema:
@@ -891,11 +963,11 @@ paths:
     put:
       tags: [users]
       operationId: setProjectIgnored
-      summary: Set whether the current user ignores one otherwise-visible project
+      summary: Set whether the current user ignores one otherwise-visible workspace
       description: |
-        Idempotent. Like the preference listing, project resolution applies
+        Idempotent. Like the preference listing, workspace resolution applies
         ordinary authorization but bypasses the existing ignore state so false
-        can always re-enable the project.
+        can always re-enable the workspace.
       requestBody:
         required: true
         content:
@@ -918,17 +990,42 @@ paths:
     get:
       tags: [projects]
       operationId: listProjectMembers
-      summary: The users with access to a project, ordered by username ascending
+      summary: The users with access to a workspace, ordered by username ascending
       description: |
-        Readable by any member of the project: knowing who else works on a
+        Readable by any member of the workspace: knowing who else works on a
         board is part of working on it, and every one of those names is
-        already visible as an assignee. A project the caller has no access to
-        is a `404`, as it is everywhere else.
+        already visible as an assignee. A workspace the caller has no access to
+        is a `404`, as it is everywhere else. This dedicated administration
+        path bypasses the caller's ignored-workspace preference without
+        bypassing authorization, so an ignored workspace remains manageable.
       parameters:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
         '200': { $ref: '#/components/responses/MembershipList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [projects]
+      operationId: addProjectMember
+      summary: Grant a user who is not already a member access to a project
+      description: |
+        Requires `admin` access to the project. Unlike the member resource's
+        `PUT`, this create operation returns `409` when the user is already a
+        member. The existence check and insert share one write transaction, so
+        a stale administration view cannot overwrite a concurrent access
+        grant. The dedicated administration path remains available when the
+        caller has personally ignored the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipCreate' }
+      responses:
+        '201':
+          description: The new membership.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/projects/{key}/members/{user}:
@@ -944,15 +1041,17 @@ paths:
     put:
       tags: [projects]
       operationId: setProjectMember
-      summary: Grant a user access to a project
+      summary: Grant a user access to a workspace
       description: |
-        Replaces whatever access the user held in the project, so granting the
+        Replaces whatever access the user held in the workspace, so granting the
         level they already hold succeeds and changes nothing. `PUT` rather than
         `POST` because a membership is addressed by its own path and setting it
         is idempotent.
 
-        Requires `admin` access to that project, which the `project_admin` flag
-        also confers. Naming a user who does not exist is a `404`.
+        Requires `admin` access to that workspace, which the compatibility field `project_admin`
+        also confers. Naming a user who does not exist is a `404`. The
+        dedicated administration path remains available when the caller has
+        personally ignored the workspace.
 
         A membership carries no timestamps and no ETag, having one field; there
         is no `If-Match` here.
@@ -967,11 +1066,12 @@ paths:
     delete:
       tags: [projects]
       operationId: removeProjectMember
-      summary: Withdraw a user's access to a project
+      summary: Withdraw a user's access to a workspace
       description: |
-        Requires `admin` access to that project. Withdrawing access nobody
+        Requires `admin` access to that workspace. Withdrawing access nobody
         holds is a `404`, exactly as deleting an attachment that is not there
-        is.
+        is. The dedicated administration path remains available when the
+        caller has personally ignored the workspace.
       responses:
         '200':
           description: |
@@ -988,9 +1088,9 @@ paths:
       summary: List users, ordered by name ascending
       description: |
         A user administrator sees every account. Other users see themselves
-        and current accounts that are or have been involved in a project they
+        and current accounts that are or have been involved in a workspace they
         can see, whether through membership, assignment or activity. Their
-        returned memberships are limited to those visible projects.
+        returned memberships are limited to those visible workspaces.
       parameters:
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/limit'
@@ -1025,7 +1125,7 @@ paths:
     get:
       tags: [users]
       operationId: getUser
-      summary: Read one user, with their project memberships
+      summary: Read one user, with their workspace memberships
       description: |
         Requires the `user_admin` flag, except that a user may always read
         their own account — which is how somebody without that flag learns what
@@ -1107,6 +1207,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -1142,6 +1243,7 @@ paths:
           explode: true
         - $ref: '#/components/parameters/status'
         - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
         - $ref: '#/components/parameters/type'
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
@@ -1171,7 +1273,7 @@ paths:
 
         It is read-only and says nothing about what the caller may do. That is
         `GET /api/users/{name}`, which a user may always call for themselves,
-        and which answers with their two flags and every project they have
+        and which answers with their two flags and every workspace they have
         access to.
       responses:
         '200':
@@ -1258,6 +1360,11 @@ components:
       in: query
       description: Widen whatever status set is in force to include closed issues.
       schema: { type: boolean, default: false }
+    includeArchived:
+      name: include-archived
+      in: query
+      description: Include retained archived workspace issues for explicit history or export.
+      schema: { type: boolean, default: false }
     type:
       name: type
       in: query
@@ -1312,8 +1419,9 @@ components:
       name: project
       in: query
       description: |
-        Select these projects. Repeat for several; values are ORed. A key naming
-        no project is a 404 rather than a listing that matches nothing.
+        Select these workspaces. Repeat for several; values are ORed. The
+        parameter name is retained for compatibility. A key naming no workspace
+        is a 404 rather than a listing that matches nothing.
       schema:
         type: array
         items: { $ref: '#/components/schemas/ProjectKey' }
@@ -1431,14 +1539,14 @@ components:
             type: array
             items: { $ref: '#/components/schemas/Activity' }
     Project:
-      description: The project.
+      description: The workspace, represented by the compatibility-named Project schema.
       headers:
         Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
     ProjectCreated:
-      description: The new project.
+      description: The new workspace, represented by the compatibility-named Project schema.
       headers:
         Location: { $ref: '#/components/headers/Location' }
         Etag: { $ref: '#/components/headers/ETag' }
@@ -1446,7 +1554,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
     ProjectList:
-      description: The projects.
+      description: The workspaces, represented by the compatibility-named Project schema.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
       content:
@@ -1454,6 +1562,15 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Project' }
+    ProjectActivityList:
+      description: Workspace lifecycle audit entries, newest first.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/ProjectActivity' }
     FacetList:
       description: The distinct values in use, sorted by value ascending.
       headers:
@@ -1534,9 +1651,9 @@ components:
         * `404` — an entity addressed by name does not exist. Exit code 3.
         * `409` — a constraint that depends on stored state: a dependency
           cycle, a duplicate, a claim held by somebody else, a parent already
-          set, or a project that still holds issues. Exit code 4.
+          set, or a workspace that still holds issues. Exit code 4.
         * `403` — the caller's permissions do not cover what they asked for.
-          It is always about something they can see: a project or an issue they
+          It is always about something they can see: a workspace or an issue they
           hold no access to is a `404` instead, since they are not being told
           it exists. Exit code 5.
         * `500` — the request was fine and something else was not. Exit code 1.
@@ -1606,6 +1723,11 @@ components:
 
     BoardViewPatch:
       type: object
+      description: |
+        Replaces each mutable field it carries and leaves the others alone.
+        `id`, `owner` and the timestamps are immutable and their values are
+        ignored, so a UI can send back the object it read. Ignored fields are
+        still validated against their declared schemas.
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
@@ -1621,6 +1743,10 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
+        id: { $ref: '#/components/schemas/BoardViewID' }
+        owner: { $ref: '#/components/schemas/Assignee' }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
 
     Board:
       type: object
@@ -1757,17 +1883,17 @@ components:
     Access:
       type: string
       description: |
-        What one user may do in one project, and the only per-project
-        vocabulary there is. `regular` is working with the project's issues —
+        What one user may do in one workspace, and the only per-workspace
+        vocabulary there is. `regular` is working with the workspace's issues —
         reading them, creating them, editing them, claiming them, everything
         awb does to an issue. `admin` is that and, in addition, adding and
-        removing the project's other users.
+        removing the workspace's other users.
 
-        `admin` is not power over the project itself: creating, renaming and
-        deleting a project is the `project_admin` flag's, because a project's
+        `admin` is not power over the workspace itself: creating, renaming and
+        deleting a workspace is the compatibility field `project_admin`'s, because a workspace's
         own existence is not something its members decide.
 
-        Holding neither in a project means the project does not exist as far
+        Holding neither in a workspace means the workspace does not exist as far
         as that user is concerned.
       enum: [regular, admin]
 
@@ -1960,7 +2086,7 @@ components:
       properties:
         id:
           type: string
-          description: '`<workspace-key>-<hash>`, assigned at creation and immutable.'
+          description: '`<workspace-key>-<hash>`, assigned at creation and immutable; the compatibility field `project` names that workspace.'
           examples: [awb-5c1d84]
         project: { $ref: '#/components/schemas/ProjectKey' }
         title:
@@ -2006,14 +2132,14 @@ components:
 
             It is computed over the whole graph rather than over what the
             caller may see, because readiness has to be true: an issue held up
-            by work in a project you have no access to is still held up.
+            by work in a workspace you have no access to is still held up.
         blockers:
           type: array
           description: |
             Derived and read-only: the not-closed issues that cause `blocked`.
             Sorted, and empty for a closed issue whatever its relations say.
 
-            An entry may name an issue in a project the caller has no access
+            An entry may name an issue in a workspace the caller has no access
             to, for the reason `blocked` gives. The name is all that is
             exposed: fetching that issue is a `404`.
           items: { type: string }
@@ -2023,7 +2149,7 @@ components:
             Derived and read-only: every relation the issue takes part in, at
             either end.
 
-            As with `blockers`, `other` may name an issue in a project the
+            As with `blockers`, `other` may name an issue in a workspace the
             caller has no access to: this issue is theirs to see and what it is
             related to is part of it.
           items: { $ref: '#/components/schemas/Relation' }
@@ -2069,9 +2195,10 @@ components:
       examples: ['2026-08-26T09:12:03.412Z']
 
     Project:
+      description: Compatibility-named representation of one workspace.
       type: object
       additionalProperties: false
-      required: [key, name, description, active_issues, created_at, updated_at]
+      required: [key, name, description, state, archived_at, archived_by, active_issues, created_at, updated_at]
       properties:
         key: { $ref: '#/components/schemas/ProjectKey' }
         name:
@@ -2082,14 +2209,36 @@ components:
           minLength: 1
           maxLength: 500
         description: { type: string }
+        state:
+          type: string
+          enum: [active, archived]
+        archived_at:
+          type: string
+          description: Empty while active; otherwise the most recent archive time.
+        archived_by:
+          type: string
+          description: Empty while active; otherwise the actor who most recently archived it.
         active_issues:
           type: integer
           description: |
             Derived and read-only: the number of issues that are not closed.
-            Changing it does not affect the project's `updated_at`.
+            Changing it does not affect the workspace's `updated_at`.
           minimum: 0
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    ProjectActivity:
+      type: object
+      additionalProperties: false
+      required: [id, project, action, actor, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        action:
+          type: string
+          enum: [archived, restored]
+        actor: { type: string }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
 
     ProjectPreference:
       type: object
@@ -2099,7 +2248,7 @@ components:
         project: { $ref: '#/components/schemas/Project' }
         ignored:
           type: boolean
-          description: Whether the current user hides this project from normal operations.
+          description: Whether the current user hides this workspace from normal operations.
 
     ProjectPreferenceSet:
       type: object
@@ -2111,11 +2260,11 @@ components:
     Membership:
       type: object
       description: |
-        One user's access to one project. Both ends are named whichever way
-        round it is read, so a project's member list and a user's own project
+        One user's access to one workspace. Both ends are named whichever way
+        round it is read, so a workspace's member list and a user's own workspace
         list are one shape.
 
-        A membership is identified by `project` and `user` together and carries
+        A membership is identified by compatibility fields `project` and `user` together and carries
         no id of its own, exactly as an attachment is identified by its issue
         and its name. It has no timestamps and therefore no ETag.
       additionalProperties: false
@@ -2139,7 +2288,7 @@ components:
         project_admin:
           type: boolean
           description: |
-            May create, change and delete projects, and holds `admin` access in
+            May create, change and delete workspaces, and holds `admin` access in
             every one of them — including the ones nobody has been given access
             to, since somebody has to be able to.
         user_admin:
@@ -2152,12 +2301,12 @@ components:
           allOf: [$ref: '#/components/schemas/Timestamp']
           description: |
             Moves when the full name, password or either flag changes, and is strictly
-            increasing per user. Granting or withdrawing access to a project
+            increasing per user. Granting or withdrawing access to a workspace
             does not move it, exactly as an issue's relations do not move its.
         projects:
           type: array
           description: |
-            Derived and read-only: the projects this user has access to, by key
+            Derived and read-only: the workspaces this user has access to, by key
             ascending. In the scoped user directory, only memberships visible
             to the caller are included. Membership is changed by its own
             endpoints.
@@ -2167,11 +2316,11 @@ components:
       type: object
       description: |
         One account as it appears in the user directory, including the
-        projects where that username occurs in an assignment or activity
+        workspaces where that username occurs in an assignment or activity
         entry. This is historical, so closed issues still count, and is kept
         separate from the account's current memberships. The list remains
-        restricted to project names the caller may see, except that a user
-        administrator's complete directory includes every project.
+        restricted to workspace names the caller may see, except that a user
+        administrator's complete directory includes every workspace.
       additionalProperties: false
       required: [name, full_name, project_admin, user_admin, created_at, updated_at, projects, activity_projects]
       properties:
@@ -2199,10 +2348,17 @@ components:
 
     Identity:
       type: object
+      description: |
+        The request identity and its effective account-administration
+        capability. `may_manage_users` is true in direct and `--no-auth`
+        modes as well as for an authenticated user administrator, so clients
+        do not mistake a fixed attribution identity for an authenticated
+        account with the same name.
       additionalProperties: false
-      required: [identity]
+      required: [identity, may_manage_users]
       properties:
         identity: { type: string }
+        may_manage_users: { type: boolean }
 
     Error:
       type: object
@@ -2458,6 +2614,15 @@ components:
           items: { $ref: '#/components/schemas/Membership' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+
+    MembershipCreate:
+      type: object
+      description: The body of `POST /api/projects/{key}/members`.
+      additionalProperties: false
+      required: [user, access]
+      properties:
+        user: { $ref: '#/components/schemas/Username' }
+        access: { $ref: '#/components/schemas/Access' }
 
     MembershipSet:
       type: object

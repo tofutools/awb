@@ -48,6 +48,11 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	c := &conditions{}
 
 	t.visible(c, "i.project")
+	// Archived work remains reachable through stable direct URLs, but never
+	// participates in everyday listings, search, facets, readiness or pickers.
+	if !f.IncludeArchived {
+		c.add(`EXISTS (SELECT 1 FROM projects p WHERE p.key = i.project AND p.state = 'active')`)
+	}
 	c.addIn("i.status", anyArgs(f.EffectiveStatuses()))
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))

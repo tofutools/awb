@@ -912,4 +912,16 @@ func TestIdentity(t *testing.T) {
 	identity, err := b.Identity(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "mikael", identity)
+
+	allowed, err := b.MayManageUsers(ctx)
+	require.NoError(t, err)
+	assert.True(t, allowed, "direct mode is unrestricted")
+	_, err = b.CreateUser(ctx, backend.UserCreate{Name: "mikael", Password: "hunter2"})
+	require.NoError(t, err)
+	allowed, err = b.WithUser("mikael").MayManageUsers(ctx)
+	require.NoError(t, err)
+	assert.False(t, allowed, "an authenticated caller follows the stored flag")
+	allowed, err = b.WithoutUserPreferences().MayManageUsers(ctx)
+	require.NoError(t, err)
+	assert.True(t, allowed, "no-auth ignores a matching stored account")
 }

@@ -99,9 +99,9 @@ func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
 	}))
 }
 
-func TestV10AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
+func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
-	raw := openAtVersion(t, path, 9)
+	raw := openAtVersion(t, path, 10)
 	_, err := raw.ExecContext(t.Context(), `INSERT INTO projects
 		(key, name, description, created_at, updated_at)
 		VALUES ('awb', 'AWB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
@@ -117,6 +117,9 @@ func TestV10AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 		return tx.InsertBoardView(view)
 	}))
 	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		project, readErr := tx.GetProject("awb")
+		require.NoError(t, readErr)
+		assert.Equal(t, "AWB", project.Name)
 		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, readErr)
 		assert.Equal(t, []string{"awb"}, view.Projects)
@@ -124,9 +127,9 @@ func TestV10AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	}))
 }
 
-func TestV11AddsAutomaticOrderWithoutChangingExistingIssues(t *testing.T) {
+func TestV12AddsAutomaticOrderWithoutChangingExistingIssues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
-	raw := openAtVersion(t, path, 10)
+	raw := openAtVersion(t, path, 11)
 	_, err := raw.ExecContext(t.Context(), `INSERT INTO projects
 		(key, name, description, created_at, updated_at)
 		VALUES ('awb', 'AWB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),

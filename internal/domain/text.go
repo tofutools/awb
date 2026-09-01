@@ -167,16 +167,16 @@ func ValidateComment(s string) (string, error) {
 // is accepted here and means "restore the key as the name", which is what
 // --name "" and a PATCH carrying "" do; the caller substitutes the key.
 func ValidateProjectName(s string) (string, error) {
-	if err := checkUTF8("project name", s); err != nil {
+	if err := checkUTF8("workspace name", s); err != nil {
 		return "", err
 	}
 	// Not trimmed: only a title and a close reason are. Everything else is
 	// stored byte for byte as it arrived, so a name whose spacing the caller
 	// meant is the name they get back.
-	if err := checkNoControls("project name", s); err != nil {
+	if err := checkNoControls("workspace name", s); err != nil {
 		return "", err
 	}
-	if err := checkMaxRunes("project name", s, MaxProjectNameLen); err != nil {
+	if err := checkMaxRunes("workspace name", s, MaxProjectNameLen); err != nil {
 		return "", err
 	}
 	return s, nil
@@ -202,14 +202,14 @@ func ValidateUserFullName(s string) (string, error) {
 // digits and hyphens, starting with a letter, at most 16 characters. The key
 // is refused rather than normalised.
 func ValidateProjectKey(s string) (string, error) {
-	if err := checkUTF8("project key", s); err != nil {
+	if err := checkUTF8("workspace key", s); err != nil {
 		return "", err
 	}
 	if s == "" {
-		return "", awberr.Usagef("project key must not be empty")
+		return "", awberr.Usagef("workspace key must not be empty")
 	}
 	if len(s) > MaxProjectKeyLen {
-		return "", awberr.Usagef("invalid project key %q: at most %d characters", s, MaxProjectKeyLen)
+		return "", awberr.Usagef("invalid workspace key %q: at most %d characters", s, MaxProjectKeyLen)
 	}
 	for i, r := range s {
 		switch {
@@ -217,7 +217,7 @@ func ValidateProjectKey(s string) (string, error) {
 		case i > 0 && (r >= '0' && r <= '9' || r == '-'):
 		default:
 			return "", awberr.Usagef(
-				"invalid project key %q: lowercase ASCII letters, digits and hyphens, starting with a letter", s)
+				"invalid workspace key %q: lowercase ASCII letters, digits and hyphens, starting with a letter", s)
 		}
 	}
 	return s, nil

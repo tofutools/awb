@@ -28,19 +28,20 @@ var migrations = [][]string{
 	schemaV9,
 	schemaV10,
 	schemaV11,
+	schemaV12,
 }
 
-// schemaV11 adds a sparse manual position. Zero means the issue has not been
+// schemaV12 adds a sparse manual position. Zero means the issue has not been
 // positioned and therefore follows the ordinary priority/recency fallback.
-var schemaV11 = []string{
+var schemaV12 = []string{
 	`ALTER TABLE issues ADD COLUMN board_order INTEGER NOT NULL DEFAULT 0 CHECK (board_order >= 0)`,
 	`CREATE INDEX idx_issues_board_order ON issues (board_order, priority, updated_at, id)`,
 }
 
-// schemaV10 stores owner-scoped board filters. The owner is deliberately not
+// schemaV11 stores owner-scoped board filters. The owner is deliberately not
 // a foreign key: an open database has a fixed identity but no user rows. A
 // trigger still removes views with an account on authenticated installations.
-var schemaV10 = []string{
+var schemaV11 = []string{
 	`CREATE TABLE board_views (
 		id           TEXT PRIMARY KEY,
 		name         TEXT NOT NULL,
@@ -77,6 +78,24 @@ var schemaV10 = []string{
 	`CREATE TRIGGER users_board_views_ad AFTER DELETE ON users BEGIN
 		DELETE FROM board_views WHERE owner = old.name;
 	END`,
+}
+
+// schemaV10 retains old projects without deleting any of their graph or blob
+// metadata, and records every actual lifecycle transition append-only.
+var schemaV10 = []string{
+	`ALTER TABLE projects ADD COLUMN state TEXT NOT NULL DEFAULT 'active'
+		CHECK (state IN ('active', 'archived'))`,
+	`ALTER TABLE projects ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE projects ADD COLUMN archived_by TEXT NOT NULL DEFAULT ''`,
+	`CREATE TABLE project_activity (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		project    TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+		action     TEXT NOT NULL CHECK (action IN ('archived', 'restored')),
+		actor      TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	) STRICT`,
+	`CREATE INDEX idx_project_activity_order
+		ON project_activity (project, created_at DESC, id DESC)`,
 }
 
 // schemaV9 stores the projects each user has chosen to hide. Both foreign keys

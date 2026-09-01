@@ -188,7 +188,7 @@ type rootParams struct {
 	Attachments *string `long:"attachments" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
 	JSON        bool    `long:"json" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
 	Compact     bool    `long:"compact" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
-	NoContext   bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the project and label of the local configuration file"`
+	NoContext   bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the workspace and label of the local configuration file"`
 	Color       string  `long:"color" persistent:"true" default:"auto" optional:"true" alts:"auto,always,never" help:"when to colour the default output: auto, always or never"`
 	NoColor     bool    `long:"no-color" persistent:"true" optional:"true" help:"alias for --color never"`
 }

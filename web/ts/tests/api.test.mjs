@@ -76,6 +76,33 @@ test("profile edits use the safely encoded path and advance its ETag", async (t)
   assert.equal(calls[2].init.body, JSON.stringify({ password: "changed" }));
 });
 
+test("user administration creates and version-deletes accounts", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ name: "a/b" }), {
+      status: calls.length === 1 ? 200 : calls.length === 2 ? 201 : 200,
+      headers: calls.length === 1 ? { ETag: '"user-v1"' } : { "Content-Type": "application/json" },
+    });
+  });
+
+  await api.user("a/b");
+  await api.createUser({ name: "new-user", password: "safe password", user_admin: true });
+  await api.deleteUser("a/b");
+
+  assert.equal(calls[1].path, "api/users");
+  assert.equal(calls[1].init.method, "POST");
+  assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
+  assert.deepEqual(JSON.parse(calls[1].init.body), {
+    name: "new-user",
+    password: "safe password",
+    user_admin: true,
+  });
+  assert.equal(calls[2].path, "api/users/a%2Fb");
+  assert.equal(calls[2].init.method, "DELETE");
+  assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v1"');
+});
+
 test("project preferences use their dedicated recovery endpoints", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
@@ -118,6 +145,15 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");
   assert.equal(boardURL.searchParams.get("card-offset"), "8");
+});
+
+test("identity exposes the backend's effective account-administration capability", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    identity: "fixed-name",
+    may_manage_users: true,
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+  assert.deepEqual(await api.identity(), { identity: "fixed-name", may_manage_users: true });
 });
 
 // Every listing is asked with the filters it accepts. Regression: the listing
@@ -270,4 +306,56 @@ test("project edits patch the project resource with its ETag", async () => {
   assert.equal(requests[1].init.method, "PATCH");
   assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"project-version"');
   assert.deepEqual(JSON.parse(requests[1].init.body), { name: "Web", description: "Markdown" });
+});
+
+test("project creation and lifecycle use stable paths and advance the project ETag", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify(calls.length === 5 ? [] : { key: "team/web" }), {
+      status: calls.length === 1 ? 201 : 200,
+      headers: { "Content-Type": "application/json", ETag: `"v${calls.length}"` },
+    });
+  });
+
+  await api.createProject({ key: "team/web", name: "Web" });
+  await api.updateProject("team/web", { description: "Client" });
+  await api.archiveProject("team/web");
+  await api.restoreProject("team/web");
+  await api.projectActivity("team/web");
+
+  assert.equal(calls[0].path, "api/projects");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[1].path, "api/projects/team%2Fweb");
+  assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"v1"');
+  assert.equal(calls[2].path, "api/projects/team%2Fweb/archive");
+  assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"v2"');
+  assert.equal(calls[3].path, "api/projects/team%2Fweb/restore");
+  assert.equal(new Headers(calls[3].init.headers).get("If-Match"), '"v3"');
+  assert.equal(calls[4].path, "api/projects/team%2Fweb/activity");
+});
+
+test("project membership writes distinguish creation from the idempotent resource", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ project: "team/web", user: "a/b", access: "admin" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  await api.addProjectMember("team/web", "a/b", "admin");
+  await api.setProjectMember("team/web", "a/b", "admin");
+  await api.removeProjectMember("team/web", "a/b");
+
+  assert.equal(calls[0].path, "api/projects/team%2Fweb/members");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { user: "a/b", access: "admin" });
+  assert.equal(calls[1].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[1].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { access: "admin" });
+  assert.equal(calls[2].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[2].init.method, "DELETE");
 });

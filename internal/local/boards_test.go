@@ -216,3 +216,38 @@ func TestDeletingASelectedProjectMovesTheBoardViewETag(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed, "the pre-deletion ETag is stale")
 }
+
+func TestArchivedWorkspaceSelectionIsDormantAndRestored(t *testing.T) {
+	root, ctx := newInstance(t)
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Current work", AllProjects: false,
+		Projects: []string{"awb"}, PriorityMax: 4})
+	require.NoError(t, err)
+	workspace, err := root.GetProject(ctx, "awb")
+	require.NoError(t, err)
+	archived, err := root.ArchiveProject(ctx, "awb", backend.ETag(workspace.UpdatedAt))
+	require.NoError(t, err)
+
+	hidden, err := root.GetBoardView(ctx, view.ID)
+	require.NoError(t, err)
+	assert.Empty(t, hidden.Projects, "archived workspaces are omitted from normal board metadata")
+	board, err := root.GetBoard(ctx, view.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.True(t, board.ProjectsOmitted)
+	require.Len(t, board.Lanes, 1)
+	for _, column := range board.Lanes[0].Columns {
+		assert.Empty(t, column.Issues)
+	}
+
+	name := "Renamed while archived"
+	updated, err := root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(view.UpdatedAt))
+	require.NoError(t, err, "an unrelated edit preserves a dormant workspace selection")
+	assert.Empty(t, updated.Projects)
+	_, err = root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Archived", Projects: []string{"awb"}, PriorityMax: 4})
+	notFound(t, err, "an archived workspace cannot be newly selected")
+
+	_, err = root.RestoreProject(ctx, "awb", backend.ETag(archived.UpdatedAt))
+	require.NoError(t, err)
+	restored, err := root.GetBoardView(ctx, view.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"awb"}, restored.Projects)
+}

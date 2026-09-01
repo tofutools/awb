@@ -66,8 +66,16 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await dialog.getByText("Anyone with the link").click();
   await dialog.getByRole("button", { name: "Save view" }).click();
   await expect(page).toHaveURL(/#\/boards\/view-[0-9a-f]{24}$/);
+  const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
+
+  const closeControl = page.locator(".board-card", { hasText: "Build the full text search index" }).getByLabel(/Status for demo-/);
+  await closeControl.selectOption("closed");
+  const closeDialog = page.getByRole("dialog", { name: "Close issue?" });
+  await expect(closeDialog).toContainText("This can be reopened later.");
+  await closeDialog.getByRole("button", { name: "No" }).click();
+  await expect(closeControl).toHaveValue("open");
 
   // Epic-to-epic, epic-to-No-epic, and No-epic-to-epic all preserve the
   // immutable demo workspace while status and sparse position move atomically.
@@ -162,4 +170,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.keyboard.press("Enter");
   const listMove = await listOrderResponse;
   expect(listMove.request().postDataJSON().direction).toBe("earlier");
+
+  await page.goto(savedViewURL);
+  await page.getByRole("button", { name: "Edit view" }).click();
+  await page.getByRole("dialog", { name: "Edit board view" }).getByRole("button", { name: "Delete" }).click();
+  const deleteDialog = page.getByRole("dialog", { name: "Delete board view?" });
+  await expect(deleteDialog).toContainText("Issues are not affected.");
+  await deleteDialog.getByRole("button", { name: "Yes" }).click();
+  await expect(page).toHaveURL(/#\/boards$/);
 });
