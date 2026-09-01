@@ -123,8 +123,11 @@ test("save, share and work from a responsive board", async ({ page }) => {
   });
   await expect(createDialog.locator(".issue-create-resource-list.attachments")).toContainText("release-notes.txt");
   await createDialog.getByRole("button", { name: "Create issue" }).click();
-  await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
-  const createdID = page.url().split("/").at(-1);
+  await expect(page).toHaveURL(/#\/boards$/);
+  await expect(page.locator(".app-notice")).toContainText(/Issue demo-[0-9a-f]+ was created\./);
+  const createdCard = page.locator(".board-card", { hasText: "Created from the board" });
+  await expect(createdCard).toBeVisible();
+  const createdID = await createdCard.getAttribute("data-issue");
   const created = await page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()), createdID);
   const caller = await page.evaluate(async () => (await (await fetch("api/identity")).json()).identity);
   expect(created.type).toBe("feature");
@@ -157,9 +160,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(partialDialog.getByRole("button", { name: "Create issue" })).toBeDisabled();
   await page.waitForTimeout(100);
   await expect(page).toHaveURL(/#\/issues$/);
-  await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
   await expect(page.locator(".app-notice-error")).toContainText("fails.txt (simulated upload failure)");
-  await expect(page.locator(".attachment-section")).toContainText("slow.txt");
+  const partialRow = page.locator(".issue-table tbody tr", { hasText: "Partially uploaded issue" });
+  await expect(partialRow).toBeVisible();
+  const partialHref = await partialRow.locator("a[href^='#/issues/']").getAttribute("href");
+  const partialID = partialHref?.split("/").at(-1);
+  const partialIssue = await page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()), partialID);
+  expect(partialIssue.attachments.map((attachment) => attachment.name)).toContain("slow.txt");
   await page.unroute("**/api/issues/*/attachments?*");
   await page.goto(`${baseURL}/#/boards`);
 
