@@ -262,7 +262,7 @@ paths:
       operationId: moveIssue
       summary: Atomically move and manually position an issue
       description: |
-        Places the issue in a workflow status and optional direct same-project
+        Places the issue in a workflow status and optional direct same-workspace
         epic, immediately before or after one anchor in the same ordering
         scope, or one transaction-time place earlier/later without requiring a
         visible anchor. These position choices are mutually exclusive. Omitting

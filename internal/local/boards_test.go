@@ -219,6 +219,8 @@ func TestDeletingASelectedProjectMovesTheBoardViewETag(t *testing.T) {
 
 func TestArchivedWorkspaceSelectionIsDormantAndRestored(t *testing.T) {
 	root, ctx := newInstance(t)
+	epic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Dormant epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
 	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Current work", AllProjects: false,
 		Projects: []string{"awb"}, PriorityMax: 4})
 	require.NoError(t, err)
@@ -236,6 +238,10 @@ func TestArchivedWorkspaceSelectionIsDormantAndRestored(t *testing.T) {
 	require.Len(t, board.Lanes, 1)
 	for _, column := range board.Lanes[0].Columns {
 		assert.Empty(t, column.Issues)
+	}
+	for _, ref := range []string{"default", view.ID} {
+		_, err = root.GetBoard(ctx, ref, backend.BoardQuery{Epic: &epic.ID})
+		notFound(t, err, "an explicit epic cannot bypass the active-workspace board scope")
 	}
 
 	name := "Renamed while archived"

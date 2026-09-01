@@ -95,7 +95,7 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 				return err
 			}
 			if !exists {
-				return awberr.NotFoundf("no such project: %s", project)
+				return awberr.NotFoundf("no such workspace: %s", project)
 			}
 		}
 		if err := tx.InsertBoardView(view); err != nil {
@@ -258,7 +258,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 					return err
 				}
 				if !exists {
-					return awberr.NotFoundf("no such project: %s", project)
+					return awberr.NotFoundf("no such workspace: %s", project)
 				}
 			}
 		}
@@ -393,7 +393,11 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					if err != nil {
 						return err
 					}
-					if epic.Type != domain.TypeEpic ||
+					active, err := tx.ActiveProjectExists(epic.Project)
+					if err != nil {
+						return err
+					}
+					if !active || epic.Type != domain.TypeEpic ||
 						(laneSelection != nil && !slices.Contains(laneSelection, epic.Project)) {
 						return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 					}

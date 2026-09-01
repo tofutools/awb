@@ -584,7 +584,7 @@ archived selection is dormant rather than removed and becomes active again
 when its workspace is restored. A boolean can say that some configured workspaces were omitted without naming one or
 distinguishing authorization from preference.
 
-Views are personal resources rather than project resources. Their owner alone
+Views are personal resources rather than workspace resources. Their owner alone
 may change or delete them; administrative flags do not imply ownership. A
 shared view is unlisted and readable by stable URL, while listing returns only
 the current identity's views. The virtual default board is not stored. Board
