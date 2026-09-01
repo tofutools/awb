@@ -130,6 +130,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   });
   await page.reload();
   const responsiveCard = page.locator(".board-card").first();
+  const movedID = await responsiveCard.getAttribute("data-issue");
+  expect(movedID).toBeTruthy();
   await expect(responsiveCard.getByLabel(/Drag demo-/)).toBeHidden();
   const keyboardBoardOrder = responsiveCard.locator(".board-card-order-button:not([disabled])").first();
   await expect(keyboardBoardOrder).toBeEnabled();
@@ -137,7 +139,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await keyboardBoardOrder.focus();
   await page.keyboard.press("Enter");
   await boardOrderResponse;
-  const reorderedCard = page.locator(".board-card", { hasText: "Build the full text search index" });
+  const reorderedCard = page.locator(`.board-card[data-issue="${movedID}"]`);
   const epicControl = reorderedCard.getByLabel(/Epic for demo-/);
   const initialEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
   await page.getByRole("button", { name: /Load up to .* more epics/ }).click();
@@ -145,7 +147,6 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const loadedEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
   const pagedEpic = loadedEpicValues.find((value) => !initialEpicValues.includes(value));
   expect(pagedEpic).toBeTruthy();
-  const movedID = await reorderedCard.getAttribute("data-issue");
   await reorderedCard.getByLabel(/Epic for demo-/).selectOption(pagedEpic);
   await expect.poll(async () => page.evaluate(async ({ id, epic }) => {
     const issue = await (await fetch(`api/issues/${id}`)).json();
