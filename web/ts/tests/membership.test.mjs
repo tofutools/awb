@@ -43,7 +43,7 @@ test("the add flow rejects duplicates and stale rows instead of restoring access
   assert.equal(membershipAdditionError("carol", renderedMembers), null);
   assert.equal(
     membershipAdditionError("bob", renderedMembers),
-    "@bob already has regular access. Remove that membership before granting different access.",
+    "@bob already has regular access. Use that member's Access control to grant different access.",
   );
 });
 

@@ -34,7 +34,7 @@ export function membershipAdditionError(user: string, members: Membership[]): st
   const existing = members.find((membership) => membership.user === user);
   if (existing === undefined) return null;
   return `@${user} already has ${existing.access} access. `
-    + "Remove that membership before granting different access.";
+    + "Use that member's Access control to grant different access.";
 }
 
 /** Membership changes deliberately allow the last stored administrator to
