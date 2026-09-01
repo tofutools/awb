@@ -584,7 +584,9 @@ inside its workspace, epic lane and status; regular lists edit the same rank
 inside one immutable workspace and reject a cross-workspace anchor. Accessible
 earlier/later actions resolve their neighbor from that whole scope inside the
 write transaction, so filtering and offset pagination do not turn the visible
-page boundary into an ordering boundary.
+page boundary into an ordering boundary. Swapping inside the still-automatic
+tail materialises only its prefix through the pair; this is necessary to keep
+earlier automatic rows in place, and later sparse moves normally touch one row.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated

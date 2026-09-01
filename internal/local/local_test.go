@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -188,6 +189,8 @@ func TestMoveDirectionUsesTheTransactionTimeWorkspaceOrder(t *testing.T) {
 	require.Len(t, secondPage.Issues, 1)
 	anchor := firstPage.Issues[24]
 	moving := secondPage.Issues[0]
+	want := append(slices.Clone(firstPage.Issues), secondPage.Issues...)
+	want[24], want[25] = want[25], want[24]
 
 	moved, err := b.MoveIssue(ctx, moving.ID, backend.IssueMove{
 		Status: domain.StatusOpen, Direction: "earlier",
@@ -198,6 +201,19 @@ func TestMoveDirectionUsesTheTransactionTimeWorkspaceOrder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Less(t, moved.Order, anchorAfter.Order,
 		"direction resolves the neighbor outside the caller's visible offset page")
+	allLimit := 50
+	after, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &allLimit, Offset: &firstOffset})
+	require.NoError(t, err)
+	wantIDs := make([]string, len(want))
+	for i := range want {
+		wantIDs[i] = want[i].ID
+	}
+	afterIDs := make([]string, len(after.Issues))
+	for i := range after.Issues {
+		afterIDs[i] = after.Issues[i].ID
+	}
+	assert.Equal(t, wantIDs, afterIDs,
+		"one-place direction preserves every other automatic row's position")
 
 	_, err = b.MoveIssue(ctx, moving.ID, backend.IssueMove{
 		Status: domain.StatusOpen, Direction: "earlier", Before: anchor.ID,

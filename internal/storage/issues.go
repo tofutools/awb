@@ -528,6 +528,36 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction stri
 		return nil, awberr.Usagef("the order anchor is not visible")
 	}
 	if anchor.order == 0 {
+		if direction != "" && issue.Order == 0 {
+			// Ranked rows sort before every automatic row. To swap two rows in
+			// the automatic tail without pulling that pair to its front, freeze
+			// only the automatic prefix through the pair in its desired order.
+			desired := slices.Clone(orderedRows)
+			position := -1
+			for i := range desired {
+				if desired[i].id == issue.ID {
+					position = i
+					break
+				}
+			}
+			target := position - 1
+			if direction == "later" {
+				target = position + 1
+			}
+			desired[position], desired[target] = desired[target], desired[position]
+			nextOrder := maxOrder
+			through := max(position, target)
+			for i := range through + 1 {
+				if desired[i].order > 0 {
+					continue
+				}
+				nextOrder += step
+				if err := write(&desired[i], nextOrder); err != nil {
+					return nil, err
+				}
+			}
+			return changes, nil
+		}
 		if beforeID != "" {
 			if err := write(&moving, maxOrder+step); err != nil {
 				return nil, err
