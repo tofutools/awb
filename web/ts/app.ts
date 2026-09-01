@@ -2974,7 +2974,7 @@ function workspaceArchiveConfirmation(workspace: Workspace, host: HTMLElement): 
   const input = document.createElement("input");
   input.placeholder = workspace.key;
   input.setAttribute("aria-label", `Type ${workspace.key} to confirm`);
-  const archive = element("button", "archive-button", "Archive workspace") as HTMLButtonElement;
+  const archive = element("button", "danger-button archive-button", "Archive workspace") as HTMLButtonElement;
   archive.type = "submit";
   archive.disabled = true;
   input.addEventListener("input", () => { archive.disabled = input.value !== workspace.key; });
@@ -2988,7 +2988,7 @@ function workspaceArchiveConfirmation(workspace: Workspace, host: HTMLElement): 
 }
 
 function workspaceEditForm(workspace: Workspace): HTMLFormElement {
-  const form = element("form", "edit-panel") as HTMLFormElement;
+  const form = element("form", "edit-panel workspace-edit-form") as HTMLFormElement;
   form.append(element("h2", "", "Edit workspace"));
   const name = document.createElement("input");
   name.value = workspace.name;
