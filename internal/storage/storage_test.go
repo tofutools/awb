@@ -928,6 +928,80 @@ func TestProjectListOrderings(t *testing.T) {
 		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated, Desc: true}))
 }
 
+// status and type order by what their values mean, not by how they are spelled.
+// Sorting the stored text would put closed first and bug before epic.
+func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+
+	// Created in an order that is neither the vocabulary's nor the alphabet's,
+	// so passing means the ordering did the work.
+	for _, issueType := range []domain.Type{
+		domain.TypeChore, domain.TypeBug, domain.TypeEpic,
+		domain.TypeTask, domain.TypeFeature,
+	} {
+		add(string(issueType), func(i *domain.Issue) { i.Type = issueType })
+	}
+	types := func(sort domain.Sort) []domain.Type {
+		t.Helper()
+		issues, _, err := listWith(t, db, &domain.Filter{IncludeClosed: true, Sort: sort})
+		require.NoError(t, err)
+		found := make([]domain.Type, len(issues))
+		for i := range issues {
+			found[i] = issues[i].Type
+		}
+		return found
+	}
+	assert.Equal(t, domain.Types, types(domain.Sort{Key: domain.SortType}),
+		"epic, feature, bug, task, chore — not the alphabet's bug, chore, epic, feature, task")
+	reversed := slices.Clone(domain.Types)
+	slices.Reverse(reversed)
+	assert.Equal(t, reversed, types(domain.Sort{Key: domain.SortType, Desc: true}))
+
+	// One issue per status, on a second project so the type set above is not in
+	// the way. Every status is reachable only through its own transition.
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		return tx.InsertProject("st", "statuses", "")
+	}))
+	statusIssue := func(title string, mutate func(*domain.Issue)) {
+		t.Helper()
+		issue := &domain.Issue{
+			Project: "st", Title: title, Type: domain.DefaultType,
+			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
+		}
+		mutate(issue)
+		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+			return tx.InsertIssue(issue)
+		}))
+		if issue.Status == domain.StatusClosed {
+			closeIssue(t, db, issue.ID)
+		}
+	}
+	statusIssue("closed", func(i *domain.Issue) { i.Status = domain.StatusClosed })
+	statusIssue("open", func(*domain.Issue) {})
+	statusIssue("in progress", func(i *domain.Issue) {
+		i.Status = domain.StatusInProgress
+		i.Assignees = []string{"mikael"}
+	})
+
+	statuses := func(sort domain.Sort) []domain.Status {
+		t.Helper()
+		issues, _, err := listWith(t, db, &domain.Filter{
+			IncludeClosed: true, Projects: []string{"st"}, Sort: sort})
+		require.NoError(t, err)
+		found := make([]domain.Status, len(issues))
+		for i := range issues {
+			found[i] = issues[i].Status
+		}
+		return found
+	}
+	assert.Equal(t, domain.Statuses, statuses(domain.Sort{Key: domain.SortStatus}),
+		"open, in_progress, closed — not the alphabet's closed, in_progress, open")
+	reversedStatuses := slices.Clone(domain.Statuses)
+	slices.Reverse(reversedStatuses)
+	assert.Equal(t, reversedStatuses, statuses(domain.Sort{Key: domain.SortStatus, Desc: true}))
+}
+
 // Two invocations against unchanged data must agree, so every order is total.
 func TestListOrderIsTotal(t *testing.T) {
 	db := newDB(t)
