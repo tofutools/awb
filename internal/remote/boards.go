@@ -15,6 +15,9 @@ type boardViewCreateBody struct {
 	Shared        bool     `json:"shared"`
 	AllWorkspaces bool     `json:"all_workspaces"`
 	Workspaces    []string `json:"workspaces"`
+	AllEpics      bool     `json:"all_epics"`
+	Epics         []string `json:"epics"`
+	IncludeNoEpic bool     `json:"include_no_epic"`
 	Labels        []string `json:"labels"`
 	Assignees     []string `json:"assignees"`
 	PriorityMax   int      `json:"priority_max"`
@@ -24,6 +27,9 @@ type boardViewPatchBody struct {
 	Shared        *bool     `json:"shared,omitempty"`
 	AllWorkspaces *bool     `json:"all_workspaces,omitempty"`
 	Workspaces    *[]string `json:"workspaces,omitempty"`
+	AllEpics      *bool     `json:"all_epics,omitempty"`
+	Epics         *[]string `json:"epics,omitempty"`
+	IncludeNoEpic *bool     `json:"include_no_epic,omitempty"`
 	Labels        *[]string `json:"labels,omitempty"`
 	Assignees     *[]string `json:"assignees,omitempty"`
 	PriorityMax   *int      `json:"priority_max,omitempty"`
@@ -35,6 +41,9 @@ func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error
 	return views, err
 }
 func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCreate) (*domain.BoardView, error) {
+	if !req.AllEpics && req.Epics == nil && !req.IncludeNoEpic {
+		req.AllEpics, req.IncludeNoEpic = true, true
+	}
 	body := boardViewCreateBody(req)
 	var view domain.BoardView
 	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/board-views", nil), body, "", &view)
@@ -46,7 +55,9 @@ func (b *Backend) GetBoardView(ctx context.Context, id string) (*domain.BoardVie
 	return &view, err
 }
 func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.BoardViewPatch, ifMatch string) (*domain.BoardView, error) {
-	body := boardViewPatchBody{Name: req.Name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces, Workspaces: req.Workspaces, Labels: req.Labels, Assignees: req.Assignees, PriorityMax: req.PriorityMax}
+	body := boardViewPatchBody{Name: req.Name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
+		Workspaces: req.Workspaces, AllEpics: req.AllEpics, Epics: req.Epics, IncludeNoEpic: req.IncludeNoEpic,
+		Labels: req.Labels, Assignees: req.Assignees, PriorityMax: req.PriorityMax}
 	var view domain.BoardView
 	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/board-views/"+url.PathEscape(id), nil), body, ifMatch, &view)
 	return &view, err

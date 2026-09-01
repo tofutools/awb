@@ -1780,38 +1780,105 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     const workspaces = await api.workspaces();
     preferences = workspaces.rows.map((workspace) => ({ workspace, ignored: false }));
   }
+  const epicPage = await api.issues({ type: ["epic"], "include-closed": true });
   const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
   dialog.setAttribute("aria-labelledby", "board-view-dialog-heading");
   const form = element("form", "board-view-form") as HTMLFormElement;
   form.method = "dialog";
+  const header = element("header", "board-view-dialog-header");
   const heading = element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
   heading.id = "board-view-dialog-heading";
-  form.append(heading);
+  header.append(heading, element("p", "muted", source === null
+    ? "Keep this board scope and its filters for later."
+    : duplicate ? "Create your own copy of this board view."
+      : "Update who can open this view, its scope, and its issue filters."));
+  form.append(header);
+  const basics = element("section", "board-view-section"); basics.append(element("h3", "", "Basics"));
   const name = document.createElement("input");
   name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
-  form.append(field("Name", name));
+  const nameField = field("Name", name); nameField.append(element("span", "board-view-help", "A short name shown in the board view picker.")); basics.append(nameField);
   const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && (source?.shared ?? false);
-  const sharedLabel = element("label", "board-view-check"); sharedLabel.append(shared, document.createTextNode("Anyone with the link can open this view"));
-  form.append(sharedLabel);
-  const all = document.createElement("input"); all.type = "checkbox"; all.checked = source?.all_workspaces ?? route.query.getAll("workspace").length === 0;
-  const allLabel = element("label", "board-view-check"); allLabel.append(all, document.createTextNode("All visible workspaces")); form.append(allLabel);
+  const sharedLabel = element("label", "board-view-check"); const sharedCopy = element("span", "board-view-check-copy");
+  sharedCopy.append(element("span", "", "Anyone with the link can open this view"), element("span", "board-view-help", "Only issues they already have access to will be shown."));
+  sharedLabel.append(shared, sharedCopy); basics.append(sharedLabel); form.append(basics);
+
+  const scope = element("section", "board-view-section"); scope.append(element("h3", "", "Scope"));
+  const scopeGrid = element("div", "board-view-scope-grid");
+  const mode = (name: string, allChecked: boolean): { host: HTMLElement; all: HTMLInputElement; selected: HTMLInputElement } => {
+    const host = element("div", "board-view-mode");
+    const choice = (value: string, text: string, checked: boolean): HTMLInputElement => {
+      const label = element("label"); const input = document.createElement("input"); input.type = "radio"; input.name = name; input.value = value; input.checked = checked;
+      label.append(input, element("span", "", text)); host.append(label); return input;
+    };
+    return { host, all: choice("all", "All", allChecked), selected: choice("selected", "Selected", !allChecked) };
+  };
+  const workspaceCard = element("article", "board-view-scope-card"); const workspaceHead = element("header");
+  const workspaceTitle = element("div"); workspaceTitle.append(element("strong", "", "Workspaces"), element("span", "board-view-help", `${preferences.length} available`));
+  const allWorkspaces = source?.all_workspaces ?? route.query.getAll("workspace").length === 0; const workspaceMode = mode("board-view-workspace-mode", allWorkspaces);
+  workspaceHead.append(workspaceTitle, workspaceMode.host); workspaceCard.append(workspaceHead);
   const selected = new Set(source?.workspaces ?? route.query.getAll("workspace"));
-  const workspaces = element("fieldset", "board-view-workspaces"); workspaces.append(element("legend", "", "Selected workspaces"));
+  const workspaces = element("div", "board-view-choices"); const workspaceInputs: HTMLInputElement[] = [];
   for (const preference of preferences) {
-    const row = element("label"); const input = document.createElement("input"); input.type = "checkbox"; input.value = preference.workspace.key; input.checked = selected.has(preference.workspace.key);
-    row.append(input, document.createTextNode(`${preference.workspace.key} — ${preference.workspace.name}${preference.ignored ? " (ignored)" : ""}`)); workspaces.append(row);
+    const row = element("label", "board-view-choice"); const input = document.createElement("input"); input.type = "checkbox"; input.value = preference.workspace.key; input.checked = selected.has(preference.workspace.key); workspaceInputs.push(input);
+    const copy = element("span"); copy.append(element("code", "", preference.workspace.key), element("span", "", `${preference.workspace.name}${preference.ignored ? " (ignored)" : ""}`)); row.append(input, copy); workspaces.append(row);
   }
-  workspaces.hidden = all.checked; all.addEventListener("change", () => { workspaces.hidden = all.checked; }); form.append(workspaces);
-  const labels = document.createElement("input"); labels.value = source?.labels.join(", ") ?? ""; labels.placeholder = "release, frontend"; form.append(field("Labels (any)", labels));
-  const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam"; form.append(field("Assignees (any)", assignees));
-  const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4)); form.append(field("Maximum priority", priority));
+  workspaceCard.append(workspaces);
+
+  const epicCard = element("article", "board-view-scope-card"); const epicHead = element("header"); const epicTitle = element("div");
+  epicTitle.append(element("strong", "", "Epic lanes"), element("span", "board-view-help", "Within selected workspaces"));
+  const routeEpic = route.query.get("epic"); const initialAllEpics = source?.all_epics ?? routeEpic === null; const epicMode = mode("board-view-epic-mode", initialAllEpics);
+  epicHead.append(epicTitle, epicMode.host); epicCard.append(epicHead);
+  const epicPicker = element("div", "board-view-epic-picker"); const epicSearch = document.createElement("input"); epicSearch.type = "search"; epicSearch.placeholder = "Filter epics…"; epicSearch.setAttribute("aria-label", "Filter epics"); epicPicker.append(epicSearch);
+  const selectedEpics = new Set(source?.epics ?? (routeEpic !== null && routeEpic !== "none" ? [routeEpic] : []));
+  const epicChoices = element("div", "board-view-choices"); const epicInputs: HTMLInputElement[] = [];
+  for (const epic of epicPage.rows) {
+    const row = element("label", "board-view-choice"); row.dataset.workspace = epic.workspace; row.dataset.search = `${epic.id} ${epic.title}`.toLocaleLowerCase();
+    const input = document.createElement("input"); input.type = "checkbox"; input.value = epic.id; input.checked = selectedEpics.has(epic.id); epicInputs.push(input);
+    const copy = element("span"); copy.append(element("code", "", epic.id), element("span", "", epic.title)); row.append(input, copy); epicChoices.append(row);
+  }
+  for (const id of source?.epics ?? []) {
+    if (epicInputs.some((input) => input.value === id)) continue;
+    const row = element("label", "board-view-choice"); row.dataset.workspace = id.slice(0, id.lastIndexOf("-")); row.dataset.search = id.toLocaleLowerCase();
+    const input = document.createElement("input"); input.type = "checkbox"; input.value = id; input.checked = true; epicInputs.push(input);
+    const copy = element("span"); copy.append(element("code", "", id), element("span", "muted", "Ignored or unavailable epic")); row.append(input, copy); epicChoices.append(row);
+  }
+  epicPicker.append(epicChoices); epicCard.append(epicPicker);
+  const noEpic = document.createElement("input"); noEpic.type = "checkbox"; noEpic.checked = source?.include_no_epic ?? (routeEpic === null || routeEpic === "none");
+  const noEpicLabel = element("label", "board-view-check board-view-no-epic"); const noEpicCopy = element("span", "board-view-check-copy");
+  noEpicCopy.append(element("span", "", "No epic"), element("span", "board-view-help", "Include the lane for unassigned issues.")); noEpicLabel.append(noEpic, noEpicCopy); epicCard.append(noEpicLabel);
+  const selectionSummary = element("span", "board-view-selection-summary");
+  scopeGrid.append(workspaceCard, epicCard); scope.append(scopeGrid); form.append(scope);
+
+  const syncScope = (): void => {
+    workspaces.hidden = workspaceMode.all.checked;
+    epicPicker.hidden = epicMode.all.checked;
+    const chosenWorkspaces = new Set(workspaceInputs.filter((input) => input.checked).map((input) => input.value));
+    const query = epicSearch.value.trim().toLocaleLowerCase();
+    for (const input of epicInputs) {
+      const row = input.closest<HTMLElement>(".board-view-choice"); if (row === null) continue;
+      const inWorkspace = workspaceMode.all.checked || chosenWorkspaces.has(row.dataset.workspace ?? "");
+      if (!inWorkspace) input.checked = false;
+      row.hidden = !inWorkspace || !(row.dataset.search ?? "").includes(query);
+    }
+    const count = epicMode.all.checked ? epicInputs.filter((input) => !input.closest<HTMLElement>(".board-view-choice")?.hidden).length
+      : epicInputs.filter((input) => input.checked).length;
+    const selectedCount = count + (noEpic.checked ? 1 : 0);
+    selectionSummary.textContent = epicMode.all.checked ? "All epic lanes" : `${selectedCount} ${selectedCount === 1 ? "lane" : "lanes"} selected`;
+  };
+  for (const input of [...workspaceInputs, ...epicInputs, workspaceMode.all, workspaceMode.selected, epicMode.all, epicMode.selected, noEpic]) input.addEventListener("change", syncScope);
+  epicSearch.addEventListener("input", syncScope); syncScope();
+
+  const filters = element("section", "board-view-section"); filters.append(element("h3", "", "Issue filters")); const filterGrid = element("div", "board-view-filter-grid");
+  const labels = document.createElement("input"); labels.value = source?.labels.join(", ") ?? ""; labels.placeholder = "release, frontend";
+  const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam";
+  const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4));
+  filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority)); filters.append(filterGrid); form.append(filters);
   const error = element("p", "edit-error");
-  const actions = element("div", "board-view-dialog-actions");
+  const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
   const save = element("button", "primary-button", source === null ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
-  actions.append(cancel);
   if (source !== null && !duplicate && source.owner === identity) {
-    const remove = button("Delete", "danger-button");
+    const remove = button("Delete view", "danger-button board-view-delete");
     remove.addEventListener("click", async () => {
       const confirmed = await confirmMutation(
         "Delete board view?",
@@ -1825,13 +1892,18 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     });
     actions.append(remove);
   }
-  actions.append(save); form.append(error, actions); dialog.append(form); document.body.append(dialog);
+  actions.append(selectionSummary, cancel, save); form.append(error, actions); dialog.append(form); document.body.append(dialog);
   dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", (event) => {
     event.preventDefault(); save.disabled = true; error.textContent = "";
-    const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_workspaces: all.checked,
-      workspaces: all.checked ? [] : [...workspaces.querySelectorAll<HTMLInputElement>('input:checked')].map((input) => input.value),
+    const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_workspaces: workspaceMode.all.checked,
+      workspaces: workspaceMode.all.checked ? [] : workspaceInputs.filter((input) => input.checked).map((input) => input.value).sort(),
+      all_epics: epicMode.all.checked, epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
+      include_no_epic: noEpic.checked,
       labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4 };
+    if (!body.all_epics && (body.epics?.length ?? 0) === 0 && !body.include_no_epic) {
+      save.disabled = false; error.textContent = "Select at least one epic lane or include No epic."; return;
+    }
     let operation: Promise<BoardView>;
     if (source !== null && !duplicate) {
       const patch: BoardViewPatch = {};
@@ -1839,6 +1911,9 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
       if (body.shared !== source.shared) patch.shared = body.shared;
       if (body.all_workspaces !== source.all_workspaces) patch.all_workspaces = body.all_workspaces;
       if (JSON.stringify(body.workspaces) !== JSON.stringify(source.workspaces)) patch.workspaces = body.workspaces;
+      if (body.all_epics !== source.all_epics) patch.all_epics = body.all_epics;
+      if (JSON.stringify(body.epics) !== JSON.stringify(source.epics)) patch.epics = body.epics;
+      if (body.include_no_epic !== source.include_no_epic) patch.include_no_epic = body.include_no_epic;
       if (JSON.stringify(body.labels) !== JSON.stringify(source.labels)) patch.labels = body.labels;
       if (JSON.stringify(body.assignees) !== JSON.stringify(source.assignees)) patch.assignees = body.assignees;
       if (body.priority_max !== source.priority_max) patch.priority_max = body.priority_max;
@@ -1846,7 +1921,11 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     } else {
       operation = api.createBoardView(body);
     }
-    void operation.then((view) => { dialog.close(); location.hash = `#/boards/${view.id}`; }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
+    void operation.then((view) => {
+      dialog.close();
+      const destination = `#/boards/${view.id}`;
+      if (location.hash === destination) void render(); else location.hash = destination;
+    }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
   });
   dialog.showModal(); name.focus();
 }
@@ -1896,6 +1975,8 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   if (saved !== undefined) {
     const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
     const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
+    const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
+    chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} epic ${epicLaneCount === 1 ? "lane" : "lanes"}`));
     for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted

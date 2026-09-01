@@ -30,6 +30,19 @@ var migrations = [][]string{
 	schemaV11,
 	schemaV12,
 	schemaV13,
+	schemaV14,
+}
+
+// schemaV14 lets a saved board pin epic lanes independently of its workspace
+// scope. No-epic is derived rather than an issue row, so it remains a boolean.
+var schemaV14 = []string{
+	`ALTER TABLE board_views ADD COLUMN all_epics INTEGER NOT NULL DEFAULT 1 CHECK (all_epics IN (0, 1))`,
+	`ALTER TABLE board_views ADD COLUMN include_no_epic INTEGER NOT NULL DEFAULT 1 CHECK (include_no_epic IN (0, 1))`,
+	`CREATE TABLE board_view_epics (
+		view TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		epic TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+		PRIMARY KEY (view, epic)
+	) STRICT, WITHOUT ROWID`,
 }
 
 // schemaV13 makes Workspace the current storage vocabulary. The preceding

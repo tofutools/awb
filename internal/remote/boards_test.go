@@ -28,7 +28,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"labels":null,"assignees":null,"priority_max":4}`, string(body))
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
@@ -67,7 +67,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, views, 1)
 	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{Name: "Release", Shared: true,
-		AllWorkspaces: false, Workspaces: []string{"awb"}, PriorityMax: 4})
+		AllWorkspaces: false, Workspaces: []string{"awb"}, AllEpics: true, IncludeNoEpic: true, PriorityMax: 4})
 	require.NoError(t, err)
 	name := "Release"
 	_, err = client.UpdateBoardView(t.Context(), id, backend.BoardViewPatch{Name: &name}, `"etag"`)

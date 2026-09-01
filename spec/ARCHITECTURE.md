@@ -574,11 +574,11 @@ ordinary authorization, so an ignored workspace is always available to re-enable
 and an inaccessible workspace is never disclosed by the editor.
 
 Named board views are stored beside that preference boundary but do not alter
-it. A view owns only reusable selection — workspace keys for
-active workspaces, labels, assignees and a
-maximum priority — while each board read resolves status columns and swimlanes
-for visible epic issues inside the viewer's normally scoped transaction. The
-one **No epic** lane contains non-epic issues without a direct, same-workspace
+it. A view owns only reusable selection — workspace keys, either every visible
+epic or pinned epic IDs, the independent **No epic** lane, labels, assignees
+and a maximum priority — while each board read resolves status columns and
+swimlanes inside the viewer's normally scoped transaction. The **No epic**
+lane contains non-epic issues without a direct, same-workspace
 `has-parent` edge to an epic. Other decomposition parents do not silently
 become epic membership, and epic issues are lane headers rather than cards. A
 shared URL can therefore render fewer lanes for a viewer with less access or a broader
@@ -595,8 +595,8 @@ reads page epic lanes and cards independently and report unpaged totals at
 both levels, so the browser never has to fetch the whole issue collection. The
 HTTP boundary defaults to ten lanes and fifty cards per column and refuses a
 limit above fifty; direct backend callers receive the same bounds. Deleting a
-selected workspace advances each affected view version before the foreign-key
-cascade changes its filter. A browser may fold epic swimlanes locally; that
+selected workspace or pinned epic advances each affected view version before
+the foreign-key cascade changes its filter. A browser may fold epic swimlanes locally; that
 presentation state is keyed by board reference and is not part of the shared
 view. One atomic move operation changes direct same-workspace epic membership,
 status column and manual position while applying the same assignment rules as

@@ -318,6 +318,11 @@ func (t *Tx) WorkspaceRelationsTouchArchived(key string) (bool, error) {
 // issues in other workspaces, which may unblock work elsewhere. It reports how
 // many issues went.
 func (t *Tx) DeleteWorkspaceIssues(key string) (int, error) {
+	// Pinning an epic may be the only way a view names this workspace. Bump
+	// those views before the issue cascade removes the evidence.
+	if err := t.bumpBoardViewsSelectingWorkspace(key); err != nil {
+		return 0, err
+	}
 	result, err := t.q.ExecContext(t.ctx, `DELETE FROM issues WHERE workspace = ?`, key)
 	if err != nil {
 		return 0, awberr.Wrap(awberr.Runtime, err, "delete issues in workspace %s", key)

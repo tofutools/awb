@@ -366,6 +366,11 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		return nil
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
+	if before.Type == domain.TypeEpic && fields.Type != domain.TypeEpic {
+		if err := t.removeBoardViewEpicSelections(issue.ID); err != nil {
+			return err
+		}
+	}
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
@@ -700,6 +705,9 @@ func (t *Tx) RemoveLabel(issue *domain.Issue, label string) error {
 // a blocker silently makes other issues ready and orphaning children makes a
 // decomposed parent's work top-level.
 func (t *Tx) DeleteIssue(id string) (relationsRemoved int, err error) {
+	if err := t.bumpBoardViewsSelectingEpic(id); err != nil {
+		return 0, err
+	}
 	if err := t.q.QueryRowContext(t.ctx,
 		`SELECT count(*) FROM relations WHERE subject = ? OR other = ?`, id, id,
 	).Scan(&relationsRemoved); err != nil {

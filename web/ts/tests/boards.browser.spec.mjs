@@ -249,11 +249,26 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Save board view" });
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
+  const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
+  await epicScope.getByText("Selected", { exact: true }).click();
+  await epicScope.locator(".board-view-choice", { hasText: "Ship the 1.0 release" }).click();
+  await epicScope.getByText("No epic", { exact: true }).click();
   await dialog.getByRole("button", { name: "Save view" }).click();
   await expect(page).toHaveURL(/#\/boards\/view-[0-9a-f]{24}$/);
   const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
+  await expect(page.locator(".board-summary")).toContainText("1 epic lane");
+  await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const editView = page.getByRole("dialog", { name: "Edit board view" });
+  await expect(editView.getByRole("button", { name: "Delete view" })).toBeVisible();
+  const editEpicScope = editView.locator(".board-view-scope-card", { hasText: "Epic lanes" });
+  await editEpicScope.getByText("All", { exact: true }).click();
+  await editEpicScope.getByText("No epic", { exact: true }).click();
+  await editView.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.locator(".board-summary")).toContainText("All epic lanes");
 
   const closeControl = page.locator(".board-card", { hasText: "Build the full text search index" }).getByLabel(/Status for demo-/);
   await closeControl.selectOption("closed");

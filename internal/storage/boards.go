@@ -25,7 +25,8 @@ func (t *Tx) ListBoardEpics(workspaces []string, limit, offset *int) ([]domain.I
 func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 	var view domain.BoardView
 	err := row.Scan(&view.ID, &view.Name, &view.Owner, &view.Shared,
-		&view.AllWorkspaces, &view.PriorityMax, &view.CreatedAt, &view.UpdatedAt)
+		&view.AllWorkspaces, &view.AllEpics, &view.IncludeNoEpic,
+		&view.PriorityMax, &view.CreatedAt, &view.UpdatedAt)
 	return &view, err
 }
 
@@ -34,7 +35,8 @@ func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 // the selected workspaces through the caller's transaction scope.
 func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 	view, err := scanBoardView(t.q.QueryRowContext(t.ctx, `
-		SELECT id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at
+		SELECT id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
+		       priority_max, created_at, updated_at
 		  FROM board_views WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such board view: %s", id)
@@ -52,7 +54,8 @@ func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 // and are discovered by their stable URL.
 func (t *Tx) ListBoardViews(owner string) ([]domain.BoardView, error) {
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at
+		SELECT id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
+		       priority_max, created_at, updated_at
 		  FROM board_views WHERE owner = ? ORDER BY name, id`, owner)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
@@ -102,6 +105,9 @@ func (t *Tx) hydrateBoardView(view *domain.BoardView) error {
 	if err := load(`SELECT workspace FROM board_view_workspaces WHERE view = ? ORDER BY workspace`, &view.Workspaces); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read board view workspaces")
 	}
+	if err := load(`SELECT epic FROM board_view_epics WHERE view = ? ORDER BY epic`, &view.Epics); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read board view epics")
+	}
 	if err := load(`SELECT label FROM board_view_labels WHERE view = ? ORDER BY label`, &view.Labels); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read board view labels")
 	}
@@ -116,9 +122,10 @@ func (t *Tx) InsertBoardView(view *domain.BoardView) error {
 	now := Now()
 	view.CreatedAt, view.UpdatedAt = now, now
 	_, err := t.q.ExecContext(t.ctx, `INSERT INTO board_views
-		(id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, view.ID, view.Name, view.Owner, view.Shared,
-		view.AllWorkspaces, view.PriorityMax, now, now)
+		(id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
+		 priority_max, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, view.ID, view.Name, view.Owner, view.Shared,
+		view.AllWorkspaces, view.AllEpics, view.IncludeNoEpic, view.PriorityMax, now, now)
 	if isUniqueViolation(err) {
 		return awberr.Conflictf("board view already exists: %s", view.ID)
 	}
@@ -131,15 +138,17 @@ func (t *Tx) InsertBoardView(view *domain.BoardView) error {
 // UpdateBoardView moves its ETag only when the stored representation changes.
 func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 	if existing.Name == next.Name && existing.Shared == next.Shared &&
-		existing.AllWorkspaces == next.AllWorkspaces && existing.PriorityMax == next.PriorityMax &&
+		existing.AllWorkspaces == next.AllWorkspaces && existing.AllEpics == next.AllEpics &&
+		existing.IncludeNoEpic == next.IncludeNoEpic && existing.PriorityMax == next.PriorityMax &&
 		slices.Equal(existing.Workspaces, next.Workspaces) && slices.Equal(existing.Labels, next.Labels) &&
-		slices.Equal(existing.Assignees, next.Assignees) {
+		slices.Equal(existing.Assignees, next.Assignees) && slices.Equal(existing.Epics, next.Epics) {
 		return nil
 	}
 	next.UpdatedAt = bumpedTimestamp(existing.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET name = ?, shared = ?,
-		all_workspaces = ?, priority_max = ?, updated_at = ? WHERE id = ?`, next.Name,
-		next.Shared, next.AllWorkspaces, next.PriorityMax, next.UpdatedAt, existing.ID)
+		all_workspaces = ?, all_epics = ?, include_no_epic = ?, priority_max = ?,
+		updated_at = ? WHERE id = ?`, next.Name, next.Shared, next.AllWorkspaces,
+		next.AllEpics, next.IncludeNoEpic, next.PriorityMax, next.UpdatedAt, existing.ID)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update board view %s", existing.ID)
 	}
@@ -147,9 +156,14 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 }
 
 func (t *Tx) replaceBoardViewFilters(view *domain.BoardView) error {
-	for _, table := range []string{"board_view_workspaces", "board_view_labels", "board_view_assignees"} {
+	for _, table := range []string{"board_view_workspaces", "board_view_epics", "board_view_labels", "board_view_assignees"} {
 		if _, err := t.q.ExecContext(t.ctx, `DELETE FROM `+table+` WHERE view = ?`, view.ID); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "replace board view filters")
+		}
+	}
+	for _, value := range view.Epics {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_epics (view, epic) VALUES (?, ?)`, view.ID, value); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "store board view epic")
 		}
 	}
 	for _, value := range view.Workspaces {
@@ -191,7 +205,13 @@ func (t *Tx) bumpBoardViewsSelectingWorkspace(workspace string) error {
 	rows, err := t.q.QueryContext(t.ctx, `SELECT selected.view, views.updated_at
 		FROM board_view_workspaces AS selected
 		JOIN board_views AS views ON views.id = selected.view
-		WHERE selected.workspace = ?`, workspace)
+		WHERE selected.workspace = ?
+		UNION
+		SELECT selected.view, views.updated_at
+		FROM board_view_epics AS selected
+		JOIN board_views AS views ON views.id = selected.view
+		JOIN issues ON issues.id = selected.epic
+		WHERE issues.workspace = ?`, workspace, workspace)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "find board views selecting workspace %s", workspace)
 	}
@@ -218,6 +238,55 @@ func (t *Tx) bumpBoardViewsSelectingWorkspace(workspace string) error {
 			bumpedTimestamp(view.updatedAt, now), view.id); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "update board view %s before deleting workspace", view.id)
 		}
+	}
+	return nil
+}
+
+// bumpBoardViewsSelectingEpic moves each affected ETag before the issue's
+// foreign-key cascade removes its pinned lane.
+func (t *Tx) bumpBoardViewsSelectingEpic(epic string) error {
+	rows, err := t.q.QueryContext(t.ctx, `SELECT selected.view, views.updated_at
+		FROM board_view_epics AS selected
+		JOIN board_views AS views ON views.id = selected.view
+		WHERE selected.epic = ?`, epic)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting epic %s", epic)
+	}
+	type selectedView struct{ id, updatedAt string }
+	views := []selectedView{}
+	for rows.Next() {
+		var view selectedView
+		if err := rows.Scan(&view.id, &view.updatedAt); err != nil {
+			_ = rows.Close()
+			return awberr.Wrap(awberr.Runtime, err, "find board views selecting epic %s", epic)
+		}
+		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting epic %s", epic)
+	}
+	if err := rows.Close(); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting epic %s", epic)
+	}
+	now := Now()
+	for _, view := range views {
+		if _, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET updated_at = ? WHERE id = ?`,
+			bumpedTimestamp(view.updatedAt, now), view.id); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "update board view %s before deleting epic", view.id)
+		}
+	}
+	return nil
+}
+
+// removeBoardViewEpicSelections advances each affected version before an issue
+// stops being an epic, then removes the now-invalid pinned lane.
+func (t *Tx) removeBoardViewEpicSelections(epic string) error {
+	if err := t.bumpBoardViewsSelectingEpic(epic); err != nil {
+		return err
+	}
+	if _, err := t.q.ExecContext(t.ctx, `DELETE FROM board_view_epics WHERE epic = ?`, epic); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "remove board view selections of epic %s", epic)
 	}
 	return nil
 }
