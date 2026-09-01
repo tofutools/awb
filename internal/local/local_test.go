@@ -134,6 +134,33 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	assert.Equal(t, moved.ID, byHash.ID)
 }
 
+func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.T) {
+	b, ctx := newBackend(t)
+	dragged := create(t, b, ctx, "ranked")
+	dragged, err := b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen,
+	}, "")
+	require.NoError(t, err)
+	draggedOrder := dragged.Order
+	automatic := create(t, b, ctx, "automatic anchor")
+
+	dragged, err = b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, Before: automatic.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Equal(t, draggedOrder, dragged.Order,
+		"placing the last ranked issue before an automatic anchor keeps its rank")
+
+	automatic, err = b.GetIssue(ctx, automatic.ID)
+	require.NoError(t, err)
+	assert.Greater(t, automatic.Order, dragged.Order)
+	activity, err := b.ListActivity(ctx, automatic.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, activity.Activity)
+	assert.Equal(t, "reordered", activity.Activity[0].Action,
+		"the anchor mutation is recorded even when the dragged issue is unchanged")
+}
+
 // Creating with an assignee is an atomic create-and-claim, so a new issue is
 // never open and assigned at once.
 func TestCreateWithAssigneeIsAClaim(t *testing.T) {

@@ -66,6 +66,7 @@ import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
 import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
+import { attachSearchClear } from "./search-control.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -680,18 +681,12 @@ function listingFilter(
   adjacentControl: HTMLElement | null = null,
 ): HTMLElement {
   const bar = element("div", "listing-tools");
-  const control = element("div", "listing-filter");
+  const control = element("div", "search-control listing-filter");
   const input = document.createElement("input");
-  input.type = "search";
   input.maxLength = listingFilterMaxLength;
   input.placeholder = placeholder;
   input.setAttribute("aria-label", placeholder);
   input.value = route.query.get("filter") ?? "";
-  const clearButton = element("button", "clear-filter", "×") as HTMLButtonElement;
-  clearButton.type = "button";
-  clearButton.title = "Clear filter";
-  clearButton.setAttribute("aria-label", "Clear filter");
-  control.append(input, clearButton);
   const count = element("span", "filter-count");
   bar.append(control, count);
   if (adjacentControl !== null) bar.append(adjacentControl);
@@ -724,18 +719,17 @@ function listingFilter(
     history.replaceState(null, "", routeHref(route, query));
     refreshFacetHrefs(route);
     count.textContent = "Filtering…";
-    clearButton.hidden = input.value === "";
     search.query(input.value, immediate);
   };
   input.addEventListener("input", () => refresh());
-  clearButton.addEventListener("click", () => {
-    input.value = "";
+  const clearControl = attachSearchClear(input, () => {
     refresh(true);
-    input.focus();
   });
+  clearControl.button.title = "Clear filter";
+  clearControl.button.setAttribute("aria-label", "Clear filter");
+  control.append(input, clearControl.button);
 
   count.textContent = `${total} ${noun}${total === 1 ? "" : "s"}`;
-  clearButton.hidden = input.value === "";
   return bar;
 }
 
@@ -2707,9 +2701,11 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
   const filterLabel = element("label", "project-preference-filter");
   filterLabel.append(element("span", "visually-hidden", "Find a project"));
   const filter = document.createElement("input");
-  filter.type = "search";
   filter.placeholder = "Find a project by name or key";
-  filterLabel.append(filter);
+  const filterControl = element("span", "search-control project-preference-search");
+  const filterClear = attachSearchClear(filter);
+  filterControl.append(filter, filterClear.button);
+  filterLabel.append(filterControl);
 
   const list = element("ul", "project-preference-list");
   const rows = new Map<ProjectPreference, HTMLElement>();

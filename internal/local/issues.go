@@ -381,9 +381,6 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			return err
 		}
 		changes := activityChanges(&before, result)
-		if len(changes) == 0 {
-			return nil
-		}
 		for _, change := range orderChanges {
 			if change.Issue == issue.ID {
 				continue
@@ -393,6 +390,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			}}); err != nil {
 				return err
 			}
+		}
+		if len(changes) == 0 {
+			return nil
 		}
 		return recordChange(tx, caller, issue.ID, "moved", changes)
 	})
