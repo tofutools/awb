@@ -42,7 +42,7 @@ import {
   type SortDirection,
   type SortState,
 } from "./listings.js";
-import { commentSubmitShortcut, issueEditorShortcut } from "./keyboard.js";
+import { commentSubmitShortcut, confirmationDecision, issueEditorShortcut } from "./keyboard.js";
 import {
   CommandPalette,
   CommandRegistry,
@@ -93,6 +93,7 @@ let identity = "";
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
+let confirmationDialogID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -312,6 +313,57 @@ function button(text: string, className = "secondary-button"): HTMLButtonElement
   const control = element("button", className, text) as HTMLButtonElement;
   control.type = "button";
   return control;
+}
+
+/** Ask before a relation or attachment mutation. A fresh dialog per decision
+ * keeps its lifetime tied to the action and lets focus return to its trigger. */
+function confirmMutation(
+  title: string,
+  description: string,
+  trigger: HTMLElement,
+  destructive = false,
+): Promise<boolean> {
+  const dialog = element("dialog", "confirmation-dialog") as HTMLDialogElement;
+  const id = confirmationDialogID++;
+  const titleID = `confirmation-title-${id}`;
+  const descriptionID = `confirmation-description-${id}`;
+  dialog.setAttribute("aria-labelledby", titleID);
+  dialog.setAttribute("aria-describedby", descriptionID);
+
+  const heading = element("h2", "", title);
+  heading.id = titleID;
+  const detail = element("p", "confirmation-description", description);
+  detail.id = descriptionID;
+  const hint = element("span", "confirmation-shortcut-hint", "Enter: Yes · Esc: No");
+  const no = button("No", "secondary-button");
+  const yes = button("Yes", destructive ? "danger-button" : "primary-button");
+  const actions = element("div", "confirmation-actions");
+  actions.append(hint, no, yes);
+  dialog.append(heading, detail, actions);
+  document.body.append(dialog);
+
+  return new Promise((resolve) => {
+    no.addEventListener("click", () => dialog.close("no"));
+    yes.addEventListener("click", () => dialog.close("yes"));
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      dialog.close("no");
+    });
+    dialog.addEventListener("keydown", (event) => {
+      const decision = confirmationDecision(event);
+      if (decision === undefined) return;
+      event.preventDefault();
+      dialog.close(decision === "confirm" ? "yes" : "no");
+    });
+    dialog.addEventListener("close", () => {
+      const confirmed = dialog.returnValue === "yes";
+      dialog.remove();
+      trigger.focus();
+      resolve(confirmed);
+    }, { once: true });
+    dialog.showModal();
+    no.focus();
+  });
 }
 
 function mutationError(host: HTMLElement, error: unknown): void {
@@ -1399,9 +1451,16 @@ function issueRelationSection(issue: Issue): IssueResourceSection {
       row.append(element("span", "relation-type", relation.type));
       row.append(link(`#/issues/${other}`, other, "id"));
       const remove = button("Remove", "inline-button danger-button resource-remove");
-      remove.addEventListener("click", () => {
+      remove.addEventListener("click", async () => {
         const addressed = relation.direction === "in" ? relation.other : issue.id;
         const addressedOther = relation.direction === "in" ? issue.id : relation.other;
+        const confirmed = await confirmMutation(
+          "Remove relation?",
+          `${addressed} — ${relation.type} — ${addressedOther}`,
+          remove,
+          true,
+        );
+        if (!confirmed) return;
         void mutate(row, [remove], () => api.removeRelation(addressed, relation.type, addressedOther));
       });
       row.append(remove);
@@ -1502,8 +1561,14 @@ function relationEditor(issueID: string): HTMLFormElement {
   };
   disclose.addEventListener("click", expand);
   form.addEventListener("reset", collapse);
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const confirmed = await confirmMutation(
+      "Add relation?",
+      `${issueID} — ${type.value} — ${other.value}`,
+      add,
+    );
+    if (!confirmed) return;
     void mutate(form, [add], () => api.addRelation(issueID, {
       type: type.value as Relation["type"],
       other: other.value,
@@ -1526,13 +1591,23 @@ function attachmentEditor(issueID: string): HTMLFormElement {
     element("span", "attachment-browse", "browse"),
     file,
   );
+  picker.tabIndex = 0;
   form.append(picker);
-  const upload = (selected: File): void => {
+  const upload = async (selected: File): Promise<void> => {
+    const confirmed = await confirmMutation(
+      "Upload attachment?",
+      `Add ${selected.name} (${formatSize(selected.size)}) to ${issueID}.`,
+      picker,
+    );
+    if (!confirmed) {
+      file.value = "";
+      return;
+    }
     void mutate(form, [file], () => api.addAttachment(issueID, selected));
   };
   file.addEventListener("change", () => {
     const selected = file.files?.[0];
-    if (selected !== undefined) upload(selected);
+    if (selected !== undefined) void upload(selected);
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1546,7 +1621,7 @@ function attachmentEditor(issueID: string): HTMLFormElement {
     event.preventDefault();
     form.classList.remove("drag-active");
     const selected = event.dataTransfer?.files[0];
-    if (selected !== undefined) upload(selected);
+    if (selected !== undefined) void upload(selected);
   });
   form.addEventListener("reset", () => form.classList.remove("drag-active"));
   return form;
@@ -2007,7 +2082,14 @@ function attachmentRow(attachment: Attachment, editable = false): HTMLElement {
   row.append(element("span", "content-type", attachment.content_type));
   if (editable) {
     const remove = button("Remove", "inline-button danger-button resource-remove");
-    remove.addEventListener("click", () => {
+    remove.addEventListener("click", async () => {
+      const confirmed = await confirmMutation(
+        "Remove attachment?",
+        `Remove ${attachment.name} from ${attachment.issue}.`,
+        remove,
+        true,
+      );
+      if (!confirmed) return;
       void mutate(row, [remove], () => api.removeAttachment(attachment.issue, attachment.name));
     });
     row.append(remove);

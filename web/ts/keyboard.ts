@@ -27,3 +27,16 @@ export function inspectorDismissShortcut(
 ): boolean {
   return event.key === "Escape" && !event.defaultPrevented;
 }
+
+export type ConfirmationDecision = "confirm" | "cancel";
+
+/** confirmationDecision gives every mutation confirmation the same keyboard
+ * contract without treating an input-method composition as a decision. */
+export function confirmationDecision(
+  event: Pick<KeyboardEvent, "key" | "isComposing">,
+): ConfirmationDecision | undefined {
+  if (event.isComposing) return undefined;
+  if (event.key === "Enter") return "confirm";
+  if (event.key === "Escape") return "cancel";
+  return undefined;
+}
