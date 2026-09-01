@@ -8,18 +8,13 @@ web UI with read access and issue commenting.
 
 ## Project status
 
-Implementation phase. Version 1 is implemented.
+The system is in v0.x / beta phase, and there is no requirement to keep backwards 
+compatibility in CLI or API. It should always be possible to migrate the database however.
 
-**The code and its tests are authoritative for behaviour.** The specification
-that version 1 was built from has served its purpose and is gone; it is in the
-Git history if you ever need it. `spec/ARCHITECTURE.md` describes the shape of
-the system and the reasoning behind it, and `spec/TODO.md` lists what is left
-for future versions.
-
-That means a behavioural rule is documented in exactly one place: the comment
-next to the code that enforces it, and the test that pins it down. When you
-change behaviour, change both, and check whether `ARCHITECTURE.md` still
-describes the system truthfully.
+`spec/ARCHITECTURE.md` describes the general shape of the system and the reasoning behind it.
+Specific behavioural rules are documented in comments next to the code that enforces it, 
+and the test that pins it down. When you change behaviour, change both, and check whether 
+`spec/ARCHITECTURE.md` still describes the system truthfully.
 
 ## Build
 
@@ -129,7 +124,7 @@ Three structural rules hold the design together:
 
 ## Rules
 
-* Do not put history or changelog into any document unless the specific document is obviously ment for that. 
+* Do not put history or changelog into any document or source code unless the specific document is obviously meant for that. 
 We have Git version history.
 
 * Keep it simple, do not make it overly flexible or configurable unless that is required by the goals or 
