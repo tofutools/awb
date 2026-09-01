@@ -1142,8 +1142,12 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-create-resource .compact-editor { margin-bottom: 0; }
 .issue-create-resource-list { margin-bottom: 0.5rem; }
 .issue-create-resource-list[hidden] { display: none; }
-.issue-create-resource .relations li { grid-template-columns: minmax(6rem, auto) minmax(7rem, auto) minmax(7rem, 1fr) auto; }
-.issue-create-resource .attachments li { grid-template-columns: minmax(7rem, 1fr) auto auto auto; }
+.issue-create-resource .resource-list li { gap: 0.4rem; }
+.issue-create-resource .relations li { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+.issue-create-resource .relations .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-create-resource .attachments li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.issue-create-resource .attachments .content-type { grid-column: 1 / 3; }
+.issue-create-resource .attachments .inline-button { grid-column: 3; grid-row: 1 / 3; }
 .primary-button, .secondary-button, .danger-button, .inline-button {
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--line);
