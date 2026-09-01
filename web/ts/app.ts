@@ -1270,6 +1270,7 @@ function userTable(users: DirectoryUser[], manageable: boolean): HTMLElement {
 }
 
 async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
+  await refreshCaller();
   const manageable = mayManageUsers;
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
@@ -1382,7 +1383,12 @@ function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElemen
         project_admin: projectAdmin.checked,
         user_admin: userAdmin.checked,
       });
+      await refreshCaller();
       pendingNotice = { message: `@${user.name} was updated.`, error: false };
+      if (!mayManageUsers) {
+        location.hash = "#/users";
+        return;
+      }
       await render();
     } catch (error) {
       if (await recoverStaleUser(error)) return;
@@ -1500,6 +1506,7 @@ function userDeleteForm(user: User, directory: DirectoryUser[]): HTMLFormElement
 }
 
 async function viewUserEditor(name: string, signal?: AbortSignal): Promise<HTMLElement> {
+  await refreshCaller();
   if (!mayManageUsers) throw accountAdminDenied();
   const [user, directory] = await Promise.all([api.user(name), api.users({}, signal)]);
   const view = element("div", "profile-view user-admin-view");
@@ -1601,6 +1608,7 @@ function userCreateForm(): HTMLFormElement {
 }
 
 async function viewUserCreate(): Promise<HTMLElement> {
+  await refreshCaller();
   if (!mayManageUsers) throw accountAdminDenied();
   const view = element("div", "profile-view user-admin-view");
   view.append(link("#/users", "← Users", "detail-back-link"));
@@ -3222,13 +3230,7 @@ function markActiveNav(route: Route): void {
 }
 
 async function start(): Promise<void> {
-  try {
-    const caller = await api.identity();
-    identity = caller.identity;
-    mayManageUsers = caller.may_manage_users;
-  } catch {
-    // A server that cannot say who the caller is still browses fine.
-  }
+  await refreshCaller();
   const registry = new CommandRegistry();
   registry.register("navigation", () => {
     const route = parseRoute();
@@ -3261,6 +3263,18 @@ async function start(): Promise<void> {
   );
   window.addEventListener("hashchange", () => void render());
   await render();
+}
+
+async function refreshCaller(): Promise<void> {
+  try {
+    const caller = await api.identity();
+    identity = caller.identity;
+    mayManageUsers = caller.may_manage_users;
+  } catch {
+    // A server that cannot say who the caller is still browses fine.
+    identity = "";
+    mayManageUsers = false;
+  }
 }
 
 void start();
