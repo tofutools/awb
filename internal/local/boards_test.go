@@ -178,6 +178,49 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	}
 }
 
+func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
+	root, ctx := newInstance(t)
+	first, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "First epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	second, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Second epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Pinned", AllWorkspaces: true,
+		AllEpics: false, Epics: []string{first.ID}, IncludeNoEpic: false, PriorityMax: 4})
+	require.NoError(t, err)
+
+	board, err := root.GetBoard(ctx, view.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, board.LaneTotal)
+	require.Len(t, board.Lanes, 1)
+	require.NotNil(t, board.Lanes[0].Epic)
+	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
+	_, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{Epic: &second.ID})
+	notFound(t, err, "an explicit lane cannot escape a saved view's pinned epic set")
+
+	epics := []string{second.ID}
+	includeNoEpic := true
+	updated, err := root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Epics: &epics,
+		IncludeNoEpic: &includeNoEpic}, backend.ETag(view.UpdatedAt))
+	require.NoError(t, err)
+	assert.Equal(t, epics, updated.Epics)
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, board.LaneTotal)
+	require.Len(t, board.Lanes, 2)
+	assert.Nil(t, board.Lanes[0].Epic)
+	assert.Equal(t, second.ID, board.Lanes[1].Epic.ID)
+
+	_, err = root.DeleteIssue(ctx, second.ID, "")
+	require.NoError(t, err)
+	afterDelete, err := root.GetBoardView(ctx, view.ID)
+	require.NoError(t, err)
+	assert.Empty(t, afterDelete.Epics)
+	assert.Greater(t, afterDelete.UpdatedAt, updated.UpdatedAt)
+	name := "stale"
+	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(updated.UpdatedAt))
+	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+}
+
 func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	root, ctx := newInstance(t)
 	for i := range 51 {

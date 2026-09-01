@@ -18,6 +18,11 @@ const (
 )
 
 func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
+	// The backend interface predates epic scope. Preserve its former dynamic
+	// board default when an in-process caller leaves every new field unset.
+	if !req.AllEpics && req.Epics == nil && !req.IncludeNoEpic {
+		req.AllEpics, req.IncludeNoEpic = true, true
+	}
 	name, err := domain.ValidateBoardViewName(req.Name)
 	if err != nil {
 		return nil, err
@@ -26,7 +31,8 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if err != nil {
 		return nil, err
 	}
-	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces, PriorityMax: priority}
+	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
+		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority}
 	seen := map[string]bool{}
 	for _, value := range req.Workspaces {
 		valid, err := domain.ValidateWorkspaceKey(value)
@@ -48,6 +54,16 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 			seen["l:"+valid] = true
 		}
 	}
+	for _, value := range req.Epics {
+		valid, err := domain.ValidateIssueID(value)
+		if err != nil {
+			return nil, err
+		}
+		if !seen["e:"+valid] {
+			view.Epics = append(view.Epics, valid)
+			seen["e:"+valid] = true
+		}
+	}
 	for _, value := range req.Assignees {
 		valid, err := domain.ValidateAssignee(value)
 		if err != nil {
@@ -64,7 +80,28 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 
 func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
 	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
-		Workspaces: view.Workspaces, Labels: view.Labels, Assignees: view.Assignees, PriorityMax: view.PriorityMax}
+		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
+		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees, PriorityMax: view.PriorityMax}
+}
+
+func validateBoardViewEpics(tx *storage.Tx, view *domain.BoardView, requested []string) error {
+	for _, id := range requested {
+		epic, err := tx.GetIssue(id)
+		if err != nil {
+			return err
+		}
+		if epic.Type != domain.TypeEpic {
+			return awberr.Usagef("board view epic must name an epic: %s", id)
+		}
+		active, err := tx.ActiveWorkspaceExists(epic.Workspace)
+		if err != nil {
+			return err
+		}
+		if !active || (!view.AllWorkspaces && !slices.Contains(view.Workspaces, epic.Workspace)) {
+			return awberr.NotFoundf("no such board epic: %s", id)
+		}
+	}
+	return nil
 }
 
 func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCreate) (*domain.BoardView, error) {
@@ -98,6 +135,9 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 				return awberr.NotFoundf("no such workspace: %s", workspace)
 			}
 		}
+		if err := validateBoardViewEpics(tx, view, view.Epics); err != nil {
+			return err
+		}
 		if err := tx.InsertBoardView(view); err != nil {
 			return err
 		}
@@ -127,6 +167,10 @@ func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error
 		}
 		for i := range views {
 			views[i].Workspaces, _, err = visibleViewWorkspaces(tx, views[i].Workspaces)
+			if err != nil {
+				return err
+			}
+			views[i].Epics, err = visibleViewEpics(tx, views[i].Epics)
 			if err != nil {
 				return err
 			}
@@ -164,6 +208,10 @@ func (b *Backend) readBoardView(ctx context.Context, id string) (*domain.BoardVi
 		if err != nil {
 			return err
 		}
+		view.Epics, err = visibleViewEpics(tx, view.Epics)
+		if err != nil {
+			return err
+		}
 		view.Normalize()
 		result = view
 		return nil
@@ -187,6 +235,27 @@ func visibleViewWorkspaces(tx *storage.Tx, workspaces []string) ([]string, bool,
 		}
 	}
 	return visible, len(visible) != len(workspaces), nil
+}
+
+func visibleViewEpics(tx *storage.Tx, epics []string) ([]string, error) {
+	visible := []string{}
+	for _, id := range epics {
+		epic, err := tx.GetIssue(id)
+		if err != nil {
+			if awberr.KindOf(err) == awberr.NotFound {
+				continue
+			}
+			return nil, err
+		}
+		active, err := tx.ActiveWorkspaceExists(epic.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		if active && epic.Type == domain.TypeEpic {
+			visible = append(visible, id)
+		}
+	}
+	return visible, nil
 }
 
 func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.BoardViewPatch, ifMatch string) (*domain.BoardView, error) {
@@ -237,6 +306,22 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 				}
 			}
 		}
+		if req.AllEpics != nil {
+			next.AllEpics = *req.AllEpics
+		}
+		if req.Epics != nil {
+			next.Epics = slices.Clone(*req.Epics)
+			for _, epic := range existing.Epics {
+				if _, err := tx.GetIssue(epic); awberr.KindOf(err) == awberr.NotFound && !slices.Contains(next.Epics, epic) {
+					next.Epics = append(next.Epics, epic)
+				} else if err != nil {
+					return err
+				}
+			}
+		}
+		if req.IncludeNoEpic != nil {
+			next.IncludeNoEpic = *req.IncludeNoEpic
+		}
 		if req.Labels != nil {
 			next.Labels = slices.Clone(*req.Labels)
 		}
@@ -262,6 +347,13 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 				}
 			}
 		}
+		requestedEpics := valid.Epics
+		if req.Epics != nil {
+			requestedEpics = *req.Epics
+		}
+		if err := validateBoardViewEpics(tx, valid, requestedEpics); err != nil {
+			return err
+		}
 		if err := tx.UpdateBoardView(existing, valid); err != nil {
 			return err
 		}
@@ -270,6 +362,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 			return err
 		}
 		updated.Workspaces, _, err = visibleViewWorkspaces(tx, updated.Workspaces)
+		if err == nil {
+			updated.Epics, err = visibleViewEpics(tx, updated.Epics)
+		}
 		if err == nil {
 			updated.Normalize()
 		}
@@ -302,6 +397,10 @@ func (b *Backend) DeleteBoardView(ctx context.Context, id, ifMatch string) (*dom
 			return err
 		}
 		deleted.Workspaces, _, err = visibleViewWorkspaces(tx, deleted.Workspaces)
+		if err != nil {
+			return err
+		}
+		deleted.Epics, err = visibleViewEpics(tx, deleted.Epics)
 		if err != nil {
 			return err
 		}
@@ -365,6 +464,10 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			result.WorkspacesOmitted = omitted
 			shown := *view
 			shown.Workspaces = visible
+			shown.Epics, err = visibleViewEpics(tx, view.Epics)
+			if err != nil {
+				return err
+			}
 			shown.Normalize()
 			result.View = &shown
 		}
@@ -384,6 +487,10 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		}
 		laneEpics := []*domain.Issue{}
 		if query.Epic != nil {
+			if view != nil && ((*query.Epic == "none" && !view.IncludeNoEpic) ||
+				(*query.Epic != "none" && !view.AllEpics && !slices.Contains(view.Epics, *query.Epic))) {
+				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+			}
 			result.LaneTotal = 1
 			var epic *domain.Issue
 			if *query.Epic != "none" {
@@ -403,12 +510,43 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if laneOffset == 0 && laneLimit > 0 {
 				laneEpics = append(laneEpics, epic)
 			}
+		} else if view != nil && !view.AllEpics {
+			selectedEpics := []domain.Issue{}
+			for _, id := range view.Epics {
+				epic, loadErr := tx.GetIssue(id)
+				if loadErr != nil {
+					if awberr.KindOf(loadErr) == awberr.NotFound {
+						continue
+					}
+					return loadErr
+				}
+				if epic.Type == domain.TypeEpic && (laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
+					selectedEpics = append(selectedEpics, *epic)
+				}
+			}
+			result.LaneTotal = len(selectedEpics)
+			if view.IncludeNoEpic {
+				result.LaneTotal++
+			}
+			all := []*domain.Issue{}
+			if view.IncludeNoEpic {
+				all = append(all, nil)
+			}
+			for i := range selectedEpics {
+				all = append(all, &selectedEpics[i])
+			}
+			end := min(laneOffset+laneLimit, len(all))
+			if laneOffset < len(all) {
+				laneEpics = append(laneEpics, all[laneOffset:end]...)
+			}
 		} else {
 			epicLimit, epicOffset := laneLimit, 0
-			if laneOffset > 0 {
+			hasNoEpic := view == nil || view.IncludeNoEpic
+			epicOffset = laneOffset
+			if hasNoEpic && laneOffset > 0 {
 				epicOffset = laneOffset - 1
 			}
-			includeNoEpic := laneOffset == 0 && laneLimit > 0
+			includeNoEpic := hasNoEpic && laneOffset == 0 && laneLimit > 0
 			if includeNoEpic {
 				epicLimit--
 			}
@@ -416,7 +554,10 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if err != nil {
 				return err
 			}
-			result.LaneTotal = epicTotal + 1
+			result.LaneTotal = epicTotal
+			if hasNoEpic {
+				result.LaneTotal++
+			}
 			if includeNoEpic {
 				laneEpics = append(laneEpics, nil)
 			}

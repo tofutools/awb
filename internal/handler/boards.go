@@ -13,8 +13,13 @@ func toBoardView(view *domain.BoardView) api.BoardView {
 	for i, v := range view.Workspaces {
 		workspaces[i] = api.WorkspaceKey(v)
 	}
+	epics := make([]api.IssueID, len(view.Epics))
+	for i, v := range view.Epics {
+		epics[i] = api.IssueID(v)
+	}
 	return api.BoardView{ID: api.BoardViewID(view.ID), Name: view.Name, Owner: api.Assignee(view.Owner),
 		Shared: view.Shared, AllWorkspaces: view.AllWorkspaces, Workspaces: workspaces,
+		AllEpics: view.AllEpics, Epics: epics, IncludeNoEpic: view.IncludeNoEpic,
 		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees),
 		PriorityMax: api.Priority(view.PriorityMax), CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
 }
@@ -32,6 +37,13 @@ func boardViewResponse(view *domain.BoardView) *api.BoardViewHeaders {
 }
 
 func stringsFromWorkspaces(values []api.WorkspaceKey) []string {
+	result := make([]string, len(values))
+	for i, v := range values {
+		result[i] = string(v)
+	}
+	return result
+}
+func stringsFromIssueIDs(values []api.IssueID) []string {
 	result := make([]string, len(values))
 	for i, v := range values {
 		result[i] = string(v)
@@ -57,6 +69,13 @@ func optWorkspaces(values []api.WorkspaceKey) *[]string {
 		return nil
 	}
 	result := stringsFromWorkspaces(values)
+	return &result
+}
+func optIssueIDs(values []api.IssueID) *[]string {
+	if values == nil {
+		return nil
+	}
+	result := stringsFromIssueIDs(values)
 	return &result
 }
 func optLabels(values []api.Label) *[]string {
@@ -85,6 +104,7 @@ func (h *Handler) ListBoardViews(ctx context.Context) ([]api.BoardView, error) {
 func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate) (*api.BoardViewCreatedHeaders, error) {
 	view, err := h.backendFor(ctx).CreateBoardView(ctx, backend.BoardViewCreate{Name: req.Name,
 		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
+		AllEpics: req.AllEpics.Or(true), Epics: stringsFromIssueIDs(req.Epics), IncludeNoEpic: req.IncludeNoEpic.Or(true),
 		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees), PriorityMax: int(req.PriorityMax.Or(4))})
 	if err != nil {
 		return nil, err
@@ -105,6 +125,7 @@ func (h *Handler) UpdateBoardView(ctx context.Context, req *api.BoardViewPatch, 
 	view, err := h.backendFor(ctx).UpdateBoardView(ctx, string(params.ID), backend.BoardViewPatch{
 		Name: optString(req.Name), Shared: optBool(req.Shared), AllWorkspaces: optBool(req.AllWorkspaces),
 		Workspaces: optWorkspaces(req.Workspaces), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
+		AllEpics: optBool(req.AllEpics), Epics: optIssueIDs(req.Epics), IncludeNoEpic: optBool(req.IncludeNoEpic),
 		PriorityMax: optPriority(req.PriorityMax)}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err

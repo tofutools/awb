@@ -1679,6 +1679,10 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    IssueID:
+      type: string
+      pattern: '^[a-z][a-z0-9-]*-[0-9a-f]{6}$'
+
     BoardViewID:
       type: string
       pattern: '^view-[0-9a-f]{24}$'
@@ -1686,7 +1690,8 @@ components:
     BoardView:
       type: object
       additionalProperties: false
-      required: [id, name, owner, shared, all_workspaces, workspaces, labels,
+      required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
+        epics, include_no_epic, labels,
         assignees, priority_max, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
@@ -1697,6 +1702,11 @@ components:
         workspaces:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceKey' }
+        all_epics: { type: boolean }
+        epics:
+          type: array
+          items: { $ref: '#/components/schemas/IssueID' }
+        include_no_epic: { type: boolean }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1718,6 +1728,11 @@ components:
         workspaces:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceKey' }
+        all_epics: { type: boolean }
+        epics:
+          type: array
+          items: { $ref: '#/components/schemas/IssueID' }
+        include_no_epic: { type: boolean }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1743,6 +1758,11 @@ components:
         workspaces:
           type: array
           items: { $ref: '#/components/schemas/WorkspaceKey' }
+        all_epics: { type: boolean }
+        epics:
+          type: array
+          items: { $ref: '#/components/schemas/IssueID' }
+        include_no_epic: { type: boolean }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }

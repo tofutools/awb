@@ -91,6 +91,19 @@ func SplitID(id string) (workspaceKey, hash string, ok bool) {
 	return id[:i], id[i+1:], true
 }
 
+// ValidateIssueID refuses abbreviated references where a persisted foreign key
+// requires one immutable issue ID.
+func ValidateIssueID(s string) (string, error) {
+	workspace, hash, ok := SplitID(s)
+	if !ok || len(hash) != HashLen || !IsHex(hash) {
+		return "", awberr.Usagef("invalid issue id %q", s)
+	}
+	if _, err := ValidateWorkspaceKey(workspace); err != nil {
+		return "", awberr.Usagef("invalid issue id %q: %s", s, err.Error())
+	}
+	return s, nil
+}
+
 // IsHex reports whether s is non-empty and made only of lowercase hexadecimal
 // digits, which is what an issue ID's hash part and any prefix of one look
 // like.

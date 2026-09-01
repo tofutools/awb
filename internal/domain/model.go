@@ -104,8 +104,9 @@ type WorkspacePreference struct {
 }
 
 // BoardView is a named, owner-scoped set of filters for the status board.
-// Empty filter slices mean no constraint. AllWorkspaces distinguishes that from
-// an explicitly selected workspace set which currently has no visible members.
+// Empty filter slices mean no constraint. AllWorkspaces and AllEpics distinguish
+// dynamic scope from an explicitly selected set which currently has no visible
+// members. IncludeNoEpic independently selects the derived unassigned lane.
 type BoardView struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
@@ -113,6 +114,9 @@ type BoardView struct {
 	Shared        bool     `json:"shared"`
 	AllWorkspaces bool     `json:"all_workspaces"`
 	Workspaces    []string `json:"workspaces"`
+	AllEpics      bool     `json:"all_epics"`
+	Epics         []string `json:"epics"`
+	IncludeNoEpic bool     `json:"include_no_epic"`
 	Labels        []string `json:"labels"`
 	Assignees     []string `json:"assignees"`
 	PriorityMax   int      `json:"priority_max"`
@@ -123,10 +127,14 @@ type BoardView struct {
 // Normalize makes every collection deterministic and non-null on the wire.
 func (v *BoardView) Normalize() {
 	slices.Sort(v.Workspaces)
+	slices.Sort(v.Epics)
 	slices.Sort(v.Labels)
 	slices.Sort(v.Assignees)
 	if v.Workspaces == nil {
 		v.Workspaces = []string{}
+	}
+	if v.Epics == nil {
+		v.Epics = []string{}
 	}
 	if v.Labels == nil {
 		v.Labels = []string{}

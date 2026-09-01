@@ -149,6 +149,9 @@ type BoardViewCreate struct {
 	Shared        bool
 	AllWorkspaces bool
 	Workspaces    []string
+	AllEpics      bool
+	Epics         []string
+	IncludeNoEpic bool
 	Labels        []string
 	Assignees     []string
 	PriorityMax   int
@@ -159,6 +162,9 @@ type BoardViewPatch struct {
 	Shared        *bool
 	AllWorkspaces *bool
 	Workspaces    *[]string
+	AllEpics      *bool
+	Epics         *[]string
+	IncludeNoEpic *bool
 	Labels        *[]string
 	Assignees     *[]string
 	PriorityMax   *int
