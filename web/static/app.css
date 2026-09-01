@@ -726,7 +726,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .archived-badge { margin-left: 0.55rem; color: var(--warn); border-color: currentcolor; }
 .workspace-archive-banner { display: flex; gap: 0.7rem; align-items: baseline; margin-bottom: 1rem; padding: 0.8rem 1rem; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: var(--radius); color: var(--fg); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
 .workspace-archive-banner strong { color: var(--warn); }
-.workspace-lifecycle-card { max-width: 46rem; margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius); }
+.workspace-lifecycle-card { max-width: 46rem; margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius); background: var(--panel); }
+.workspace-lifecycle-card h2 { margin-top: 0; color: var(--fg); }
 .workspace-lifecycle-card h3 { margin-top: 1.4rem; font-size: 0.95rem; }
 .workspace-archive-form { display: grid; grid-template-columns: minmax(10rem, 1fr) auto; gap: 0.45rem 0.7rem; align-items: end; max-width: 30rem; }
 .workspace-archive-form label { grid-column: 1 / -1; font-size: 0.88rem; font-weight: 650; }
@@ -1058,6 +1059,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .edit-panel input, .edit-panel textarea, .edit-panel select,
 .issue-create-form input, .issue-create-form textarea, .issue-create-form select,
 .compact-editor input, .compact-editor select,
+.workspace-archive-form input, .membership-table select,
 .sidebar-editor input, .close-editor input {
   min-width: 0;
   padding: 0.45rem 0.55rem;
@@ -1102,6 +1104,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .edit-panel input:focus, .edit-panel textarea:focus, .edit-panel select:focus,
 .issue-create-form input:focus, .issue-create-form textarea:focus, .issue-create-form select:focus,
 .compact-editor input:focus, .compact-editor select:focus,
+.workspace-archive-form input:focus, .membership-table select:focus,
 .sidebar-editor input:focus, .close-editor input:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-color: var(--accent);
