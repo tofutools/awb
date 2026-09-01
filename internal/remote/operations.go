@@ -78,7 +78,8 @@ type projectPatchBody struct {
 }
 
 type identityBody struct {
-	Identity string `json:"identity"`
+	Identity       string `json:"identity"`
+	MayManageUsers bool   `json:"may_manage_users"`
 }
 
 type commentBody struct {
@@ -505,6 +506,16 @@ func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return body.Identity, nil
+}
+
+// MayManageUsers asks for the server-side effective capability rather than
+// interpreting the client's configured identity as an account row.
+func (b *Backend) MayManageUsers(ctx context.Context) (bool, error) {
+	var body identityBody
+	if _, err := b.call(ctx, http.MethodGet, b.endpoint("/api/identity", nil), nil, "", &body); err != nil {
+		return false, err
+	}
+	return body.MayManageUsers, nil
 }
 
 func (b *Backend) issueCall(ctx context.Context, method, path string, body any,

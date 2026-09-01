@@ -119,6 +119,15 @@ test("project preferences use their dedicated recovery endpoints", async (t) => 
   assert.deepEqual(JSON.parse(calls[1].init.body), { ignored: true });
 });
 
+test("identity exposes the backend's effective account-administration capability", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    identity: "fixed-name",
+    may_manage_users: true,
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+  assert.deepEqual(await api.identity(), { identity: "fixed-name", may_manage_users: true });
+});
+
 // Every listing is asked with the filters it accepts. Regression: the listing
 // view passed one filter object to all of them, so an assignee in the URL made
 // the ready listing a 400, include-closed did the same to blocked, and a sort

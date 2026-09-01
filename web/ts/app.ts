@@ -64,10 +64,11 @@ import {
 } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import {
-  mayAdministerUsers,
+  userCreateHref,
   userDeletionImpact,
   userDeletionWarning,
   userEditorHref,
+  userNameFromRouteSegment,
 } from "./user-admin.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
@@ -105,6 +106,7 @@ const app = document.getElementById("app") as HTMLElement;
 
 /** identity is the caller the server attributes requests to. */
 let identity = "";
+let mayManageUsers = false;
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
@@ -1268,8 +1270,7 @@ function userTable(users: DirectoryUser[], manageable: boolean): HTMLElement {
 }
 
 async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
-  const account = await currentAccount();
-  const manageable = mayAdministerUsers(account);
+  const manageable = mayManageUsers;
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
   const filters: UserFilters = {
@@ -1293,7 +1294,7 @@ async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElemen
   const view = element("div");
   const heading = element("div", "directory-heading");
   heading.append(element("h1", "", "Users"));
-  if (manageable) heading.append(link("#/users/new", "Add user", "primary-button"));
+  if (manageable) heading.append(link(userCreateHref, "Add user", "primary-button"));
   view.append(heading);
 
   const listing = element("div", "listing");
@@ -1309,19 +1310,6 @@ async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElemen
   );
   view.append(listing);
   return view;
-}
-
-async function currentAccount(): Promise<User | null> {
-  if (identity === "") return null;
-  try {
-    return await api.user(identity);
-  } catch (error) {
-    // Before the first account is created, serve has an attribution identity
-    // but no account row. The local backend is deliberately unrestricted in
-    // that bootstrap state.
-    if (error instanceof ApiError && error.status === 404) return null;
-    throw error;
-  }
 }
 
 function accountAdminDenied(): ApiError {
@@ -1512,8 +1500,7 @@ function userDeleteForm(user: User, directory: DirectoryUser[]): HTMLFormElement
 }
 
 async function viewUserEditor(name: string, signal?: AbortSignal): Promise<HTMLElement> {
-  const account = await currentAccount();
-  if (!mayAdministerUsers(account)) throw accountAdminDenied();
+  if (!mayManageUsers) throw accountAdminDenied();
   const [user, directory] = await Promise.all([api.user(name), api.users({}, signal)]);
   const view = element("div", "profile-view user-admin-view");
   view.append(link("#/users", "← Users", "detail-back-link"));
@@ -1614,8 +1601,7 @@ function userCreateForm(): HTMLFormElement {
 }
 
 async function viewUserCreate(): Promise<HTMLElement> {
-  const account = await currentAccount();
-  if (!mayAdministerUsers(account)) throw accountAdminDenied();
+  if (!mayManageUsers) throw accountAdminDenied();
   const view = element("div", "profile-view user-admin-view");
   view.append(link("#/users", "← Users", "detail-back-link"));
   const heading = element("div", "settings-heading");
@@ -3211,8 +3197,10 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
     case "settings":
       return viewSettings();
     case "users":
-      if (route.path[1] === "new") return viewUserCreate();
-      return route.path.length > 1 ? viewUserEditor(route.path[1], signal) : viewUsers(route, signal);
+      if (route.path[1] === "-" && route.path[2] === "new") return viewUserCreate();
+      return route.path.length > 1
+        ? viewUserEditor(userNameFromRouteSegment(route.path[1]), signal)
+        : viewUsers(route, signal);
     case "tree":
       return viewTree(route.path[1] ?? "");
     default: {
@@ -3235,7 +3223,9 @@ function markActiveNav(route: Route): void {
 
 async function start(): Promise<void> {
   try {
-    identity = (await api.identity()).identity;
+    const caller = await api.identity();
+    identity = caller.identity;
+    mayManageUsers = caller.may_manage_users;
   } catch {
     // A server that cannot say who the caller is still browses fine.
   }

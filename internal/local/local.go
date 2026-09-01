@@ -93,6 +93,19 @@ func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
 	return b.Identity(ctx)
 }
 
+// MayManageUsers reports the effective capability resolved by the same caller
+// path every account operation uses. In particular, an unrestricted no-auth
+// server remains unrestricted even when its fixed identity matches a stored
+// non-administrator account.
+func (b *Backend) MayManageUsers(ctx context.Context) (bool, error) {
+	var allowed bool
+	err := b.read(ctx, func(_ *storage.Tx, caller domain.Caller) error {
+		allowed = caller.MayManageUsers()
+		return nil
+	})
+	return allowed, err
+}
+
 // Close releases the database.
 func (b *Backend) Close() error { return b.db.Close() }
 

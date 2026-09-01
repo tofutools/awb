@@ -1,14 +1,15 @@
 import type { DirectoryUser, User } from "./api.js";
 
-/** An authenticated account needs user_admin to administer accounts. A null
- * account is the documented open/no-auth bootstrap mode, where the backend is
- * unrestricted and the first account can still be created from the UI. */
-export function mayAdministerUsers(account: User | null): boolean {
-  return account === null || account.user_admin;
-}
+export const userCreateHref = "#/users/-/new";
 
 export function userEditorHref(name: string): string {
   return `#/users/${encodeURIComponent(name)}`;
+}
+
+/** Hash route segments remain escaped after splitting. Decode exactly once
+ * before the API client performs its own path escaping. */
+export function userNameFromRouteSegment(segment: string): string {
+  return decodeURIComponent(segment);
 }
 
 export interface UserDeletionImpact {

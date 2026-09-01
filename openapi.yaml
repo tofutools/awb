@@ -2075,10 +2075,17 @@ components:
 
     Identity:
       type: object
+      description: |
+        The request identity and its effective account-administration
+        capability. `may_manage_users` is true in direct and `--no-auth`
+        modes as well as for an authenticated user administrator, so clients
+        do not mistake a fixed attribution identity for an authenticated
+        account with the same name.
       additionalProperties: false
-      required: [identity]
+      required: [identity, may_manage_users]
       properties:
         identity: { type: string }
+        may_manage_users: { type: boolean }
 
     Error:
       type: object

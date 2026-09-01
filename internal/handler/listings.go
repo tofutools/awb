@@ -335,9 +335,14 @@ func facets(ctx context.Context, filter *domain.Filter,
 }
 
 func (h *Handler) GetIdentity(ctx context.Context) (*api.Identity, error) {
-	identity, err := h.backendFor(ctx).Identity(ctx)
+	be := h.backendFor(ctx)
+	identity, err := be.Identity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &api.Identity{Identity: identity}, nil
+	mayManageUsers, err := be.MayManageUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &api.Identity{Identity: identity, MayManageUsers: mayManageUsers}, nil
 }

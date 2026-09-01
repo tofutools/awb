@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  mayAdministerUsers,
+  userCreateHref,
   userDeletionImpact,
   userDeletionWarning,
   userEditorHref,
+  userNameFromRouteSegment,
 } from "../../static/user-admin.js";
 
 function user(overrides = {}) {
@@ -22,15 +23,11 @@ function user(overrides = {}) {
   };
 }
 
-test("only user administrators and bootstrap mode expose account administration", () => {
-  assert.equal(mayAdministerUsers(null), true);
-  assert.equal(mayAdministerUsers(user({ user_admin: true })), true);
-  assert.equal(mayAdministerUsers(user({ project_admin: true })), false);
-  assert.equal(mayAdministerUsers(user()), false);
-});
-
 test("editor links encode the account name", () => {
   assert.equal(userEditorHref("team/user"), "#/users/team%2Fuser");
+  assert.equal(userNameFromRouteSegment("team%2Fuser"), "team/user");
+  assert.equal(userEditorHref("new"), "#/users/new");
+  assert.equal(userCreateHref, "#/users/-/new");
 });
 
 test("deletion impact identifies self, memberships, and the last user administrator", () => {
