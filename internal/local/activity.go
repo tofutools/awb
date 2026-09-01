@@ -101,9 +101,6 @@ func redactIgnoredRelationActivity(tx *storage.Tx, user string, entries []domain
 					if err != nil {
 						return err
 					}
-					if project == "" {
-						project, _, _ = domain.SplitID(relation.Other)
-					}
 					if !ignored[project] {
 						kept = append(kept, relation)
 					}

@@ -43,7 +43,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, `"issue-etag"`, r.Header.Get("If-Match"))
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"project":"web","status":"open","before":"web-456"}`, string(body))
+			assert.JSONEq(t, `{"project":"web","status":"open","after":"web-456"}`, string(body))
 			_, _ = w.Write([]byte(`{"id":"awb-123"}`))
 		default:
 			http.NotFound(w, r)
@@ -74,7 +74,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		Projects: []string{"awb", "web"}, Status: domain.StatusOpen})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
-		Project: "web", Status: domain.StatusOpen, Before: "web-456",
+		Project: "web", Status: domain.StatusOpen, After: "web-456",
 	}, `"issue-etag"`)
 	require.NoError(t, err)
 }

@@ -570,9 +570,10 @@ cascade changes its filter. A browser may fold project swimlanes locally; that
 presentation state is keyed by board reference and is not part of the shared
 view. One atomic move operation changes swimlane, status column and manual
 position while applying the same assignment rules as claim, release, close and
-reopen. Sparse integer ranks normally change only the dragged issue; automatic
-issues fall back to priority and recency, and ranked rows are rebalanced only
-when an insertion gap is exhausted. The regular list uses and edits this same
+reopen. Sparse integer ranks normally change only the dragged issue; placing
+relative to an automatic anchor ranks that explicit pair. Other automatic
+issues keep falling back to priority and recency, and ranked rows are
+rebalanced only when an insertion gap is exhausted. The regular list uses and edits this same
 order rather than maintaining a second board-only sequence.
 
 The user directory follows the same boundary without pretending that a person

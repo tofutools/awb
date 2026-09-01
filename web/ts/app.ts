@@ -612,7 +612,7 @@ function issueTable(
 
   const body = document.createElement("tbody");
   const orderingEnabled = state.key === "order" && state.direction === "asc";
-  for (const [rowIndex, issue] of issues.entries()) {
+  for (const issue of issues) {
     const row = document.createElement("tr");
     row.dataset.issue = issue.id;
     for (const column of columns) {
@@ -636,11 +636,13 @@ function issueTable(
     }
     if (orderingEnabled) {
       let before = issue.id;
+      let after = "";
       row.addEventListener("dragover", (event) => {
         if (draggedListIssue === null || draggedListIssue.id === issue.id) return;
         event.preventDefault();
         const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
-        before = below ? (issues[rowIndex + 1]?.id ?? "") : issue.id;
+        before = below ? "" : issue.id;
+        after = below ? issue.id : "";
         row.classList.toggle("drop-after", below);
         row.classList.toggle("drop-before", !below);
       });
@@ -656,6 +658,7 @@ function issueTable(
           project: moving.project,
           status: moving.status,
           ...(before === "" ? {} : { before }),
+          ...(after === "" ? {} : { after }),
         }).then(() => render()).catch((error) => {
           row.classList.remove("moving");
           mutationError(row, error);

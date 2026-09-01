@@ -52,6 +52,7 @@ type issueMoveBody struct {
 	Project string        `json:"project"`
 	Status  domain.Status `json:"status"`
 	Before  string        `json:"before,omitempty"`
+	After   string        `json:"after,omitempty"`
 }
 
 type claimBody struct {
@@ -259,7 +260,7 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
 	ifMatch string) (*domain.Issue, error) {
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/move",
-		issueMoveBody{Project: req.Project, Status: req.Status, Before: req.Before}, ifMatch)
+		issueMoveBody{Project: req.Project, Status: req.Status, Before: req.Before, After: req.After}, ifMatch)
 }
 
 func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backend.DeletedIssue, error) {

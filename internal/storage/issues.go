@@ -58,12 +58,13 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
-// IssueProject returns the current project of an issue for internal policy
-// checks which already hold an issue ID. It deliberately does not apply the
-// transaction scope; callers must never return the value directly.
+// IssueProject returns the current, or last retained, project of an issue for
+// internal policy checks which already hold an issue ID. It deliberately does
+// not apply the transaction scope; callers must never return the value directly.
 func (t *Tx) IssueProject(id string) (string, error) {
 	var project string
-	err := t.q.QueryRowContext(t.ctx, `SELECT project FROM issues WHERE id = ?`, id).Scan(&project)
+	err := t.q.QueryRowContext(t.ctx,
+		`SELECT project FROM issue_last_projects WHERE issue = ?`, id).Scan(&project)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -405,20 +406,28 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	return nil
 }
 
-// ReorderIssue places issue before beforeID in the visible issue order, or at
-// the end when beforeID is empty. A board sees the same relative order after
-// filtering this sequence to one project/status cell. Sparse ranks make the
-// ordinary move a one-row update. Unpositioned predecessors are materialized
-// only when a move must preserve their relative place, and ranked rows are rebalanced
-// only in the rare case that a gap is exhausted.
-func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
+// OrderChange is one sparse-rank write made while placing an issue. Most moves
+// contain only the dragged issue; an automatic anchor is the one ordinary case
+// that also becomes ranked.
+type OrderChange struct {
+	Issue    string
+	From, To int
+}
+
+// ReorderIssue places issue relative to one visible global-order anchor, or at
+// the end of the manually ranked sequence when neither anchor is given. A
+// board sees the same relative order after filtering that sequence to one
+// project/status cell. Automatic rows are never mass-materialized: an
+// automatic anchor and the dragged issue join the end of the ranked sequence
+// as an adjacent pair. Ranked rows are re-spaced only when a gap is exhausted.
+func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string) ([]OrderChange, error) {
 	visible, args := t.visibleClause("project")
 	rows, err := t.q.QueryContext(t.ctx, `SELECT id, board_order, updated_at FROM issues
 		WHERE `+visible+
 		` ORDER BY (board_order = 0) ASC, board_order ASC, priority ASC, updated_at DESC, id ASC`,
 		args...)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "read issue order")
+		return nil, awberr.Wrap(awberr.Runtime, err, "read issue order")
 	}
 	type ordered struct {
 		id      string
@@ -430,7 +439,7 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
 		var row ordered
 		if err := rows.Scan(&row.id, &row.order, &row.updated); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		if row.id != issue.ID {
 			current = append(current, row)
@@ -438,27 +447,12 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return awberr.Wrap(awberr.Runtime, err, "read issue order")
+		return nil, awberr.Wrap(awberr.Runtime, err, "read issue order")
 	}
 	if err := rows.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	insert := len(current)
-	if beforeID != "" {
-		insert = -1
-		for i := range current {
-			if current[i].id == beforeID {
-				insert = i
-				break
-			}
-		}
-		if insert < 0 {
-			return awberr.Usagef("the issue to place before is not visible")
-		}
-	}
-	current = append(current, ordered{})
-	copy(current[insert+1:], current[insert:])
-	current[insert] = ordered{id: issue.ID, order: issue.Order, updated: issue.UpdatedAt}
+	var changes []OrderChange
 	write := func(row *ordered, want int) error {
 		if row.order == want {
 			return nil
@@ -468,6 +462,7 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
 			want, updated, row.id); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "reorder issue %s", row.id)
 		}
+		changes = append(changes, OrderChange{Issue: row.id, From: row.order, To: want})
 		row.order, row.updated = want, updated
 		if row.id == issue.ID {
 			issue.Order, issue.UpdatedAt = want, updated
@@ -475,46 +470,97 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
 		return nil
 	}
 
-	// Preserve any automatic rows which appear before the insertion point by
-	// assigning just that prefix sparse ranks after the existing ranked group.
-	last := 0
-	for i := 0; i < insert; i++ {
+	const step = 1 << 20
+	ranked := make([]ordered, 0, len(current))
+	maxOrder := 0
+	var anchor *ordered
+	anchorID := beforeID
+	if anchorID == "" {
+		anchorID = afterID
+	}
+	for i := range current {
 		if current[i].order > 0 {
-			last = current[i].order
-			continue
-		}
-		last += 1024
-		if err := write(&current[i], last); err != nil {
-			return err
-		}
-	}
-	next := 0
-	if insert+1 < len(current) {
-		next = current[insert+1].order
-	}
-	want := last + 1024
-	if next > last+1 {
-		want = last + (next-last)/2
-	}
-	if next > 0 && next <= last+1 {
-		// No integer remains between adjacent ranks. Rebalance ranked rows only;
-		// automatic rows keep their zero and fallback ordering.
-		position := 1024
-		for i := range current {
-			if current[i].order == 0 && i != insert {
-				continue
+			ranked = append(ranked, current[i])
+			if current[i].order > maxOrder {
+				maxOrder = current[i].order
 			}
-			if err := write(&current[i], position); err != nil {
-				return err
-			}
-			position += 1024
 		}
-		return nil
+		if current[i].id == anchorID {
+			copy := current[i]
+			anchor = &copy
+		}
 	}
-	if err := write(&current[insert], want); err != nil {
-		return err
+	moving := ordered{id: issue.ID, order: issue.Order, updated: issue.UpdatedAt}
+	if anchorID == "" {
+		if err := write(&moving, maxOrder+step); err != nil {
+			return nil, err
+		}
+		return changes, nil
 	}
-	return nil
+	if anchor == nil {
+		return nil, awberr.Usagef("the order anchor is not visible")
+	}
+	if anchor.order == 0 {
+		if beforeID != "" {
+			if err := write(&moving, maxOrder+step); err != nil {
+				return nil, err
+			}
+			if err := write(anchor, maxOrder+2*step); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := write(anchor, maxOrder+step); err != nil {
+				return nil, err
+			}
+			if err := write(&moving, maxOrder+2*step); err != nil {
+				return nil, err
+			}
+		}
+		return changes, nil
+	}
+
+	insert := -1
+	for i := range ranked {
+		if ranked[i].id == anchor.id {
+			insert = i
+			break
+		}
+	}
+	if insert < 0 {
+		return nil, awberr.Usagef("the order anchor is not visible")
+	}
+	if afterID != "" {
+		insert++
+	}
+	previous, next := 0, 0
+	if insert > 0 {
+		previous = ranked[insert-1].order
+	}
+	if insert < len(ranked) {
+		next = ranked[insert].order
+	}
+	want := previous + step
+	if next > previous+1 {
+		want = previous + (next-previous)/2
+	}
+	if next == 0 || next > previous+1 {
+		if err := write(&moving, want); err != nil {
+			return nil, err
+		}
+		return changes, nil
+	}
+
+	// The gap is exhausted. Re-space only the already-ranked visible sequence;
+	// this is rare because each ordinary gap starts with over a million slots.
+	ranked = append(ranked, ordered{})
+	copy(ranked[insert+1:], ranked[insert:])
+	ranked[insert] = moving
+	for i := range ranked {
+		if err := write(&ranked[i], (i+1)*step); err != nil {
+			return nil, err
+		}
+	}
+	return changes, nil
 }
 
 func validateAssignment(status domain.Status, assignees []string) error {

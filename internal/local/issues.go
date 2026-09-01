@@ -294,6 +294,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 	if err != nil {
 		return nil, err
 	}
+	if req.Before != "" && req.After != "" {
+		return nil, awberr.Usagef("before and after are mutually exclusive")
+	}
 	var result *domain.Issue
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
@@ -311,6 +314,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			return awberr.NotFoundf("no such project: %s", project)
 		}
 		beforeID := ""
+		afterID := ""
 		if req.Before != "" {
 			before, err := load(tx, req.Before)
 			if err != nil {
@@ -321,6 +325,17 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				return nil
 			}
 			beforeID = before.ID
+		}
+		if req.After != "" {
+			after, err := load(tx, req.After)
+			if err != nil {
+				return err
+			}
+			if after.ID == issue.ID && issue.Project == project && issue.Status == status {
+				result = issue
+				return nil
+			}
+			afterID = after.ID
 		}
 
 		before := *issue
@@ -357,7 +372,8 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		if err := tx.UpdateIssue(issue, fields); err != nil {
 			return err
 		}
-		if err := tx.ReorderIssue(issue, beforeID); err != nil {
+		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID)
+		if err != nil {
 			return err
 		}
 		result, err = tx.GetIssue(issue.ID)
@@ -367,6 +383,16 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		changes := activityChanges(&before, result)
 		if len(changes) == 0 {
 			return nil
+		}
+		for _, change := range orderChanges {
+			if change.Issue == issue.ID {
+				continue
+			}
+			if err := recordChange(tx, caller, change.Issue, "reordered", []domain.ActivityChange{{
+				Field: "order", From: activityJSON(change.From), To: activityJSON(change.To),
+			}}); err != nil {
+				return err
+			}
 		}
 		return recordChange(tx, caller, issue.ID, "moved", changes)
 	})

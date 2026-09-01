@@ -69,13 +69,16 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	// The first manual move ranks the dragged issue without touching unrelated
 	// automatic rows.
 	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, Before: first.ID,
+		Project: "awb", Status: domain.StatusOpen,
 	}, "")
 	require.NoError(t, err)
 	assert.Positive(t, third.Order)
 	secondAfter, err := b.GetIssue(ctx, second.ID)
 	require.NoError(t, err)
 	assert.Zero(t, secondAfter.Order)
+	firstAutomatic, err := b.GetIssue(ctx, first.ID)
+	require.NoError(t, err)
+	assert.Zero(t, firstAutomatic.Order)
 
 	// A move between ranked neighbors chooses the sparse gap and leaves its
 	// neighbor's representation/ETag unchanged.
@@ -88,6 +91,31 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	thirdAgain, err := b.GetIssue(ctx, third.ID)
 	require.NoError(t, err)
 	assert.Equal(t, thirdTag, thirdAgain.UpdatedAt)
+
+	second, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, After: first.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Greater(t, second.Order, first.Order)
+	assert.Less(t, second.Order, third.Order)
+
+	automatic := create(t, b, ctx, "automatic anchor")
+	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, Before: automatic.ID,
+	}, "")
+	require.NoError(t, err)
+	automatic, err = b.GetIssue(ctx, automatic.ID)
+	require.NoError(t, err)
+	assert.Greater(t, automatic.Order, third.Order)
+	activity, err := b.ListActivity(ctx, automatic.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "reordered", activity.Activity[0].Action,
+		"ranking an explicit automatic anchor records its stored-field mutation")
+
+	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, Before: first.ID, After: third.ID,
+	}, "")
+	assert.Equal(t, 2, exitOf(err), "the two relative anchors are mutually exclusive")
 
 	// A swimlane/column move keeps the immutable origin ID and applies claim
 	// semantics atomically.

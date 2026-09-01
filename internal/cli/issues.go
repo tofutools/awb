@@ -399,6 +399,7 @@ type moveParams struct {
 	Project string `long:"project" required:"true" help:"target project"`
 	Status  string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
 	Before  string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
+	After   string `long:"after" optional:"true" help:"place immediately after this issue"`
 }
 
 func newMoveCommand(e *env) *cobra.Command {
@@ -409,12 +410,15 @@ func newMoveCommand(e *env) *cobra.Command {
 			"assignment safety rules as claim, release, close and reopen.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
+			if p.Before != "" && p.After != "" {
+				return awberr.Usagef("--before and --after are mutually exclusive")
+			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
 			issue, err := be.MoveIssue(cmd.Context(), p.ID, backend.IssueMove{
-				Project: p.Project, Status: domain.Status(p.Status), Before: p.Before,
+				Project: p.Project, Status: domain.Status(p.Status), Before: p.Before, After: p.After,
 			}, "")
 			if err != nil {
 				return err

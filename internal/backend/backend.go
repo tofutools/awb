@@ -314,13 +314,15 @@ type IssuePatch struct {
 	ExpectAssignees *[]string
 }
 
-// IssueMove atomically places an issue in a project/status cell and before an
-// optional neighboring issue. An empty Before appends it. The issue ID remains
-// stable when Project changes so links and graph edges do not break.
+// IssueMove atomically places an issue in a project/status cell and before or
+// after an optional global-order anchor. The anchors are mutually exclusive;
+// omitting both appends to the ranked sequence. The issue ID remains stable
+// when Project changes so links and graph edges do not break.
 type IssueMove struct {
 	Project string
 	Status  domain.Status
 	Before  string
+	After   string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.

@@ -156,6 +156,18 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 		Type: domain.RelBlockedBy, Other: hidden.ID,
 	}, "")
 	require.NoError(t, err)
+	movedThenDeleted, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Moved secret"})
+	require.NoError(t, err)
+	_, err = root.AddRelation(ctx, visible.ID, backend.RelationRequest{
+		Type: domain.RelRelated, Other: movedThenDeleted.ID,
+	}, "")
+	require.NoError(t, err)
+	_, err = root.MoveIssue(ctx, movedThenDeleted.ID, backend.IssueMove{
+		Project: "web", Status: domain.StatusOpen,
+	}, "")
+	require.NoError(t, err)
+	_, err = root.DeleteIssue(ctx, movedThenDeleted.ID, "")
+	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
 	preference, err := bob.SetProjectIgnored(ctx, "web", true)
@@ -189,6 +201,8 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(encodedActivity), hidden.ID,
 		"historical relation snapshots must obey the current ignore boundary")
+	assert.NotContains(t, string(encodedActivity), movedThenDeleted.ID,
+		"a deleted issue is redacted by its retained moved-to project, not its origin ID")
 
 	labels, err := bob.LabelFacets(ctx, &domain.Filter{})
 	require.NoError(t, err)

@@ -255,8 +255,10 @@ paths:
       operationId: moveIssue
       summary: Atomically move and manually position an issue
       description: |
-        Places the issue in a project/status cell and immediately before an
-        optional neighboring issue; omitting `before` appends it. The issue ID
+        Places the issue in a project/status cell and immediately before or
+        after an optional visible global-order anchor; the two anchors are
+        mutually exclusive. Omitting both appends it to the manually ranked
+        sequence. The issue ID
         stays stable when its project changes. Status changes apply the same
         assignment safety rules as claim, release, close and reopen.
       requestBody:
@@ -2304,7 +2306,10 @@ components:
         status: { $ref: '#/components/schemas/Status' }
         before:
           type: string
-          description: A visible issue in the target project/status cell; omitted to append.
+          description: A visible global-order anchor to place the issue immediately before.
+        after:
+          type: string
+          description: A visible global-order anchor to place the issue immediately after.
 
     ClaimRequest:
       type: object
