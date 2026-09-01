@@ -30,12 +30,25 @@ type FilterFlags struct {
 	AllProjects   bool     `long:"all-projects" optional:"true" help:"ignore the configured default project"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
+	Offset        *int     `long:"offset" optional:"true" help:"skip this many results"`
 	// The accepted values and the help text are fixed in filterInit from the
 	// domain vocabulary rather than by an alts tag here. A tag would be a second
 	// copy of what ParseSort accepts, and the two drifted apart once already;
 	// this way completion, validation and the parser cannot disagree, and search
 	// widens the set by asking for relevance rather than by restating it.
 	Sort string `long:"sort" optional:"true"`
+}
+
+// checkPaging refuses a negative window. Zero is meaningful for both and is
+// left alone: no rows returned, and no rows skipped.
+func checkPaging(limit, offset *int) error {
+	if limit != nil && *limit < 0 {
+		return awberr.Usagef("--limit must not be negative")
+	}
+	if offset != nil && *offset < 0 {
+		return awberr.Usagef("--offset must not be negative")
+	}
+	return nil
 }
 
 // filterOptions says which of the flags a particular command accepts. A flag a
@@ -71,7 +84,7 @@ func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 				// A repeated label is an OR, so the facet must be computed without
 				// its own dimension or the first label would hide alternatives.
 				filter.Labels = nil
-				filter.Limit = nil
+				filter.Limit, filter.Offset = nil, nil
 				return e.queryCompletion(cmd,
 					func(ctx context.Context, be backend.Backend) ([]string, error) {
 						page, err := be.LabelFacets(ctx, filter)
@@ -107,7 +120,7 @@ func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 					}
 					filter.Assignees = nil
 					filter.Unassigned = false
-					filter.Limit = nil
+					filter.Limit, filter.Offset = nil, nil
 					return e.queryCompletion(cmd,
 						func(ctx context.Context, be backend.Backend) ([]string, error) {
 							page, err := be.AssigneeFacets(ctx, filter)
@@ -179,12 +192,16 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 		return nil, err
 	}
 
+	if err := checkPaging(f.Limit, f.Offset); err != nil {
+		return nil, err
+	}
 	if f.Limit != nil {
-		if *f.Limit < 0 {
-			return nil, awberr.Usagef("--limit must not be negative")
-		}
 		limit := *f.Limit
 		filter.Limit = &limit
+	}
+	if f.Offset != nil {
+		offset := *f.Offset
+		filter.Offset = &offset
 	}
 
 	filter.Parent = f.Parent

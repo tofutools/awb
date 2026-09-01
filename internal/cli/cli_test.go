@@ -402,6 +402,68 @@ func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
 		"the project listing")
 }
 
+// --limit and --offset cut a window out of a listing without disturbing the
+// order it would have had, on each of the three listings that take both.
+func TestListingsPage(t *testing.T) {
+	h := newHarness(t)
+	// Four of each at least, so a two-wide window at offset two lands inside the
+	// listing rather than running off the end.
+	for _, key := range []string{"mid", "yew", "zed"} {
+		h.mustRun("project", "create", key)
+	}
+	for range 5 {
+		h.create("tied", "--project", "awb")
+	}
+	for _, name := range []string{"carol", "alice", "dan", "bob"} {
+		h.mustRunStdin("hunter2\n", "user", "add", name)
+	}
+
+	// The first field of a --compact line is the record's identifier on all
+	// three, which is what the window is checked against.
+	ids := func(args ...string) []string {
+		t.Helper()
+		out := strings.TrimSpace(h.mustRun(args...))
+		if out == "" {
+			return []string{}
+		}
+		lines := strings.Split(out, "\n")
+		found := make([]string, len(lines))
+		for i, line := range lines {
+			found[i] = strings.Fields(line)[0]
+		}
+		return found
+	}
+
+	for _, listing := range [][]string{
+		{"list", "--all-projects", "--sort", "id", "--compact"},
+		{"project", "list", "--compact"},
+		{"user", "list", "--compact"},
+	} {
+		name := strings.Join(listing[:len(listing)-1], " ")
+		with := func(paging ...string) []string {
+			return ids(append(append([]string{}, listing...), paging...)...)
+		}
+
+		all := with()
+		require.GreaterOrEqual(t, len(all), 4, name)
+
+		assert.Equal(t, all[:2], with("--limit", "2"), "%s: a limit takes from the front", name)
+		assert.Equal(t, all[2:], with("--offset", "2"), "%s: an offset skips from the front", name)
+		assert.Equal(t, all[2:4], with("--limit", "2", "--offset", "2"),
+			"%s: together they are a window, and the order inside it is unchanged", name)
+		assert.Empty(t, with("--limit", "0"), "%s: a limit of zero returns nothing", name)
+		assert.Empty(t, with("--offset", "99"), "%s: an offset past the end returns nothing", name)
+
+		// A negative window is a usage error rather than a silent clamp.
+		for _, flag := range []string{"--limit", "--offset"} {
+			args := append(append([]string{}, listing...), flag, "-1")
+			_, stderr, code := h.run(args...)
+			assert.Equal(t, 2, code, "%s %s -1", name, flag)
+			assert.Contains(t, stderr, flag+" must not be negative", "%s %s -1", name, flag)
+		}
+	}
+}
+
 // Two invocations against unchanged data produce byte-identical output.
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)

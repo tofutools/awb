@@ -148,11 +148,14 @@ func newProjectShowCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-// projectListParams is the picker flag plus the ordering. Project ordering is
-// its own vocabulary because "active" is a derived count, not a stored column.
+// projectListParams is the picker flag plus the ordering and the window.
+// Project ordering is its own vocabulary because "active" is a derived count,
+// not a stored column.
 type projectListParams struct {
 	InteractiveFlags
-	Sort string `long:"sort" optional:"true"`
+	Sort   string `long:"sort" optional:"true"`
+	Limit  *int   `long:"limit" optional:"true" help:"cap the number of results; zero returns none"`
+	Offset *int   `long:"offset" optional:"true" help:"skip this many results"`
 }
 
 func newProjectListCommand(e *env) *cobra.Command {
@@ -180,12 +183,15 @@ func newProjectListCommand(e *env) *cobra.Command {
 					return err
 				}
 			}
+			if err := checkPaging(p.Limit, p.Offset); err != nil {
+				return err
+			}
 
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjects(cmd.Context(), "", sort, nil, nil)
+			page, err := be.ListProjects(cmd.Context(), "", sort, p.Limit, p.Offset)
 			if err != nil {
 				return err
 			}

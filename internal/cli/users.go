@@ -283,14 +283,25 @@ func newUserShowCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
+// userListParams is the picker flag plus the window. The order is fixed at
+// name ascending, so there is no --sort to go with them.
+type userListParams struct {
+	InteractiveFlags
+	Limit  *int `long:"limit" optional:"true" help:"cap the number of results; zero returns none"`
+	Offset *int `long:"offset" optional:"true" help:"skip this many results"`
+}
+
 func newUserListCommand(e *env) *cobra.Command {
-	return boa.CmdT[InteractiveFlags]{
+	return boa.CmdT[userListParams]{
 		Use:         "list",
 		Short:       "List users, with their flags and the projects they have access to",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *userListParams, cmd *cobra.Command, _ []string) error {
 			out, err := e.interactively(p.Interactive)
 			if err != nil {
+				return err
+			}
+			if err := checkPaging(p.Limit, p.Offset); err != nil {
 				return err
 			}
 
@@ -298,7 +309,7 @@ func newUserListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListUsers(cmd.Context(), "", nil, nil)
+			page, err := be.ListUsers(cmd.Context(), "", p.Limit, p.Offset)
 			if err != nil {
 				return err
 			}
