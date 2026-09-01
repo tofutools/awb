@@ -116,7 +116,7 @@ Three structural rules hold the design together:
   why an attachment's content is the one response `serve` does not gzip.
 * The default table output is explicitly not a compatibility surface. `--json`
   and `--compact` are; changing either is a breaking change.
-* `awb demo` fills the `demo` project from the table in `internal/cli/demo.go`.
+* `awb demo` fills the `demo` workspace from the table in `internal/cli/demo.go`.
   When a feature is added that the data set could show — a new type, status,
   priority, relation, or anything else worth seeing in a listing or the web UI —
   add or amend a row so it does. `TestDemoCoversTheVocabulary` fails when a
