@@ -360,11 +360,16 @@ func TestOutputIsDeterministic(t *testing.T) {
 	}
 }
 
-// Every listing has a total order, so it is reproducible even where nothing
-// distinguishes the rows but the tiebreak. The data below is deliberately tied
-// on every sort key each listing offers: same title, same priority, same
-// labels, same assignee, same content, all within the resolution of the
-// timestamps. Whatever remains different is what the order is specified on.
+// Every listing command produces the same output twice running, even where
+// nothing distinguishes the rows but the tiebreak. The data below is
+// deliberately tied on every sort key each listing offers: same title, same
+// priority, same labels, same assignee, same content, all within the resolution
+// of the timestamps, so what remains different is the tiebreak alone.
+//
+// This is the breadth half of the guarantee: it says every command reaches an
+// answer that does not vary. That each order is also the intended one is the
+// job of the tests that name an expected sequence, in internal/storage and
+// beside the feature each listing belongs to.
 func TestEveryListingIsDeterministic(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun("project", "create", "web", "--name", "Agent Work Board")
@@ -409,8 +414,10 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 		{"attach", "list", blocker}, {"activity", blocker}, {"comment", "list", blocker},
 		{"dep", "tree", parent}, {"show", blocker}, {"status"},
 	}
-	// --sort is offered on the issue listings only, and every key it takes has
-	// to be as reproducible as the default.
+	// --sort is offered on the issue listings only, and the four keys below are
+	// the whole of what the flag accepts — the API takes five more, which
+	// TestEveryAPIListingIsDeterministic covers. Each has to be as reproducible
+	// as the default.
 	for _, key := range []string{
 		"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
 	} {

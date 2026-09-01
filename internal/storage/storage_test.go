@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -792,6 +793,65 @@ func TestBlockerSortingPagesByTheVisibleBlockers(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Equal(t, open, issues[0].ID,
 		"a closed subject's historical blocker is not part of its visible sort value")
+}
+
+// The assignee sort key joins the assignee list in assignment order, not in
+// alphabetical order, so an issue's place in the listing follows the list the
+// listing shows. The two issues below are chosen so that joining their
+// assignees by value rather than by position would swap them.
+func TestAssigneeSortingJoinsInAssignmentOrder(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	inProgress := func(assignees ...string) func(*domain.Issue) {
+		return func(i *domain.Issue) {
+			i.Status = domain.StatusInProgress
+			i.Assignees = assignees
+		}
+	}
+	// "b z" sorts before "c a"; joined by value instead, "a c" would sort before
+	// "b z" and the two would come back the other way round.
+	bz := add("bz", inProgress("b", "z"))
+	ca := add("ca", inProgress("c", "a"))
+
+	issues, _, err := listWith(t, db, &domain.Filter{Sort: domain.Sort{Key: domain.SortAssignee}})
+	require.NoError(t, err)
+	require.Len(t, issues, 2)
+	assert.Equal(t, []string{bz, ca}, []string{issues[0].ID, issues[1].ID})
+	assert.Equal(t, []string{"b", "z"}, issues[0].Assignees, "and the visible list is the joined one")
+}
+
+// The blocker sort key joins the blocker ids ascending, whatever order the
+// relations were written in, so it agrees with the ascending list the listing
+// shows.
+func TestBlockerSortingJoinsAscending(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	blockers := []string{add("blocker one"), add("blocker two"), add("blocker three")}
+	slices.Sort(blockers)
+	low, middle, high := blockers[0], blockers[1], blockers[2]
+
+	two := add("blocked by two")
+	one := add("blocked by one")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		// Written high first, so a join that followed insertion order would put
+		// the high id at the front.
+		if err := tx.InsertRelation(two, domain.RelBlockedBy, high); err != nil {
+			return err
+		}
+		if err := tx.InsertRelation(two, domain.RelBlockedBy, low); err != nil {
+			return err
+		}
+		return tx.InsertRelation(one, domain.RelBlockedBy, middle)
+	}))
+
+	issues, _, err := listWith(t, db, &domain.Filter{Sort: domain.Sort{Key: domain.SortBlockers}})
+	require.NoError(t, err)
+	require.Len(t, issues, 5)
+	// Joined ascending, the two-blocker issue's key starts at the low id and it
+	// comes first; joined in insertion order it would start at the high id and
+	// come second.
+	assert.Equal(t, []string{two, one}, []string{issues[0].ID, issues[1].ID})
+	assert.Equal(t, []string{low, high}, issues[0].Blockers, "and the visible list is the joined one")
 }
 
 // Two invocations against unchanged data must agree, so every order is total.

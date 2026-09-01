@@ -1061,12 +1061,17 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	}
 }
 
-// Every listing the API publishes has a total order, so a client that asks the
-// same question twice gets the same answer in the same sequence — including on
-// the sort keys the CLI does not offer, and on the endpoints that exist only
-// over HTTP. The data below is deliberately tied on every key: same title,
-// same priority, same type, same labels, same description, all created within
-// the resolution of the stored timestamps.
+// Every listing the API publishes returns the same answer in the same sequence
+// twice running — including on the sort keys the CLI does not offer, and on the
+// endpoints that exist only over HTTP. The data below is deliberately tied on
+// every key: same title, same priority, same type, same labels, same
+// description, all created within the resolution of the stored timestamps, so
+// what separates the rows is the tiebreak alone.
+//
+// This is the breadth half of the guarantee: it says every endpoint reaches an
+// answer that does not vary. That each order is also the intended one is the
+// job of the tests that name an expected sequence — TestListOrderIsTotal and
+// the per-listing tests in internal/storage.
 func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	h, be := newServeHandlerOn(t,
 		serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
@@ -1075,14 +1080,16 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	_, err := be.CreateUser(ctx, backend.UserCreate{
 		Name: "mikael", Password: "hunter2", ProjectAdmin: true, UserAdmin: true})
 	require.NoError(t, err)
-	for _, name := range []string{"adam", "zoe"} {
+	// Two of these share a prefix with the awb project key and with the ids of
+	// the issues in it, so one navigation query reaches all three of its groups.
+	for _, name := range []string{"adam", "zoe", "awbot", "awbee"} {
 		_, err := be.CreateUser(ctx, backend.UserCreate{Name: name, Password: "hunter2"})
 		require.NoError(t, err)
 	}
 	for _, key := range []string{"awb", "web"} {
 		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key, Name: "Agent Work Board"})
 		require.NoError(t, err)
-		for _, user := range []string{"mikael", "adam", "zoe"} {
+		for _, user := range []string{"mikael", "adam", "zoe", "awbot", "awbee"} {
 			_, err := be.SetMember(ctx, key, user, domain.AccessRegular)
 			require.NoError(t, err)
 		}
@@ -1129,7 +1136,8 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 
 	paths := []string{
 		"/api/issues", "/api/ready", "/api/blocked", "/api/search?q=parser",
-		"/api/issues/suggestions?q=tied", "/api/navigation?q=tied",
+		"/api/issues/suggestions?q=tied",
+		"/api/navigation?q=tied", "/api/navigation?q=awb",
 		"/api/projects", "/api/preferences/projects", "/api/projects/awb/members",
 		"/api/users", "/api/labels", "/api/assignees",
 		"/api/issues/" + blocker, "/api/issues/" + blocker + "/attachments",
@@ -1148,6 +1156,21 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	}
 
 	credentials := basicAuth("mikael", "hunter2")
+
+	// Navigation returns three independently capped groups. A query that reached
+	// only one of them would leave the other two orders untested while the
+	// response as a whole still compared equal, so check all three are populated.
+	_, navigation := get(t, h, http.MethodGet, "/api/navigation?q=awb", credentials...)
+	var groups struct {
+		Issues   []domain.Issue   `json:"issues"`
+		Projects []domain.Project `json:"projects"`
+		Users    []domain.User    `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(navigation), &groups))
+	assert.NotEmpty(t, groups.Issues)
+	assert.NotEmpty(t, groups.Projects)
+	assert.NotEmpty(t, groups.Users)
+
 	for _, path := range paths {
 		resp, first := get(t, h, http.MethodGet, path, credentials...)
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
