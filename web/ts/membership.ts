@@ -1,8 +1,8 @@
 import type { DirectoryUser, Membership, User } from "./api.js";
 import type { Suggestion } from "./autocomplete.js";
 
-/** Project administrators hold admin access everywhere without a membership
- * row; otherwise the caller needs an admin membership in this project. An
+/** Workspace administrators hold admin access everywhere without a membership
+ * row; otherwise the caller needs an admin membership in this workspace. An
  * empty identity is the server's unrestricted bootstrap/direct-style mode. */
 export function mayManageProjectMembership(
   identity: string,
@@ -38,7 +38,7 @@ export function membershipAdditionError(user: string, members: Membership[]): st
 }
 
 /** Membership changes deliberately allow the last stored administrator to
- * leave: a global project administrator or direct database mode is the
+ * leave: a global workspace administrator or direct database mode is the
  * documented recovery path. The UI makes that consequence explicit. */
 export function membershipChangeConfirmation(
   member: Membership,
@@ -52,22 +52,22 @@ export function membershipChangeConfirmation(
     && nextAccess !== "admin"
     && members.filter((candidate) => candidate.access === "admin").length === 1;
   const action = removing
-    ? `remove @${member.user} from this project`
+    ? `remove @${member.user} from this workspace`
     : `change @${member.user} to ${nextAccess} access`;
 
   if (lastStoredAdmin) {
     const selfWarning = self
       ? removing
         ? " You will lose access to this membership page."
-        : " You will lose the membership management controls unless you are a global project administrator."
+        : " You will lose the membership management controls unless you are a global workspace administrator."
       : "";
-    return `This is the last stored project administrator.${selfWarning} `
-      + "Only a global project administrator or direct database access can restore project administration. "
+    return `This is the last stored workspace administrator.${selfWarning} `
+      + "Only a global workspace administrator or direct database access can restore workspace administration. "
       + `Do you want to ${action}?`;
   }
-  if (self && removing) return `Do you want to ${action}? You may lose access to this project.`;
+  if (self && removing) return `Do you want to ${action}? You may lose access to this workspace.`;
   if (self && member.access === "admin" && nextAccess === "regular") {
-    return `Do you want to ${action}? You will lose project administration.`;
+    return `Do you want to ${action}? You will lose workspace administration.`;
   }
   return `Do you want to ${action}?`;
 }

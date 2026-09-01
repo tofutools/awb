@@ -10,7 +10,7 @@ import {
 
 const membership = (user, access, project = "awb") => ({ project, user, access });
 
-test("membership administration follows effective project access", () => {
+test("membership administration follows effective workspace access", () => {
   const regular = { project_admin: false, projects: [membership("alice", "regular")] };
   const admin = { project_admin: false, projects: [membership("alice", "admin")] };
   const globalAdmin = { project_admin: true, projects: [] };
@@ -22,7 +22,7 @@ test("membership administration follows effective project access", () => {
   assert.equal(
     mayManageProjectMembership("alice", regular, "web", [membership("alice", "admin", "web")]),
     true,
-    "the dedicated member list retains ignored-project administration",
+    "the dedicated member list retains ignored-workspace administration",
   );
 });
 
@@ -52,7 +52,7 @@ test("self-removal and the last stored administrator get explicit warnings", () 
   const bob = membership("bob", "regular");
 
   const lastAdmin = membershipChangeConfirmation(alice, [alice, bob], "alice", null);
-  assert.match(lastAdmin, /last stored project administrator/);
+  assert.match(lastAdmin, /last stored workspace administrator/);
   assert.match(lastAdmin, /lose access/);
   assert.match(lastAdmin, /direct database access/);
 
@@ -61,7 +61,7 @@ test("self-removal and the last stored administrator get explicit warnings", () 
   assert.doesNotMatch(lastAdminDemotion, /lose access to this membership page/);
 
   const ordinaryRemoval = membershipChangeConfirmation(bob, [alice, bob], "alice", null);
-  assert.equal(ordinaryRemoval, "Do you want to remove @bob from this project?");
+  assert.equal(ordinaryRemoval, "Do you want to remove @bob from this workspace?");
 
   const promotion = membershipChangeConfirmation(bob, [alice, bob], "alice", "admin");
   assert.equal(promotion, "Do you want to change @bob to admin access?");
@@ -71,6 +71,6 @@ test("self-removal and the last stored administrator get explicit warnings", () 
   );
 
   const twoAdmins = [alice, membership("carol", "admin")];
-  assert.match(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /lose project administration/);
+  assert.match(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /lose workspace administration/);
   assert.doesNotMatch(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /last stored/);
 });

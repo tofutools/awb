@@ -1373,7 +1373,7 @@ async function changeProjectMembership(
     await operation();
     pendingNotice = { message: success, error: false };
     if (redirect) {
-      location.hash = "#/projects";
+      location.hash = "#/workspaces";
       return;
     }
     await render();
@@ -1406,11 +1406,11 @@ function projectMembershipSection(project: Project, members: Membership[], curre
   const heading = element("div", "membership-heading");
   const title = element("div");
   title.append(
-    element("h2", "", "Project members"),
+    element("h2", "", "Workspace members"),
     element(
       "p",
       "membership-help",
-      "Membership grants access to this project. It is separate from each user's ignored-project preference.",
+      "Membership grants access to this workspace. It is separate from each user's ignored-workspace preference.",
     ),
   );
   heading.append(title, element("span", "membership-count", String(members.length)));
@@ -1418,10 +1418,10 @@ function projectMembershipSection(project: Project, members: Membership[], curre
 
   const manageable = mayManageProjectMembership(identity, currentUser, project.key, members);
   if (manageable) section.append(projectMembershipEditor(project, members));
-  else section.append(element("p", "membership-help", "Project administrators can change membership and access."));
+  else section.append(element("p", "membership-help", "Workspace administrators can change membership and access."));
 
   if (members.length === 0) {
-    section.append(element("p", "empty", "No stored members. Global project administrators still have access."));
+    section.append(element("p", "empty", "No stored members. Global workspace administrators still have access."));
     return section;
   }
 
@@ -1465,7 +1465,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
           accessCell,
           rowControls,
           () => api.setProjectMember(project.key, member.user, next),
-          `@${member.user} now has ${next} access to ${project.key}.`,
+          `@${member.user} now has ${next} access to workspace ${project.key}.`,
         ).then(() => {
           // On failure the row remains mounted, so restore what the server
           // still holds. A successful render has already detached this row.
@@ -1479,7 +1479,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
     actions.dataset.label = "Actions";
     if (manageable) {
       const remove = button("Remove", "danger-button membership-remove");
-      remove.setAttribute("aria-label", `Remove @${member.user} from ${project.key}`);
+      remove.setAttribute("aria-label", `Remove @${member.user} from workspace ${project.key}`);
       rowControls.push(remove);
       remove.addEventListener("click", () => {
         if (!window.confirm(membershipChangeConfirmation(member, members, identity, null))) return;
@@ -1488,7 +1488,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
           actions,
           rowControls,
           () => api.removeProjectMember(project.key, member.user),
-          `@${member.user} was removed from ${project.key}.`,
+          `@${member.user} was removed from workspace ${project.key}.`,
           true,
           losesAccess,
         );
@@ -1535,7 +1535,7 @@ function projectMembershipEditor(project: Project, members: Membership[]): HTMLF
       form,
       [input, access, add],
       () => api.addProjectMember(project.key, user, next),
-      `@${user} was added with ${next} access to ${project.key}.`,
+      `@${user} was added with ${next} access to workspace ${project.key}.`,
       false,
       false,
       true,
@@ -1560,7 +1560,7 @@ async function viewProjectMembership(key: string, signal?: AbortSignal): Promise
   title.append(
     element("div", "issue-key", preference.project.key),
     element("h1", "", preference.project.name),
-    element("p", "lede", preference.ignored ? "Ignored project administration" : "Project administration"),
+    element("p", "lede", preference.ignored ? "Ignored workspace administration" : "Workspace administration"),
   );
   heading.append(title, link("#/settings", "Back to settings", "secondary-button"));
   view.append(heading, projectMembershipSection(preference.project, memberPage.rows, currentUser));
@@ -2723,7 +2723,7 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
     });
     const actions = element("span", "project-preference-actions");
     actions.append(link(
-      `#/projects/${encodeURIComponent(preference.project.key)}/members`,
+      `#/workspaces/${encodeURIComponent(preference.project.key)}/members`,
       "Members",
       "secondary-button project-preference-members",
     ));
