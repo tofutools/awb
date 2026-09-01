@@ -76,6 +76,33 @@ test("profile edits use the safely encoded path and advance its ETag", async (t)
   assert.equal(calls[2].init.body, JSON.stringify({ password: "changed" }));
 });
 
+test("user administration creates and version-deletes accounts", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ name: "a/b" }), {
+      status: calls.length === 1 ? 200 : calls.length === 2 ? 201 : 200,
+      headers: calls.length === 1 ? { ETag: '"user-v1"' } : { "Content-Type": "application/json" },
+    });
+  });
+
+  await api.user("a/b");
+  await api.createUser({ name: "new-user", password: "safe password", user_admin: true });
+  await api.deleteUser("a/b");
+
+  assert.equal(calls[1].path, "api/users");
+  assert.equal(calls[1].init.method, "POST");
+  assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
+  assert.deepEqual(JSON.parse(calls[1].init.body), {
+    name: "new-user",
+    password: "safe password",
+    user_admin: true,
+  });
+  assert.equal(calls[2].path, "api/users/a%2Fb");
+  assert.equal(calls[2].init.method, "DELETE");
+  assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v1"');
+});
+
 test("project preferences use their dedicated recovery endpoints", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
@@ -90,6 +117,15 @@ test("project preferences use their dedicated recovery endpoints", async (t) => 
   assert.equal(calls[1].path, "api/preferences/projects/team%2Fweb");
   assert.equal(calls[1].init.method, "PUT");
   assert.deepEqual(JSON.parse(calls[1].init.body), { ignored: true });
+});
+
+test("identity exposes the backend's effective account-administration capability", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    identity: "fixed-name",
+    may_manage_users: true,
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+  assert.deepEqual(await api.identity(), { identity: "fixed-name", may_manage_users: true });
 });
 
 // Every listing is asked with the filters it accepts. Regression: the listing

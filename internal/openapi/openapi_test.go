@@ -224,6 +224,16 @@ func TestUserSchemasAlwaysCarryTheFullName(t *testing.T) {
 	}
 }
 
+func TestIdentityCarriesEffectiveUserAdministration(t *testing.T) {
+	identity := schema(t, document(t), "Identity")
+	properties, ok := identity["properties"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, properties, "may_manage_users")
+	required, ok := identity["required"].([]any)
+	require.True(t, ok)
+	assert.Contains(t, required, "may_manage_users")
+}
+
 // The endpoints the CLI has no counterpart for still have to be declared.
 func TestPathsCoverTheWholeAPI(t *testing.T) {
 	paths, ok := document(t)["paths"].(map[string]any)
@@ -237,6 +247,7 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 		"/api/ready", "/api/blocked", "/api/search",
 		"/api/projects", "/api/projects/{key}", "/api/projects/{key}/archive",
 		"/api/projects/{key}/restore", "/api/projects/{key}/activity",
+		"/api/users", "/api/users/{name}",
 		"/api/labels", "/api/assignees", "/api/identity",
 	} {
 		assert.Contains(t, paths, path)

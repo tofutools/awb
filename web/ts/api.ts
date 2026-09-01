@@ -33,6 +33,7 @@ export type ProjectPreference = components["schemas"]["ProjectPreference"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
+export type UserCreate = components["schemas"]["UserCreate"];
 export type Membership = components["schemas"]["Membership"];
 export type MembershipAccess = Membership["access"];
 export type NavigationResults = components["schemas"]["NavigationResults"];
@@ -201,9 +202,13 @@ async function patchOne<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function projectLifecycle(key: string, action: "archive" | "restore"): Promise<Project> {
-	const path = `api/projects/${encodeURIComponent(key)}`;
-	const resp = await request(`${path}/${action}`, { method: "POST", headers: entityHeaders(path) });
-	return entityResponse<Project>(path, resp);
+  const path = `api/projects/${encodeURIComponent(key)}`;
+  const resp = await request(`${path}/${action}`, { method: "POST", headers: entityHeaders(path) });
+  return entityResponse<Project>(path, resp);
+}
+
+async function deleteEntity<T>(path: string): Promise<T> {
+  return getResponse<T>(await request(path, { method: "DELETE", headers: entityHeaders(path) }));
 }
 
 async function issueMutation<T>(id: string, suffix: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
@@ -327,8 +332,10 @@ export const api = {
     getPage<Facet>(`api/assignees${toQuery(filters)}`, { signal }),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
   user: (name: string) => getOne<User>(`api/users/${encodeURIComponent(name)}`),
+  createUser: (body: UserCreate) => postOne<User>("api/users", body),
   updateUser: (name: string, patch: UserPatch) =>
     patchOne<User>(`api/users/${encodeURIComponent(name)}`, patch),
+  deleteUser: (name: string) => deleteEntity<User>(`api/users/${encodeURIComponent(name)}`),
 };
 
 export { toQuery };

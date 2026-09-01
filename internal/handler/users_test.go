@@ -332,13 +332,13 @@ func TestUserListingPages(t *testing.T) {
 	assert.NotNil(t, users[1].Projects, "an empty membership list is [] and never null")
 }
 
-// The identity endpoint still says only who is calling; what they may do is
-// their own user object, which they may always read.
-func TestIdentityStillOnlySaysWho(t *testing.T) {
+// The identity endpoint reports effective account-administration capability,
+// which is not necessarily a stored flag in unrestricted direct/no-auth mode.
+func TestIdentityReportsEffectiveUserAdministration(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodGet, "/api/identity", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	assert.JSONEq(t, `{"identity":"mikael"}`, payload)
+	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 
 	_, err := a.be.CreateUser(a.t.Context(),
 		backend.UserCreate{Name: "mikael", Password: "hunter2", ProjectAdmin: true})

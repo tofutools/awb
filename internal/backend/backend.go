@@ -33,6 +33,9 @@ type Backend interface {
 	// same as Identity in direct mode; against a server it is the server's
 	// answer, which may differ from the client's configured default identity.
 	AuthenticatedIdentity(ctx context.Context) (string, error)
+	// MayManageUsers is the caller's effective capability, including the
+	// unrestricted direct and no-auth modes where no stored flag is consulted.
+	MayManageUsers(ctx context.Context) (bool, error)
 	SearchNavigation(ctx context.Context, query string, limit int) (NavigationResults, error)
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)

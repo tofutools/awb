@@ -577,6 +577,11 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 		forbidden(t, err)
 		_, err = be.GetUser(ctx, "dana")
 		forbidden(t, err)
+		_, err = be.GetUser(ctx, "nobody")
+		forbidden(t, err, "the authorization check precedes lookup and does not disclose existence")
+		fullName := "Dana Doe"
+		_, err = be.UpdateUser(ctx, "dana", backend.UserPatch{FullName: &fullName}, "")
+		forbidden(t, err)
 		_, err = be.DeleteUser(ctx, "dana", "")
 		forbidden(t, err)
 	}

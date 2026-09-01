@@ -21,6 +21,7 @@ import {
   type ProjectPreference,
   type ProjectFilters,
   type User,
+  type UserCreate,
   type UserFilters,
   type Relation,
 } from "./api.js";
@@ -62,6 +63,13 @@ import {
   projectScopedHref,
 } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
+import {
+  userCreateHref,
+  userDeletionImpact,
+  userDeletionWarning,
+  userEditorHref,
+  userNameFromRouteSegment,
+} from "./user-admin.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
   mayManageProjectMembership,
@@ -98,6 +106,7 @@ const app = document.getElementById("app") as HTMLElement;
 
 /** identity is the caller the server attributes requests to. */
 let identity = "";
+let mayManageUsers = false;
 let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
@@ -1197,7 +1206,7 @@ function projectCreateForm(): HTMLFormElement {
   return form;
 }
 
-function userTable(users: DirectoryUser[]): HTMLElement {
+function userTable(users: DirectoryUser[], manageable: boolean): HTMLElement {
   const table = element("table", "listing-table user-table") as HTMLTableElement;
   const head = document.createElement("thead");
   const heading = document.createElement("tr");
@@ -1215,7 +1224,8 @@ function userTable(users: DirectoryUser[]): HTMLElement {
     const row = document.createElement("tr");
     const userCell = document.createElement("td");
     userCell.dataset.label = "User";
-    const name = element("span", "user-name");
+    const name = element(manageable ? "a" : "span", "user-name");
+    if (name instanceof HTMLAnchorElement) name.href = userEditorHref(user.name);
     const identityText = element("span", "user-identity");
     identityText.append(element("span", "user-full-name", user.full_name || user.name));
     if (user.full_name !== "") identityText.append(element("span", "muted", `@${user.name}`));
@@ -1260,6 +1270,8 @@ function userTable(users: DirectoryUser[]): HTMLElement {
 }
 
 async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
+  await refreshCaller();
+  const manageable = mayManageUsers;
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
   const filters: UserFilters = {
@@ -1281,20 +1293,334 @@ async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElemen
     page = await api.users(filters, signal);
   }
   const view = element("div");
-  view.append(element("h1", "", "Users"));
+  const heading = element("div", "directory-heading");
+  heading.append(element("h1", "", "Users"));
+  if (manageable) heading.append(link(userCreateHref, "Add user", "primary-button"));
+  view.append(heading);
 
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
   if (page.rows.length === 0) {
     host.append(element("p", "empty", filterText === null ? "No users yet." : "No users match this filter."));
   } else {
-    host.append(userTable(page.rows));
+    host.append(userTable(page.rows, manageable));
   }
   listing.append(
     listingFilter(route, "Filter all users…", "user", page.total, pagination(route, page.total)),
     host,
   );
   view.append(listing);
+  return view;
+}
+
+function accountAdminDenied(): ApiError {
+  return new ApiError(403, "Only a user administrator may administer accounts.");
+}
+
+function formMessage(): HTMLElement {
+  const message = element("p", "profile-form-message");
+  message.setAttribute("aria-live", "polite");
+  return message;
+}
+
+function setFormError(message: HTMLElement, error: unknown): void {
+  message.className = "profile-form-message form-error";
+  message.setAttribute("role", "alert");
+  message.textContent = error instanceof ApiError ? error.message : String(error);
+}
+
+async function recoverStaleUser(error: unknown): Promise<boolean> {
+  if (!(error instanceof ApiError) || error.status !== 412) return false;
+  pendingNotice = {
+    message: "This account changed elsewhere. The latest values have been loaded; review them and try again.",
+    error: true,
+  };
+  await render();
+  return true;
+}
+
+function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElement {
+  const form = element("form", "user-admin-form") as HTMLFormElement;
+  const fullName = document.createElement("input");
+  fullName.value = user.full_name;
+  fullName.maxLength = 500;
+  fullName.autocomplete = "name";
+  const projectAdmin = document.createElement("input");
+  projectAdmin.type = "checkbox";
+  projectAdmin.checked = user.project_admin;
+  const userAdmin = document.createElement("input");
+  userAdmin.type = "checkbox";
+  userAdmin.checked = user.user_admin;
+  const projectAdminLabel = element("label", "check-field user-role-field");
+  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
+  const userAdminLabel = element("label", "check-field user-role-field");
+  userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
+  const lastUserAdmin = user.user_admin
+    && directory.filter((candidate) => candidate.user_admin).length === 1;
+  const roleWarning = element(
+    "p",
+    "profile-form-help",
+    lastUserAdmin
+      ? "This is the last user administrator. Removing that role leaves account administration available only through direct database access."
+      : "Administrative roles are independent; grant only what this account needs.",
+  );
+  const submit = element("button", "primary-button", "Save changes") as HTMLButtonElement;
+  submit.type = "submit";
+  const message = formMessage();
+  form.append(field("Full name", fullName), projectAdminLabel, userAdminLabel, roleWarning, submit, message);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (lastUserAdmin && !userAdmin.checked && !window.confirm(
+      "This removes the last user administrator. Only direct database access can restore account administration. Continue?",
+    )) return;
+    form.setAttribute("aria-busy", "true");
+    submit.disabled = true;
+    message.textContent = "Saving…";
+    message.className = "profile-form-message";
+    try {
+      await api.updateUser(user.name, {
+        full_name: fullName.value,
+        project_admin: projectAdmin.checked,
+        user_admin: userAdmin.checked,
+      });
+      await refreshCaller();
+      pendingNotice = { message: `@${user.name} was updated.`, error: false };
+      if (!mayManageUsers) {
+        location.hash = "#/users";
+        return;
+      }
+      await render();
+    } catch (error) {
+      if (await recoverStaleUser(error)) return;
+      setFormError(message, error);
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
+  });
+  return form;
+}
+
+function userPasswordResetForm(user: User): HTMLFormElement {
+  const form = element("form", "user-admin-form") as HTMLFormElement;
+  const password = document.createElement("input");
+  password.type = "password";
+  password.required = true;
+  password.maxLength = 72;
+  password.autocomplete = "new-password";
+  const confirmation = password.cloneNode() as HTMLInputElement;
+  const submit = element("button", "secondary-button", "Reset password") as HTMLButtonElement;
+  submit.type = "submit";
+  const message = formMessage();
+  form.append(
+    element("p", "profile-form-help", "Set a new password. The current password is never shown."),
+    field("New password", password),
+    field("Confirm new password", confirmation),
+    submit,
+    message,
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message.className = "profile-form-message";
+    if (password.value !== confirmation.value) {
+      setFormError(message, new Error("The passwords do not match."));
+      confirmation.focus();
+      return;
+    }
+    form.setAttribute("aria-busy", "true");
+    submit.disabled = true;
+    message.textContent = "Resetting…";
+    try {
+      await api.updateUser(user.name, { password: password.value });
+      form.reset();
+      message.textContent = "Password reset.";
+    } catch (error) {
+      if (await recoverStaleUser(error)) return;
+      setFormError(message, error);
+    } finally {
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
+  });
+  return form;
+}
+
+function userMembershipList(user: User): HTMLElement {
+  const list = element("ul", "profile-projects");
+  for (const membership of user.projects) {
+    const item = element("li", "profile-project");
+    item.append(
+      link(
+        `#/workspaces/${encodeURIComponent(membership.project)}/members`,
+        membership.project,
+        "profile-project-name",
+      ),
+      element("span", "profile-project-title", "Workspace Members page"),
+      element("span", "listing-badge", membership.access),
+    );
+    list.append(item);
+  }
+  if (user.projects.length === 0) list.append(element("li", "empty", "No workspace memberships."));
+  return list;
+}
+
+function userDeleteForm(user: User, directory: DirectoryUser[]): HTMLFormElement {
+  const impact = userDeletionImpact(user, directory, identity);
+  const form = element("form", "user-delete-form") as HTMLFormElement;
+  const warning = element("p", "user-delete-warning", userDeletionWarning(user, impact));
+  const confirmation = document.createElement("input");
+  confirmation.autocomplete = "off";
+  confirmation.placeholder = user.name;
+  const submit = element("button", "danger-button", "Delete user") as HTMLButtonElement;
+  submit.type = "submit";
+  submit.disabled = true;
+  const message = formMessage();
+  confirmation.addEventListener("input", () => {
+    submit.disabled = confirmation.value !== user.name;
+  });
+  form.append(
+    warning,
+    element("p", "profile-form-help", `Type ${user.name} to confirm.`),
+    field("Username", confirmation),
+    submit,
+    message,
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (confirmation.value !== user.name) return;
+    form.setAttribute("aria-busy", "true");
+    submit.disabled = true;
+    message.textContent = "Deleting…";
+    try {
+      await api.deleteUser(user.name);
+      pendingNotice = { message: `@${user.name} was deleted.`, error: false };
+      location.hash = "#/users";
+      if (parseRoute().path.length > 1) await render();
+    } catch (error) {
+      if (await recoverStaleUser(error)) return;
+      setFormError(message, error);
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
+  });
+  return form;
+}
+
+async function viewUserEditor(name: string, signal?: AbortSignal): Promise<HTMLElement> {
+  await refreshCaller();
+  if (!mayManageUsers) throw accountAdminDenied();
+  const [user, directory] = await Promise.all([api.user(name), api.users({}, signal)]);
+  const view = element("div", "profile-view user-admin-view");
+  view.append(link("#/users", "← Users", "detail-back-link"));
+  const heading = element("div", "profile-heading user-admin-heading");
+  heading.append(avatar(user.name, "profile-avatar"));
+  const title = element("div");
+  title.append(
+    element("h1", "", user.full_name || `@${user.name}`),
+    element("p", "lede", user.full_name === "" ? "Account administration" : `@${user.name} · Account administration`),
+  );
+  heading.append(title);
+  const cards = element("div", "user-admin-grid");
+  const accountCard = element("section", "profile-card");
+  accountCard.append(element("h2", "", "Account details"), userAccountForm(user, directory.rows));
+  const passwordCard = element("section", "profile-card");
+  passwordCard.append(element("h2", "", "Reset password"), userPasswordResetForm(user));
+  const membershipCard = element("section", "profile-card");
+  membershipCard.append(
+    element("h2", "", "Workspaces"),
+    element(
+      "p",
+      "profile-form-help",
+      "Workspace memberships are read-only here. Manage access on each workspace's Members page.",
+    ),
+    userMembershipList(user),
+  );
+  const factsCard = element("section", "profile-card");
+  const facts = element("dl", "profile-facts");
+  facts.append(
+    element("dt", "", "Username"), element("dd", "", user.name),
+    element("dt", "", "Created"), element("dd", "", user.created_at),
+    element("dt", "", "Updated"), element("dd", "", user.updated_at),
+  );
+  factsCard.append(element("h2", "", "Account information"), facts);
+  const deleteCard = element("section", "profile-card user-delete-card");
+  deleteCard.append(element("h2", "", "Delete account"), userDeleteForm(user, directory.rows));
+  cards.append(accountCard, passwordCard, membershipCard, factsCard, deleteCard);
+  view.append(heading, cards);
+  return view;
+}
+
+function userCreateForm(): HTMLFormElement {
+  const form = element("form", "user-admin-form user-create-form") as HTMLFormElement;
+  const username = document.createElement("input");
+  username.required = true;
+  username.maxLength = 64;
+  username.autocomplete = "username";
+  const fullName = document.createElement("input");
+  fullName.maxLength = 500;
+  fullName.autocomplete = "name";
+  const password = document.createElement("input");
+  password.type = "password";
+  password.required = true;
+  password.maxLength = 72;
+  password.autocomplete = "new-password";
+  const confirmation = password.cloneNode() as HTMLInputElement;
+  const projectAdmin = document.createElement("input");
+  projectAdmin.type = "checkbox";
+  const userAdmin = document.createElement("input");
+  userAdmin.type = "checkbox";
+  const projectAdminLabel = element("label", "check-field user-role-field");
+  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
+  const userAdminLabel = element("label", "check-field user-role-field");
+  userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
+  const submit = element("button", "primary-button", "Create user") as HTMLButtonElement;
+  submit.type = "submit";
+  const message = formMessage();
+  form.append(
+    field("Username", username), field("Full name", fullName),
+    field("Password", password), field("Confirm password", confirmation),
+    projectAdminLabel, userAdminLabel, submit, message,
+  );
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message.className = "profile-form-message";
+    if (password.value !== confirmation.value) {
+      setFormError(message, new Error("The passwords do not match."));
+      confirmation.focus();
+      return;
+    }
+    form.setAttribute("aria-busy", "true");
+    submit.disabled = true;
+    message.textContent = "Creating…";
+    const body: UserCreate = {
+      name: username.value,
+      full_name: fullName.value,
+      password: password.value,
+      project_admin: projectAdmin.checked,
+      user_admin: userAdmin.checked,
+    };
+    try {
+      const created = await api.createUser(body);
+      pendingNotice = { message: `@${created.name} was created.`, error: false };
+      location.hash = userEditorHref(created.name);
+    } catch (error) {
+      setFormError(message, error);
+      submit.disabled = false;
+      form.removeAttribute("aria-busy");
+    }
+  });
+  return form;
+}
+
+async function viewUserCreate(): Promise<HTMLElement> {
+  await refreshCaller();
+  if (!mayManageUsers) throw accountAdminDenied();
+  const view = element("div", "profile-view user-admin-view");
+  view.append(link("#/users", "← Users", "detail-back-link"));
+  const heading = element("div", "settings-heading");
+  heading.append(element("h1", "", "Add user"), element("p", "lede", "Create an account and its initial roles."));
+  const card = element("section", "profile-card user-create-card");
+  card.append(element("h2", "", "Account"), userCreateForm());
+  view.append(heading, card);
   return view;
 }
 
@@ -2806,11 +3132,16 @@ async function render(): Promise<void> {
   app.append(chrome());
 
   const main = element("main");
+  const loading = element("p", "route-loading", "Loading…");
+  loading.setAttribute("role", "status");
+  loading.setAttribute("aria-live", "polite");
+  main.append(loading);
   app.append(main);
 
   try {
     const view = await routeView(route, request.signal);
     if (generation !== renderGeneration || request.signal.aborted) return;
+    clear(main);
     const notice = pendingNotice;
     if (notice !== null) {
       const message = element("p", notice.error ? "app-notice app-notice-error" : "app-notice", notice.message);
@@ -2823,6 +3154,7 @@ async function render(): Promise<void> {
     activateListingFilter(view);
   } catch (error) {
     if (generation !== renderGeneration || request.signal.aborted) return;
+    clear(main);
     const notice = pendingNotice;
     if (notice !== null) {
       const message = element("p", notice.error ? "app-notice app-notice-error" : "app-notice", notice.message);
@@ -2877,7 +3209,10 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
     case "settings":
       return viewSettings();
     case "users":
-      return viewUsers(route, signal);
+      if (route.path[1] === "-" && route.path[2] === "new") return viewUserCreate();
+      return route.path.length > 1
+        ? viewUserEditor(userNameFromRouteSegment(route.path[1]), signal)
+        : viewUsers(route, signal);
     case "tree":
       return viewTree(route.path[1] ?? "");
     default: {
@@ -2899,11 +3234,7 @@ function markActiveNav(route: Route): void {
 }
 
 async function start(): Promise<void> {
-  try {
-    identity = (await api.identity()).identity;
-  } catch {
-    // A server that cannot say who the caller is still browses fine.
-  }
+  await refreshCaller();
   const registry = new CommandRegistry();
   registry.register("navigation", () => {
     const route = parseRoute();
@@ -2936,6 +3267,21 @@ async function start(): Promise<void> {
   );
   window.addEventListener("hashchange", () => void render());
   await render();
+}
+
+async function refreshCaller(): Promise<void> {
+  // Account administration can change the current caller's workspace role.
+  // Force the next workspace view to resolve that effective capability again.
+  projectManager = null;
+  try {
+    const caller = await api.identity();
+    identity = caller.identity;
+    mayManageUsers = caller.may_manage_users;
+  } catch {
+    // A server that cannot say who the caller is still browses fine.
+    identity = "";
+    mayManageUsers = false;
+  }
 }
 
 void start();
