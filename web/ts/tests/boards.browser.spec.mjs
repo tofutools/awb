@@ -53,6 +53,27 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Open" }).first()).toBeVisible();
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
+  const inProgressColumn = releaseLane.locator(".board-column[data-status='in_progress']");
+  await inProgressColumn.getByRole("button", { name: /Create in progress issue/ }).click();
+  const createDialog = page.getByRole("dialog", { name: "New issue" });
+  await expect(createDialog.getByLabel("Workspace")).toHaveValue("demo");
+  await expect(createDialog.getByLabel("Workspace")).toBeDisabled();
+  await expect(createDialog).toContainText("Epic:");
+  await expect(createDialog.getByText(/Assign to me/).locator("input")).toBeChecked();
+  await createDialog.getByLabel("Title").fill("Created from the board");
+  await createDialog.getByLabel("Type").selectOption("feature");
+  await createDialog.getByLabel("Priority").selectOption("1");
+  await createDialog.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
+  const createdID = page.url().split("/").at(-1);
+  const created = await page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()), createdID);
+  const caller = await page.evaluate(async () => (await (await fetch("api/identity")).json()).identity);
+  expect(created.type).toBe("feature");
+  expect(created.priority).toBe(1);
+  expect(created.relations.some((relation) => relation.type === "has-parent")).toBe(true);
+  if (caller !== "") expect(created.assignees).toContain(caller);
+  await page.goto(`${baseURL}/#/boards`);
+
   await releaseLane.getByRole("button", { name: /Collapse Ship the 1.0 release.*swimlane/ }).click();
   await expect(releaseLane.locator(".board-columns")).toBeHidden();
 	const initialNoEpicLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) });
@@ -166,6 +187,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
+  await expect(page.getByRole("button", { name: "New issue" })).toBeVisible();
   const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Browse the widget catalogue" });
   const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
   await expect(sourceRow).toBeVisible();
