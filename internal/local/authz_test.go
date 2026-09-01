@@ -849,6 +849,21 @@ func TestPermissionsAreReadPerOperation(t *testing.T) {
 	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
 }
 
+func TestOnlyProjectAdministratorsManageLifecycle(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "operator", true, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessAdmin)
+
+	_, err := root.WithUser("bob").ArchiveProject(ctx, "awb", "")
+	forbidden(t, err)
+	archived, err := root.WithUser("operator").ArchiveProject(ctx, "awb", "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.ProjectArchived, archived.State)
+	_, err = root.WithUser("bob").RestoreProject(ctx, "awb", "")
+	forbidden(t, err)
+}
+
 // An empty patch is still a read of the account, and answers with it, so a
 // caller who may not read one may not reach it by asking to change nothing.
 func TestAnEmptyPatchIsNotAWayToReadAnAccount(t *testing.T) {

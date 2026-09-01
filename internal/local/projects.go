@@ -34,7 +34,7 @@ func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) 
 		// nothing to hide behind a 404 here: the caller named a key that is not
 		// there yet either way.
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may create a project")
+			return awberr.Forbiddenf("only a workspace administrator may create a workspace")
 		}
 		if err := tx.InsertProject(key, name, description); err != nil {
 			return err
@@ -69,10 +69,15 @@ func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, 
 // that are not closed.
 func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.ProjectSort,
 	limit, offset *int) (backend.ProjectPage, error) {
+	return b.ListProjectsByState(ctx, filter, domain.ProjectsActive, sort, limit, offset)
+}
+
+func (b *Backend) ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter, sort domain.ProjectSort,
+	limit, offset *int) (backend.ProjectPage, error) {
 	var page backend.ProjectPage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		var err error
-		page.Projects, page.Total, err = tx.ListProjects(filter, sort, limit, offset)
+		page.Projects, page.Total, err = tx.ListProjectsByState(filter, state, sort, limit, offset)
 		return err
 	})
 	if err != nil {
@@ -102,9 +107,12 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 			return err
 		}
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may change project %s", key)
+			return awberr.Forbiddenf("only a workspace administrator may change workspace %s", key)
 		}
-		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
+		if existing.State == domain.ProjectArchived {
+			return awberr.Conflictf("workspace %s is archived; restore it before changing it", key)
+		}
+		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the workspace"); err != nil {
 			return err
 		}
 
@@ -136,6 +144,56 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 	return project, nil
 }
 
+func (b *Backend) setProjectState(ctx context.Context, key string, state domain.ProjectState,
+	ifMatch string) (*domain.Project, error) {
+	if _, err := domain.ValidateProjectKey(key); err != nil {
+		return nil, err
+	}
+	var project *domain.Project
+	err := b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		existing, err := tx.GetProject(key)
+		if err != nil {
+			return err
+		}
+		if !caller.MayManageProjects() {
+			return awberr.Forbiddenf("only a workspace administrator may change workspace %s lifecycle", key)
+		}
+		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the workspace"); err != nil {
+			return err
+		}
+		if _, err := tx.SetProjectState(existing, state, caller.Name); err != nil {
+			return err
+		}
+		project, err = tx.GetProject(key)
+		return err
+	})
+	return project, err
+}
+
+func (b *Backend) ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.setProjectState(ctx, key, domain.ProjectArchived, ifMatch)
+}
+
+func (b *Backend) RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.setProjectState(ctx, key, domain.ProjectActive, ifMatch)
+}
+
+func (b *Backend) ListProjectActivity(ctx context.Context, key string, limit, offset *int) (backend.ProjectActivityPage, error) {
+	if _, err := domain.ValidateProjectKey(key); err != nil {
+		return backend.ProjectActivityPage{}, err
+	}
+	var page backend.ProjectActivityPage
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+		if _, err := tx.GetProject(key); err != nil {
+			return err
+		}
+		var err error
+		page.Activity, page.Total, err = tx.ListProjectActivity(key, limit, offset)
+		return err
+	})
+	return page, err
+}
+
 // DeleteProject deletes a project.
 //
 // It refuses while the project holds any issue at all — closed ones included,
@@ -159,9 +217,12 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 			return err
 		}
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may delete project %s", key)
+			return awberr.Forbiddenf("only a workspace administrator may delete workspace %s", key)
 		}
-		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the project"); err != nil {
+		if project.State == domain.ProjectArchived {
+			return awberr.Conflictf("workspace %s is archived and read-only; restore it before deleting it", key)
+		}
+		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the workspace"); err != nil {
 			return err
 		}
 
@@ -171,8 +232,17 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		}
 		if held > 0 && !cascade {
 			return awberr.Conflictf(
-				"project %s still holds %d issue(s), closed ones included; use --cascade to delete them too",
+				"workspace %s still holds %d issue(s), closed ones included; use --cascade to delete them too",
 				key, held)
+		}
+		if cascade {
+			touchesArchived, err := tx.ProjectRelationsTouchArchived(key)
+			if err != nil {
+				return err
+			}
+			if touchesArchived {
+				return awberr.Conflictf("workspace %s has relations touching archived read-only work", key)
+			}
 		}
 
 		deleted.Project = *project

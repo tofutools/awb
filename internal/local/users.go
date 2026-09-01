@@ -334,7 +334,7 @@ func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*doma
 			return err
 		}
 		if !member {
-			return awberr.NotFoundf("%s has no access to project %s",
+			return awberr.NotFoundf("%s has no access to workspace %s",
 				membership.User, membership.Project)
 		}
 		membership.Access = access
@@ -382,7 +382,7 @@ func permitMembership(tx *storage.Tx, caller domain.Caller, project string) erro
 	}
 	if !caller.MayAdministerProject(access, member) {
 		return awberr.Forbiddenf(
-			"only an administrator of project %s may change who works on it", project)
+			"only an administrator of workspace %s may change who works on it", project)
 	}
 	return nil
 }

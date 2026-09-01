@@ -19,22 +19,23 @@ import (
 // A parameter an operation does not declare cannot appear here at all: the
 // request is refused before it arrives (see Handler.Middleware).
 type selection struct {
-	statuses      []api.Status
-	includeClosed bool
-	types         []api.Type
-	priorities    []api.Priority
-	priorityMax   api.OptPriority
-	labels        []api.Label
-	assignees     []api.Assignee
-	unassigned    bool
-	projects      []api.ProjectKey
-	parent        api.OptString
-	sort          string
-	limit         api.OptInt
-	offset        api.OptInt
-	terms         []string
-	listingFilter string
-	readiness     api.OptFacetReadiness
+	statuses        []api.Status
+	includeClosed   bool
+	includeArchived bool
+	types           []api.Type
+	priorities      []api.Priority
+	priorityMax     api.OptPriority
+	labels          []api.Label
+	assignees       []api.Assignee
+	unassigned      bool
+	projects        []api.ProjectKey
+	parent          api.OptString
+	sort            string
+	limit           api.OptInt
+	offset          api.OptInt
+	terms           []string
+	listingFilter   string
+	readiness       api.OptFacetReadiness
 }
 
 // filter turns the selection into a domain filter. The values arrive already
@@ -43,10 +44,11 @@ type selection struct {
 // each other — and the rules that live in the domain layer.
 func (s selection) filter(relevance bool) (*domain.Filter, error) {
 	filter := &domain.Filter{
-		IncludeClosed: s.includeClosed,
-		Unassigned:    s.unassigned,
-		Parent:        s.parent.Or(""),
-		ListingFilter: s.listingFilter,
+		IncludeClosed:   s.includeClosed,
+		IncludeArchived: s.includeArchived,
+		Unassigned:      s.unassigned,
+		Parent:          s.parent.Or(""),
+		ListingFilter:   s.listingFilter,
 	}
 
 	for _, status := range s.statuses {
@@ -129,20 +131,21 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 	*api.IssueListHeaders, error) {
 	filter, err := selection{
-		statuses:      params.Status,
-		includeClosed: params.IncludeClosed.Or(false),
-		types:         params.Type,
-		priorities:    params.Priority,
-		priorityMax:   params.PriorityMax,
-		labels:        params.Label,
-		assignees:     params.Assignee,
-		unassigned:    params.Unassigned.Or(false),
-		projects:      params.Project,
-		parent:        params.Parent,
-		sort:          string(params.Sort.Or("")),
-		limit:         params.Limit,
-		offset:        params.Offset,
-		listingFilter: params.Filter.Or(""),
+		statuses:        params.Status,
+		includeClosed:   params.IncludeClosed.Or(false),
+		includeArchived: params.IncludeArchived.Or(false),
+		types:           params.Type,
+		priorities:      params.Priority,
+		priorityMax:     params.PriorityMax,
+		labels:          params.Label,
+		assignees:       params.Assignee,
+		unassigned:      params.Unassigned.Or(false),
+		projects:        params.Project,
+		parent:          params.Parent,
+		sort:            string(params.Sort.Or("")),
+		limit:           params.Limit,
+		offset:          params.Offset,
+		listingFilter:   params.Filter.Or(""),
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -204,21 +207,22 @@ func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams)
 func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParams) (
 	*api.IssueListHeaders, error) {
 	filter, err := selection{
-		statuses:      params.Status,
-		includeClosed: params.IncludeClosed.Or(false),
-		types:         params.Type,
-		priorities:    params.Priority,
-		priorityMax:   params.PriorityMax,
-		labels:        params.Label,
-		assignees:     params.Assignee,
-		unassigned:    params.Unassigned.Or(false),
-		projects:      params.Project,
-		parent:        params.Parent,
-		sort:          string(params.Sort.Or("")),
-		limit:         params.Limit,
-		offset:        params.Offset,
-		terms:         params.Q,
-		listingFilter: params.Filter.Or(""),
+		statuses:        params.Status,
+		includeClosed:   params.IncludeClosed.Or(false),
+		includeArchived: params.IncludeArchived.Or(false),
+		types:           params.Type,
+		priorities:      params.Priority,
+		priorityMax:     params.PriorityMax,
+		labels:          params.Label,
+		assignees:       params.Assignee,
+		unassigned:      params.Unassigned.Or(false),
+		projects:        params.Project,
+		parent:          params.Parent,
+		sort:            string(params.Sort.Or("")),
+		limit:           params.Limit,
+		offset:          params.Offset,
+		terms:           params.Q,
+		listingFilter:   params.Filter.Or(""),
 	}.filter(true)
 	if err != nil {
 		return nil, err
@@ -268,21 +272,22 @@ func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
 func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
-		terms:         params.Q,
-		statuses:      params.Status,
-		includeClosed: params.IncludeClosed.Or(false),
-		types:         params.Type,
-		priorities:    params.Priority,
-		priorityMax:   params.PriorityMax,
-		labels:        params.Label,
-		assignees:     params.Assignee,
-		unassigned:    params.Unassigned.Or(false),
-		projects:      params.Project,
-		parent:        params.Parent,
-		limit:         params.Limit,
-		offset:        params.Offset,
-		listingFilter: params.Filter.Or(""),
-		readiness:     params.Readiness,
+		terms:           params.Q,
+		statuses:        params.Status,
+		includeClosed:   params.IncludeClosed.Or(false),
+		includeArchived: params.IncludeArchived.Or(false),
+		types:           params.Type,
+		priorities:      params.Priority,
+		priorityMax:     params.PriorityMax,
+		labels:          params.Label,
+		assignees:       params.Assignee,
+		unassigned:      params.Unassigned.Or(false),
+		projects:        params.Project,
+		parent:          params.Parent,
+		limit:           params.Limit,
+		offset:          params.Offset,
+		listingFilter:   params.Filter.Or(""),
+		readiness:       params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err
@@ -293,21 +298,22 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesParams) (
 	*api.FacetListHeaders, error) {
 	filter, err := selection{
-		terms:         params.Q,
-		statuses:      params.Status,
-		includeClosed: params.IncludeClosed.Or(false),
-		types:         params.Type,
-		priorities:    params.Priority,
-		priorityMax:   params.PriorityMax,
-		labels:        params.Label,
-		assignees:     params.Assignee,
-		unassigned:    params.Unassigned.Or(false),
-		projects:      params.Project,
-		parent:        params.Parent,
-		limit:         params.Limit,
-		offset:        params.Offset,
-		listingFilter: params.Filter.Or(""),
-		readiness:     params.Readiness,
+		terms:           params.Q,
+		statuses:        params.Status,
+		includeClosed:   params.IncludeClosed.Or(false),
+		includeArchived: params.IncludeArchived.Or(false),
+		types:           params.Type,
+		priorities:      params.Priority,
+		priorityMax:     params.PriorityMax,
+		labels:          params.Label,
+		assignees:       params.Assignee,
+		unassigned:      params.Unassigned.Or(false),
+		projects:        params.Project,
+		parent:          params.Parent,
+		limit:           params.Limit,
+		offset:          params.Offset,
+		listingFilter:   params.Filter.Or(""),
+		readiness:       params.Readiness,
 	}.filter(false)
 	if err != nil {
 		return nil, err

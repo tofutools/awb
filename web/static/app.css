@@ -661,6 +661,36 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .project-description.markdown > :first-child { margin-top: 0; }
 .project-description.markdown > :last-child { margin-bottom: 0; }
+.projects-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.projects-heading h1 { margin-bottom: 0; }
+.project-create-panel { max-width: 46rem; margin: 1rem 0; }
+.project-key-preview { margin: -0.45rem 0 0.8rem; font-size: 0.86rem; }
+.project-state-tabs { display: flex; gap: 1.25rem; margin: 1.25rem 0 0.8rem; border-bottom: 1px solid var(--line); }
+.project-state-tabs a { padding: 0.55rem 0.1rem; color: var(--muted); text-decoration: none; }
+.project-state-tabs a.active { color: var(--accent); border-bottom: 2px solid currentColor; font-weight: 650; }
+.archived-badge { margin-left: 0.55rem; color: var(--warn); border-color: currentColor; }
+.project-archive-banner { display: flex; gap: 0.7rem; align-items: baseline; margin-bottom: 1rem; padding: 0.8rem 1rem; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: var(--radius); color: var(--fg); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); }
+.project-archive-banner strong { color: var(--warn); }
+.project-lifecycle-card { max-width: 46rem; margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius); }
+.project-lifecycle-card h3 { margin-top: 1.4rem; font-size: 0.95rem; }
+.project-archive-form { display: grid; grid-template-columns: minmax(10rem, 1fr) auto; gap: 0.45rem 0.7rem; align-items: end; max-width: 30rem; }
+.project-archive-form label { grid-column: 1 / -1; font-size: 0.88rem; font-weight: 650; }
+.project-archive-form input { min-width: 0; }
+.archive-button { color: var(--warn); border-color: currentColor; }
+.project-lifecycle-history { margin-bottom: 0; padding-left: 1.2rem; }
+.project-lifecycle-history li { padding: 0.25rem 0; }
+.issue-archive-banner { margin: 0 0 1rem; }
+.archived-project-issue .comment-composer,
+.archived-project-issue .inspector-add,
+.archived-project-issue .chip-remove { display: none; }
+.archived-project-issue .sidebar-select:disabled {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  opacity: 1;
+}
 
 .user-table th:first-child { width: 24%; }
 .user-table th:last-child { width: 24%; }
@@ -725,6 +755,12 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   }
   .project-preference-state { justify-self: start; }
   .project-preference-action { justify-self: end; }
+  .projects-heading { align-items: stretch; flex-direction: column; }
+  .projects-heading .primary-button { width: 100%; }
+  .project-archive-banner { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
+  .project-archive-form { grid-template-columns: 1fr; }
+  .project-archive-form label { grid-column: auto; }
+  .project-archive-form button { width: 100%; }
   .listing-filter { flex: 1 1 12rem; }
   .listing-filter input { width: 100%; }
   .mobile-sort-control {

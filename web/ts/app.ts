@@ -1,4 +1,4 @@
-// The bundled web UI: projects, issues, dependency trees and editing,
+// The bundled web UI: workspaces, issues, dependency trees and editing,
 // over the same HTTP API anything else would use.
 
 import {
@@ -16,6 +16,7 @@ import {
   type Issue,
   type IssueTree,
   type Project,
+  type ProjectActivity,
   type ProjectPreference,
   type ProjectFilters,
   type User,
@@ -101,6 +102,21 @@ let activeListingFilter: BackendListingFilter<HTMLElement> | null = null;
 const listingFilterOwners = new WeakMap<HTMLElement, BackendListingFilter<HTMLElement>>();
 let activeRenderRequest: AbortController | null = null;
 let renderGeneration = 0;
+let projectManager: boolean | null = null;
+
+async function mayManageProjects(): Promise<boolean> {
+  if (projectManager !== null) return projectManager;
+  if (identity === "") return true;
+  try {
+    projectManager = (await api.user(identity)).project_admin;
+  } catch (error) {
+    // A server with no account rows is unrestricted even though it still has
+    // an attribution identity for audit entries.
+    if (error instanceof ApiError && error.status === 404) projectManager = true;
+    else throw error;
+  }
+  return projectManager;
+}
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -317,7 +333,10 @@ function button(text: string, className = "secondary-button"): HTMLButtonElement
 function mutationError(host: HTMLElement, error: unknown): void {
   host.querySelector(".edit-error")?.remove();
   const message = error instanceof ApiError ? error.message : String(error);
-  host.append(element("p", "edit-error", message));
+  const notice = element("p", "edit-error", message);
+  notice.setAttribute("role", "alert");
+  notice.setAttribute("aria-live", "assertive");
+  host.append(notice);
 }
 
 async function mutate(
@@ -430,7 +449,7 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   const issue: IssueColumn = { key: "id", label: "Issue", render: issueNameCell };
   const project: IssueColumn = {
     key: "project",
-    label: "Project",
+    label: "Workspace",
     render: (row) => textCell("id", row.project),
   };
   const priority: IssueColumn = {
@@ -809,6 +828,7 @@ function filtersFrom(query: URLSearchParams): Filters {
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
+  if (query.get("include-archived") === "true") filters["include-archived"] = true;
   const listingFilter = query.get("filter");
   if (listingFilter !== null && listingFilter !== "") filters.filter = listingFilter;
   const sort = query.get("sort");
@@ -837,7 +857,7 @@ function facetBar(
 
   const projectGroup = element("div", "facet-group projects");
   const projectValues = element("span", "facet-values");
-  projectGroup.append(element("span", "facet-title", "projects"), projectValues);
+  projectGroup.append(element("span", "facet-title", "workspaces"), projectValues);
   const projectEmpty = emptyFacetLabel(projects);
   if (projectEmpty !== null) {
     projectValues.append(element("span", "facet-empty", projectEmpty));
@@ -921,7 +941,7 @@ async function viewListing(
   // unassigned issues, so there is no assignee menu to offer there either.
   let [page, projects, labels, assignees] = await Promise.all([
     load(),
-    api.projects({}, signal),
+    api.projects(filters["include-archived"] ? { state: "all" } : {}, signal),
     api.labels(kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters), signal),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters), signal),
   ]);
@@ -972,7 +992,7 @@ function emptyFor(kind: string): string {
 
 const projectSortKeys = ["key", "active", "updated"] as const;
 const projectColumns: SortChoice[] = [
-  { key: "key", label: "Project" },
+  { key: "key", label: "Workspace" },
   { key: "active", label: "Open" },
   { key: "updated", label: "Updated" },
 ];
@@ -1025,11 +1045,12 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
   const body = document.createElement("tbody");
   for (const project of projects) {
     const row = document.createElement("tr");
-    const href = `#/projects/${encodeURIComponent(project.key)}`;
+    const href = `#/workspaces/${encodeURIComponent(project.key)}`;
 
     const projectCell = document.createElement("td");
-    projectCell.dataset.label = "Project";
+    projectCell.dataset.label = "Workspace";
     projectCell.append(nameLink(href, project.key, project.name));
+    if (project.state === "archived") projectCell.append(element("span", "listing-badge archived-badge", "Archived"));
     if (project.description !== "") {
       const description = element("div", "project-description markdown");
       description.innerHTML = renderMarkdown(project.description);
@@ -1059,6 +1080,8 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
     limit: size,
     offset: (requested - 1) * size,
   };
+  const lifecycle = route.query.get("state") === "archived" ? "archived" : "active";
+  filters.state = lifecycle;
   const filterText = route.query.get("filter");
   if (filterText !== null && filterText !== "") filters.filter = filterText;
   const sort = route.query.get("sort");
@@ -1072,7 +1095,38 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   }
 
   const view = element("div");
-  view.append(element("h1", "", "Projects"));
+  const heading = element("div", "projects-heading");
+  heading.append(element("h1", "", "Workspaces"));
+  const create = button("New workspace", "primary-button") as HTMLButtonElement;
+  const createForm = projectCreateForm();
+  createForm.id = "project-creator";
+  createForm.hidden = true;
+  create.setAttribute("aria-controls", createForm.id);
+  create.setAttribute("aria-expanded", "false");
+  if (await mayManageProjects()) {
+    heading.append(create);
+    create.addEventListener("click", () => {
+      createForm.hidden = !createForm.hidden;
+      create.setAttribute("aria-expanded", String(!createForm.hidden));
+      create.textContent = createForm.hidden ? "New workspace" : "Hide creator";
+      if (!createForm.hidden) createForm.querySelector<HTMLInputElement>("input")?.focus();
+    });
+  }
+  view.append(heading, createForm);
+
+  const tabs = element("div", "project-state-tabs");
+  const tabHref = (state: "active" | "archived"): string => {
+    const query = new URLSearchParams(route.query);
+    query.delete("page");
+    if (state === "active") query.delete("state"); else query.set("state", state);
+    return `#/workspaces${query.toString() === "" ? "" : `?${query.toString()}`}`;
+  };
+  const activeTab = link(tabHref("active"), "Active", lifecycle === "active" ? "active" : "");
+  const archivedTab = link(tabHref("archived"), "Archived", lifecycle === "archived" ? "active" : "");
+  if (lifecycle === "active") activeTab.setAttribute("aria-current", "page");
+  else archivedTab.setAttribute("aria-current", "page");
+  tabs.append(activeTab, archivedTab);
+  view.append(tabs);
 
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
@@ -1085,19 +1139,54 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   );
   if (page.rows.length === 0) {
     host.append(element("p", "empty", filterText === null
-      ? "No projects yet. Create one with: awb project create <key>"
-      : "No projects match this filter."));
+      ? lifecycle === "archived" ? "No archived workspaces." : "No workspaces yet. Create one above or with: awb workspace create <key>"
+      : "No workspaces match this filter."));
   } else host.append(projectTable(route, page.rows, state));
   listing.append(listingFilter(
     route,
-    "Filter all projects…",
-    "project",
+    "Filter all workspaces…",
+    "workspace",
     page.total,
     listingActions,
   ));
   listing.append(host);
   view.append(listing);
   return view;
+}
+
+function projectCreateForm(): HTMLFormElement {
+  const form = element("form", "edit-panel project-create-panel") as HTMLFormElement;
+  form.append(element("h2", "", "Create workspace"), element("p", "muted", "The key becomes every issue ID prefix in this workspace and cannot be changed. Issues cannot move between workspaces."));
+  const key = document.createElement("input");
+  key.name = "key";
+  key.required = true;
+  key.maxLength = 16;
+  key.pattern = "[a-z][a-z0-9-]*";
+  const name = document.createElement("input");
+  name.name = "name";
+  name.maxLength = 500;
+  const description = document.createElement("textarea");
+  description.name = "description";
+  description.rows = 5;
+  const preview = element("p", "project-key-preview muted", "Issue IDs will use this key as their prefix.");
+  key.addEventListener("input", () => {
+    preview.textContent = key.value === "" ? "Issue IDs will use this key as their prefix." : `Issue IDs will start with ${key.value}-.`;
+  });
+  const submit = element("button", "primary-button", "Create workspace") as HTMLButtonElement;
+  submit.type = "submit";
+  form.append(field("Key", key), preview, field("Name (optional)", name), field("Description (Markdown)", description), submit);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    try {
+      const project = await api.createProject({ key: key.value, name: name.value, description: description.value });
+      location.hash = `#/workspaces/${encodeURIComponent(project.key)}`;
+    } catch (error) {
+      submit.disabled = false;
+      mutationError(form, error);
+    }
+  });
+  return form;
 }
 
 function userTable(users: DirectoryUser[]): HTMLElement {
@@ -1151,7 +1240,7 @@ function userTable(users: DirectoryUser[]): HTMLElement {
     const roles = document.createElement("td");
     roles.dataset.label = "Roles";
     const roleList = element("div", "user-roles");
-    if (user.project_admin) roleList.append(element("span", "listing-badge", "project admin"));
+    if (user.project_admin) roleList.append(element("span", "listing-badge", "workspace admin"));
     if (user.user_admin) roleList.append(element("span", "listing-badge", "user admin"));
     if (!user.project_admin && !user.user_admin) roleList.append(element("span", "muted", "member"));
     roles.append(roleList);
@@ -1202,20 +1291,32 @@ async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElemen
 }
 
 async function viewProject(key: string): Promise<HTMLElement> {
-  const project = await api.project(key);
+  const [project, activity, canManage] = await Promise.all([
+    api.project(key), api.projectActivity(key), mayManageProjects(),
+  ]);
   const view = element("div", "project-view");
+  if (project.state === "archived") {
+    const banner = element("div", "project-archive-banner");
+    banner.setAttribute("role", "status");
+    banner.append(
+      element("strong", "", "Archived"),
+      document.createTextNode("This workspace is retained as read-only history. Restore it to resume work inside the same workspace boundary."),
+    );
+    view.append(banner);
+  }
   const heading = element("div", "detail-heading");
   const title = element("div");
   title.append(element("div", "issue-key", project.key), element("h1", "", project.name));
-  const edit = button("Edit project");
-  heading.append(title, edit);
+  const edit = button("Edit workspace");
+  heading.append(title);
+  if (canManage && project.state === "active") heading.append(edit);
   view.append(heading);
 
   const form = projectEditForm(project);
   form.hidden = true;
   edit.addEventListener("click", () => {
     form.hidden = !form.hidden;
-    edit.textContent = form.hidden ? "Edit project" : "Hide editor";
+    edit.textContent = form.hidden ? "Edit workspace" : "Hide editor";
     if (!form.hidden) form.querySelector<HTMLInputElement>("input")?.focus();
   });
   view.append(form);
@@ -1235,16 +1336,68 @@ async function viewProject(key: string): Promise<HTMLElement> {
     updatedTimeElement(project.updated_at),
   );
   view.append(facts, link(
-    `#/issues?project=${encodeURIComponent(project.key)}`,
-    "View this project's issues",
+    `#/issues?project=${encodeURIComponent(project.key)}${project.state === "archived" ? "&include-archived=true&include-closed=true" : ""}`,
+    project.state === "archived" ? "View this workspace's historical issues" : "View this workspace's issues",
     "action",
   ));
+  view.append(projectLifecycleCard(project, activity.rows, canManage));
   return view;
+}
+
+function projectLifecycleCard(project: Project, activity: ProjectActivity[], canManage: boolean): HTMLElement {
+  const card = element("section", "project-lifecycle-card");
+  card.append(element("h2", "", "Lifecycle"));
+  if (project.state === "archived") {
+    card.append(element("p", "", "Issues, comments, attachments, transitions and relations are read-only while this workspace is archived. Issues remain in this workspace and cannot be transferred elsewhere."));
+    if (project.archived_at !== "") {
+      const meta = element("p", "muted", `Archived${project.archived_by === "" ? "" : ` by @${project.archived_by}`} · `);
+      meta.append(updatedTimeElement(project.archived_at));
+      card.append(meta);
+    }
+    if (canManage) {
+      const restore = element("button", "primary-button", "Restore workspace") as HTMLButtonElement;
+      restore.type = "button";
+      restore.addEventListener("click", () => void mutate(card, [restore], () => api.restoreProject(project.key)));
+      card.append(restore);
+    }
+  } else {
+    card.append(element("p", "", "Archive this workspace to remove it from everyday discovery and make its retained work read-only. Its issues keep their stable workspace-prefixed IDs."));
+    if (canManage) card.append(projectArchiveConfirmation(project, card));
+  }
+  if (activity.length > 0) {
+    card.append(element("h3", "", "Lifecycle history"));
+    const list = element("ol", "project-lifecycle-history");
+    for (const entry of activity) {
+      const item = document.createElement("li");
+      item.append(document.createTextNode(`${entry.action === "archived" ? "Archived" : "Restored"}${entry.actor === "" ? "" : ` by @${entry.actor}`} · `), updatedTimeElement(entry.created_at));
+      list.append(item);
+    }
+    card.append(list);
+  }
+  return card;
+}
+
+function projectArchiveConfirmation(project: Project, host: HTMLElement): HTMLElement {
+  const form = element("form", "project-archive-form") as HTMLFormElement;
+  const input = document.createElement("input");
+  input.placeholder = project.key;
+  input.setAttribute("aria-label", `Type ${project.key} to confirm`);
+  const archive = element("button", "archive-button", "Archive workspace") as HTMLButtonElement;
+  archive.type = "submit";
+  archive.disabled = true;
+  input.addEventListener("input", () => { archive.disabled = input.value !== project.key; });
+  form.append(element("label", "", `Type ${project.key} to confirm`), input, archive);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (input.value !== project.key) return;
+    void mutate(host, [input, archive], () => api.archiveProject(project.key));
+  });
+  return form;
 }
 
 function projectEditForm(project: Project): HTMLFormElement {
   const form = element("form", "edit-panel") as HTMLFormElement;
-  form.append(element("h2", "", "Edit project"));
+  form.append(element("h2", "", "Edit workspace"));
   const name = document.createElement("input");
   name.value = project.name;
   name.maxLength = 500;
@@ -1265,7 +1418,8 @@ function projectEditForm(project: Project): HTMLFormElement {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-  const [issue, activity] = await Promise.all([api.issue(id), api.activity(id)]);
+  const issue = await api.issue(id);
+  const [activity, project] = await Promise.all([api.activity(id), api.project(issue.project)]);
 
   const view = element("div", "issue-view");
   view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
@@ -1353,6 +1507,20 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
+  if (project.state === "archived") {
+    view.classList.add("archived-project-issue");
+    const banner = element("div", "project-archive-banner issue-archive-banner");
+    banner.setAttribute("role", "status");
+    banner.append(
+      element("strong", "", "Read-only"),
+      document.createTextNode(`Workspace ${project.key} is archived.`),
+    );
+    content.prepend(banner);
+    editButton.remove();
+    for (const control of view.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      "form button, form input, form select, form textarea, .issue-sidebar button, .issue-sidebar input, .issue-sidebar select",
+    )) control.disabled = true;
+  }
   view.addEventListener("keydown", (event) => {
     if (event.defaultPrevented ||
         !view.classList.contains("issue-editing") || issueEditorShortcut(event) !== "hide") return;
@@ -1360,7 +1528,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     showEditor(false);
     editButton.focus();
   });
-  if (existingDraft !== undefined) showEditor(true);
+  if (existingDraft !== undefined && project.state === "active") showEditor(true);
   return view;
 }
 
@@ -1584,7 +1752,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     facts.append(row);
   };
   add("ID", element("span", "id", issue.id));
-  add("Project", link(`#/projects/${encodeURIComponent(issue.project)}`, issue.project));
+  add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.project)}`, issue.project));
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
   type.className = "sidebar-select";
   type.setAttribute("aria-label", "Type");
@@ -2102,7 +2270,7 @@ function chrome(): HTMLElement {
   nav.append(navLink(projectScopedHref("ready", route.query), "Ready", "ready"));
   nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
   nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
-  nav.append(navLink(projectScopedHref("projects", route.query), "Projects", "projects"));
+  nav.append(navLink(projectScopedHref("workspaces", route.query), "Workspaces", "projects"));
   nav.append(navLink("#/users", "Users", "users"));
   const brand = link("#/ready", "", "brand");
   const mark = document.createElement("img");
@@ -2135,7 +2303,7 @@ function profileProjectList(user: User, projects: Project[]): HTMLElement {
     if (access !== undefined) item.append(element("span", "listing-badge", access));
     list.append(item);
   }
-  if (projects.length === 0) list.append(element("li", "empty", "No project access."));
+  if (projects.length === 0) list.append(element("li", "empty", "No workspace access."));
   return list;
 }
 
@@ -2272,7 +2440,7 @@ async function viewProfile(): Promise<HTMLElement> {
     if (updatedValue !== undefined) updatedValue.textContent = profileIdentity(updated).updated;
   }));
   const access = element("section", "profile-card");
-  access.append(element("h2", "", "Project access"), profileProjectList(user, projects.rows));
+  access.append(element("h2", "", "Workspace access"), profileProjectList(user, projects.rows));
   const security = element("section", "profile-card");
   security.append(element("h2", "", "Password"), passwordForm(user));
   view.append(details, profile, access, security);
@@ -2284,11 +2452,11 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
   const heading = element("div", "ignored-projects-heading");
   const copy = element("div");
   copy.append(
-    element("h2", "", "Ignored projects"),
+    element("h2", "", "Ignored workspaces"),
     element(
       "p",
       "",
-      "Ignored projects are hidden from listings, search, counts, and navigation. " +
+      "Ignored workspaces are hidden from listings, search, counts, and navigation. " +
         "They always remain available here so you can re-enable them.",
     ),
   );
@@ -2296,9 +2464,10 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
   heading.append(copy, summary);
 
   const filterLabel = element("label", "project-preference-filter");
-  filterLabel.append(element("span", "visually-hidden", "Find a project"));
+  filterLabel.append(element("span", "visually-hidden", "Find a workspace"));
   const filter = document.createElement("input");
-  filter.placeholder = "Find a project by name or key";
+  filter.type = "search";
+  filter.placeholder = "Find a workspace by name or key";
   const filterControl = element("span", "search-control project-preference-search");
   const filterClear = attachSearchClear(filter);
   filterControl.append(filter, filterClear.button);
@@ -2333,7 +2502,7 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
     rows.set(preference, row);
     list.append(row);
   }
-  const empty = element("p", "project-preference-empty empty", "No authorized projects match your search.");
+  const empty = element("p", "project-preference-empty empty", "No authorized workspaces match your search.");
   empty.hidden = projects.length !== 0;
   const refresh = (): void => {
     const visible = new Set(filterProjectPreferences(projects, filter.value));
@@ -2452,7 +2621,8 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
       return route.path.length > 1 ? viewIssue(route.path[1]) : viewListing(route, "issues", signal);
     case "blocked":
       return viewListing(route, "blocked", signal);
-    case "projects":
+    case "workspaces":
+    case "projects": // Legacy browser route; links emitted by this UI use /workspaces.
       return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route, signal);
     case "profile":
       return viewProfile();
@@ -2472,7 +2642,8 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
 }
 
 function markActiveNav(route: Route): void {
-  const current = route.path[0] ?? "ready";
+  const rawCurrent = route.path[0] ?? "ready";
+  const current = rawCurrent === "projects" ? "workspaces" : rawCurrent;
   for (const anchor of app.querySelectorAll("nav a")) {
     const target = navigationPath(anchor.getAttribute("href") ?? "");
     anchor.classList.toggle("active", target === current);

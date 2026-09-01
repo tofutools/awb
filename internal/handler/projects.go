@@ -22,6 +22,10 @@ func projectResponse(project *domain.Project) *api.ProjectHeaders {
 
 func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParams) (
 	*api.ProjectListHeaders, error) {
+	state, err := domain.ParseProjectStateFilter(string(params.State.Or(api.ListProjectsStateActive)))
+	if err != nil {
+		return nil, err
+	}
 	sort := domain.DefaultProjectSort
 	if value, ok := params.Sort.Get(); ok {
 		var err error
@@ -29,7 +33,7 @@ func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParam
 			return nil, err
 		}
 	}
-	page, err := h.backendFor(ctx).ListProjects(ctx, params.Filter.Or(""), sort,
+	page, err := h.backendFor(ctx).ListProjectsByState(ctx, params.Filter.Or(""), state, sort,
 		optInt(params.Limit), optInt(params.Offset))
 	if err != nil {
 		return nil, err
@@ -38,6 +42,36 @@ func (h *Handler) ListProjects(ctx context.Context, params api.ListProjectsParam
 		XTotalCount: api.NewOptInt(page.Total),
 		Response:    toProjects(page.Projects),
 	}, nil
+}
+
+func (h *Handler) ArchiveProject(ctx context.Context, params api.ArchiveProjectParams) (*api.ProjectHeaders, error) {
+	project, err := h.backendFor(ctx).ArchiveProject(ctx, string(params.Key), params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return projectResponse(project), nil
+}
+
+func (h *Handler) RestoreProject(ctx context.Context, params api.RestoreProjectParams) (*api.ProjectHeaders, error) {
+	project, err := h.backendFor(ctx).RestoreProject(ctx, string(params.Key), params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return projectResponse(project), nil
+}
+
+func (h *Handler) ListProjectActivity(ctx context.Context, params api.ListProjectActivityParams) (*api.ProjectActivityListHeaders, error) {
+	page, err := h.backendFor(ctx).ListProjectActivity(ctx, string(params.Key), optInt(params.Limit), optInt(params.Offset))
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]api.ProjectActivity, len(page.Activity))
+	for i, entry := range page.Activity {
+		entries[i] = api.ProjectActivity{ID: entry.ID, Project: api.ProjectKey(entry.Project),
+			Action: api.ProjectActivityAction(entry.Action), Actor: entry.Actor,
+			CreatedAt: api.Timestamp(entry.CreatedAt)}
+	}
+	return &api.ProjectActivityListHeaders{XTotalCount: api.NewOptInt(page.Total), Response: entries}, nil
 }
 
 func (h *Handler) CreateProject(ctx context.Context, req *api.ProjectCreate) (

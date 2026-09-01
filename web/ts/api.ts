@@ -27,6 +27,8 @@ export type Attachment = components["schemas"]["Attachment"];
 export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
 export type Project = components["schemas"]["Project"];
+export type ProjectCreate = components["schemas"]["ProjectCreate"];
+export type ProjectActivity = components["schemas"]["ProjectActivity"];
 export type ProjectPreference = components["schemas"]["ProjectPreference"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
@@ -72,13 +74,13 @@ export type Filters = IssueFilters & Partial<SearchFilters>;
  * neither.
  */
 export function readyFilters(filters: Filters): ReadyFilters {
-  const { status, "include-closed": includeClosed, assignee, unassigned, q, ...accepted } = filters;
+  const { status, "include-closed": includeClosed, "include-archived": includeArchived, assignee, unassigned, q, ...accepted } = filters;
   return accepted;
 }
 
 /** /api/blocked fixes the status set to the two that are not closed. */
 export function blockedFilters(filters: Filters): BlockedFilters {
-  const { status, "include-closed": includeClosed, q, ...accepted } = filters;
+  const { status, "include-closed": includeClosed, "include-archived": includeArchived, q, ...accepted } = filters;
   return accepted;
 }
 
@@ -197,6 +199,12 @@ async function patchOne<T>(path: string, body: unknown): Promise<T> {
   return entityResponse<T>(path, resp);
 }
 
+async function projectLifecycle(key: string, action: "archive" | "restore"): Promise<Project> {
+	const path = `api/projects/${encodeURIComponent(key)}`;
+	const resp = await request(`${path}/${action}`, { method: "POST", headers: entityHeaders(path) });
+	return entityResponse<Project>(path, resp);
+}
+
 async function issueMutation<T>(id: string, suffix: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
   const issuePath = `api/issues/${encodeURIComponent(id)}`;
   const headers = entityHeaders(issuePath);
@@ -278,6 +286,14 @@ export const api = {
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   projects: (filters: ProjectFilters = {}, signal?: AbortSignal) =>
     getPage<Project>(`api/projects${toQuery(filters)}`, { signal }),
+  createProject: async (body: ProjectCreate) => {
+    const resp = await request("api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return entityResponse<Project>(`api/projects/${encodeURIComponent(body.key)}`, resp);
+  },
   projectMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
   users: (filters: UserFilters = {}, signal?: AbortSignal) =>
@@ -285,6 +301,10 @@ export const api = {
   project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
   updateProject: (key: string, patch: ProjectPatch) =>
     patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),
+  archiveProject: (key: string) => projectLifecycle(key, "archive"),
+  restoreProject: (key: string) => projectLifecycle(key, "restore"),
+  projectActivity: (key: string) =>
+    getPage<ProjectActivity>(`api/projects/${encodeURIComponent(key)}/activity`),
   labels: (filters: FacetFilters = {}, signal?: AbortSignal) =>
     getPage<Facet>(`api/labels${toQuery(filters)}`, { signal }),
   assignees: (filters: FacetFilters = {}, signal?: AbortSignal) =>

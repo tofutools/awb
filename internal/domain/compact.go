@@ -66,6 +66,16 @@ func CompactProjectLine(p *Project) string {
 	return p.Key + " " + strconv.Itoa(p.ActiveIssues) + " " + jsonString(p.Name)
 }
 
+// CompactProjectActivityLine renders one project lifecycle event as a stable
+// single line. The project key and action vocabularies contain no whitespace.
+func CompactProjectActivityLine(a *ProjectActivity) string {
+	line := strconv.FormatInt(a.ID, 10) + " " + a.CreatedAt + " " + a.Project + " " + a.Action
+	if a.Actor != "" {
+		line += " @" + a.Actor
+	}
+	return line
+}
+
 // CompactActivityLine renders one timeline entry as a stable single line.
 // Comment bodies and change arrays are JSON so embedded whitespace and line
 // breaks never make one entry span multiple lines.

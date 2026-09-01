@@ -11,7 +11,7 @@ import {
 test("a user sees each administrative capability they hold", () => {
   assert.deepEqual(accountRoles({ user_admin: true, project_admin: true }), [
     "User administrator",
-    "Project administrator",
+    "Workspace administrator",
   ]);
 });
 

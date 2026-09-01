@@ -60,12 +60,12 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	}
 
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		exists, err := tx.ProjectExists(issue.Project)
+		project, err := tx.GetProject(issue.Project)
 		if err != nil {
 			return err
 		}
-		if !exists {
-			return awberr.NotFoundf("no such project: %s", issue.Project)
+		if project.State == domain.ProjectArchived {
+			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Project)
 		}
 
 		if err := tx.InsertIssue(issue); err != nil {
@@ -214,7 +214,7 @@ func checkFilterProjects(tx *storage.Tx, filter *domain.Filter) error {
 			return err
 		}
 		if !exists {
-			return awberr.NotFoundf("no such project: %s", key)
+			return awberr.NotFoundf("no such workspace: %s", key)
 		}
 	}
 	return nil
@@ -314,6 +314,9 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
+			return err
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
 			return err
 		}
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
@@ -436,6 +439,9 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody
 	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
 		if err != nil {
+			return err
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
 			return err
 		}
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {

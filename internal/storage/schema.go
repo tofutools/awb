@@ -26,6 +26,25 @@ var migrations = [][]string{
 	schemaV7,
 	schemaV8,
 	schemaV9,
+	schemaV10,
+}
+
+// schemaV10 retains old projects without deleting any of their graph or blob
+// metadata, and records every actual lifecycle transition append-only.
+var schemaV10 = []string{
+	`ALTER TABLE projects ADD COLUMN state TEXT NOT NULL DEFAULT 'active'
+		CHECK (state IN ('active', 'archived'))`,
+	`ALTER TABLE projects ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE projects ADD COLUMN archived_by TEXT NOT NULL DEFAULT ''`,
+	`CREATE TABLE project_activity (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		project    TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+		action     TEXT NOT NULL CHECK (action IN ('archived', 'restored')),
+		actor      TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL
+	) STRICT`,
+	`CREATE INDEX idx_project_activity_order
+		ON project_activity (project, created_at DESC, id DESC)`,
 }
 
 // schemaV9 stores the projects each user has chosen to hide. Both foreign keys

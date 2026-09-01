@@ -41,8 +41,11 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	// checked here at all — whether it is taken is exactly the kind of question
 	// that has to be asked inside the write lock.
 	if err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		_, err := resolve(tx, issueRef)
-		return err
+		issue, err := load(tx, issueRef)
+		if err != nil {
+			return err
+		}
+		return ensureIssueWritable(tx, issue)
 	}); err != nil {
 		return nil, err
 	}
@@ -73,6 +76,9 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, issueRef)
 		if err != nil {
+			return err
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
 			return err
 		}
 		attachment.Issue = issue.ID
@@ -158,6 +164,9 @@ func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 		}
 		issue, err := tx.GetIssue(attachment.Issue)
 		if err != nil {
+			return err
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
 			return err
 		}
 		if err := tx.DeleteAttachment(issue, attachment.Name); err != nil {

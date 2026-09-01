@@ -72,7 +72,7 @@ type createParams struct {
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
-	Project        string   `long:"project" optional:"true" help:"the project to create the issue in"`
+	Project        string   `long:"project" optional:"true" help:"the workspace to create the issue in (flag name retained for compatibility)"`
 	HasParent      string   `long:"has-parent" optional:"true" help:"the new issue is part of decomposing this one"`
 	BlockedBy      []string `long:"blocked-by" collection:"array" optional:"true" help:"the new issue cannot start until this one is closed; repeatable"`
 	DiscoveredFrom []string `long:"discovered-from" collection:"array" optional:"true" help:"the new issue was found while working on this one; repeatable"`
@@ -109,7 +109,7 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 			if target == "" {
 				return awberr.Usagef(
-					"no project: give --project, set AWB_PROJECT, or put \"project\" in %s",
+					"no workspace: give the compatibility flag --project, set AWB_PROJECT, or put \"project\" in %s",
 					".awb.yaml or the user configuration file")
 			}
 

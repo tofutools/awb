@@ -25,7 +25,7 @@ import (
 const (
 	demoProjectKey  = "demo"
 	demoProjectName = "DEMO"
-	demoProjectDesc = "A sample project for trying `awb` out.\n\n" +
+	demoProjectDesc = "A sample workspace for trying `awb` out.\n\n" +
 		"`awb demo --force` replaces it **wholesale**, so anything written here is\n" +
 		"scratch data. See the [worked example](https://example.com/widgets/example) for\n" +
 		"what to try first.\n"
@@ -215,23 +215,23 @@ var demoIssues = []demoIssue{{
 }}
 
 type demoParams struct {
-	Force bool `long:"force" optional:"true" help:"replace the demo project, deleting everything in it"`
+	Force bool `long:"force" optional:"true" help:"replace the demo workspace, deleting everything in it"`
 }
 
 func newDemoCommand(e *env) *cobra.Command {
 	return boa.CmdT[demoParams]{
 		Use:   "demo",
-		Short: "Fill the " + demoProjectKey + " project with a data set that exercises every feature",
-		Long: "Create the " + demoProjectKey + " project and fill it with a small sample data set: every\n" +
+		Short: "Fill the " + demoProjectKey + " workspace with a data set that exercises every feature",
+		Long: "Create the " + demoProjectKey + " workspace and fill it with a small sample data set: every\n" +
 			"issue type, every priority, every status, every relation type, blocked\n" +
 			"and ready work, labels, assignees and Markdown links.\n\n" +
 			"It is for trying commands out, and for looking at the web UI with\n" +
 			"something in it.\n\n" +
-			"It refuses while the " + demoProjectKey + " project exists, because it replaces the project\n" +
+			"It refuses while the " + demoProjectKey + " workspace exists, because it replaces the workspace\n" +
 			"wholesale rather than reconciling it: nothing marks an issue there as one\n" +
 			"a previous run wrote, so --force is what says that deleting whatever is\n" +
 			"under the key is meant.\n\n" +
-			"No other project is created or deleted, but deleting this one drops the\n" +
+			"No other workspace is created or deleted, but deleting this one drops the\n" +
 			"relations its issues were on either end of, which may unblock work\n" +
 			"elsewhere.",
 		ParamEnrich: boaParams,
@@ -251,7 +251,7 @@ func newDemoCommand(e *env) *cobra.Command {
 			// success", for the reason the deleting commands are: a command that
 			// replaces a whole project should say what it left behind. The line is
 			// not a compatibility surface; a script reads --json.
-			return e.summarise("Created project %s with %d issue(s).\n",
+			return e.summarise("Created workspace %s with %d issue(s).\n",
 				project.Key, len(demoIssues))
 		},
 	}.ToCobra()
@@ -283,7 +283,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 		return nil, err
 	case err == nil && !force:
 		return nil, awberr.Conflictf(
-			"project %s already exists; awb demo --force replaces it and deletes everything in it",
+			"workspace %s already exists; awb demo --force replaces it and deletes everything in it",
 			demoProjectKey)
 	case err == nil:
 		if _, err := be.DeleteProject(ctx, demoProjectKey, true, ""); err != nil {
