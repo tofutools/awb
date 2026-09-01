@@ -217,9 +217,6 @@ func listing(e *env, use, short, long string, opts filterOptions,
 		InitFuncCtx: func(ctx *boa.HookContext, p *listingParams, cmd *cobra.Command) error {
 			return filterInit(e, opts, fix)(ctx, &p.FilterFlags, cmd)
 		},
-		PostCreateFuncCtx: func(ctx *boa.HookContext, p *listingParams, cmd *cobra.Command) error {
-			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
-		},
 		RunFuncE: func(p *listingParams, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, &p.FilterFlags, p.Interactive, opts, fix, withBlockers, nil)
 		},
@@ -282,9 +279,6 @@ func newSearchCommand(e *env) *cobra.Command {
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
 			return filterInit(e, opts, nil)(ctx, &p.FilterFlags, cmd)
-		},
-		PostCreateFuncCtx: func(ctx *boa.HookContext, p *searchParams, cmd *cobra.Command) error {
-			return filterPostCreate(opts)(ctx, &p.FilterFlags, cmd)
 		},
 		RunFuncE: func(p *searchParams, cmd *cobra.Command, _ []string) error {
 			return runListing(e, cmd, &p.FilterFlags, p.Interactive, opts, nil, false, p.Terms)

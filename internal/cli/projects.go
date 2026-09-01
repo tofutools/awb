@@ -148,22 +148,44 @@ func newProjectShowCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
+// projectListParams is the picker flag plus the ordering. Project ordering is
+// its own vocabulary because "active" is a derived count, not a stored column.
+type projectListParams struct {
+	InteractiveFlags
+	Sort string `long:"sort" optional:"true"`
+}
+
 func newProjectListCommand(e *env) *cobra.Command {
-	return boa.CmdT[InteractiveFlags]{
+	return boa.CmdT[projectListParams]{
 		Use:         "list",
 		Short:       "List projects with counts of issues that are not closed",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
+		InitFuncCtx: func(ctx *boa.HookContext, p *projectListParams, _ *cobra.Command) error {
+			// Offered and validated from the parser's own vocabulary, as --sort on
+			// the issue listings is.
+			sortParam := boa.GetParamT(ctx, &p.Sort)
+			sortParam.SetAlternatives(domain.ProjectSortAlternatives())
+			sortParam.SetDescription(domain.ProjectSortHelp())
+			return nil
+		},
+		RunFuncE: func(p *projectListParams, cmd *cobra.Command, _ []string) error {
 			out, err := e.interactively(p.Interactive)
 			if err != nil {
 				return err
+			}
+
+			sort := domain.DefaultProjectSort
+			if p.Sort != "" {
+				if sort, err = domain.ParseProjectSort(p.Sort); err != nil {
+					return err
+				}
 			}
 
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, nil, nil)
+			page, err := be.ListProjects(cmd.Context(), "", sort, nil, nil)
 			if err != nil {
 				return err
 			}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -185,8 +186,16 @@ func TestEnumParameterCompletions(t *testing.T) {
 		{"list type", []string{"list", "--type"}, []string{"epic", "feature", "bug", "task", "chore"}},
 		{"list priority", []string{"list", "--priority"}, []string{"0", "1", "2", "3", "4"}},
 		{"list priority max", []string{"list", "--priority-max"}, []string{"0", "1", "2", "3", "4"}},
-		{"list sort", []string{"list", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id"}},
-		{"search sort", []string{"search", "--sort"}, []string{"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id", "relevance", "-relevance"}},
+		{"list sort", []string{"list", "--sort"}, []string{
+			"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
+			"project", "-project", "status", "-status", "assignee", "-assignee",
+			"type", "-type", "blockers", "-blockers"}},
+		{"search sort", []string{"search", "--sort"}, []string{
+			"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
+			"project", "-project", "status", "-status", "assignee", "-assignee",
+			"type", "-type", "blockers", "-blockers", "relevance", "-relevance"}},
+		{"project list sort", []string{"project", "list", "--sort"}, []string{
+			"key", "-key", "active", "-active", "updated", "-updated"}},
 		{"project access", []string{"project", "grant", "--access"}, []string{"regular", "admin"}},
 		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
 		{"install skills harness", []string{"agent-guide", "install-skills", "--harness"}, []string{"all", "claude", "codex", "opencode", "copilot"}},
@@ -341,6 +350,59 @@ func TestPersistentFlagsWorkBeforeAndAfterSubcommands(t *testing.T) {
 }
 
 // Two invocations against unchanged data produce byte-identical output.
+// The CLI offers exactly the orderings the API declares. The two surfaces are
+// meant to be one vocabulary, and they were not: --sort accepted four of the
+// nine issue keys and awb project list accepted none at all, because the flag
+// carried its own copy of the list instead of taking the parser's. Both now
+// read from the domain, and this compares that against the document the API is
+// generated from, so a key added to one arrives in the other or this fails.
+func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
+	type parameter struct {
+		Name   string `yaml:"name"`
+		Schema struct {
+			Enum []string `yaml:"enum"`
+		} `yaml:"schema"`
+	}
+	// Only the fields this test reads are declared; a path item's own
+	// parameters list and everything else in the document is ignored.
+	var document struct {
+		Paths map[string]struct {
+			Get struct {
+				Parameters []parameter `yaml:"parameters"`
+			} `yaml:"get"`
+		} `yaml:"paths"`
+		Components struct {
+			Parameters map[string]parameter `yaml:"parameters"`
+		} `yaml:"components"`
+	}
+	require.NoError(t, yaml.Unmarshal(openAPI.YAML(), &document))
+
+	// The enum a path declares inline for its sort parameter; the shared one
+	// lives in components and is what every listing but search and projects uses.
+	inline := func(path string) []string {
+		t.Helper()
+		for _, p := range document.Paths[path].Get.Parameters {
+			if p.Name == "sort" {
+				return p.Schema.Enum
+			}
+		}
+		t.Fatalf("no inline sort parameter on GET %s", path)
+		return nil
+	}
+
+	shared := document.Components.Parameters["sort"]
+	require.Equal(t, "sort", shared.Name)
+
+	// Compared as sets: the document groups ascending before descending while the
+	// flag pairs each key with its own reverse, and neither order is a promise.
+	assert.ElementsMatch(t, domain.SortAlternatives(false), shared.Schema.Enum,
+		"the issue listings")
+	assert.ElementsMatch(t, domain.SortAlternatives(true), inline("/api/search"),
+		"search, which adds relevance")
+	assert.ElementsMatch(t, domain.ProjectSortAlternatives(), inline("/api/projects"),
+		"the project listing")
+}
+
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
 	for i := range 5 {
@@ -414,17 +476,17 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 		{"attach", "list", blocker}, {"activity", blocker}, {"comment", "list", blocker},
 		{"dep", "tree", parent}, {"show", blocker}, {"status"},
 	}
-	// --sort is offered on the issue listings only, and the four keys below are
-	// the whole of what the flag accepts — the API takes five more, which
-	// TestEveryAPIListingIsDeterministic covers. Each has to be as reproducible
-	// as the default.
-	for _, key := range []string{
-		"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
-	} {
+	// Every key --sort accepts, in both directions, has to be as reproducible as
+	// the default. Taking them from the domain vocabulary rather than a literal
+	// list is what makes a key added there arrive here too.
+	for _, key := range domain.SortAlternatives(false) {
 		listings = append(listings, []string{"list", "--all-projects", "--sort", key})
 	}
-	for _, key := range []string{"relevance", "-relevance"} {
+	for _, key := range domain.SortAlternatives(true) {
 		listings = append(listings, []string{"search", "parser", "--sort", key})
+	}
+	for _, key := range domain.ProjectSortAlternatives() {
+		listings = append(listings, []string{"project", "list", "--sort", key})
 	}
 
 	for _, args := range listings {

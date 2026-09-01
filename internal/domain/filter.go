@@ -66,18 +66,40 @@ func ParseSort(s string, allowRelevance bool) (Sort, error) {
 		return Sort{}, awberr.Usagef("invalid sort %q: relevance is only available on search", s)
 	case containsKey(SortKeys, key):
 	default:
-		allowed := join(SortKeys)
-		if allowRelevance {
-			allowed += ", " + string(SortRelevance)
-		}
-		return Sort{}, awberr.Usagef("invalid sort %q: must be one of %s, optionally prefixed with \"-\"",
-			s, allowed)
+		return Sort{}, awberr.Usagef("invalid sort %q: must be one of %s", s, SortHelp(allowRelevance))
 	}
 
 	// relevance means best match first, so its bare form is already descending
 	// and "-relevance" is worst match first. The flag is stored as written and
 	// the storage layer knows which way round the function runs.
 	return Sort{Key: key, Desc: desc}, nil
+}
+
+// sortKeys is every key ParseSort accepts, relevance last when it accepts it.
+func sortKeys(allowRelevance bool) []SortKey {
+	if allowRelevance {
+		return append(append([]SortKey{}, SortKeys...), SortRelevance)
+	}
+	return SortKeys
+}
+
+// SortAlternatives is every value ParseSort accepts, each key ascending and
+// then descending. The command line offers and validates against this rather
+// than a second copy of the vocabulary, so --sort and ParseSort cannot come to
+// disagree about what a listing may be ordered by.
+func SortAlternatives(allowRelevance bool) []string {
+	keys := sortKeys(allowRelevance)
+	values := make([]string, 0, 2*len(keys))
+	for _, key := range keys {
+		values = append(values, string(key), "-"+string(key))
+	}
+	return values
+}
+
+// SortHelp names the accepted keys, for --sort's help text and for the usage
+// error a rejected value produces. Both surfaces say the same sentence.
+func SortHelp(allowRelevance bool) string {
+	return join(sortKeys(allowRelevance)) + `, optionally prefixed with "-"`
 }
 
 func containsKey(keys []SortKey, key SortKey) bool {
@@ -109,6 +131,25 @@ type ProjectSort struct {
 // API callers that omit sort.
 var DefaultProjectSort = ProjectSort{Key: ProjectSortByKey}
 
+// ProjectSortKeys lists every key ParseProjectSort accepts.
+var ProjectSortKeys = []ProjectSortKey{ProjectSortByKey, ProjectSortActive, ProjectSortUpdated}
+
+// ProjectSortAlternatives and ProjectSortHelp are SortAlternatives and
+// SortHelp for project listings, and exist for the same reason: the command
+// line offers and validates against the parser's own vocabulary rather than a
+// second copy of it.
+func ProjectSortAlternatives() []string {
+	values := make([]string, 0, 2*len(ProjectSortKeys))
+	for _, key := range ProjectSortKeys {
+		values = append(values, string(key), "-"+string(key))
+	}
+	return values
+}
+
+func ProjectSortHelp() string {
+	return join(ProjectSortKeys) + `, optionally prefixed with "-"`
+}
+
 // ParseProjectSort reads a project ordering, optionally prefixed with "-".
 func ParseProjectSort(s string) (ProjectSort, error) {
 	desc := false
@@ -117,13 +158,13 @@ func ParseProjectSort(s string) (ProjectSort, error) {
 		s = rest
 	}
 	key := ProjectSortKey(s)
-	switch key {
-	case ProjectSortByKey, ProjectSortActive, ProjectSortUpdated:
-		return ProjectSort{Key: key, Desc: desc}, nil
-	default:
-		return ProjectSort{}, awberr.Usagef(
-			"invalid project sort %q: must be one of key, active, updated, optionally prefixed with \"-\"", s)
+	for _, accepted := range ProjectSortKeys {
+		if key == accepted {
+			return ProjectSort{Key: key, Desc: desc}, nil
+		}
 	}
+	return ProjectSort{}, awberr.Usagef("invalid project sort %q: must be one of %s",
+		s, ProjectSortHelp())
 }
 
 // Readiness selects on the derived blocked state, which is what separates awb
