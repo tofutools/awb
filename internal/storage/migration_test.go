@@ -102,15 +102,21 @@ func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
 func TestV15AddsBoardVisibilityAndClosedRetention(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
 	raw := openAtVersion(t, path, 14)
-	const timestamp = "2026-01-01T00:00:00.000Z"
+	const (
+		closedAt  = "2026-01-01T00:00:00.000Z"
+		updatedAt = "2026-02-01T00:00:00.000Z"
+	)
 	_, err := raw.ExecContext(t.Context(), `
 		INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
 		VALUES ('awb', 'AWB', '', 'active', '', '', ?, ?);
 		INSERT INTO issues (id, workspace, title, description, type, status, priority, board_order, created_at, updated_at)
 		VALUES ('awb-aaaaaa', 'awb', 'done', '', 'task', 'closed', 2, 0, ?, ?);
+		INSERT INTO issue_activity (issue, kind, actor, action, changes, created_at)
+		VALUES ('awb-aaaaaa', 'change', 'alice', 'closed',
+			'[{"field":"status","from":"in_progress","to":"closed"}]', ?);
 		INSERT INTO board_views (id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at, all_epics, include_no_epic)
 		VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Release', 'alice', 0, 1, 4, ?, ?, 1, 1)`,
-		timestamp, timestamp, timestamp, timestamp, timestamp, timestamp)
+		closedAt, updatedAt, closedAt, updatedAt, closedAt, updatedAt, updatedAt)
 	require.NoError(t, err)
 	require.NoError(t, raw.Close())
 
@@ -121,7 +127,7 @@ func TestV15AddsBoardVisibilityAndClosedRetention(t *testing.T) {
 		issue, readErr := tx.GetIssue("awb-aaaaaa")
 		require.NoError(t, readErr)
 		assert.False(t, issue.BoardHidden)
-		assert.Equal(t, timestamp, issue.ClosedAt)
+		assert.Equal(t, closedAt, issue.ClosedAt, "later issue updates do not become its close time")
 		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, readErr)
 		assert.Equal(t, 30, view.ClosedDays)

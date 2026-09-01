@@ -39,7 +39,15 @@ var migrations = [][]string{
 var schemaV15 = []string{
 	`ALTER TABLE issues ADD COLUMN board_hidden INTEGER NOT NULL DEFAULT 0 CHECK (board_hidden IN (0, 1))`,
 	`ALTER TABLE issues ADD COLUMN closed_at TEXT NOT NULL DEFAULT ''`,
-	`UPDATE issues SET closed_at = updated_at WHERE status = 'closed'`,
+	`UPDATE issues SET closed_at = COALESCE((
+		SELECT activity.created_at
+		  FROM issue_activity AS activity, json_each(activity.changes) AS change
+		 WHERE activity.issue = issues.id
+		   AND json_extract(change.value, '$.field') = 'status'
+		   AND json_extract(change.value, '$.to') = 'closed'
+		 ORDER BY activity.created_at DESC, activity.id DESC
+		 LIMIT 1
+	), updated_at) WHERE status = 'closed'`,
 	`ALTER TABLE board_views ADD COLUMN closed_days INTEGER NOT NULL DEFAULT 30 CHECK (closed_days BETWEEN 0 AND 3650)`,
 }
 
