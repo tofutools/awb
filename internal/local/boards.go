@@ -490,6 +490,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			result.View = &shown
 			closedDays = view.ClosedDays
 		}
+		closedAfter := boardClosedAfter(closedDays)
 		laneSelection := selected
 		if len(query.Workspaces) > 0 {
 			requested := []string{}
@@ -521,7 +522,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				if !active || epic.Type != domain.TypeEpic ||
+				if !active || epic.Type != domain.TypeEpic || !boardIssueVisible(epic, closedAfter) ||
 					(laneSelection != nil && !slices.Contains(laneSelection, epic.Workspace)) {
 					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 				}
@@ -539,7 +540,8 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					}
 					return loadErr
 				}
-				if epic.Type == domain.TypeEpic && (laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
+				if epic.Type == domain.TypeEpic && boardIssueVisible(epic, closedAfter) &&
+					(laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
 					selectedEpics = append(selectedEpics, *epic)
 				}
 			}
@@ -569,7 +571,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if includeNoEpic {
 				epicLimit--
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, closedAfter, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}
@@ -602,11 +604,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
 					Offset: query.CardOffset, Sort: domain.DefaultSort, BoardOnly: true}
 				if status == domain.StatusClosed {
-					if closedDays == 0 {
-						filter.ClosedAfter = "9999-12-31T23:59:59.999Z"
-					} else {
-						filter.ClosedAfter = domain.FormatTime(time.Now().UTC().Add(-time.Duration(closedDays) * 24 * time.Hour))
-					}
+					filter.ClosedAfter = closedAfter
 				}
 				if view != nil {
 					filter.Labels = view.Labels
@@ -628,6 +626,17 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		return nil
 	})
 	return result, err
+}
+
+func boardClosedAfter(days int) string {
+	if days == 0 {
+		return "9999-12-31T23:59:59.999Z"
+	}
+	return domain.FormatTime(time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour))
+}
+
+func boardIssueVisible(issue *domain.Issue, closedAfter string) bool {
+	return !issue.BoardHidden && (issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
 }
 
 func boundedBoardLimit(value *int, fallback, maximum int, name string) (*int, error) {
