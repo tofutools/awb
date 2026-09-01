@@ -11,9 +11,9 @@ import (
 
 // The user and membership queries.
 //
-// A user is not owned by a project, so the account-management queries are not
+// A user is not owned by a workspace, so the account-management queries are not
 // scoped. ListVisibleUsers is the exception used by the collaborative user
-// directory: it derives people from projects in Tx.scope, and scopes the
+// directory: it derives people from workspaces in Tx.scope, and scopes the
 // memberships it returns by that same set.
 
 // AnyUsers reports whether the database holds a user at all.
@@ -83,8 +83,8 @@ func (t *Tx) PasswordHash(name string) (string, bool, error) {
 func (t *Tx) Caller(name string) (domain.Caller, error) {
 	caller := domain.Caller{Name: name}
 	err := t.q.QueryRowContext(t.ctx,
-		`SELECT project_admin, user_admin FROM users WHERE name = ?`, name,
-	).Scan(&caller.ProjectAdmin, &caller.UserAdmin)
+		`SELECT workspace_admin, user_admin FROM users WHERE name = ?`, name,
+	).Scan(&caller.WorkspaceAdmin, &caller.UserAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Caller{}, awberr.Forbiddenf("no such user: %s", name)
 	}
@@ -98,9 +98,9 @@ func (t *Tx) Caller(name string) (domain.Caller, error) {
 func (t *Tx) GetUser(name string) (*domain.User, error) {
 	var u domain.User
 	err := t.q.QueryRowContext(t.ctx, `
-		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, workspace_admin, user_admin, created_at, updated_at
 		  FROM users WHERE name = ?`, name,
-	).Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.Name, &u.FullName, &u.WorkspaceAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such user: %s", name)
 	}
@@ -108,7 +108,7 @@ func (t *Tx) GetUser(name string) (*domain.User, error) {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read user %s", name)
 	}
 
-	if u.Projects, err = t.membershipsOf(name); err != nil {
+	if u.Workspaces, err = t.membershipsOf(name); err != nil {
 		return nil, err
 	}
 	u.Normalize()
@@ -127,7 +127,7 @@ func (t *Tx) ListUsers(filter string, limit, offset *int) (users []domain.User, 
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, workspace_admin, user_admin, created_at, updated_at
 		  FROM users u WHERE `+match+` ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
 	if err != nil {
 		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
@@ -137,7 +137,7 @@ func (t *Tx) ListUsers(filter string, limit, offset *int) (users []domain.User, 
 	users = []domain.User{}
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin,
+		if err := rows.Scan(&u.Name, &u.FullName, &u.WorkspaceAdmin, &u.UserAdmin,
 			&u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list users")
 		}
@@ -150,7 +150,7 @@ func (t *Tx) ListUsers(filter string, limit, offset *int) (users []domain.User, 
 	if err := t.hydrateMemberships(users, false); err != nil {
 		return nil, 0, err
 	}
-	if err := t.hydrateActivityProjects(users, false); err != nil {
+	if err := t.hydrateActivityWorkspaces(users, false); err != nil {
 		return nil, 0, err
 	}
 	return users, total, nil
@@ -159,7 +159,7 @@ func (t *Tx) ListUsers(filter string, limit, offset *int) (users []domain.User, 
 // SearchUsersForNavigation performs a bounded username and full-name substring search.
 func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, error) {
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, workspace_admin, user_admin, created_at, updated_at
 		  FROM users
 		 WHERE instr(lower(name), lower(?)) > 0 OR instr(lower(full_name), lower(?)) > 0
 		 ORDER BY CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END, name ASC LIMIT ?`,
@@ -168,17 +168,17 @@ func (t *Tx) SearchUsersForNavigation(query string, limit int) ([]domain.User, e
 }
 
 // ListVisibleUsers returns current accounts that have participated in a
-// project visible to the transaction, plus the caller themselves. Participation
+// workspace visible to the transaction, plus the caller themselves. Participation
 // is a membership, an assignment, or an activity entry: removing somebody's
 // membership must not erase them from the history their former collaborators
 // can already read.
 //
 // Only visible memberships are hydrated. A username may be shared across
-// projects without disclosing the names of projects the caller cannot see.
+// workspaces without disclosing the names of workspaces the caller cannot see.
 func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users []domain.User, total int, err error) {
-	visibleProject, visibleArgs := t.visibleClause("project_members.project")
-	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
-	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
+	visibleWorkspace, visibleArgs := t.visibleClause("workspace_members.workspace")
+	visibleAssignmentWorkspace, visibleAssignmentArgs := t.visibleClause("i.workspace")
+	visibleActivityWorkspace, visibleActivityArgs := t.visibleClause("i.workspace")
 	args := append([]any{caller}, visibleArgs...)
 	args = append(args, visibleAssignmentArgs...)
 	args = append(args, visibleActivityArgs...)
@@ -186,11 +186,11 @@ func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users 
 	args = append(args, matchArgs...)
 	cte := `WITH visible_users(name) AS (
 		SELECT ?
-		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
+		UNION SELECT user FROM workspace_members WHERE ` + visibleWorkspace + `
 		UNION SELECT assignee FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
-			WHERE ` + visibleAssignmentProject + `
+			WHERE ` + visibleAssignmentWorkspace + `
 		UNION SELECT actor FROM issue_activity a JOIN issues i ON i.id = a.issue
-			WHERE actor <> '' AND ` + visibleActivityProject + `
+			WHERE actor <> '' AND ` + visibleActivityWorkspace + `
 	)`
 
 	if err := t.q.QueryRowContext(t.ctx, cte+`
@@ -200,7 +200,7 @@ func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users 
 	}
 
 	rows, err := t.q.QueryContext(t.ctx, cte+`
-		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, workspace_admin, user_admin, created_at, updated_at
 		  FROM users u WHERE name IN (SELECT name FROM visible_users)
 		   AND `+match+`
 		 ORDER BY name ASC`+limitOffsetClause(limit, offset), args...)
@@ -212,7 +212,7 @@ func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users 
 	users = []domain.User{}
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin,
+		if err := rows.Scan(&u.Name, &u.FullName, &u.WorkspaceAdmin, &u.UserAdmin,
 			&u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list visible users")
 		}
@@ -224,16 +224,16 @@ func (t *Tx) ListVisibleUsers(caller, filter string, limit, offset *int) (users 
 	if err := t.hydrateMemberships(users, true); err != nil {
 		return nil, 0, err
 	}
-	if err := t.hydrateActivityProjects(users, true); err != nil {
+	if err := t.hydrateActivityWorkspaces(users, true); err != nil {
 		return nil, 0, err
 	}
 	return users, total, nil
 }
 
 // userListingFilter matches exactly the directory values the web table shows.
-// visibleOnly applies the transaction's project scope inside both correlated
-// project lookups, so a filter cannot infer a hidden membership or activity
-// project. Each whitespace-separated word may match a different field.
+// visibleOnly applies the transaction's workspace scope inside both correlated
+// workspace lookups, so a filter cannot infer a hidden membership or activity
+// workspace. Each whitespace-separated word may match a different field.
 func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) {
 	clauses := []string{}
 	args := []any{}
@@ -241,27 +241,27 @@ func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) 
 		var membershipScope, activityScope string
 		var membershipScopeArgs, activityScopeArgs []any
 		if visibleOnly {
-			membershipScope, membershipScopeArgs = t.visibleClause("pm.project")
-			activityScope, activityScopeArgs = t.visibleClause("ap.project")
+			membershipScope, membershipScopeArgs = t.visibleClause("pm.workspace")
+			activityScope, activityScopeArgs = t.visibleClause("ap.workspace")
 		} else {
-			membershipScope, membershipScopeArgs = t.notIgnoredClause("pm.project")
-			activityScope, activityScopeArgs = t.notIgnoredClause("ap.project")
+			membershipScope, membershipScopeArgs = t.notIgnoredClause("pm.workspace")
+			activityScope, activityScopeArgs = t.notIgnoredClause("ap.workspace")
 		}
 		clauses = append(clauses, `(
 			instr(awb_casefold(u.name || ' ' || u.full_name ||
-				CASE WHEN u.project_admin THEN ' project administrator' ELSE '' END ||
+				CASE WHEN u.workspace_admin THEN ' workspace administrator' ELSE '' END ||
 				CASE WHEN u.user_admin THEN ' user administrator' ELSE '' END), awb_casefold(?)) > 0
-			OR EXISTS (SELECT 1 FROM project_members pm
+			OR EXISTS (SELECT 1 FROM workspace_members pm
 			            WHERE pm.user = u.name AND `+membershipScope+`
-			              AND instr(awb_casefold(pm.project || ' ' || pm.access), awb_casefold(?)) > 0)
+			              AND instr(awb_casefold(pm.workspace || ' ' || pm.access), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM (
-				SELECT i.project, ia.assignee AS user
+				SELECT i.workspace, ia.assignee AS user
 				  FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
-				UNION SELECT i.project, a.actor AS user
+				UNION SELECT i.workspace, a.actor AS user
 				  FROM issue_activity a JOIN issues i ON i.id = a.issue
 				 WHERE a.actor <> ''
 			) ap WHERE ap.user = u.name AND `+activityScope+`
-			  AND instr(awb_casefold(ap.project), awb_casefold(?)) > 0)
+			  AND instr(awb_casefold(ap.workspace), awb_casefold(?)) > 0)
 		)`)
 		args = append(args, word)
 		args = append(args, membershipScopeArgs...)
@@ -278,23 +278,23 @@ func (t *Tx) userListingFilter(filter string, visibleOnly bool) (string, []any) 
 // SearchVisibleUsersForNavigation applies the directory visibility set before
 // matching, so autocomplete cannot disclose an otherwise hidden account.
 func (t *Tx) SearchVisibleUsersForNavigation(caller, query string, limit int) ([]domain.User, error) {
-	visibleProject, visibleArgs := t.visibleClause("project_members.project")
-	visibleAssignmentProject, visibleAssignmentArgs := t.visibleClause("i.project")
-	visibleActivityProject, visibleActivityArgs := t.visibleClause("i.project")
+	visibleWorkspace, visibleArgs := t.visibleClause("workspace_members.workspace")
+	visibleAssignmentWorkspace, visibleAssignmentArgs := t.visibleClause("i.workspace")
+	visibleActivityWorkspace, visibleActivityArgs := t.visibleClause("i.workspace")
 	args := append([]any{caller}, visibleArgs...)
 	args = append(args, visibleAssignmentArgs...)
 	args = append(args, visibleActivityArgs...)
 	args = append(args, query, query, query, limit)
 	cte := `WITH visible_users(name) AS (
 		SELECT ?
-		UNION SELECT user FROM project_members WHERE ` + visibleProject + `
+		UNION SELECT user FROM workspace_members WHERE ` + visibleWorkspace + `
 		UNION SELECT assignee FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
-			WHERE ` + visibleAssignmentProject + `
+			WHERE ` + visibleAssignmentWorkspace + `
 		UNION SELECT actor FROM issue_activity a JOIN issues i ON i.id = a.issue
-			WHERE actor <> '' AND ` + visibleActivityProject + `
+			WHERE actor <> '' AND ` + visibleActivityWorkspace + `
 	)`
 	rows, err := t.q.QueryContext(t.ctx, cte+`
-		SELECT name, full_name, project_admin, user_admin, created_at, updated_at
+		SELECT name, full_name, workspace_admin, user_admin, created_at, updated_at
 		  FROM users
 		 WHERE name IN (SELECT name FROM visible_users)
 		   AND (instr(lower(name), lower(?)) > 0 OR instr(lower(full_name), lower(?)) > 0)
@@ -310,7 +310,7 @@ func (t *Tx) navigationUsers(rows *sql.Rows, visibleOnly bool, err error) ([]dom
 	users := []domain.User{}
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.Name, &u.FullName, &u.ProjectAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.Name, &u.FullName, &u.WorkspaceAdmin, &u.UserAdmin, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, awberr.Wrap(awberr.Runtime, err, "search users for navigation")
 		}
 		users = append(users, u)
@@ -321,19 +321,19 @@ func (t *Tx) navigationUsers(rows *sql.Rows, visibleOnly bool, err error) ([]dom
 	if err := t.hydrateMemberships(users, visibleOnly); err != nil {
 		return nil, err
 	}
-	if err := t.hydrateActivityProjects(users, visibleOnly); err != nil {
+	if err := t.hydrateActivityWorkspaces(users, visibleOnly); err != nil {
 		return nil, err
 	}
 	return users, nil
 }
 
-// hydrateActivityProjects fills the directory-only history for a page in one
-// query. Both forms omit ignored projects; visibleOnly also applies ordinary
-// project authorization. Retained assignments and activity keep a project
+// hydrateActivityWorkspaces fills the directory-only history for a page in one
+// query. Both forms omit ignored workspaces; visibleOnly also applies ordinary
+// workspace authorization. Retained assignments and activity keep a workspace
 // associated after an issue closes or access is withdrawn. No status predicate
 // means closed issues count. Membership stays separate: it says what the account
 // may access now.
-func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) error {
+func (t *Tx) hydrateActivityWorkspaces(users []domain.User, visibleOnly bool) error {
 	if len(users) == 0 {
 		return nil
 	}
@@ -341,7 +341,7 @@ func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) erro
 	byName := make(map[string]*domain.User, len(users))
 	for i := range users {
 		names[i] = users[i].Name
-		users[i].ActivityProjects = []string{}
+		users[i].ActivityWorkspaces = []string{}
 		byName[users[i].Name] = &users[i]
 	}
 
@@ -350,43 +350,43 @@ func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) erro
 	var visible string
 	var visibleArgs []any
 	if visibleOnly {
-		visible, visibleArgs = t.visibleClause("p.project")
+		visible, visibleArgs = t.visibleClause("p.workspace")
 	} else {
-		visible, visibleArgs = t.notIgnoredClause("p.project")
+		visible, visibleArgs = t.notIgnoredClause("p.workspace")
 	}
 	where += ` AND ` + visible
 	args = append(args, visibleArgs...)
 	rows, err := t.q.QueryContext(t.ctx, `
-		WITH activity_projects (project, user) AS (
-			SELECT i.project, ia.assignee
+		WITH activity_workspaces (workspace, user) AS (
+			SELECT i.workspace, ia.assignee
 			  FROM issue_assignees ia JOIN issues i ON i.id = ia.issue
-			UNION SELECT i.project, a.actor
+			UNION SELECT i.workspace, a.actor
 			  FROM issue_activity a JOIN issues i ON i.id = a.issue
 			 WHERE a.actor <> ''
 		)
-		SELECT p.project, p.user FROM activity_projects p
+		SELECT p.workspace, p.user FROM activity_workspaces p
 		 WHERE `+where+`
-		 ORDER BY p.user ASC, p.project ASC`, args...)
+		 ORDER BY p.user ASC, p.workspace ASC`, args...)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read user workspace involvement")
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var project, user string
-		if err := rows.Scan(&project, &user); err != nil {
+		var workspace, user string
+		if err := rows.Scan(&workspace, &user); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "read user workspace involvement")
 		}
 		if u := byName[user]; u != nil {
-			u.ActivityProjects = append(u.ActivityProjects, project)
+			u.ActivityWorkspaces = append(u.ActivityWorkspaces, workspace)
 		}
 	}
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read user workspace involvement")
 }
 
-// hydrateMemberships fills in the Projects of a page of users in one query.
-// Both forms omit ignored projects; visibleOnly additionally applies ordinary
-// project authorization for the collaborative directory, while a user
+// hydrateMemberships fills in the Workspaces of a page of users in one query.
+// Both forms omit ignored workspaces; visibleOnly additionally applies ordinary
+// workspace authorization for the collaborative directory, while a user
 // administrator's complete directory deliberately does not.
 func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	if len(users) == 0 {
@@ -404,16 +404,16 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	var visible string
 	var visibleArgs []any
 	if visibleOnly {
-		visible, visibleArgs = t.visibleClause("project_members.project")
+		visible, visibleArgs = t.visibleClause("workspace_members.workspace")
 	} else {
-		visible, visibleArgs = t.notIgnoredClause("project_members.project")
+		visible, visibleArgs = t.notIgnoredClause("workspace_members.workspace")
 	}
 	where += ` AND ` + visible
 	args = append(args, visibleArgs...)
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT project, user, access FROM project_members
+		SELECT workspace, user, access FROM workspace_members
 		 WHERE `+where+`
-		 ORDER BY user ASC, project ASC`, args...)
+		 ORDER BY user ASC, workspace ASC`, args...)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read memberships")
 	}
@@ -421,11 +421,11 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 
 	for rows.Next() {
 		var m domain.Membership
-		if err := rows.Scan(&m.Project, &m.User, &m.Access); err != nil {
+		if err := rows.Scan(&m.Workspace, &m.User, &m.Access); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "read memberships")
 		}
 		if u := byName[m.User]; u != nil {
-			u.Projects = append(u.Projects, m)
+			u.Workspaces = append(u.Workspaces, m)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -438,13 +438,13 @@ func (t *Tx) hydrateMemberships(users []domain.User, visibleOnly bool) error {
 	return nil
 }
 
-// membershipsOf reads one user's memberships, ordered by project ascending.
+// membershipsOf reads one user's memberships, ordered by workspace ascending.
 func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
-	visible, visibleArgs := t.visibleClause("project_members.project")
+	visible, visibleArgs := t.visibleClause("workspace_members.workspace")
 	args := append([]any{name}, visibleArgs...)
 	return t.scanMemberships(`
-		SELECT project, user, access FROM project_members
-		 WHERE user = ? AND `+visible+` ORDER BY project ASC`, args)
+		SELECT workspace, user, access FROM workspace_members
+		 WHERE user = ? AND `+visible+` ORDER BY workspace ASC`, args)
 }
 
 // InsertUser stores a new user, and records that this database has had one.
@@ -452,11 +452,11 @@ func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
 // The two are one statement pair in one transaction, and the record is written
 // here rather than by the operation above, so that no way of creating a user
 // can leave the fact unwritten.
-func (t *Tx) InsertUser(name, fullName, hash string, projectAdmin, userAdmin bool) error {
+func (t *Tx) InsertUser(name, fullName, hash string, workspaceAdmin, userAdmin bool) error {
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
-		INSERT INTO users (name, full_name, password_hash, project_admin, user_admin, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, name, fullName, hash, projectAdmin, userAdmin, now, now)
+		INSERT INTO users (name, full_name, password_hash, workspace_admin, user_admin, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, name, fullName, hash, workspaceAdmin, userAdmin, now, now)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return awberr.Conflictf("user %s already exists", name)
@@ -474,17 +474,17 @@ func (t *Tx) InsertUser(name, fullName, hash string, projectAdmin, userAdmin boo
 // separate: it is write-only and is not compared, so a change that sets the
 // same password again still counts as a change.
 type UserFields struct {
-	FullName     string
-	ProjectAdmin bool
-	UserAdmin    bool
+	FullName       string
+	WorkspaceAdmin bool
+	UserAdmin      bool
 }
 
 // UpdateUser writes a user's flags and, when hash is non-nil, their password,
 // moving updated_at only when something actually changed. Granting an access
-// level in a project does not touch it: memberships are their own rows, as an
+// level in a workspace does not touch it: memberships are their own rows, as an
 // issue's labels are.
 func (t *Tx) UpdateUser(u *domain.User, fields UserFields, hash *string) error {
-	unchanged := fields.FullName == u.FullName && fields.ProjectAdmin == u.ProjectAdmin &&
+	unchanged := fields.FullName == u.FullName && fields.WorkspaceAdmin == u.WorkspaceAdmin &&
 		fields.UserAdmin == u.UserAdmin
 	if unchanged && hash == nil {
 		return nil
@@ -494,19 +494,19 @@ func (t *Tx) UpdateUser(u *domain.User, fields UserFields, hash *string) error {
 	var err error
 	if hash != nil {
 		_, err = t.q.ExecContext(t.ctx, `
-			UPDATE users SET password_hash = ?, full_name = ?, project_admin = ?, user_admin = ?, updated_at = ?
-			 WHERE name = ?`, *hash, fields.FullName, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
+			UPDATE users SET password_hash = ?, full_name = ?, workspace_admin = ?, user_admin = ?, updated_at = ?
+			 WHERE name = ?`, *hash, fields.FullName, fields.WorkspaceAdmin, fields.UserAdmin, updated, u.Name)
 	} else {
 		_, err = t.q.ExecContext(t.ctx, `
-			UPDATE users SET full_name = ?, project_admin = ?, user_admin = ?, updated_at = ?
-			 WHERE name = ?`, fields.FullName, fields.ProjectAdmin, fields.UserAdmin, updated, u.Name)
+			UPDATE users SET full_name = ?, workspace_admin = ?, user_admin = ?, updated_at = ?
+			 WHERE name = ?`, fields.FullName, fields.WorkspaceAdmin, fields.UserAdmin, updated, u.Name)
 	}
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update user %s", u.Name)
 	}
 
 	u.FullName = fields.FullName
-	u.ProjectAdmin = fields.ProjectAdmin
+	u.WorkspaceAdmin = fields.WorkspaceAdmin
 	u.UserAdmin = fields.UserAdmin
 	u.UpdatedAt = updated
 	return nil
@@ -526,60 +526,60 @@ func (t *Tx) DeleteUser(name string) error {
 	return nil
 }
 
-// Membership returns a user's access to a project, and whether they hold any
+// Membership returns a user's access to a workspace, and whether they hold any
 // there at all.
-func (t *Tx) Membership(project, user string) (domain.Access, bool, error) {
+func (t *Tx) Membership(workspace, user string) (domain.Access, bool, error) {
 	var access domain.Access
 	err := t.q.QueryRowContext(t.ctx,
-		`SELECT access FROM project_members WHERE project = ? AND user = ?`,
-		project, user).Scan(&access)
+		`SELECT access FROM workspace_members WHERE workspace = ? AND user = ?`,
+		workspace, user).Scan(&access)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, awberr.Wrap(awberr.Runtime, err, "read the membership of %s in %s",
-			user, project)
+			user, workspace)
 	}
 	return access, true, nil
 }
 
-// ListMembers returns a project's members ordered by username ascending, with
+// ListMembers returns a workspace's members ordered by username ascending, with
 // the unpaged total.
-func (t *Tx) ListMembers(project string, limit, offset *int) (
+func (t *Tx) ListMembers(workspace string, limit, offset *int) (
 	members []domain.Membership, total int, err error) {
 	if err := t.q.QueryRowContext(t.ctx,
-		`SELECT count(*) FROM project_members WHERE project = ?`, project,
+		`SELECT count(*) FROM workspace_members WHERE workspace = ?`, workspace,
 	).Scan(&total); err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count the members of %s", project)
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count the members of %s", workspace)
 	}
 
 	members, err = t.scanMemberships(`
-		SELECT project, user, access FROM project_members
-		 WHERE project = ? ORDER BY user ASC`+limitOffsetClause(limit, offset), []any{project})
+		SELECT workspace, user, access FROM workspace_members
+		 WHERE workspace = ? ORDER BY user ASC`+limitOffsetClause(limit, offset), []any{workspace})
 	return members, total, err
 }
 
 // SetMembership grants an access level, replacing whatever the user held in
-// that project before. Granting the level they already hold succeeds and
+// that workspace before. Granting the level they already hold succeeds and
 // changes nothing.
-func (t *Tx) SetMembership(project, user string, access domain.Access) error {
+func (t *Tx) SetMembership(workspace, user string, access domain.Access) error {
 	_, err := t.q.ExecContext(t.ctx, `
-		INSERT INTO project_members (project, user, access) VALUES (?, ?, ?)
-		ON CONFLICT (project, user) DO UPDATE SET access = excluded.access`,
-		project, user, access)
+		INSERT INTO workspace_members (workspace, user, access) VALUES (?, ?, ?)
+		ON CONFLICT (workspace, user) DO UPDATE SET access = excluded.access`,
+		workspace, user, access)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "grant %s access to %s in %s",
-			access, user, project)
+			access, user, workspace)
 	}
 	return nil
 }
 
-// DeleteMembership withdraws a user's access to a project.
-func (t *Tx) DeleteMembership(project, user string) error {
+// DeleteMembership withdraws a user's access to a workspace.
+func (t *Tx) DeleteMembership(workspace, user string) error {
 	_, err := t.q.ExecContext(t.ctx,
-		`DELETE FROM project_members WHERE project = ? AND user = ?`, project, user)
+		`DELETE FROM workspace_members WHERE workspace = ? AND user = ?`, workspace, user)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "withdraw the access of %s to %s", user, project)
+		return awberr.Wrap(awberr.Runtime, err, "withdraw the access of %s to %s", user, workspace)
 	}
 	return nil
 }
@@ -594,7 +594,7 @@ func (t *Tx) scanMemberships(query string, args []any) ([]domain.Membership, err
 	members := []domain.Membership{}
 	for rows.Next() {
 		var m domain.Membership
-		if err := rows.Scan(&m.Project, &m.User, &m.Access); err != nil {
+		if err := rows.Scan(&m.Workspace, &m.User, &m.Access); err != nil {
 			return nil, awberr.Wrap(awberr.Runtime, err, "read memberships")
 		}
 		members = append(members, m)

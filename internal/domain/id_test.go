@@ -57,10 +57,10 @@ func TestNewSalt(t *testing.T) {
 
 func TestSplitIDUsesTheLastHyphen(t *testing.T) {
 	cases := []struct {
-		id      string
-		project string
-		hash    string
-		ok      bool
+		id        string
+		workspace string
+		hash      string
+		ok        bool
 	}{
 		{"awb-a3f9c1", "awb", "a3f9c1", true},
 		{"web-ui-a3f9c1", "web-ui", "a3f9c1", true},
@@ -70,17 +70,17 @@ func TestSplitIDUsesTheLastHyphen(t *testing.T) {
 		{"trailing-", "", "", false},
 	}
 	for _, tc := range cases {
-		project, hash, ok := domain.SplitID(tc.id)
+		workspace, hash, ok := domain.SplitID(tc.id)
 		assert.Equal(t, tc.ok, ok, tc.id)
-		assert.Equal(t, tc.project, project, tc.id)
+		assert.Equal(t, tc.workspace, workspace, tc.id)
 		assert.Equal(t, tc.hash, hash, tc.id)
 	}
 }
 
 func TestMakeIDRoundTrips(t *testing.T) {
-	project, hash, ok := domain.SplitID(domain.MakeID("web-ui", "a3f9c1"))
+	workspace, hash, ok := domain.SplitID(domain.MakeID("web-ui", "a3f9c1"))
 	require.True(t, ok)
-	assert.Equal(t, "web-ui", project)
+	assert.Equal(t, "web-ui", workspace)
 	assert.Equal(t, "a3f9c1", hash)
 }
 
@@ -88,35 +88,35 @@ func TestParseIssueRef(t *testing.T) {
 	t.Run("full id", func(t *testing.T) {
 		ref, err := domain.ParseIssueRef("awb-a3f9c1")
 		require.NoError(t, err)
-		assert.Equal(t, "awb", ref.Project)
+		assert.Equal(t, "awb", ref.Workspace)
 		assert.Equal(t, "a3f9c1", ref.Hash)
 	})
 
 	t.Run("id prefix", func(t *testing.T) {
 		ref, err := domain.ParseIssueRef("awb-a3f")
 		require.NoError(t, err)
-		assert.Equal(t, "awb", ref.Project)
+		assert.Equal(t, "awb", ref.Workspace)
 		assert.Equal(t, "a3f", ref.Hash)
 	})
 
-	t.Run("bare hash carries no project", func(t *testing.T) {
+	t.Run("bare hash carries no workspace", func(t *testing.T) {
 		ref, err := domain.ParseIssueRef("a3f9c1")
 		require.NoError(t, err)
-		assert.Equal(t, "", ref.Project)
+		assert.Equal(t, "", ref.Workspace)
 		assert.Equal(t, "a3f9c1", ref.Hash)
 	})
 
 	t.Run("is lower-cased so capitals resolve", func(t *testing.T) {
 		ref, err := domain.ParseIssueRef("AWB-A3F9C1")
 		require.NoError(t, err)
-		assert.Equal(t, "awb", ref.Project)
+		assert.Equal(t, "awb", ref.Workspace)
 		assert.Equal(t, "a3f9c1", ref.Hash)
 	})
 
-	t.Run("project keys may contain hyphens", func(t *testing.T) {
+	t.Run("workspace keys may contain hyphens", func(t *testing.T) {
 		ref, err := domain.ParseIssueRef("web-ui-a3f")
 		require.NoError(t, err)
-		assert.Equal(t, "web-ui", ref.Project)
+		assert.Equal(t, "web-ui", ref.Workspace)
 		assert.Equal(t, "a3f", ref.Hash)
 	})
 
@@ -150,6 +150,6 @@ func TestParseIssueRefDoesNotTrim(t *testing.T) {
 	// The exact reference still resolves, in any case.
 	ref, err := domain.ParseIssueRef("AWB-A3F9C1")
 	require.NoError(t, err)
-	assert.Equal(t, "awb", ref.Project)
+	assert.Equal(t, "awb", ref.Workspace)
 	assert.Equal(t, "a3f9c1", ref.Hash)
 }

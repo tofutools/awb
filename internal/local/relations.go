@@ -115,7 +115,7 @@ func addRelation(tx *storage.Tx, subject string, relType domain.RelationType,
 // is given, which replaces it.
 //
 // The parent it replaces is read unscoped, and may therefore be an issue in a
-// project the caller has no access to. That is deliberate on both counts: the
+// workspace the caller has no access to. That is deliberate on both counts: the
 // edge is stored on the child, which is the caller's to change — deleting the
 // child outright would remove it too — and the child's own relations already
 // name that parent, so the refusal below reveals nothing the caller cannot
@@ -245,11 +245,11 @@ func (s relationSnapshots) capture(tx *storage.Tx) func(string) error {
 		if _, ok := s[id]; ok {
 			return nil
 		}
-		state, err := tx.IssueProjectState(id)
+		state, err := tx.IssueWorkspaceState(id)
 		if err != nil {
 			return err
 		}
-		if state == domain.ProjectArchived {
+		if state == domain.WorkspaceArchived {
 			return awberr.Conflictf("the relation touches archived read-only workspace work")
 		}
 		relations, err := tx.IssueRelations(id)

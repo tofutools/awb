@@ -22,17 +22,17 @@ func newDB(t *testing.T) *storage.DB {
 	return db
 }
 
-// seed creates a project and returns a helper that adds issues to it.
+// seed creates a workspace and returns a helper that adds issues to it.
 func seed(t *testing.T, db *storage.DB) func(title string, mutate ...func(*domain.Issue)) string {
 	t.Helper()
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertProject("awb", "Agent Work Board", "")
+		return tx.InsertWorkspace("awb", "Agent Work Board", "")
 	}))
 
 	return func(title string, mutate ...func(*domain.Issue)) string {
 		t.Helper()
 		issue := &domain.Issue{
-			Project: "awb", Title: title, Type: domain.DefaultType,
+			Workspace: "awb", Title: title, Type: domain.DefaultType,
 			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 		}
 		for _, m := range mutate {
@@ -67,7 +67,7 @@ func TestInsertAndGetIssue(t *testing.T) {
 
 	issue := read(t, db, func(tx *storage.Tx) (*domain.Issue, error) { return tx.GetIssue(id) })
 
-	assert.Equal(t, "awb", issue.Project)
+	assert.Equal(t, "awb", issue.Workspace)
 	assert.Equal(t, "Parser crashes on empty input", issue.Title)
 	assert.Equal(t, domain.TypeBug, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
@@ -81,10 +81,10 @@ func TestInsertAndGetIssue(t *testing.T) {
 	assert.Equal(t, []domain.Relation{}, issue.Relations)
 	assert.Equal(t, []domain.Link{{Text: "CI", URL: "https://ci.example.com/1"}}, issue.Links)
 
-	// The ID is <project-key>-<hash>.
-	project, hash, ok := domain.SplitID(issue.ID)
+	// The ID is <workspace-key>-<hash>.
+	workspace, hash, ok := domain.SplitID(issue.ID)
 	require.True(t, ok)
-	assert.Equal(t, "awb", project)
+	assert.Equal(t, "awb", workspace)
 	assert.Len(t, hash, domain.HashLen)
 }
 
@@ -855,16 +855,16 @@ func TestBlockerSortingJoinsAscending(t *testing.T) {
 	assert.Equal(t, []string{low, high}, issues[0].Blockers, "and the visible list is the joined one")
 }
 
-// Each of the three project orderings, in both directions. The descending form
+// Each of the three workspace orderings, in both directions. The descending form
 // reverses the named key only: after a derived key the p.key tiebreak stays
 // ascending, exactly as the issue listings' id tiebreak does.
-func TestProjectListOrderings(t *testing.T) {
+func TestWorkspaceListOrderings(t *testing.T) {
 	db := newDB(t)
 	// Keys, active counts and update times are each deliberately in a different
 	// order, so no two orderings agree by accident.
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 		for _, key := range []string{"beta", "alpha", "gamma"} {
-			if err := tx.InsertProject(key, key, ""); err != nil {
+			if err := tx.InsertWorkspace(key, key, ""); err != nil {
 				return err
 			}
 		}
@@ -874,7 +874,7 @@ func TestProjectListOrderings(t *testing.T) {
 	for _, key := range []string{"gamma", "gamma", "alpha"} {
 		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 			return tx.InsertIssue(&domain.Issue{
-				Project: key, Title: "t", Type: domain.DefaultType,
+				Workspace: key, Title: "t", Type: domain.DefaultType,
 				Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 			})
 		}))
@@ -886,46 +886,46 @@ func TestProjectListOrderings(t *testing.T) {
 	for _, key := range []string{"beta", "gamma", "alpha"} {
 		for i := range updates[key] {
 			require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-				project, err := tx.GetProject(key)
+				workspace, err := tx.GetWorkspace(key)
 				if err != nil {
 					return err
 				}
 				// A rename that changes nothing is a no-op, so each one differs.
-				return tx.UpdateProject(project, fmt.Sprintf("%s %d", key, i), "")
+				return tx.UpdateWorkspace(workspace, fmt.Sprintf("%s %d", key, i), "")
 			}))
 		}
 	}
 
-	keys := func(sort domain.ProjectSort) []string {
+	keys := func(sort domain.WorkspaceSort) []string {
 		t.Helper()
-		projects := read(t, db, func(tx *storage.Tx) ([]domain.Project, error) {
-			projects, _, err := tx.ListProjects("", sort, nil, nil)
-			return projects, err
+		workspaces := read(t, db, func(tx *storage.Tx) ([]domain.Workspace, error) {
+			workspaces, _, err := tx.ListWorkspaces("", sort, nil, nil)
+			return workspaces, err
 		})
-		found := make([]string, len(projects))
-		for i, project := range projects {
-			found[i] = project.Key
+		found := make([]string, len(workspaces))
+		for i, workspace := range workspaces {
+			found[i] = workspace.Key
 		}
 		return found
 	}
 
-	assert.Equal(t, []string{"alpha", "beta", "gamma"}, keys(domain.DefaultProjectSort),
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, keys(domain.DefaultWorkspaceSort),
 		"the default, which an absent key also gives")
 	assert.Equal(t, []string{"alpha", "beta", "gamma"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortByKey}))
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortByKey}))
 	assert.Equal(t, []string{"gamma", "beta", "alpha"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortByKey, Desc: true}),
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortByKey, Desc: true}),
 		"-key is descending, not the ascending default")
 
 	assert.Equal(t, []string{"beta", "alpha", "gamma"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortActive}), "0, 1, 2 open issues")
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortActive}), "0, 1, 2 open issues")
 	assert.Equal(t, []string{"gamma", "alpha", "beta"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}))
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortActive, Desc: true}))
 
 	assert.Equal(t, []string{"beta", "gamma", "alpha"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated}), "least recently touched first")
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortUpdated}), "least recently touched first")
 	assert.Equal(t, []string{"alpha", "gamma", "beta"},
-		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated, Desc: true}))
+		keys(domain.WorkspaceSort{Key: domain.WorkspaceSortUpdated, Desc: true}))
 }
 
 // status and type order by what their values mean, not by how they are spelled.
@@ -958,15 +958,15 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 	slices.Reverse(reversed)
 	assert.Equal(t, reversed, types(domain.Sort{Key: domain.SortType, Desc: true}))
 
-	// One issue per status, on a second project so the type set above is not in
+	// One issue per status, on a second workspace so the type set above is not in
 	// the way. Every status is reachable only through its own transition.
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertProject("st", "statuses", "")
+		return tx.InsertWorkspace("st", "statuses", "")
 	}))
 	statusIssue := func(title string, mutate func(*domain.Issue)) {
 		t.Helper()
 		issue := &domain.Issue{
-			Project: "st", Title: title, Type: domain.DefaultType,
+			Workspace: "st", Title: title, Type: domain.DefaultType,
 			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 		}
 		mutate(issue)
@@ -987,7 +987,7 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 	statuses := func(sort domain.Sort) []domain.Status {
 		t.Helper()
 		issues, _, err := listWith(t, db, &domain.Filter{
-			IncludeClosed: true, Projects: []string{"st"}, Sort: sort})
+			IncludeClosed: true, Workspaces: []string{"st"}, Sort: sort})
 		require.NoError(t, err)
 		found := make([]domain.Status, len(issues))
 		for i := range issues {
@@ -1013,7 +1013,7 @@ func TestListOrderIsTotal(t *testing.T) {
 	for _, sort := range []domain.Sort{
 		{Key: domain.SortPriority}, {Key: domain.SortPriority, Desc: true},
 		{Key: domain.SortCreated}, {Key: domain.SortUpdated}, {Key: domain.SortID},
-		{Key: domain.SortID, Desc: true}, {Key: domain.SortProject},
+		{Key: domain.SortID, Desc: true}, {Key: domain.SortWorkspace},
 		{Key: domain.SortStatus}, {Key: domain.SortAssignee}, {Key: domain.SortAssignee, Desc: true},
 		{Key: domain.SortType}, {Key: domain.SortBlockers},
 	} {
@@ -1106,7 +1106,7 @@ func TestAssigneeFacetsHaveNoEmptyRow(t *testing.T) {
 	assert.NotEmpty(t, assigned)
 }
 
-func TestProjects(t *testing.T) {
+func TestWorkspaces(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	add("live")
@@ -1114,112 +1114,112 @@ func TestProjects(t *testing.T) {
 	closeIssue(t, db, done)
 
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertProject("web", "web", "")
+		return tx.InsertWorkspace("web", "web", "")
 	}))
 
-	projects, total, err := func() ([]domain.Project, int, error) {
+	workspaces, total, err := func() ([]domain.Workspace, int, error) {
 		var (
-			ps    []domain.Project
+			ps    []domain.Workspace
 			total int
 		)
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error
-			ps, total, err = tx.ListProjects("", domain.DefaultProjectSort, nil, nil)
+			ps, total, err = tx.ListWorkspaces("", domain.DefaultWorkspaceSort, nil, nil)
 			return err
 		})
 		return ps, total, err
 	}()
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)
-	require.Len(t, projects, 2)
-	assert.Equal(t, "awb", projects[0].Key, "ordered by key ascending")
-	assert.Equal(t, "web", projects[1].Key)
-	assert.Equal(t, 1, projects[0].ActiveIssues, "closed issues are not active")
+	require.Len(t, workspaces, 2)
+	assert.Equal(t, "awb", workspaces[0].Key, "ordered by key ascending")
+	assert.Equal(t, "web", workspaces[1].Key)
+	assert.Equal(t, 1, workspaces[0].ActiveIssues, "closed issues are not active")
 
-	projects, _, err = func() ([]domain.Project, int, error) {
+	workspaces, _, err = func() ([]domain.Workspace, int, error) {
 		var (
-			ps    []domain.Project
+			ps    []domain.Workspace
 			total int
 		)
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error
-			ps, total, err = tx.ListProjects("",
-				domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}, nil, nil)
+			ps, total, err = tx.ListWorkspaces("",
+				domain.WorkspaceSort{Key: domain.WorkspaceSortActive, Desc: true}, nil, nil)
 			return err
 		})
 		return ps, total, err
 	}()
 	require.NoError(t, err)
-	assert.Equal(t, []string{"awb", "web"}, []string{projects[0].Key, projects[1].Key},
+	assert.Equal(t, []string{"awb", "web"}, []string{workspaces[0].Key, workspaces[1].Key},
 		"active count sorting happens before paging")
 
 	// A duplicate key is a conflict.
 	err = db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertProject("awb", "again", "")
+		return tx.InsertWorkspace("awb", "again", "")
 	})
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 }
 
-func TestProjectListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
+func TestWorkspaceListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
 	db := newDB(t)
 	seed(t, db)
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		if err := tx.InsertProject("cli", "Command tools", "remote clients"); err != nil {
+		if err := tx.InsertWorkspace("cli", "Command tools", "remote clients"); err != nil {
 			return err
 		}
-		return tx.InsertProject("web", "Web console", "MÜLLER Agent issue tracking")
+		return tx.InsertWorkspace("web", "Web console", "MÜLLER Agent issue tracking")
 	}))
 
 	limit, offset := 1, 0
-	var projects []domain.Project
+	var workspaces []domain.Workspace
 	var total int
 	require.NoError(t, db.Read(t.Context(), func(tx *storage.Tx) error {
 		var err error
-		projects, total, err = tx.ListProjects("müller agent TRACK", domain.DefaultProjectSort, &limit, &offset)
+		workspaces, total, err = tx.ListWorkspaces("müller agent TRACK", domain.DefaultWorkspaceSort, &limit, &offset)
 		return err
 	}))
-	require.Len(t, projects, 1)
-	assert.Equal(t, "web", projects[0].Key)
+	require.Len(t, workspaces, 1)
+	assert.Equal(t, "web", workspaces[0].Key)
 	assert.Equal(t, 1, total)
 }
 
-// A project's updated_at does not move when an issue it holds changes:
+// A workspace's updated_at does not move when an issue it holds changes:
 // active_issues is derived, not stored.
-func TestProjectUpdatedAtIgnoresIssueChurn(t *testing.T) {
+func TestWorkspaceUpdatedAtIgnoresIssueChurn(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 
-	before := read(t, db, func(tx *storage.Tx) (*domain.Project, error) { return tx.GetProject("awb") })
+	before := read(t, db, func(tx *storage.Tx) (*domain.Workspace, error) { return tx.GetWorkspace("awb") })
 	id := add("new issue")
 	closeIssue(t, db, id)
 
-	after := read(t, db, func(tx *storage.Tx) (*domain.Project, error) { return tx.GetProject("awb") })
+	after := read(t, db, func(tx *storage.Tx) (*domain.Workspace, error) { return tx.GetWorkspace("awb") })
 	assert.Equal(t, before.UpdatedAt, after.UpdatedAt)
 	assert.Equal(t, 0, after.ActiveIssues)
 }
 
-func TestProjectDeletionRefusesWhileItHoldsAnyIssue(t *testing.T) {
+func TestWorkspaceDeletionRefusesWhileItHoldsAnyIssue(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	id := add("even a closed one counts")
 	closeIssue(t, db, id)
 
-	count := read(t, db, func(tx *storage.Tx) (int, error) { return tx.CountIssuesInProject("awb") })
-	assert.Equal(t, 1, count, "the count is wider than the active one project list shows")
+	count := read(t, db, func(tx *storage.Tx) (int, error) { return tx.CountIssuesInWorkspace("awb") })
+	assert.Equal(t, 1, count, "the count is wider than the active one workspace list shows")
 
 	var removed int
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 		var err error
-		if removed, err = tx.DeleteProjectIssues("awb"); err != nil {
+		if removed, err = tx.DeleteWorkspaceIssues("awb"); err != nil {
 			return err
 		}
-		return tx.DeleteProject("awb")
+		return tx.DeleteWorkspace("awb")
 	}))
 	assert.Equal(t, 1, removed)
 
 	err := db.Read(t.Context(), func(tx *storage.Tx) error {
-		_, err := tx.GetProject("awb")
+		_, err := tx.GetWorkspace("awb")
 		return err
 	})
 	assert.Error(t, err)

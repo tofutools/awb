@@ -10,7 +10,7 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, project, title, description, type, status, priority,
+const issueColumns = `id, workspace, title, description, type, status, priority, board_order,
 	created_at, updated_at`
 
 type rowScanner interface {
@@ -19,8 +19,8 @@ type rowScanner interface {
 
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.Type, &i.Status,
+		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -39,14 +39,14 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
-// IssueProjectState reads only the lifecycle guard for an already-resolved
+// IssueWorkspaceState reads only the lifecycle guard for an already-resolved
 // endpoint. Relation maintenance may address an existing counterpart outside
 // the caller's scope (the visible relation already names it), so this check is
 // intentionally independent of presentation scope.
-func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
-	var state domain.ProjectState
+func (t *Tx) IssueWorkspaceState(id string) (domain.WorkspaceState, error) {
+	var state domain.WorkspaceState
 	err := t.q.QueryRowContext(t.ctx, `SELECT p.state FROM issues i
-		JOIN projects p ON p.key = i.project WHERE i.id = ?`, id).Scan(&state)
+		JOIN workspaces p ON p.key = i.workspace WHERE i.id = ?`, id).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", awberr.NotFoundf("no such issue: %s", id)
 	}
@@ -55,11 +55,11 @@ func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
 
 // getIssueRow reads the stored half of one issue by its exact ID.
 //
-// An issue in a project outside the transaction's scope is not found rather
-// than refused, exactly as such a project itself is: a caller who is not a
+// An issue in a workspace outside the transaction's scope is not found rather
+// than refused, exactly as such a workspace itself is: a caller who is not a
 // member is not told that the issue exists.
 func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
-	visible, args := t.visibleClause("issues.project")
+	visible, args := t.visibleClause("issues.workspace")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
 		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
 		append([]any{id}, args...)...))
@@ -86,22 +86,22 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 // one invisible issue resolves, and uniqueness is uniqueness among what the
 // caller can see.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
-	visible, scopeArgs := t.visibleClause("issues.project")
+	visible, scopeArgs := t.visibleClause("issues.workspace")
 	var (
 		rows *sql.Rows
 		err  error
 	)
-	if ref.Project == "" {
-		// A bare hash matches on the hash part of any ID, in any project.
+	if ref.Workspace == "" {
+		// A bare hash matches on the hash part of any ID, in any workspace.
 		rows, err = t.q.QueryContext(t.ctx,
 			`SELECT id FROM issues
-			  WHERE substr(id, length(project) + 2) LIKE ? || '%' AND `+visible+`
+			  WHERE substr(id, length(workspace) + 2) LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`, append([]any{ref.Hash}, scopeArgs...)...)
 	} else {
 		rows, err = t.q.QueryContext(t.ctx,
-			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%' AND `+visible+`
+			`SELECT id FROM issues WHERE workspace = ? AND id LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`,
-			append([]any{ref.Project, ref.Project + "-" + ref.Hash}, scopeArgs...)...)
+			append([]any{ref.Workspace, ref.Workspace + "-" + ref.Hash}, scopeArgs...)...)
 	}
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "resolve issue %s", ref.Raw)
@@ -213,8 +213,8 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 // both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
-	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.project")
-	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.project")
+	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.workspace")
+	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.workspace")
 	args := append(anyArgs(ids), visibleOutArgs...)
 	args = append(args, anyArgs(ids)...)
 	args = append(args, visibleInArgs...)
@@ -253,7 +253,7 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 // whatever its blocked-by relations still say, which is what makes it
 // impossible for the recorded state to disagree with the dependency graph.
 func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
-	notIgnored, ignoredArgs := t.notIgnoredClause("other.project")
+	notIgnored, ignoredArgs := t.notIgnoredClause("other.workspace")
 	args := append(ignoredArgs, anyArgs(ids)...)
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT r.subject, r.other, `+notIgnored+` AS show_name
@@ -286,7 +286,7 @@ func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
 }
 
 // InsertIssue stores a new issue, drawing a fresh salt and retrying on a
-// same-project ID collision inside the same transaction.
+// same-workspace ID collision inside the same transaction.
 func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	const maxAttempts = 8
 	now := Now()
@@ -302,13 +302,13 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		if err != nil {
 			return err
 		}
-		issue.ID = domain.MakeID(issue.Project, domain.MintHash(issue.Title, now, salt))
+		issue.ID = domain.MakeID(issue.Workspace, domain.MintHash(issue.Title, now, salt))
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.Type,
+			issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
 			for position, assignee := range assignees {
 				if _, err := t.q.ExecContext(t.ctx,
@@ -329,7 +329,7 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		return awberr.Wrap(awberr.Runtime, err, "create issue")
 	}
 	return awberr.Runtimef("could not mint a free issue id in workspace %s after %d attempts",
-		issue.Project, maxAttempts)
+		issue.Workspace, maxAttempts)
 }
 
 // IssueFields are the stored fields an update may change.
@@ -339,6 +339,7 @@ type IssueFields struct {
 	Type        domain.Type
 	Status      domain.Status
 	Priority    int
+	Order       int
 	Assignees   []string
 }
 
@@ -346,7 +347,7 @@ type IssueFields struct {
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignees: slices.Clone(i.Assignees),
+		Priority: i.Priority, Order: i.Order, Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -360,7 +361,7 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	before := Fields(issue)
 	if before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
-		before.Priority == fields.Priority &&
+		before.Priority == fields.Priority && before.Order == fields.Order &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
@@ -368,10 +369,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET title = ?, description = ?, type = ?, status = ?, priority = ?,
+		   SET title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
 		       updated_at = ?
 		 WHERE id = ?`,
-		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority,
+		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
 		updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
@@ -395,9 +396,242 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
+	issue.Order = fields.Order
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil
+}
+
+// OrderChange is one sparse-rank write made while placing an issue. Most moves
+// contain only the dragged issue; an automatic anchor is the one ordinary case
+// that also becomes ranked.
+type OrderChange struct {
+	Issue    string
+	From, To int
+}
+
+// ReorderIssue places issue relative to an anchor in its immutable workspace.
+// A board additionally supplies destination status and epic so ranks cannot
+// cross cells; a regular list leaves both nil and orders within the workspace.
+func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction string,
+	status *domain.Status, epic *string) ([]OrderChange, error) {
+	visible, args := t.visibleClause("workspace")
+	where := "workspace = ? AND " + visible
+	args = append([]any{issue.Workspace}, args...)
+	if status != nil {
+		where += " AND status = ?"
+		args = append(args, *status)
+	}
+	if epic != nil {
+		const directEpic = `EXISTS (SELECT 1 FROM relations er JOIN issues parent ON parent.id = er.other
+			WHERE er.subject = issues.id AND er.type = 'has-parent'
+			  AND parent.type = 'epic' AND parent.workspace = issues.workspace`
+		if *epic == "" {
+			where += " AND NOT " + directEpic + ")"
+		} else {
+			where += " AND " + directEpic + " AND parent.id = ?)"
+			args = append(args, *epic)
+		}
+	}
+	rows, err := t.q.QueryContext(t.ctx, `SELECT id, board_order, updated_at FROM issues
+		WHERE `+where+
+		` ORDER BY (board_order = 0) ASC, board_order ASC, priority ASC, updated_at DESC, id ASC`,
+		args...)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "read issue order")
+	}
+	type ordered struct {
+		id      string
+		order   int
+		updated string
+	}
+	var orderedRows []ordered
+	for rows.Next() {
+		var row ordered
+		if err := rows.Scan(&row.id, &row.order, &row.updated); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		orderedRows = append(orderedRows, row)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, awberr.Wrap(awberr.Runtime, err, "read issue order")
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if direction != "" {
+		position := -1
+		for i := range orderedRows {
+			if orderedRows[i].id == issue.ID {
+				position = i
+				break
+			}
+		}
+		if position < 0 {
+			return nil, awberr.Usagef("the issue is not visible in its ordering scope")
+		}
+		switch direction {
+		case "earlier":
+			if position == 0 {
+				return nil, nil
+			}
+			beforeID = orderedRows[position-1].id
+		case "later":
+			if position == len(orderedRows)-1 {
+				return nil, nil
+			}
+			afterID = orderedRows[position+1].id
+		default:
+			return nil, awberr.Usagef("direction must be earlier or later")
+		}
+	}
+	var current []ordered
+	for _, row := range orderedRows {
+		if row.id != issue.ID {
+			current = append(current, row)
+		}
+	}
+	var changes []OrderChange
+	write := func(row *ordered, want int) error {
+		if row.order == want {
+			return nil
+		}
+		updated := bumpedTimestamp(row.updated, Now())
+		if _, err := t.q.ExecContext(t.ctx, `UPDATE issues SET board_order = ?, updated_at = ? WHERE id = ?`,
+			want, updated, row.id); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "reorder issue %s", row.id)
+		}
+		changes = append(changes, OrderChange{Issue: row.id, From: row.order, To: want})
+		row.order, row.updated = want, updated
+		if row.id == issue.ID {
+			issue.Order, issue.UpdatedAt = want, updated
+		}
+		return nil
+	}
+
+	const step = 1 << 20
+	ranked := make([]ordered, 0, len(current))
+	maxOrder := 0
+	var anchor *ordered
+	anchorID := beforeID
+	if anchorID == "" {
+		anchorID = afterID
+	}
+	for i := range current {
+		if current[i].order > 0 {
+			ranked = append(ranked, current[i])
+			if current[i].order > maxOrder {
+				maxOrder = current[i].order
+			}
+		}
+		if current[i].id == anchorID {
+			copy := current[i]
+			anchor = &copy
+		}
+	}
+	moving := ordered{id: issue.ID, order: issue.Order, updated: issue.UpdatedAt}
+	if anchorID == "" {
+		if err := write(&moving, maxOrder+step); err != nil {
+			return nil, err
+		}
+		return changes, nil
+	}
+	if anchor == nil {
+		return nil, awberr.Usagef("the order anchor is not visible")
+	}
+	if anchor.order == 0 {
+		if direction != "" && issue.Order == 0 {
+			// Ranked rows sort before every automatic row. To swap two rows in
+			// the automatic tail without pulling that pair to its front, freeze
+			// only the automatic prefix through the pair in its desired order.
+			desired := slices.Clone(orderedRows)
+			position := -1
+			for i := range desired {
+				if desired[i].id == issue.ID {
+					position = i
+					break
+				}
+			}
+			target := position - 1
+			if direction == "later" {
+				target = position + 1
+			}
+			desired[position], desired[target] = desired[target], desired[position]
+			nextOrder := maxOrder
+			through := max(position, target)
+			for i := range through + 1 {
+				if desired[i].order > 0 {
+					continue
+				}
+				nextOrder += step
+				if err := write(&desired[i], nextOrder); err != nil {
+					return nil, err
+				}
+			}
+			return changes, nil
+		}
+		if beforeID != "" {
+			if err := write(&moving, maxOrder+step); err != nil {
+				return nil, err
+			}
+			if err := write(anchor, maxOrder+2*step); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := write(anchor, maxOrder+step); err != nil {
+				return nil, err
+			}
+			if err := write(&moving, maxOrder+2*step); err != nil {
+				return nil, err
+			}
+		}
+		return changes, nil
+	}
+
+	insert := -1
+	for i := range ranked {
+		if ranked[i].id == anchor.id {
+			insert = i
+			break
+		}
+	}
+	if insert < 0 {
+		return nil, awberr.Usagef("the order anchor is not visible")
+	}
+	if afterID != "" {
+		insert++
+	}
+	previous, next := 0, 0
+	if insert > 0 {
+		previous = ranked[insert-1].order
+	}
+	if insert < len(ranked) {
+		next = ranked[insert].order
+	}
+	want := previous + step
+	if next > previous+1 {
+		want = previous + (next-previous)/2
+	}
+	if next == 0 || next > previous+1 {
+		if err := write(&moving, want); err != nil {
+			return nil, err
+		}
+		return changes, nil
+	}
+
+	// The gap is exhausted. Re-space only the already-ranked visible sequence;
+	// this is rare because each ordinary gap starts with over a million slots.
+	ranked = append(ranked, ordered{})
+	copy(ranked[insert+1:], ranked[insert:])
+	ranked[insert] = moving
+	for i := range ranked {
+		if err := write(&ranked[i], (i+1)*step); err != nil {
+			return nil, err
+		}
+	}
+	return changes, nil
 }
 
 func validateAssignment(status domain.Status, assignees []string) error {

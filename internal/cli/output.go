@@ -38,20 +38,20 @@ func (e *env) writeJSON(value any) error {
 	return nil
 }
 
-// issueJSON and projectJSON are the CLI's JSON presentation shapes. The API
+// issueJSON and workspaceJSON are the CLI's JSON presentation shapes. The API
 // returns the domain objects themselves, but a remote CLI also knows the web
 // address that presents each object and includes it as navigation metadata.
 // The fields remain present and empty in direct mode, where no web address
 // exists to name.
 type issueJSON struct {
 	*domain.Issue
-	IssueLink   string `json:"issue_link"`
-	ProjectLink string `json:"project_link"`
+	IssueLink     string `json:"issue_link"`
+	WorkspaceLink string `json:"workspace_link"`
 }
 
-type projectJSON struct {
-	*domain.Project
-	ProjectLink string `json:"project_link"`
+type workspaceJSON struct {
+	*domain.Workspace
+	WorkspaceLink string `json:"workspace_link"`
 }
 
 type issueTreeJSON struct {
@@ -61,14 +61,14 @@ type issueTreeJSON struct {
 
 func (e *env) issueJSON(issue *domain.Issue) issueJSON {
 	return issueJSON{
-		Issue:       issue,
-		IssueLink:   e.issueURL(issue.ID),
-		ProjectLink: e.projectURL(issue.Project),
+		Issue:         issue,
+		IssueLink:     e.issueURL(issue.ID),
+		WorkspaceLink: e.workspaceURL(issue.Workspace),
 	}
 }
 
-func (e *env) projectJSON(project *domain.Project) projectJSON {
-	return projectJSON{Project: project, ProjectLink: e.projectURL(project.Key)}
+func (e *env) workspaceJSON(workspace *domain.Workspace) workspaceJSON {
+	return workspaceJSON{Workspace: workspace, WorkspaceLink: e.workspaceURL(workspace.Key)}
 }
 
 func (e *env) issueTreeJSON(node *domain.IssueTree) issueTreeJSON {
@@ -83,8 +83,8 @@ func (e *env) writeIssueJSON(issue *domain.Issue) error {
 	return e.writeJSON(e.issueJSON(issue))
 }
 
-func (e *env) writeProjectJSON(project *domain.Project) error {
-	return e.writeJSON(e.projectJSON(project))
+func (e *env) writeWorkspaceJSON(workspace *domain.Workspace) error {
+	return e.writeJSON(e.workspaceJSON(workspace))
 }
 
 const (
@@ -538,8 +538,8 @@ func (e *env) issueURL(id string) string {
 	return e.entityURL("/issues/" + url.PathEscape(id))
 }
 
-func (e *env) projectURL(key string) string {
-	query := url.Values{"project": []string{key}}.Encode()
+func (e *env) workspaceURL(key string) string {
+	query := url.Values{"workspace": []string{key}}.Encode()
 	return e.entityURL("/issues?" + query)
 }
 
@@ -555,8 +555,8 @@ func (e *env) issueLinks(t *theme, ids []string, separator string) string {
 	return strings.Join(linked, separator)
 }
 
-func (e *env) projectLink(t *theme, key string) string {
-	return e.entityLink(t, key, "/issues?"+url.Values{"project": []string{key}}.Encode())
+func (e *env) workspaceLink(t *theme, key string) string {
+	return e.entityLink(t, key, "/issues?"+url.Values{"workspace": []string{key}}.Encode())
 }
 
 // listTitle gives a title whichever width treatment the layout can offer. With
@@ -635,7 +635,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	t := e.theme()
 
 	e.writeHeading(t, e.issueLink(t, issue.ID), issue.Title)
-	e.field(t, "Workspace", e.projectLink(t, issue.Project))
+	e.field(t, "Workspace", e.workspaceLink(t, issue.Workspace))
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
@@ -728,43 +728,43 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-// printProjects renders a project listing. Under --compact each line is "<key>
+// printWorkspaces renders a workspace listing. Under --compact each line is "<key>
 // <active_issues> <name>", where the name is a JSON string.
-func (e *env) printProjects(projects []domain.Project) error {
+func (e *env) printWorkspaces(workspaces []domain.Workspace) error {
 	switch {
 	case e.json:
-		if projects == nil {
-			projects = []domain.Project{}
+		if workspaces == nil {
+			workspaces = []domain.Workspace{}
 		}
-		out := make([]projectJSON, len(projects))
-		for i := range projects {
-			out[i] = e.projectJSON(&projects[i])
+		out := make([]workspaceJSON, len(workspaces))
+		for i := range workspaces {
+			out[i] = e.workspaceJSON(&workspaces[i])
 		}
 		return e.writeJSON(out)
 	case e.compact:
-		for i := range projects {
-			_, _ = fmt.Fprintln(e.stdout, domain.CompactProjectLine(&projects[i]))
+		for i := range workspaces {
+			_, _ = fmt.Fprintln(e.stdout, domain.CompactWorkspaceLine(&workspaces[i]))
 		}
 		return nil
 	default:
-		if len(projects) == 0 {
+		if len(workspaces) == 0 {
 			return nil
 		}
 		t := e.theme()
-		e.writeListing(t, e.projectCols(t, projects))
+		e.writeListing(t, e.workspaceCols(t, workspaces))
 		return nil
 	}
 }
 
-// projectCols is the project listing, printed or scrolled.
-func (e *env) projectCols(t *theme, projects []domain.Project) []col {
-	keys := make([]string, len(projects))
-	counts := make([]string, len(projects))
-	names := make([]string, len(projects))
-	for i := range projects {
-		keys[i] = e.projectLink(t, projects[i].Key)
-		counts[i] = strconv.Itoa(projects[i].ActiveIssues)
-		names[i] = projects[i].Name
+// workspaceCols is the workspace listing, printed or scrolled.
+func (e *env) workspaceCols(t *theme, workspaces []domain.Workspace) []col {
+	keys := make([]string, len(workspaces))
+	counts := make([]string, len(workspaces))
+	names := make([]string, len(workspaces))
+	for i := range workspaces {
+		keys[i] = e.workspaceLink(t, workspaces[i].Key)
+		counts[i] = strconv.Itoa(workspaces[i].ActiveIssues)
+		names[i] = workspaces[i].Name
 	}
 	return []col{
 		{header: "KEY", cells: keys, paint: always(t.id)},
@@ -773,34 +773,34 @@ func (e *env) projectCols(t *theme, projects []domain.Project) []col {
 	}
 }
 
-// printProject renders one project.
+// printWorkspace renders one workspace.
 //
-// Under --compact it prints the same single line a project listing would, and
+// Under --compact it prints the same single line a workspace listing would, and
 // so loses the description; --json is what a script reads when it wants the
 // rest.
-func (e *env) printProject(project *domain.Project) error {
+func (e *env) printWorkspace(workspace *domain.Workspace) error {
 	switch {
 	case e.json:
-		return e.writeProjectJSON(project)
+		return e.writeWorkspaceJSON(workspace)
 	case e.compact:
-		_, _ = fmt.Fprintln(e.stdout, domain.CompactProjectLine(project))
+		_, _ = fmt.Fprintln(e.stdout, domain.CompactWorkspaceLine(workspace))
 		return nil
 	default:
-		e.printProjectDetail(project)
+		e.printWorkspaceDetail(workspace)
 		return nil
 	}
 }
 
-func (e *env) printProjectDetail(project *domain.Project) {
+func (e *env) printWorkspaceDetail(workspace *domain.Workspace) {
 	t := e.theme()
 
-	e.writeHeading(t, e.projectLink(t, project.Key), project.Name)
-	// The same count project list shows, under the heading it uses there.
-	e.field(t, "Open", strconv.Itoa(project.ActiveIssues))
-	e.field(t, "Created", project.CreatedAt)
-	e.field(t, "Updated", project.UpdatedAt)
+	e.writeHeading(t, e.workspaceLink(t, workspace.Key), workspace.Name)
+	// The same count workspace list shows, under the heading it uses there.
+	e.field(t, "Open", strconv.Itoa(workspace.ActiveIssues))
+	e.field(t, "Created", workspace.CreatedAt)
+	e.field(t, "Updated", workspace.UpdatedAt)
 
-	e.writeDescription(t, project.Description)
+	e.writeDescription(t, workspace.Description)
 }
 
 // printUsers renders a user listing. Under --compact each line is the compact
@@ -832,18 +832,18 @@ func userCols(t *theme, users []domain.User) []col {
 	names := make([]string, len(users))
 	fullNames := make([]string, len(users))
 	flags := make([]string, len(users))
-	projects := make([]string, len(users))
+	workspaces := make([]string, len(users))
 	for i := range users {
 		names[i] = users[i].Name
 		fullNames[i] = users[i].FullName
 		flags[i] = adminFlags(&users[i])
-		projects[i] = memberships(&users[i])
+		workspaces[i] = memberships(&users[i])
 	}
 	return []col{
 		{header: "NAME", cells: names, paint: always(t.id)},
 		{header: "FULL NAME", cells: fullNames},
 		{header: "ADMIN", cells: flags, floor: adminFloor},
-		{header: "WORKSPACES", cells: projects, floor: labelsFloor},
+		{header: "WORKSPACES", cells: workspaces, floor: labelsFloor},
 	}
 }
 
@@ -851,9 +851,9 @@ func userCols(t *theme, users []domain.User) []col {
 // column never reads as a blank that might be a missing value.
 func adminFlags(user *domain.User) string {
 	switch {
-	case user.ProjectAdmin && user.UserAdmin:
+	case user.WorkspaceAdmin && user.UserAdmin:
 		return "workspaces, users"
-	case user.ProjectAdmin:
+	case user.WorkspaceAdmin:
 		return "workspaces"
 	case user.UserAdmin:
 		return "users"
@@ -862,11 +862,11 @@ func adminFlags(user *domain.User) string {
 	}
 }
 
-// memberships is a user's projects as one cell, each with its access level.
+// memberships is a user's workspaces as one cell, each with its access level.
 func memberships(user *domain.User) string {
-	parts := make([]string, len(user.Projects))
-	for i, m := range user.Projects {
-		parts[i] = m.Project + ":" + string(m.Access)
+	parts := make([]string, len(user.Workspaces))
+	for i, m := range user.Workspaces {
+		parts[i] = m.Workspace + ":" + string(m.Access)
 	}
 	return strings.Join(parts, " ")
 }
@@ -898,9 +898,9 @@ func (e *env) printUser(user *domain.User) error {
 // an account holding neither is a user, which is a thing to be.
 func adminTitle(user *domain.User) string {
 	switch {
-	case user.ProjectAdmin && user.UserAdmin:
+	case user.WorkspaceAdmin && user.UserAdmin:
 		return "workspace and user administrator"
-	case user.ProjectAdmin:
+	case user.WorkspaceAdmin:
 		return "workspace administrator"
 	case user.UserAdmin:
 		return "user administrator"
@@ -909,7 +909,7 @@ func adminTitle(user *domain.User) string {
 	}
 }
 
-// printMemberships renders a project's member listing.
+// printMemberships renders a workspace's member listing.
 func (e *env) printMemberships(members []domain.Membership) error {
 	switch {
 	case e.json:
@@ -1034,9 +1034,9 @@ func (e *env) attached(attachment *domain.Attachment) error {
 	return nil
 }
 
-func (e *env) mutatedProject(project *domain.Project) error {
+func (e *env) mutatedWorkspace(workspace *domain.Workspace) error {
 	if e.json {
-		return e.writeProjectJSON(project)
+		return e.writeWorkspaceJSON(workspace)
 	}
 	return nil
 }

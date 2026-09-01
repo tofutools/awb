@@ -28,7 +28,7 @@ type selection struct {
 	labels          []api.Label
 	assignees       []api.Assignee
 	unassigned      bool
-	projects        []api.ProjectKey
+	workspaces      []api.WorkspaceKey
 	parent          api.OptString
 	sort            string
 	limit           api.OptInt
@@ -81,12 +81,12 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 	if len(filter.Assignees) > 0 && filter.Unassigned {
 		return nil, awberr.Usagef("assignee and unassigned are mutually exclusive")
 	}
-	for _, project := range s.projects {
-		valid, err := domain.ValidateProjectKey(string(project))
+	for _, workspace := range s.workspaces {
+		valid, err := domain.ValidateWorkspaceKey(string(workspace))
 		if err != nil {
 			return nil, err
 		}
-		filter.Projects = append(filter.Projects, valid)
+		filter.Workspaces = append(filter.Workspaces, valid)
 	}
 	if readiness, ok := s.readiness.Get(); ok {
 		switch readiness {
@@ -140,7 +140,7 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 		labels:          params.Label,
 		assignees:       params.Assignee,
 		unassigned:      params.Unassigned.Or(false),
-		projects:        params.Project,
+		workspaces:      params.Workspace,
 		parent:          params.Parent,
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
@@ -163,7 +163,7 @@ func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
 		priorities:    params.Priority,
 		priorityMax:   params.PriorityMax,
 		labels:        params.Label,
-		projects:      params.Project,
+		workspaces:    params.Workspace,
 		parent:        params.Parent,
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
@@ -189,7 +189,7 @@ func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams)
 		labels:        params.Label,
 		assignees:     params.Assignee,
 		unassigned:    params.Unassigned.Or(false),
-		projects:      params.Project,
+		workspaces:    params.Workspace,
 		parent:        params.Parent,
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
@@ -216,7 +216,7 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 		labels:          params.Label,
 		assignees:       params.Assignee,
 		unassigned:      params.Unassigned.Or(false),
-		projects:        params.Project,
+		workspaces:      params.Workspace,
 		parent:          params.Parent,
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
@@ -282,7 +282,7 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 		labels:          params.Label,
 		assignees:       params.Assignee,
 		unassigned:      params.Unassigned.Or(false),
-		projects:        params.Project,
+		workspaces:      params.Workspace,
 		parent:          params.Parent,
 		limit:           params.Limit,
 		offset:          params.Offset,
@@ -308,7 +308,7 @@ func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesPar
 		labels:          params.Label,
 		assignees:       params.Assignee,
 		unassigned:      params.Unassigned.Or(false),
-		projects:        params.Project,
+		workspaces:      params.Workspace,
 		parent:          params.Parent,
 		limit:           params.Limit,
 		offset:          params.Offset,

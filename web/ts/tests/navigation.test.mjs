@@ -5,20 +5,21 @@ import {
   legacyIssueSearchHref,
   namedDestinations,
   navigationPath,
-  projectScopedHref,
+  workspaceScopedHref,
 } from "../../static/navigation.js";
 
-test("issue listing tabs preserve selected workspace filters using compatibility query names", () => {
-  const current = new URLSearchParams("project=awb&project=other%2Fteam&label=frontend&sort=-updated");
+test("issue listing tabs preserve selected workspace filters", () => {
+  const current = new URLSearchParams("workspace=awb&workspace=other%2Fteam&label=frontend&sort=-updated");
 
-  assert.equal(projectScopedHref("ready", current), "#/ready?project=awb&project=other%2Fteam");
-  assert.equal(projectScopedHref("issues", current), "#/issues?project=awb&project=other%2Fteam");
-  assert.equal(projectScopedHref("workspaces", current), "#/workspaces?project=awb&project=other%2Fteam");
-  assert.equal(projectScopedHref("blocked", new URLSearchParams()), "#/blocked");
+  assert.equal(workspaceScopedHref("ready", current), "#/ready?workspace=awb&workspace=other%2Fteam");
+  assert.equal(workspaceScopedHref("issues", current), "#/issues?workspace=awb&workspace=other%2Fteam");
+  assert.equal(workspaceScopedHref("workspaces", current), "#/workspaces?workspace=awb&workspace=other%2Fteam");
+  assert.equal(workspaceScopedHref("blocked", new URLSearchParams()), "#/blocked");
+  assert.equal(workspaceScopedHref("boards", current), "#/boards?workspace=awb&workspace=other%2Fteam");
 });
 
-test("active navigation ignores preserved project filters", () => {
-  assert.equal(navigationPath("#/issues?project=awb&project=other"), "issues");
+test("active navigation ignores preserved workspace filters", () => {
+  assert.equal(navigationPath("#/issues?workspace=awb&workspace=other"), "issues");
   assert.equal(navigationPath("#/ready"), "ready");
   assert.equal(navigationPath("#/users"), "users");
 });
@@ -26,9 +27,9 @@ test("active navigation ignores preserved project filters", () => {
 test("legacy issue-search links migrate their query into the Issues filter", () => {
   assert.equal(
     legacyIssueSearchHref(new URLSearchParams(
-      "q=parser&q=remote&project=awb&label=frontend&include-closed=true&page=4&sort=relevance",
+      "q=parser&q=remote&workspace=awb&label=frontend&include-closed=true&page=4&sort=relevance",
     )),
-    "#/issues?project=awb&label=frontend&include-closed=true&filter=parser+remote",
+    "#/issues?workspace=awb&label=frontend&include-closed=true&filter=parser+remote",
   );
   assert.equal(
     legacyIssueSearchHref(new URLSearchParams("filter=existing&q=extra&sort=-updated&page=2")),

@@ -135,12 +135,12 @@ func (t *Tx) DigestsOfIssue(issueID string) ([]string, error) {
 	return t.digests(`SELECT DISTINCT sha256 FROM attachments WHERE issue = ?`, issueID)
 }
 
-// DigestsOfProject is DigestsOfIssue for every issue a project holds, which is
-// what a cascading project delete needs.
-func (t *Tx) DigestsOfProject(key string) ([]string, error) {
+// DigestsOfWorkspace is DigestsOfIssue for every issue a workspace holds, which is
+// what a cascading workspace delete needs.
+func (t *Tx) DigestsOfWorkspace(key string) ([]string, error) {
 	return t.digests(`SELECT DISTINCT a.sha256 FROM attachments a
 	                    JOIN issues i ON i.id = a.issue
-	                   WHERE i.project = ?`, key)
+	                   WHERE i.workspace = ?`, key)
 }
 
 func (t *Tx) digests(query string, arg any) ([]string, error) {

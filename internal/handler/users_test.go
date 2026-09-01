@@ -34,8 +34,8 @@ func TestCreateUser(t *testing.T) {
 	assert.Equal(t, "alice", user.Name)
 	assert.Equal(t, "Alice Andersson", user.FullName)
 	assert.True(t, user.UserAdmin)
-	assert.False(t, user.ProjectAdmin)
-	assert.Empty(t, user.Projects)
+	assert.False(t, user.WorkspaceAdmin)
+	assert.Empty(t, user.Workspaces)
 
 	assert.Equal(t, "/api/users/alice", resp.Header.Get("Location"))
 	assert.Equal(t, backend.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
@@ -72,7 +72,7 @@ func TestCreateUserRejectsUnknownFields(t *testing.T) {
 	for _, body := range []string{
 		`{"name":"alice","password":"hunter2","nonsense":1}`,
 		`{"name":"alice","password":"hunter2","created_at":"2026-01-01T00:00:00.000Z"}`,
-		`{"name":"alice","password":"hunter2","projects":[]}`,
+		`{"name":"alice","password":"hunter2","workspaces":[]}`,
 		`{"name":"Alice","password":"hunter2"}`,
 		`{"name":"alice","password":""}`,
 		`{"name":"alice","password":null}`,
@@ -86,7 +86,7 @@ func TestCreateUserRejectsUnknownFields(t *testing.T) {
 func TestGetAndListUsers(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"bob","password":"hunter2"}`)
-	a.createUser(`{"name":"alice","full_name":"Alice Andersson","password":"hunter2","project_admin":true}`)
+	a.createUser(`{"name":"alice","full_name":"Alice Andersson","password":"hunter2","workspace_admin":true}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/users", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -98,7 +98,7 @@ func TestGetAndListUsers(t *testing.T) {
 	assert.Equal(t, "alice", users[0].Name, "ordered by name ascending")
 	assert.Equal(t, "Alice Andersson", users[0].FullName)
 	assert.Equal(t, "bob", users[1].Name)
-	assert.Contains(t, payload, `"activity_projects":[]`)
+	assert.Contains(t, payload, `"activity_workspaces":[]`)
 
 	resp, payload = a.do(http.MethodGet, "/api/users?filter=andersson&limit=1", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -111,14 +111,14 @@ func TestGetAndListUsers(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
-	assert.True(t, user.ProjectAdmin)
+	assert.True(t, user.WorkspaceAdmin)
 	assert.Equal(t, backend.ETag(user.UpdatedAt), resp.Header.Get("ETag"))
 
 	resp, _ = a.do(http.MethodGet, "/api/users/nobody", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-// A name may appear in the body but may not change, exactly as a project key
+// A name may appear in the body but may not change, exactly as a workspace key
 // may not; the derived fields may appear and are ignored, so a UI can send back
 // the object it read.
 func TestUpdateUser(t *testing.T) {
@@ -140,8 +140,8 @@ func TestUpdateUser(t *testing.T) {
 
 	// The object it read, sent back with one field changed.
 	round, err := json.Marshal(map[string]any{
-		"name": "alice", "full_name": "Alice Berg", "user_admin": false, "project_admin": user.ProjectAdmin,
-		"projects": user.Projects, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
+		"name": "alice", "full_name": "Alice Berg", "user_admin": false, "workspace_admin": user.WorkspaceAdmin,
+		"workspaces": user.Workspaces, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
 	})
 	require.NoError(t, err)
 	resp, payload = a.do(http.MethodPatch, "/api/users/alice", string(round))
@@ -155,7 +155,7 @@ func TestUpdateUser(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-// If-Match guards a user as it guards an issue and a project.
+// If-Match guards a user as it guards an issue and a workspace.
 func TestUpdateUserPrecondition(t *testing.T) {
 	a := newAPI(t)
 	user := a.createUser(`{"name":"alice","password":"hunter2"}`)
@@ -171,7 +171,7 @@ func TestUpdateUserPrecondition(t *testing.T) {
 		"a full-name-only change moves the user version")
 	assert.Equal(t, backend.ETag(updated.UpdatedAt), resp.Header.Get("ETag"))
 
-	resp, _ = a.do(http.MethodPatch, "/api/users/alice", `{"project_admin":true}`,
+	resp, _ = a.do(http.MethodPatch, "/api/users/alice", `{"workspace_admin":true}`,
 		"If-Match", stale)
 	assert.Equal(t, http.StatusPreconditionFailed, resp.StatusCode)
 }
@@ -191,7 +191,7 @@ func TestDeleteUser(t *testing.T) {
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
 	assert.Equal(t, "alice", user.Name)
-	require.Len(t, user.Projects, 1, "the memberships as they were")
+	require.Len(t, user.Workspaces, 1, "the memberships as they were")
 
 	resp, _ = a.do(http.MethodDelete, "/api/users/alice", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -199,47 +199,47 @@ func TestDeleteUser(t *testing.T) {
 
 // Collection POST creates only, while the addressed resource's PUT remains an
 // idempotent replacement.
-func TestProjectMembership(t *testing.T) {
+func TestWorkspaceMembership(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"alice","password":"hunter2"}`)
 
-	resp, payload := a.do(http.MethodPost, "/api/projects/awb/members",
+	resp, payload := a.do(http.MethodPost, "/api/workspaces/awb/members",
 		`{"user":"alice","access":"admin"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
 	var membership domain.Membership
 	require.NoError(t, json.Unmarshal([]byte(payload), &membership))
 	assert.Equal(t, domain.Membership{
-		Project: "awb", User: "alice", Access: domain.AccessAdmin}, membership)
+		Workspace: "awb", User: "alice", Access: domain.AccessAdmin}, membership)
 	assert.Empty(t, resp.Header.Get("ETag"))
 
 	// A stale create cannot replace the access granted by somebody else.
-	resp, _ = a.do(http.MethodPost, "/api/projects/awb/members",
+	resp, _ = a.do(http.MethodPost, "/api/workspaces/awb/members",
 		`{"user":"alice","access":"regular"}`)
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
 	// Setting the same access again succeeds and changes nothing.
-	resp, _ = a.do(http.MethodPut, "/api/projects/awb/members/alice", `{"access":"admin"}`)
+	resp, _ = a.do(http.MethodPut, "/api/workspaces/awb/members/alice", `{"access":"admin"}`)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	resp, payload = a.do(http.MethodGet, "/api/projects/awb/members", "")
+	resp, payload = a.do(http.MethodGet, "/api/workspaces/awb/members", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
 	var members []domain.Membership
 	require.NoError(t, json.Unmarshal([]byte(payload), &members))
 	require.Len(t, members, 1)
 
-	resp, payload = a.do(http.MethodDelete, "/api/projects/awb/members/alice", "")
+	resp, payload = a.do(http.MethodDelete, "/api/workspaces/awb/members/alice", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	require.NoError(t, json.Unmarshal([]byte(payload), &membership))
 	assert.Equal(t, domain.AccessAdmin, membership.Access, "the access as it was before")
 
 	// Withdrawing access nobody holds is a 404.
-	resp, _ = a.do(http.MethodDelete, "/api/projects/awb/members/alice", "")
+	resp, _ = a.do(http.MethodDelete, "/api/workspaces/awb/members/alice", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestProjectMembershipRefusals(t *testing.T) {
+func TestWorkspaceMembershipRefusals(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"alice","password":"hunter2"}`)
 
@@ -249,7 +249,7 @@ func TestProjectMembershipRefusals(t *testing.T) {
 		`{"user":"alice","access":"owner"}`,
 		`{"user":"alice","access":"regular","nonsense":1}`,
 	} {
-		resp, payload := a.do(http.MethodPost, "/api/projects/awb/members", body)
+		resp, payload := a.do(http.MethodPost, "/api/workspaces/awb/members", body)
 		if body == `{"user":"nobody","access":"regular"}` {
 			assert.Equal(t, http.StatusNotFound, resp.StatusCode, body)
 		} else {
@@ -262,14 +262,14 @@ func TestProjectMembershipRefusals(t *testing.T) {
 		path, body string
 		status     int
 	}{
-		{"/api/projects/awb/members/nobody", `{"access":"regular"}`, http.StatusNotFound},
-		{"/api/projects/nosuch/members/alice", `{"access":"regular"}`, http.StatusNotFound},
-		{"/api/projects/awb/members/alice", `{"access":"owner"}`, http.StatusBadRequest},
-		{"/api/projects/awb/members/alice", `{}`, http.StatusBadRequest},
-		{"/api/projects/awb/members/alice", `{"access":"regular","nonsense":1}`, http.StatusBadRequest},
+		{"/api/workspaces/awb/members/nobody", `{"access":"regular"}`, http.StatusNotFound},
+		{"/api/workspaces/nosuch/members/alice", `{"access":"regular"}`, http.StatusNotFound},
+		{"/api/workspaces/awb/members/alice", `{"access":"owner"}`, http.StatusBadRequest},
+		{"/api/workspaces/awb/members/alice", `{}`, http.StatusBadRequest},
+		{"/api/workspaces/awb/members/alice", `{"access":"regular","nonsense":1}`, http.StatusBadRequest},
 		// The two ends are in the path; a body may repeat them but not disagree.
-		{"/api/projects/awb/members/alice", `{"access":"regular","user":"bob"}`, http.StatusBadRequest},
-		{"/api/projects/awb/members/alice", `{"access":"regular","project":"web"}`, http.StatusBadRequest},
+		{"/api/workspaces/awb/members/alice", `{"access":"regular","user":"bob"}`, http.StatusBadRequest},
+		{"/api/workspaces/awb/members/alice", `{"access":"regular","workspace":"web"}`, http.StatusBadRequest},
 	} {
 		resp, payload := a.do(http.MethodPut, tc.path, tc.body)
 		assert.Equal(t, tc.status, resp.StatusCode, "%s %s", tc.path, tc.body)
@@ -277,8 +277,8 @@ func TestProjectMembershipRefusals(t *testing.T) {
 	}
 
 	// Repeating them and agreeing is accepted, so a UI can send back what it read.
-	resp, payload := a.do(http.MethodPut, "/api/projects/awb/members/alice",
-		`{"access":"regular","project":"awb","user":"alice"}`)
+	resp, payload := a.do(http.MethodPut, "/api/workspaces/awb/members/alice",
+		`{"access":"regular","workspace":"awb","user":"alice"}`)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
 
@@ -295,7 +295,7 @@ func TestUserEndpointsAreStrict(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
 	// An operation that declares no body refuses one.
-	resp, _ = a.do(http.MethodDelete, "/api/projects/awb/members/alice", `{"access":"admin"}`)
+	resp, _ = a.do(http.MethodDelete, "/api/workspaces/awb/members/alice", `{"access":"admin"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
 	// A method a path does not serve is a 405 naming what it does.
@@ -327,9 +327,9 @@ func TestUserListingPages(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	require.NoError(t, json.Unmarshal([]byte(payload), &users))
 	require.Len(t, users, 3)
-	assert.Len(t, users[0].Projects, 1)
-	assert.Empty(t, users[1].Projects)
-	assert.NotNil(t, users[1].Projects, "an empty membership list is [] and never null")
+	assert.Len(t, users[0].Workspaces, 1)
+	assert.Empty(t, users[1].Workspaces)
+	assert.NotNil(t, users[1].Workspaces, "an empty membership list is [] and never null")
 }
 
 // The identity endpoint reports effective account-administration capability,
@@ -341,12 +341,12 @@ func TestIdentityReportsEffectiveUserAdministration(t *testing.T) {
 	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 
 	_, err := a.be.CreateUser(a.t.Context(),
-		backend.UserCreate{Name: "mikael", Password: "hunter2", ProjectAdmin: true})
+		backend.UserCreate{Name: "mikael", Password: "hunter2", WorkspaceAdmin: true})
 	require.NoError(t, err)
 
 	resp, payload = a.do(http.MethodGet, "/api/users/mikael", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(payload), &user))
-	assert.True(t, user.ProjectAdmin)
+	assert.True(t, user.WorkspaceAdmin)
 }

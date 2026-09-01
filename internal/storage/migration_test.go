@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
+	"github.com/tofutools/awb/internal/domain"
 )
 
 // The version-6 backfill is what carries an installation that already
@@ -93,6 +95,60 @@ func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
 		user, readErr := tx.GetUser("alice")
 		require.NoError(t, readErr)
 		assert.Empty(t, user.FullName)
+		return nil
+	}))
+}
+
+func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 10)
+	_, err := raw.ExecContext(t.Context(), `INSERT INTO projects
+		(key, name, description, created_at, updated_at)
+		VALUES ('awb', 'AWB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
+		view := &domain.BoardView{ID: "view-aaaaaaaaaaaaaaaaaaaaaaaa", Name: "Release", Owner: "alice",
+			AllWorkspaces: false, Workspaces: []string{"awb"}, PriorityMax: 4}
+		return tx.InsertBoardView(view)
+	}))
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		workspace, readErr := tx.GetWorkspace("awb")
+		require.NoError(t, readErr)
+		assert.Equal(t, "AWB", workspace.Name)
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, []string{"awb"}, view.Workspaces)
+		return nil
+	}))
+}
+
+func TestV12AddsAutomaticOrderWithoutChangingExistingIssues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 11)
+	_, err := raw.ExecContext(t.Context(), `INSERT INTO projects
+		(key, name, description, created_at, updated_at)
+		VALUES ('awb', 'AWB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+		       ('web', 'WEB', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), `INSERT INTO issues
+		(id, project, title, description, type, status, priority, created_at, updated_at)
+		VALUES ('awb-123456', 'awb', 'Existing', '', 'task', 'open', 2,
+		        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		issue, readErr := tx.GetIssue("awb-123456")
+		require.NoError(t, readErr)
+		assert.Zero(t, issue.Order)
 		return nil
 	}))
 }
@@ -199,7 +255,7 @@ func TestV5MigratesCloseReasonsWithoutLosingData(t *testing.T) {
 		`SELECT count(*) FROM issue_activity WHERE id = 7 AND body = 'existing comment'`:            1,
 		`SELECT count(*) FROM issue_assignees WHERE issue = 'awb-closed01' AND assignee = 'mikael'`: 1,
 		`SELECT count(*) FROM users WHERE name = 'alice'`:                                           1,
-		`SELECT count(*) FROM project_members WHERE user = 'alice'`:                                 1,
+		`SELECT count(*) FROM workspace_members WHERE user = 'alice'`:                               1,
 	} {
 		var got int
 		require.NoError(t, db.SQL().QueryRowContext(t.Context(), query).Scan(&got), query)
@@ -220,4 +276,79 @@ func TestV5MigratesCloseReasonsWithoutLosingData(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, fkRows.Next(), "the rebuilt dependent tables retain valid references")
 	require.NoError(t, fkRows.Close())
+}
+
+// Version 13 is the sole compatibility boundary for the Workspace rename: it
+// accepts the released Project-shaped schema, retains every row, and leaves no
+// Project-shaped table, column or index in the live schema.
+func TestV13RenamesWorkspaceSchemaWithoutLosingData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 12)
+	const timestamp = "2026-08-31T12:00:00.000000Z"
+	statements := []string{
+		`INSERT INTO projects (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+		 VALUES ('awb', 'Agent Work Board', 'tracker', 'active', '', '', '` + timestamp + `', '` + timestamp + `')`,
+		`INSERT INTO users (name, full_name, password_hash, project_admin, user_admin, created_at, updated_at)
+		 VALUES ('alice', 'Alice', 'hash', 1, 0, '` + timestamp + `', '` + timestamp + `')`,
+		`INSERT INTO project_members (project, user, access) VALUES ('awb', 'alice', 'admin')`,
+		`INSERT INTO ignored_projects (user, project) VALUES ('alice', 'awb')`,
+		`INSERT INTO project_activity (project, action, actor, created_at)
+		 VALUES ('awb', 'archived', 'alice', '` + timestamp + `')`,
+		`INSERT INTO issues (id, project, title, description, type, status, priority, created_at, updated_at, board_order)
+		 VALUES ('awb-123456', 'awb', 'Keep me', '', 'task', 'open', 2, '` + timestamp + `', '` + timestamp + `', 1024)`,
+		`INSERT INTO board_views (id, name, owner, shared, all_projects, priority_max, created_at, updated_at)
+		 VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Release', 'alice', 1, 0, 3, '` + timestamp + `', '` + timestamp + `')`,
+		`INSERT INTO board_view_projects (view, project)
+		 VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'awb')`,
+	}
+	for _, statement := range statements {
+		_, err := raw.ExecContext(t.Context(), statement)
+		require.NoError(t, err, statement)
+	}
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		workspace, readErr := tx.GetWorkspace("awb")
+		require.NoError(t, readErr)
+		assert.Equal(t, "Agent Work Board", workspace.Name)
+		issue, readErr := tx.GetIssue("awb-123456")
+		require.NoError(t, readErr)
+		assert.Equal(t, "awb", issue.Workspace)
+		assert.Equal(t, 1024, issue.Order)
+		user, readErr := tx.GetUser("alice")
+		require.NoError(t, readErr)
+		assert.True(t, user.WorkspaceAdmin)
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, []string{"awb"}, view.Workspaces)
+		return nil
+	}))
+
+	for query, want := range map[string]int{
+		`SELECT count(*) FROM workspace_members WHERE workspace = 'awb' AND user = 'alice'`:   1,
+		`SELECT count(*) FROM ignored_workspaces WHERE workspace = 'awb' AND user = 'alice'`:  1,
+		`SELECT count(*) FROM workspace_activity WHERE workspace = 'awb' AND actor = 'alice'`: 1,
+		`SELECT count(*) FROM board_view_workspaces WHERE workspace = 'awb'`:                  1,
+	} {
+		var got int
+		require.NoError(t, db.SQL().QueryRowContext(t.Context(), query).Scan(&got), query)
+		assert.Equal(t, want, got, query)
+	}
+
+	rows, err := db.SQL().QueryContext(t.Context(), `
+		SELECT name, sql FROM sqlite_schema
+		 WHERE sql IS NOT NULL
+		   AND (lower(name) LIKE '%project%' OR lower(sql) LIKE '%project%')`)
+	require.NoError(t, err)
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var name, statement string
+		require.NoError(t, rows.Scan(&name, &statement))
+		assert.Failf(t, "legacy schema name remains", "%s: %s", name, statement)
+	}
+	require.NoError(t, rows.Err())
 }

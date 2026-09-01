@@ -13,7 +13,7 @@ import (
 
 func TestCommentAndActivityCommands(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("Timeline", "--project", "awb")
+	id := h.create("Timeline", "--workspace", "awb")
 
 	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "hello **world**"))
 	assert.Empty(t, h.mustRunStdin("from stdin\n", "comment", "add", id, "--body-file", "-"))
@@ -34,7 +34,7 @@ func TestCommentAndActivityCommands(t *testing.T) {
 
 func TestCommentRequiresExactlyOneBodySource(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("Timeline", "--project", "awb")
+	id := h.create("Timeline", "--workspace", "awb")
 
 	_, _, code := h.run("comment", "add", id)
 	assert.Equal(t, 2, code)

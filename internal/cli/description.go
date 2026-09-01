@@ -42,12 +42,12 @@ func newDescriptionCommand(e *env) *cobra.Command {
 		newDescriptionGetCommand(e, "issue"))
 }
 
-func newProjectDescriptionCommand(e *env) *cobra.Command {
+func newWorkspaceDescriptionCommand(e *env) *cobra.Command {
 	return group("description", "Fetch a workspace description for safe file-based editing",
 		"Fetch records the workspace version in a receipt beside the output file. A later\n"+
 			"awb workspace update --description-file uses that receipt as a conditional-edit\n"+
 			"precondition, so it refuses to overwrite a concurrent change.",
-		newDescriptionGetCommand(e, "project"))
+		newDescriptionGetCommand(e, "workspace"))
 }
 
 func newDescriptionGetCommand(e *env, entity string) *cobra.Command {
@@ -76,12 +76,12 @@ func newDescriptionGetCommand(e *env, entity string) *cobra.Command {
 					return err
 				}
 				id, description, updatedAt = issue.ID, issue.Description, issue.UpdatedAt
-			case "project":
-				project, err := be.GetProject(cmd.Context(), p.ID)
+			case "workspace":
+				workspace, err := be.GetWorkspace(cmd.Context(), p.ID)
 				if err != nil {
 					return err
 				}
-				id, description, updatedAt = project.Key, project.Description, project.UpdatedAt
+				id, description, updatedAt = workspace.Key, workspace.Description, workspace.UpdatedAt
 			default:
 				panic("unknown description entity " + entity)
 			}
@@ -186,15 +186,15 @@ func readDescriptionReceipt(path string) (descriptionReceipt, error) {
 }
 
 func receiptMatches(entity, canonical, ref string) bool {
-	if entity == "project" {
+	if entity == "workspace" {
 		return canonical == ref
 	}
 	parsed, err := domain.ParseIssueRef(ref)
 	if err != nil {
 		return false
 	}
-	project, hash, ok := domain.SplitID(canonical)
-	return ok && (parsed.Project == "" || parsed.Project == project) && strings.HasPrefix(hash, parsed.Hash)
+	workspace, hash, ok := domain.SplitID(canonical)
+	return ok && (parsed.Workspace == "" || parsed.Workspace == workspace) && strings.HasPrefix(hash, parsed.Hash)
 }
 
 func descriptionFetchRequired(entity, id string, file *string) error {
@@ -203,7 +203,7 @@ func descriptionFetchRequired(entity, id string, file *string) error {
 		path = *file
 	}
 	command := fmt.Sprintf("awb description get %s --output %s", id, path)
-	if entity == "project" {
+	if entity == "workspace" {
 		command = fmt.Sprintf("awb workspace description get %s --output %s", id, path)
 	}
 	return awberr.Usagef("description must be fetched before it can be updated; run %s, or use --force to replace it without a precondition", command)
@@ -218,7 +218,7 @@ func descriptionPreconditionError(err error, entity, id, file string) error {
 		return err
 	}
 	command := fmt.Sprintf("awb description get %s --output %s", id, file)
-	if entity == "project" {
+	if entity == "workspace" {
 		command = fmt.Sprintf("awb workspace description get %s --output %s", id, file)
 	}
 	return awberr.Wrap(awberr.KindOf(err), err,

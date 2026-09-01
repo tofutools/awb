@@ -2,25 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  mayManageProjectMembership,
+  mayManageWorkspaceMembership,
   membershipAdditionError,
   membershipChangeConfirmation,
   membershipSuggestions,
 } from "../../static/membership.js";
 
-const membership = (user, access, project = "awb") => ({ project, user, access });
+const membership = (user, access, workspace = "awb") => ({ workspace, user, access });
 
 test("membership administration follows effective workspace access", () => {
-  const regular = { project_admin: false, projects: [membership("alice", "regular")] };
-  const admin = { project_admin: false, projects: [membership("alice", "admin")] };
-  const globalAdmin = { project_admin: true, projects: [] };
+  const regular = { workspace_admin: false, workspaces: [membership("alice", "regular")] };
+  const admin = { workspace_admin: false, workspaces: [membership("alice", "admin")] };
+  const globalAdmin = { workspace_admin: true, workspaces: [] };
 
-  assert.equal(mayManageProjectMembership("alice", regular, "awb"), false);
-  assert.equal(mayManageProjectMembership("alice", admin, "awb"), true);
-  assert.equal(mayManageProjectMembership("alice", globalAdmin, "other"), true);
-  assert.equal(mayManageProjectMembership("", null, "awb"), true);
+  assert.equal(mayManageWorkspaceMembership("alice", regular, "awb"), false);
+  assert.equal(mayManageWorkspaceMembership("alice", admin, "awb"), true);
+  assert.equal(mayManageWorkspaceMembership("alice", globalAdmin, "other"), true);
+  assert.equal(mayManageWorkspaceMembership("", null, "awb"), true);
   assert.equal(
-    mayManageProjectMembership("alice", regular, "web", [membership("alice", "admin", "web")]),
+    mayManageWorkspaceMembership("alice", regular, "web", [membership("alice", "admin", "web")]),
     true,
     "the dedicated member list retains ignored-workspace administration",
   );

@@ -41,9 +41,9 @@ func TestUserLifecyclePreservesTheRemoteContract(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{
 			"name":"alice","full_name":"Alice Andersson",
-			"project_admin":false,"user_admin":true,
+			"workspace_admin":false,"user_admin":true,
 			"created_at":"2026-09-01T06:00:00.000Z",
-			"updated_at":"2026-09-01T06:00:00.000Z","projects":[]
+			"updated_at":"2026-09-01T06:00:00.000Z","workspaces":[]
 		}`))
 	}))
 	t.Cleanup(server.Close)

@@ -8,13 +8,13 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// ListProjectPreferences is the recovery path for ignored projects. It uses
+// ListWorkspacePreferences is the recovery path for ignored workspaces. It uses
 // ordinary authorization but deliberately omits only the preference boundary.
-func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error) {
+func (b *Backend) ListWorkspacePreferences(ctx context.Context) ([]domain.WorkspacePreference, error) {
 	if !b.userPreferences {
 		return nil, awberr.NotFoundf("no such user: %s", b.identity)
 	}
-	preferences := []domain.ProjectPreference{}
+	preferences := []domain.WorkspacePreference{}
 	err := b.db.Read(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, true)
 		if err != nil {
@@ -27,18 +27,18 @@ func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectP
 		if !exists {
 			return awberr.NotFoundf("no such user: %s", caller.Name)
 		}
-		projects, _, err := tx.ListProjectsByState("", domain.ProjectsAll, domain.ProjectSort{}, nil, nil)
+		workspaces, _, err := tx.ListWorkspacesByState("", domain.WorkspacesAll, domain.WorkspaceSort{}, nil, nil)
 		if err != nil {
 			return err
 		}
-		ignored, err := tx.IgnoredProjects(caller.Name)
+		ignored, err := tx.IgnoredWorkspaces(caller.Name)
 		if err != nil {
 			return err
 		}
-		for _, project := range projects {
-			preferences = append(preferences, domain.ProjectPreference{
-				Project: project,
-				Ignored: ignored[project.Key],
+		for _, workspace := range workspaces {
+			preferences = append(preferences, domain.WorkspacePreference{
+				Workspace: workspace,
+				Ignored:   ignored[workspace.Key],
 			})
 		}
 		return nil
@@ -46,18 +46,18 @@ func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectP
 	return preferences, err
 }
 
-// SetProjectIgnored changes the current user's preference after resolving the
-// project through authorization without the ignore boundary. That is what
-// keeps re-enabling possible without making inaccessible projects visible.
-func (b *Backend) SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error) {
-	key, err := domain.ValidateProjectKey(key)
+// SetWorkspaceIgnored changes the current user's preference after resolving the
+// workspace through authorization without the ignore boundary. That is what
+// keeps re-enabling possible without making inaccessible workspaces visible.
+func (b *Backend) SetWorkspaceIgnored(ctx context.Context, key string, ignored bool) (*domain.WorkspacePreference, error) {
+	key, err := domain.ValidateWorkspaceKey(key)
 	if err != nil {
 		return nil, err
 	}
 	if !b.userPreferences {
 		return nil, awberr.NotFoundf("no such user: %s", b.identity)
 	}
-	var preference domain.ProjectPreference
+	var preference domain.WorkspacePreference
 	err = b.db.Write(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, true)
 		if err != nil {
@@ -70,14 +70,14 @@ func (b *Backend) SetProjectIgnored(ctx context.Context, key string, ignored boo
 		if !exists {
 			return awberr.NotFoundf("no such user: %s", caller.Name)
 		}
-		project, err := tx.GetProject(key)
+		workspace, err := tx.GetWorkspace(key)
 		if err != nil {
 			return err
 		}
-		if err := tx.SetProjectIgnored(caller.Name, key, ignored); err != nil {
+		if err := tx.SetWorkspaceIgnored(caller.Name, key, ignored); err != nil {
 			return err
 		}
-		preference = domain.ProjectPreference{Project: *project, Ignored: ignored}
+		preference = domain.WorkspacePreference{Workspace: *workspace, Ignored: ignored}
 		return nil
 	})
 	if err != nil {

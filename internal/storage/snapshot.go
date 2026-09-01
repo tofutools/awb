@@ -13,11 +13,11 @@ import (
 // memberships are deliberately absent: a server never exposes password hashes,
 // and a database with no users is an unauthenticated local server.
 type Snapshot struct {
-	Projects        []domain.Project
-	Issues          []domain.Issue
-	Attachments     []domain.Attachment
-	Activity        []domain.Activity
-	ProjectActivity []domain.ProjectActivity
+	Workspaces        []domain.Workspace
+	Issues            []domain.Issue
+	Attachments       []domain.Attachment
+	Activity          []domain.Activity
+	WorkspaceActivity []domain.WorkspaceActivity
 }
 
 // RestoreSnapshot writes an API snapshot into a freshly initialized database,
@@ -31,21 +31,21 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 	return d.Write(ctx, func(tx *Tx) error {
 		var populated int
 		if err := tx.q.QueryRowContext(ctx,
-			`SELECT (SELECT count(*) FROM projects) + (SELECT count(*) FROM users)`).Scan(&populated); err != nil {
+			`SELECT (SELECT count(*) FROM workspaces) + (SELECT count(*) FROM users)`).Scan(&populated); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "inspect dump database")
 		}
 		if populated != 0 {
 			return awberr.Runtimef("refusing to restore a dump into a populated database")
 		}
 
-		for i := range snapshot.Projects {
-			p := &snapshot.Projects[i]
+		for i := range snapshot.Workspaces {
+			p := &snapshot.Workspaces[i]
 			state := p.State
 			if state == "" {
-				state = domain.ProjectActive
+				state = domain.WorkspaceActive
 			}
 			if _, err := tx.q.ExecContext(ctx, `
-				INSERT INTO projects (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+				INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				p.Key, p.Name, p.Description, state, p.ArchivedAt, p.ArchivedBy, p.CreatedAt, p.UpdatedAt); err != nil {
 				return restoreError(err, "workspace %s", p.Key)
@@ -59,9 +59,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				return err
 			}
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issues (`+issueColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-				issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt); err != nil {
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				issue.ID, issue.Workspace, issue.Title, issue.Description, issue.Type,
+				issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt); err != nil {
 				return restoreError(err, "issue %s", issue.ID)
 			}
 			issueIDs[issue.ID] = struct{}{}
@@ -81,7 +81,7 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 			}
 		}
 
-		// A relation returned on a visible issue may name an issue in a project the
+		// A relation returned on a visible issue may name an issue in a workspace the
 		// caller cannot see. Such an edge cannot exist in the self-contained visible
 		// subset, so only restore edges whose two endpoints were dumped.
 		type edge struct {
@@ -135,12 +135,12 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 			}
 		}
 
-		for i := range snapshot.ProjectActivity {
-			a := &snapshot.ProjectActivity[i]
-			if _, err := tx.q.ExecContext(ctx, `INSERT INTO project_activity
-				(id, project, action, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
-				a.ID, a.Project, a.Action, a.Actor, a.CreatedAt); err != nil {
-				return restoreError(err, "workspace activity %d of %s", a.ID, a.Project)
+		for i := range snapshot.WorkspaceActivity {
+			a := &snapshot.WorkspaceActivity[i]
+			if _, err := tx.q.ExecContext(ctx, `INSERT INTO workspace_activity
+				(id, workspace, action, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
+				a.ID, a.Workspace, a.Action, a.Actor, a.CreatedAt); err != nil {
+				return restoreError(err, "workspace activity %d of %s", a.ID, a.Workspace)
 			}
 		}
 

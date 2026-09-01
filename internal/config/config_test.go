@@ -24,7 +24,7 @@ func isolate(t *testing.T) (configDir, dataDir string) {
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	for _, name := range []string{
-		"AWB_DB", "AWB_ATTACHMENTS", "AWB_USER", "AWB_PASSWORD", "AWB_IDENTITY", "AWB_PROJECT",
+		"AWB_DB", "AWB_ATTACHMENTS", "AWB_USER", "AWB_PASSWORD", "AWB_IDENTITY", "AWB_WORKSPACE",
 		"AWB_COLOR", "AWB_CONFIG_FILE", "NO_COLOR",
 	} {
 		t.Setenv(name, "")
@@ -64,7 +64,7 @@ func TestDefaults(t *testing.T) {
 		"beside the database unless something says otherwise")
 	assert.False(t, cfg.Remote())
 	assert.Equal(t, config.ColorAuto, cfg.Color)
-	assert.Empty(t, cfg.ContextProject)
+	assert.Empty(t, cfg.ContextWorkspace)
 	assert.Empty(t, cfg.ContextLabel)
 }
 
@@ -98,14 +98,14 @@ func TestEnvironmentPathsExpandHomeDirectoryAlias(t *testing.T) {
 
 	relocated := filepath.Join(home, "config", "awb.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(relocated), 0o700))
-	require.NoError(t, os.WriteFile(relocated, []byte("project: chosen\n"), 0o600))
+	require.NoError(t, os.WriteFile(relocated, []byte("workspace: chosen\n"), 0o600))
 	t.Setenv("AWB_CONFIG_FILE", "~/config/awb.yaml")
 	t.Setenv("AWB_DB", "~/data/awb.db")
 	t.Setenv("AWB_ATTACHMENTS", "~/data/blobs")
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "chosen", cfg.DefaultProject)
+	assert.Equal(t, "chosen", cfg.DefaultWorkspace)
 	assert.Equal(t, filepath.Join(home, "data", "awb.db"), cfg.DB)
 	assert.Equal(t, filepath.Join(home, "data", "blobs"), cfg.Attachments)
 
@@ -125,7 +125,7 @@ user: someone
 password: hunter2
 identity: impostor
 color: always
-project: awb
+workspace: awb
 `)
 
 	cfg, err := config.Load(config.Flags{}, dir)
@@ -136,18 +136,18 @@ project: awb
 	assert.Empty(t, cfg.Password)
 	assert.Equal(t, "mikael", cfg.Identity)
 	assert.Equal(t, config.ColorAuto, cfg.Color)
-	assert.Equal(t, "awb", cfg.ContextProject, "project and label are the two keys it may set")
+	assert.Equal(t, "awb", cfg.ContextWorkspace, "workspace and label are the two keys it may set")
 }
 
 // Ignored means unread: their values are not type-checked either, so only
-// project and label can make this file fail a command.
+// workspace and label can make this file fail a command.
 func TestLocalFileProtectedKeysAreNotEvenTypeChecked(t *testing.T) {
 	isolate(t)
-	dir := workdir(t, ".awb.yaml", "db: [not, a, string]\ncolor: 42\nproject: awb\n")
+	dir := workdir(t, ".awb.yaml", "db: [not, a, string]\ncolor: 42\nworkspace: awb\n")
 
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "awb", cfg.ContextProject)
+	assert.Equal(t, "awb", cfg.ContextWorkspace)
 }
 
 func TestUpwardSearchStopsAtTheFirstFile(t *testing.T) {
@@ -156,23 +156,23 @@ func TestUpwardSearchStopsAtTheFirstFile(t *testing.T) {
 	deep := filepath.Join(root, "a", "b")
 	require.NoError(t, os.MkdirAll(deep, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".awb.yaml"),
-		[]byte("project: outer\nlabel: outerlabel\n"), 0o600))
+		[]byte("workspace: outer\nlabel: outerlabel\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a", ".awb.yaml"),
-		[]byte("project: inner\n"), 0o600))
+		[]byte("workspace: inner\n"), 0o600))
 
 	cfg, err := config.Load(config.Flags{}, deep)
 	require.NoError(t, err)
-	assert.Equal(t, "inner", cfg.ContextProject)
+	assert.Equal(t, "inner", cfg.ContextWorkspace)
 	assert.Empty(t, cfg.ContextLabel, "files further up are neither read nor merged")
 }
 
 func TestNoContextIgnoresTheLocalFile(t *testing.T) {
 	isolate(t)
-	dir := workdir(t, ".awb.yaml", "project: awb\nlabel: frontend\n")
+	dir := workdir(t, ".awb.yaml", "workspace: awb\nlabel: frontend\n")
 
 	cfg, err := config.Load(config.Flags{NoContext: true}, dir)
 	require.NoError(t, err)
-	assert.Empty(t, cfg.ContextProject)
+	assert.Empty(t, cfg.ContextWorkspace)
 	assert.Empty(t, cfg.ContextLabel)
 }
 
@@ -180,7 +180,7 @@ func TestNoContextIgnoresTheLocalFile(t *testing.T) {
 // still fails the command.
 func TestNoContextStillReadsTheFile(t *testing.T) {
 	isolate(t)
-	dir := workdir(t, ".awb.yaml", "project: [malformed\n")
+	dir := workdir(t, ".awb.yaml", "workspace: [malformed\n")
 
 	_, err := config.Load(config.Flags{NoContext: true}, dir)
 	require.Error(t, err)
@@ -214,7 +214,7 @@ func TestBadValueClassification(t *testing.T) {
 
 func TestLocalFileBadValueIsAConfigError(t *testing.T) {
 	isolate(t)
-	for _, content := range []string{"project: NotAKey\n", "label: Not A Label\n"} {
+	for _, content := range []string{"workspace: NotAKey\n", "label: Not A Label\n"} {
 		dir := workdir(t, ".awb.yaml", content)
 		_, err := config.Load(config.Flags{}, dir)
 		require.Error(t, err, content)
@@ -229,11 +229,11 @@ func TestUnknownKeysAreIgnored(t *testing.T) {
 	configDir, _ := isolate(t)
 	writeUserConfig(t, configDir, "identity: mikael\nsomething_new: yes\n")
 
-	dir := workdir(t, ".awb.yaml", "project: awb\nfuture_key: 1\n")
+	dir := workdir(t, ".awb.yaml", "workspace: awb\nfuture_key: 1\n")
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
 	assert.Equal(t, "mikael", cfg.Identity)
-	assert.Equal(t, "awb", cfg.ContextProject)
+	assert.Equal(t, "awb", cfg.ContextWorkspace)
 }
 
 func TestIdentityFallsBackToUser(t *testing.T) {
@@ -315,51 +315,61 @@ func TestPathsAreNotURLs(t *testing.T) {
 	assert.Equal(t, "/tmp/a file?with#odd chars.db", cfg.DB)
 }
 
-// The project resolved from any configuration source is the default used by
-// both creation and issue listings. ContextProject separately records whether
+// The workspace resolved from any configuration source is the default used by
+// both creation and issue listings. ContextWorkspace separately records whether
 // that default came from the directory, so --no-context can remove it.
-func TestDefaultProjectVersusContextProject(t *testing.T) {
+func TestDefaultWorkspaceVersusContextWorkspace(t *testing.T) {
 	configDir, _ := isolate(t)
-	writeUserConfig(t, configDir, "project: fromuser\n")
+	writeUserConfig(t, configDir, "workspace: fromuser\n")
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "fromuser", cfg.DefaultProject)
-	assert.Empty(t, cfg.ContextProject, "it did not come from directory context")
+	assert.Equal(t, "fromuser", cfg.DefaultWorkspace)
+	assert.Empty(t, cfg.ContextWorkspace, "it did not come from directory context")
 
-	// The local file's project is both the creation default and the filter.
-	dir := workdir(t, ".awb.yaml", "project: fromdir\n")
+	// The local file's workspace is both the creation default and the filter.
+	dir := workdir(t, ".awb.yaml", "workspace: fromdir\n")
 	cfg, err = config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromdir", cfg.DefaultProject)
-	assert.Equal(t, "fromdir", cfg.ContextProject)
+	assert.Equal(t, "fromdir", cfg.DefaultWorkspace)
+	assert.Equal(t, "fromdir", cfg.ContextWorkspace)
 }
 
-// An exported AWB_PROJECT outranks the directory's own project, while the
+// An exported AWB_WORKSPACE outranks the directory's own workspace, while the
 // directory label remains independently in effect.
-func TestEnvProjectOutranksTheDirectory(t *testing.T) {
+func TestEnvWorkspaceOutranksTheDirectory(t *testing.T) {
 	isolate(t)
-	t.Setenv("AWB_PROJECT", "fromenv")
-	dir := workdir(t, ".awb.yaml", "project: fromdir\nlabel: frontend\n")
+	t.Setenv("AWB_WORKSPACE", "fromenv")
+	dir := workdir(t, ".awb.yaml", "workspace: fromdir\nlabel: frontend\n")
 
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromenv", cfg.DefaultProject, "the variable is a deliberate override")
-	assert.Equal(t, "fromdir", cfg.ContextProject, "the directory source remains recorded")
+	assert.Equal(t, "fromenv", cfg.DefaultWorkspace, "the variable is a deliberate override")
+	assert.Equal(t, "fromdir", cfg.ContextWorkspace, "the directory source remains recorded")
 	assert.Equal(t, "frontend", cfg.ContextLabel)
+}
+
+func TestProjectConfigurationSpellingsAreNotAliases(t *testing.T) {
+	configDir, _ := isolate(t)
+	t.Setenv("AWB_PROJECT", "fromenv")
+	writeUserConfig(t, configDir, "project: fromfile\n")
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Empty(t, cfg.DefaultWorkspace)
 }
 
 // --no-context removes the local file from the creation chain but not the
 // rest.
 func TestNoContextLeavesTheUserFileCreationDefault(t *testing.T) {
 	configDir, _ := isolate(t)
-	writeUserConfig(t, configDir, "project: fromuser\n")
-	dir := workdir(t, ".awb.yaml", "project: fromdir\n")
+	writeUserConfig(t, configDir, "workspace: fromuser\n")
+	dir := workdir(t, ".awb.yaml", "workspace: fromdir\n")
 
 	cfg, err := config.Load(config.Flags{NoContext: true}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "fromuser", cfg.DefaultProject)
-	assert.Empty(t, cfg.ContextProject)
+	assert.Equal(t, "fromuser", cfg.DefaultWorkspace)
+	assert.Empty(t, cfg.ContextWorkspace)
 }
 
 // NO_COLOR sits between the command line and everything else.
@@ -427,7 +437,7 @@ func TestEmptyLocalFileIsLegal(t *testing.T) {
 
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Empty(t, cfg.ContextProject)
+	assert.Empty(t, cfg.ContextWorkspace)
 	assert.Empty(t, cfg.ContextLabel)
 	assert.NotEmpty(t, cfg.LocalFilePath, "the file was still found")
 }
@@ -496,11 +506,11 @@ func TestEmptyAttachmentsIsRefused(t *testing.T) {
 // not redirect where issues are.
 func TestLocalFileCannotSetAttachments(t *testing.T) {
 	_, dataDir := isolate(t)
-	dir := workdir(t, ".awb.yaml", "project: awb\nattachments: /somewhere/else\n")
+	dir := workdir(t, ".awb.yaml", "workspace: awb\nattachments: /somewhere/else\n")
 
 	cfg, err := config.Load(config.Flags{}, dir)
 	require.NoError(t, err)
-	assert.Equal(t, "awb", cfg.ContextProject)
+	assert.Equal(t, "awb", cfg.ContextWorkspace)
 	assert.Equal(t, filepath.Join(dataDir, "awb", "attachments"), cfg.Attachments)
 }
 
@@ -508,15 +518,15 @@ func TestLocalFileCannotSetAttachments(t *testing.T) {
 // default path is then not read at all.
 func TestConfigFileEnvOverridesThePath(t *testing.T) {
 	configDir, _ := isolate(t)
-	writeUserConfig(t, configDir, "project: ignored\ncolor: always\n")
+	writeUserConfig(t, configDir, "workspace: ignored\ncolor: always\n")
 
 	elsewhere := filepath.Join(t.TempDir(), "elsewhere.yaml")
-	require.NoError(t, os.WriteFile(elsewhere, []byte("project: chosen\n"), 0o600))
+	require.NoError(t, os.WriteFile(elsewhere, []byte("workspace: chosen\n"), 0o600))
 	t.Setenv("AWB_CONFIG_FILE", elsewhere)
 
 	cfg, err := config.Load(config.Flags{}, t.TempDir())
 	require.NoError(t, err)
-	assert.Equal(t, "chosen", cfg.DefaultProject)
+	assert.Equal(t, "chosen", cfg.DefaultWorkspace)
 	assert.Equal(t, config.ColorAuto, cfg.Color, "the file at the default path is not read")
 }
 

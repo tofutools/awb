@@ -13,12 +13,12 @@ function user(overrides = {}) {
   return {
     name: "alice",
     full_name: "Alice Andersson",
-    project_admin: false,
+    workspace_admin: false,
     user_admin: false,
     created_at: "2026-09-01T06:00:00Z",
     updated_at: "2026-09-01T06:00:00Z",
-    projects: [],
-    activity_projects: [],
+    workspaces: [],
+    activity_workspaces: [],
     ...overrides,
   };
 }
@@ -33,9 +33,9 @@ test("editor links encode the account name", () => {
 test("deletion impact identifies self, memberships, and the last user administrator", () => {
   const target = user({
     user_admin: true,
-    projects: [
-      { project: "awb", user: "alice", access: "admin" },
-      { project: "ops", user: "alice", access: "regular" },
+    workspaces: [
+      { workspace: "awb", user: "alice", access: "admin" },
+      { workspace: "ops", user: "alice", access: "regular" },
     ],
   });
   const impact = userDeletionImpact(target, [target, user({ name: "bob" })], "alice");

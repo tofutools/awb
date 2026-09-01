@@ -79,10 +79,10 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 // redactIgnoredRelationActivity applies today's preference boundary to the
 // relation snapshots stored in yesterday's activity. The activity row belongs
 // to a visible issue, but either endpoint snapshot may name an issue in a
-// project the caller later ignored; returning that immutable JSON verbatim
+// workspace the caller later ignored; returning that immutable JSON verbatim
 // would make the hidden connection and ID visible again.
 func redactIgnoredRelationActivity(tx *storage.Tx, user string, entries []domain.Activity) error {
-	ignored, err := tx.IgnoredProjects(user)
+	ignored, err := tx.IgnoredWorkspaces(user)
 	if err != nil || len(ignored) == 0 {
 		return err
 	}
@@ -99,8 +99,8 @@ func redactIgnoredRelationActivity(tx *storage.Tx, user string, entries []domain
 						"decode relation activity %d", entries[i].ID)
 				}
 				relations = slices.DeleteFunc(relations, func(relation domain.Relation) bool {
-					project, _, ok := domain.SplitID(relation.Other)
-					return ok && ignored[project]
+					workspace, _, ok := domain.SplitID(relation.Other)
+					return ok && ignored[workspace]
 				})
 				*value = activityJSON(relations)
 			}
@@ -127,6 +127,7 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("type", before.Type, after.Type)
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)
+	add("order", before.Order, after.Order)
 	if !slices.Equal(before.Assignees, after.Assignees) {
 		add("assignees", before.Assignees, after.Assignees)
 	}

@@ -10,11 +10,12 @@ import (
 type SortKey string
 
 const (
+	SortOrder     SortKey = "order"
 	SortPriority  SortKey = "priority"
 	SortCreated   SortKey = "created"
 	SortUpdated   SortKey = "updated"
 	SortID        SortKey = "id"
-	SortProject   SortKey = "project"
+	SortWorkspace SortKey = "workspace"
 	SortStatus    SortKey = "status"
 	SortAssignee  SortKey = "assignee"
 	SortType      SortKey = "type"
@@ -25,25 +26,25 @@ const (
 // SortKeys lists the keys every listing accepts. relevance is deliberately not
 // among them: it is search's alone.
 var SortKeys = []SortKey{
-	SortPriority, SortCreated, SortUpdated, SortID, SortProject, SortStatus,
+	SortOrder, SortPriority, SortCreated, SortUpdated, SortID, SortWorkspace, SortStatus,
 	SortAssignee, SortType, SortBlockers,
 }
 
 // Sort is one parsed --sort value.
 //
 // Every sort ends with id ascending as a final tiebreak, so the order is total
-// and two invocations against unchanged data agree. priority inserts
-// created_at ascending before that tiebreak — oldest first within a priority —
-// so --sort priority is exactly the default order; the other keys use the
-// tiebreak alone. The Desc prefix reverses the named key only: the created_at
-// and id tiebreaks stay ascending whatever it says.
+// and two invocations against unchanged data agree. order places sparse manual
+// ranks first and falls back to priority then updated_at; priority retains its
+// created_at ascending tiebreak. The Desc prefix reverses the named key only;
+// the remaining tiebreaks keep their documented direction.
 type Sort struct {
 	Key  SortKey
 	Desc bool
 }
 
-// DefaultSort is the order every listing but search uses.
-var DefaultSort = Sort{Key: SortPriority}
+// DefaultSort puts manually ordered issues first, then falls back to priority
+// and recency for issues which have not been positioned by a person.
+var DefaultSort = Sort{Key: SortOrder}
 
 // DefaultSearchSort is search's, relevance being the one key whose bare form
 // is descending, because best match first is what it means.
@@ -111,60 +112,60 @@ func containsKey(keys []SortKey, key SortKey) bool {
 	return false
 }
 
-// ProjectSortKey names an ordering for project listings. Project ordering is
-// separate from issue ordering because "active" is a derived project count.
-type ProjectSortKey string
+// WorkspaceSortKey names an ordering for workspace listings. Workspace ordering is
+// separate from issue ordering because "active" is a derived workspace count.
+type WorkspaceSortKey string
 
 const (
-	ProjectSortByKey   ProjectSortKey = "key"
-	ProjectSortActive  ProjectSortKey = "active"
-	ProjectSortUpdated ProjectSortKey = "updated"
+	WorkspaceSortByKey   WorkspaceSortKey = "key"
+	WorkspaceSortActive  WorkspaceSortKey = "active"
+	WorkspaceSortUpdated WorkspaceSortKey = "updated"
 )
 
-// ProjectSort is one parsed project-list ordering.
-type ProjectSort struct {
-	Key  ProjectSortKey
+// WorkspaceSort is one parsed workspace-list ordering.
+type WorkspaceSort struct {
+	Key  WorkspaceSortKey
 	Desc bool
 }
 
-// DefaultProjectSort is the stable key-ascending order used by the CLI and by
+// DefaultWorkspaceSort is the stable key-ascending order used by the CLI and by
 // API callers that omit sort.
-var DefaultProjectSort = ProjectSort{Key: ProjectSortByKey}
+var DefaultWorkspaceSort = WorkspaceSort{Key: WorkspaceSortByKey}
 
-// ProjectSortKeys lists every key ParseProjectSort accepts.
-var ProjectSortKeys = []ProjectSortKey{ProjectSortByKey, ProjectSortActive, ProjectSortUpdated}
+// WorkspaceSortKeys lists every key ParseWorkspaceSort accepts.
+var WorkspaceSortKeys = []WorkspaceSortKey{WorkspaceSortByKey, WorkspaceSortActive, WorkspaceSortUpdated}
 
-// ProjectSortAlternatives and ProjectSortHelp are SortAlternatives and
-// SortHelp for project listings, and exist for the same reason: the command
+// WorkspaceSortAlternatives and WorkspaceSortHelp are SortAlternatives and
+// SortHelp for workspace listings, and exist for the same reason: the command
 // line offers and validates against the parser's own vocabulary rather than a
 // second copy of it.
-func ProjectSortAlternatives() []string {
-	values := make([]string, 0, 2*len(ProjectSortKeys))
-	for _, key := range ProjectSortKeys {
+func WorkspaceSortAlternatives() []string {
+	values := make([]string, 0, 2*len(WorkspaceSortKeys))
+	for _, key := range WorkspaceSortKeys {
 		values = append(values, string(key), "-"+string(key))
 	}
 	return values
 }
 
-func ProjectSortHelp() string {
-	return join(ProjectSortKeys) + `, optionally prefixed with "-"`
+func WorkspaceSortHelp() string {
+	return join(WorkspaceSortKeys) + `, optionally prefixed with "-"`
 }
 
-// ParseProjectSort reads a project ordering, optionally prefixed with "-".
-func ParseProjectSort(s string) (ProjectSort, error) {
+// ParseWorkspaceSort reads a workspace ordering, optionally prefixed with "-".
+func ParseWorkspaceSort(s string) (WorkspaceSort, error) {
 	desc := false
 	if rest, found := strings.CutPrefix(s, "-"); found {
 		desc = true
 		s = rest
 	}
-	key := ProjectSortKey(s)
-	for _, accepted := range ProjectSortKeys {
+	key := WorkspaceSortKey(s)
+	for _, accepted := range WorkspaceSortKeys {
 		if key == accepted {
-			return ProjectSort{Key: key, Desc: desc}, nil
+			return WorkspaceSort{Key: key, Desc: desc}, nil
 		}
 	}
-	return ProjectSort{}, awberr.Usagef("invalid workspace sort %q: must be one of %s",
-		s, ProjectSortHelp())
+	return WorkspaceSort{}, awberr.Usagef("invalid workspace sort %q: must be one of %s",
+		s, WorkspaceSortHelp())
 }
 
 // Readiness selects on the derived blocked state, which is what separates awb
@@ -210,10 +211,14 @@ type Filter struct {
 	Assignees  []string
 	Unassigned bool
 
-	Projects []string
+	Workspaces []string
 	// Parent selects the direct children of that issue — the issues whose
 	// has-parent relation names it — not the whole subtree.
 	Parent string
+	// Epic selects direct same-workspace membership in one epic. A non-nil empty
+	// value selects issues without such a membership. It is board-internal and
+	// is not exposed as a general listing filter.
+	Epic *string
 
 	// Terms are search's literal terms. Each is wrapped in double quotes before
 	// it reaches FTS5, so no operator, wildcard or column prefix is passed

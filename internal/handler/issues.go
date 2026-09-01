@@ -22,7 +22,7 @@ func issueResponse(issue *domain.Issue) *api.IssueHeaders {
 func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 	*api.IssueCreatedHeaders, error) {
 	create := backend.IssueCreate{
-		Project:     string(req.Project),
+		Workspace:   string(req.Workspace),
 		Title:       req.Title,
 		Description: req.Description.Or(""),
 		Type:        domain.Type(req.Type.Or("")),
@@ -98,6 +98,18 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 	}
 
 	issue, err := h.backendFor(ctx).UpdateIssue(ctx, params.ID, patch, params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return issueResponse(issue), nil
+}
+
+func (h *Handler) MoveIssue(ctx context.Context, req *api.IssueMove,
+	params api.MoveIssueParams) (*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).MoveIssue(ctx, params.ID, backend.IssueMove{
+		Status: domain.Status(req.Status), Epic: optString(req.Epic),
+		Before: req.Before.Or(""), After: req.After.Or(""), Direction: string(req.Direction.Or("")),
+	}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
 	}

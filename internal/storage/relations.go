@@ -39,6 +39,23 @@ func (t *Tx) ParentOf(id string) (string, bool, error) {
 	return parent, true, nil
 }
 
+// DirectEpic returns the issue's direct same-workspace epic parent. Other
+// decomposition parents do not constitute board membership.
+func (t *Tx) DirectEpic(id, workspace string) (string, error) {
+	var epic string
+	err := t.q.QueryRowContext(t.ctx, `SELECT parent.id
+		FROM relations r JOIN issues parent ON parent.id = r.other
+		WHERE r.subject = ? AND r.type = 'has-parent'
+		  AND parent.type = 'epic' AND parent.workspace = ?`, id, workspace).Scan(&epic)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "read direct epic of %s", id)
+	}
+	return epic, nil
+}
+
 // IssueRelations returns every relation visible from one endpoint. It is
 // deliberately unscoped, like the graph-rule queries below: relation writes
 // change both endpoints, and their activity rows must be recorded together
@@ -254,12 +271,12 @@ func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 // Children returns the direct children of an issue, ordered as siblings are
 // ordered everywhere: priority ascending, then created_at, then id.
 //
-// The walk crosses project boundaries, so the scope applies: a child in a
-// project the caller is not a member of is not listed, and neither is the
+// The walk crosses workspace boundaries, so the scope applies: a child in a
+// workspace the caller is not a member of is not listed, and neither is the
 // subtree below it. A tree is therefore what the caller can see of a
 // decomposition, not a claim that it is the whole of one.
 func (t *Tx) Children(id string) ([]*domain.Issue, error) {
-	visible, scopeArgs := t.visibleClause("issues.project")
+	visible, scopeArgs := t.visibleClause("issues.workspace")
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT `+issueColumns+`
 		  FROM issues
@@ -283,7 +300,7 @@ func (t *Tx) Children(id string) ([]*domain.Issue, error) {
 }
 
 // Tree returns the subtree of children rooted at an issue, to its full depth,
-// following children across project boundaries and showing closed children
+// following children across workspace boundaries and showing closed children
 // too. It does not show ancestors.
 //
 // The whole subtree is gathered first and hydrated in one pass, so the derived

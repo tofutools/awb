@@ -20,27 +20,26 @@ func (e *env) summarise(format string, args ...any) error {
 	return e.stdout.Err()
 }
 
-func newProjectCommand(e *env) *cobra.Command {
+func newWorkspaceCommand(e *env) *cobra.Command {
 	cmd := group("workspace", "Manage workspaces",
 		"A workspace is the top-level organising unit. Every issue belongs immutably to exactly one; the workspace key is its stable ID prefix.",
-		newProjectCreateCommand(e),
-		newProjectUpdateCommand(e),
-		newProjectDescriptionCommand(e),
-		newProjectShowCommand(e),
-		newProjectListCommand(e),
-		newProjectArchiveCommand(e),
-		newProjectRestoreCommand(e),
-		newProjectActivityCommand(e),
-		newProjectDeleteCommand(e),
-		newProjectGrantCommand(e),
-		newProjectRevokeCommand(e),
-		newProjectMembersCommand(e),
+		newWorkspaceCreateCommand(e),
+		newWorkspaceUpdateCommand(e),
+		newWorkspaceDescriptionCommand(e),
+		newWorkspaceShowCommand(e),
+		newWorkspaceListCommand(e),
+		newWorkspaceArchiveCommand(e),
+		newWorkspaceRestoreCommand(e),
+		newWorkspaceActivityCommand(e),
+		newWorkspaceDeleteCommand(e),
+		newWorkspaceGrantCommand(e),
+		newWorkspaceRevokeCommand(e),
+		newWorkspaceMembersCommand(e),
 	)
-	cmd.Aliases = []string{"project"}
 	return cmd
 }
 
-func newProjectActivityCommand(e *env) *cobra.Command {
+func newWorkspaceActivityCommand(e *env) *cobra.Command {
 	type params struct {
 		Key    string `positional:"true" required:"true"`
 		Limit  *int   `long:"limit" optional:"true" help:"cap the entries returned"`
@@ -56,7 +55,7 @@ func newProjectActivityCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			page, err := be.ListProjectActivity(cmd.Context(), p.Key, p.Limit, p.Offset)
+			page, err := be.ListWorkspaceActivity(cmd.Context(), p.Key, p.Limit, p.Offset)
 			if err != nil {
 				return err
 			}
@@ -64,7 +63,7 @@ func newProjectActivityCommand(e *env) *cobra.Command {
 				return e.writeJSON(page.Activity)
 			}
 			for i := range page.Activity {
-				if _, err := io.WriteString(e.stdout, domain.CompactProjectActivityLine(&page.Activity[i])+"\n"); err != nil {
+				if _, err := io.WriteString(e.stdout, domain.CompactWorkspaceActivityLine(&page.Activity[i])+"\n"); err != nil {
 					return err
 				}
 			}
@@ -73,14 +72,14 @@ func newProjectActivityCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-type projectCreateParams struct {
+type workspaceCreateParams struct {
 	DescriptionFlags
 	Key  string `positional:"true" required:"true"`
 	Name string `long:"name" optional:"true" help:"human-readable name; defaults to the key"`
 }
 
-func newProjectCreateCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectCreateParams]{
+func newWorkspaceCreateCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceCreateParams]{
 		Use:   "create",
 		Short: "Create a workspace",
 		Long: "Create a workspace.\n\n" +
@@ -88,11 +87,11 @@ func newProjectCreateCommand(e *env) *cobra.Command {
 			"letter, at most 16 characters. It becomes the immutable issue ID prefix;\n" +
 			"issues cannot move to another workspace. --name defaults to the key.",
 		ParamEnrich: boaParams,
-		InitFuncCtx: func(ctx *boa.HookContext, p *projectCreateParams, cmd *cobra.Command) error {
-			return describe("project")(ctx, &p.DescriptionFlags, cmd)
+		InitFuncCtx: func(ctx *boa.HookContext, p *workspaceCreateParams, cmd *cobra.Command) error {
+			return describe("workspace")(ctx, &p.DescriptionFlags, cmd)
 		},
-		RunFuncE: func(p *projectCreateParams, cmd *cobra.Command, _ []string) error {
-			req := backend.ProjectCreate{Key: p.Key, Name: p.Name}
+		RunFuncE: func(p *workspaceCreateParams, cmd *cobra.Command, _ []string) error {
+			req := backend.WorkspaceCreate{Key: p.Key, Name: p.Name}
 			if description, err := p.value(e); err != nil {
 				return err
 			} else if description != nil {
@@ -103,24 +102,24 @@ func newProjectCreateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.CreateProject(cmd.Context(), req)
+			workspace, err := be.CreateWorkspace(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
-			return e.mutatedProject(project)
+			return e.mutatedWorkspace(workspace)
 		},
 	}.ToCobra()
 }
 
-type projectUpdateParams struct {
+type workspaceUpdateParams struct {
 	DescriptionFlags
 	Key   string  `positional:"true" required:"true"`
 	Name  *string `long:"name" help:"human-readable name; \"\" restores the key"`
 	Force bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
-func newProjectUpdateCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectUpdateParams]{
+func newWorkspaceUpdateCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceUpdateParams]{
 		Use:   "update",
 		Short: "Change a workspace's name or description",
 		Long: "Change a workspace's name or description. Its key and issue boundary are immutable.\n\n" +
@@ -129,12 +128,12 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 			"replaces a description without that precondition. --name \"\" restores the\n" +
 			"key as the name.",
 		ParamEnrich: boaParams,
-		InitFuncCtx: func(ctx *boa.HookContext, p *projectUpdateParams, cmd *cobra.Command) error {
-			return describe("project")(ctx, &p.DescriptionFlags, cmd)
+		InitFuncCtx: func(ctx *boa.HookContext, p *workspaceUpdateParams, cmd *cobra.Command) error {
+			return describe("workspace")(ctx, &p.DescriptionFlags, cmd)
 		},
-		RunFuncE: func(p *projectUpdateParams, cmd *cobra.Command, _ []string) error {
-			patch := backend.ProjectPatch{Name: p.Name}
-			description, ifMatch, err := p.valueForUpdate(e, "project", p.Key, p.Force)
+		RunFuncE: func(p *workspaceUpdateParams, cmd *cobra.Command, _ []string) error {
+			patch := backend.WorkspacePatch{Name: p.Name}
+			description, ifMatch, err := p.valueForUpdate(e, "workspace", p.Key, p.Force)
 			if err != nil {
 				return err
 			}
@@ -147,20 +146,20 @@ func newProjectUpdateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.UpdateProject(cmd.Context(), p.Key, patch, ifMatch)
+			workspace, err := be.UpdateWorkspace(cmd.Context(), p.Key, patch, ifMatch)
 			if err != nil {
 				file := ""
 				if p.File != nil {
 					file = *p.File
 				}
-				return descriptionPreconditionError(err, "project", p.Key, file)
+				return descriptionPreconditionError(err, "workspace", p.Key, file)
 			}
-			return e.mutatedProject(project)
+			return e.mutatedWorkspace(workspace)
 		},
 	}.ToCobra()
 }
 
-func newProjectShowCommand(e *env) *cobra.Command {
+func newWorkspaceShowCommand(e *env) *cobra.Command {
 	type params struct {
 		Key string `positional:"true" required:"true"`
 	}
@@ -178,19 +177,19 @@ func newProjectShowCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.GetProject(cmd.Context(), p.Key)
+			workspace, err := be.GetWorkspace(cmd.Context(), p.Key)
 			if err != nil {
 				return err
 			}
-			return e.printProject(project)
+			return e.printWorkspace(workspace)
 		},
 	}.ToCobra()
 }
 
-// projectListParams is the picker flag, the state selection, the ordering and
+// workspaceListParams is the picker flag, the state selection, the ordering and
 // the window. Workspace ordering is its own vocabulary because "active" is a
 // derived count, not a stored column.
-type projectListParams struct {
+type workspaceListParams struct {
 	InteractiveFlags
 	Archived bool   `long:"archived" optional:"true" help:"list archived workspaces instead of active workspaces"`
 	All      bool   `long:"all" optional:"true" help:"list active and archived workspaces"`
@@ -199,20 +198,20 @@ type projectListParams struct {
 	Offset   *int   `long:"offset" optional:"true" help:"skip this many results"`
 }
 
-func newProjectListCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectListParams]{
+func newWorkspaceListCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceListParams]{
 		Use:         "list",
 		Short:       "List workspaces with counts of issues that are not closed",
 		ParamEnrich: boaParams,
-		InitFuncCtx: func(ctx *boa.HookContext, p *projectListParams, _ *cobra.Command) error {
+		InitFuncCtx: func(ctx *boa.HookContext, p *workspaceListParams, _ *cobra.Command) error {
 			// Offered and validated from the parser's own vocabulary, as --sort on
 			// the issue listings is.
 			sortParam := boa.GetParamT(ctx, &p.Sort)
-			sortParam.SetAlternatives(domain.ProjectSortAlternatives())
-			sortParam.SetDescription(domain.ProjectSortHelp())
+			sortParam.SetAlternatives(domain.WorkspaceSortAlternatives())
+			sortParam.SetDescription(domain.WorkspaceSortHelp())
 			return nil
 		},
-		RunFuncE: func(p *projectListParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *workspaceListParams, cmd *cobra.Command, _ []string) error {
 			if p.Archived && p.All {
 				return awberr.Usagef("--archived and --all are mutually exclusive")
 			}
@@ -221,9 +220,9 @@ func newProjectListCommand(e *env) *cobra.Command {
 				return err
 			}
 
-			sort := domain.DefaultProjectSort
+			sort := domain.DefaultWorkspaceSort
 			if p.Sort != "" {
-				if sort, err = domain.ParseProjectSort(p.Sort); err != nil {
+				if sort, err = domain.ParseWorkspaceSort(p.Sort); err != nil {
 					return err
 				}
 			}
@@ -235,25 +234,25 @@ func newProjectListCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			state := domain.ProjectsActive
+			state := domain.WorkspacesActive
 			if p.Archived {
-				state = domain.ProjectsArchived
+				state = domain.WorkspacesArchived
 			} else if p.All {
-				state = domain.ProjectsAll
+				state = domain.WorkspacesAll
 			}
-			page, err := be.ListProjectsByState(cmd.Context(), "", state, sort, p.Limit, p.Offset)
+			page, err := be.ListWorkspacesByState(cmd.Context(), "", state, sort, p.Limit, p.Offset)
 			if err != nil {
 				return err
 			}
 			if out != nil {
-				return e.pickProject(cmd.Context(), be, out, page.Projects)
+				return e.pickWorkspace(cmd.Context(), be, out, page.Workspaces)
 			}
-			return e.printProjects(page.Projects)
+			return e.printWorkspaces(page.Workspaces)
 		},
 	}.ToCobra()
 }
 
-func newProjectArchiveCommand(e *env) *cobra.Command {
+func newWorkspaceArchiveCommand(e *env) *cobra.Command {
 	type params struct {
 		Key string `positional:"true" required:"true"`
 	}
@@ -270,16 +269,16 @@ func newProjectArchiveCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.ArchiveProject(cmd.Context(), p.Key, "")
+			workspace, err := be.ArchiveWorkspace(cmd.Context(), p.Key, "")
 			if err != nil {
 				return err
 			}
-			return e.mutatedProject(project)
+			return e.mutatedWorkspace(workspace)
 		},
 	}.ToCobra()
 }
 
-func newProjectRestoreCommand(e *env) *cobra.Command {
+func newWorkspaceRestoreCommand(e *env) *cobra.Command {
 	type params struct {
 		Key string `positional:"true" required:"true"`
 	}
@@ -293,23 +292,23 @@ func newProjectRestoreCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := be.RestoreProject(cmd.Context(), p.Key, "")
+			workspace, err := be.RestoreWorkspace(cmd.Context(), p.Key, "")
 			if err != nil {
 				return err
 			}
-			return e.mutatedProject(project)
+			return e.mutatedWorkspace(workspace)
 		},
 	}.ToCobra()
 }
 
-type projectDeleteParams struct {
+type workspaceDeleteParams struct {
 	Key     string `positional:"true" required:"true"`
 	Force   bool   `long:"force" optional:"true" help:"confirm the deletion"`
 	Cascade bool   `long:"cascade" optional:"true" help:"also delete the issues the workspace holds"`
 }
 
-func newProjectDeleteCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectDeleteParams]{
+func newWorkspaceDeleteCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceDeleteParams]{
 		Use:   "delete",
 		Short: "Delete a workspace",
 		Long: "Delete a workspace.\n\n" +
@@ -319,7 +318,7 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 			"deletes those issues and their relations, including relations to issues in\n" +
 			"other workspaces, which may unblock work elsewhere.",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *projectDeleteParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *workspaceDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {
 				return awberr.Usagef("awb workspace delete needs --force: it is not recoverable")
 			}
@@ -328,18 +327,18 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			deleted, err := be.DeleteProject(cmd.Context(), p.Key, p.Cascade, "")
+			deleted, err := be.DeleteWorkspace(cmd.Context(), p.Key, p.Cascade, "")
 			if err != nil {
 				return err
 			}
 			if e.json {
-				return e.writeProjectJSON(&deleted.Project)
+				return e.writeWorkspaceJSON(&deleted.Workspace)
 			}
 			if p.Cascade {
 				return e.summarise("Deleted workspace %s and the issues it held.\n",
-					deleted.Project.Key)
+					deleted.Workspace.Key)
 			}
-			return e.summarise("Deleted workspace %s.\n", deleted.Project.Key)
+			return e.summarise("Deleted workspace %s.\n", deleted.Workspace.Key)
 		},
 	}.ToCobra()
 }

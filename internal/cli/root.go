@@ -210,7 +210,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			newDumpCommand(e),
 			newStatusCommand(e),
 			newAgentGuideCommand(e),
-			newProjectCommand(e),
+			newWorkspaceCommand(e),
 			newUserCommand(e),
 			newCreateCommand(e),
 			newShowCommand(e),
@@ -220,6 +220,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			newBlockedCommand(e),
 			newSearchCommand(e),
 			newUpdateCommand(e),
+			newMoveCommand(e),
 			newLabelCommand(e),
 			newClaimCommand(e),
 			newReleaseCommand(e),
@@ -258,7 +259,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	// A flag cobra does not recognise is a usage error like any other, which is
-	// what makes --project exit 2 on the commands that do not take it.
+	// what makes --workspace exit 2 on the commands that do not take it.
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return awberr.Usagef("%s", err.Error())
 	})
@@ -342,7 +343,7 @@ func (e *env) identity() (string, error) {
 // help, and given anything else it fails as a usage error. Both halves are
 // needed, because cobra consults Args only on a runnable command and applies
 // its own unknown-command check only to the root — so without them a removed
-// or mistyped name, awb project add, prints the group's help and exits 0, and
+// or mistyped name, awb workspace add, prints the group's help and exits 0, and
 // nothing can tell that spelling from a working one. With them an unknown
 // command is the exit 2 the guide documents, at every level of the tree.
 func grouping(cmd *cobra.Command) *cobra.Command {

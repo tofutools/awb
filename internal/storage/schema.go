@@ -27,6 +27,87 @@ var migrations = [][]string{
 	schemaV8,
 	schemaV9,
 	schemaV10,
+	schemaV11,
+	schemaV12,
+	schemaV13,
+}
+
+// schemaV13 makes Workspace the current storage vocabulary. The preceding
+// batches deliberately retain their released Project names so an existing
+// database can be upgraded without copying or discarding any rows.
+var schemaV13 = []string{
+	`ALTER TABLE projects RENAME TO workspaces`,
+	`ALTER TABLE issues RENAME COLUMN project TO workspace`,
+	`ALTER TABLE users RENAME COLUMN project_admin TO workspace_admin`,
+	`ALTER TABLE project_members RENAME TO workspace_members`,
+	`ALTER TABLE workspace_members RENAME COLUMN project TO workspace`,
+	`ALTER TABLE ignored_projects RENAME TO ignored_workspaces`,
+	`ALTER TABLE ignored_workspaces RENAME COLUMN project TO workspace`,
+	`ALTER TABLE project_activity RENAME TO workspace_activity`,
+	`ALTER TABLE workspace_activity RENAME COLUMN project TO workspace`,
+	`ALTER TABLE board_views RENAME COLUMN all_projects TO all_workspaces`,
+	`ALTER TABLE board_view_projects RENAME TO board_view_workspaces`,
+	`ALTER TABLE board_view_workspaces RENAME COLUMN project TO workspace`,
+
+	// SQLite updates index definitions when their columns or tables are renamed,
+	// but not the index names themselves. Recreate the three whose old names
+	// would otherwise remain in the current schema.
+	`DROP INDEX idx_issues_project`,
+	`CREATE INDEX idx_issues_workspace ON issues (workspace)`,
+	`DROP INDEX idx_project_members_user`,
+	`CREATE INDEX idx_workspace_members_user ON workspace_members (user)`,
+	`DROP INDEX idx_project_activity_order`,
+	`CREATE INDEX idx_workspace_activity_order
+		ON workspace_activity (workspace, created_at DESC, id DESC)`,
+}
+
+// schemaV12 adds a sparse manual position. Zero means the issue has not been
+// positioned and therefore follows the ordinary priority/recency fallback.
+var schemaV12 = []string{
+	`ALTER TABLE issues ADD COLUMN board_order INTEGER NOT NULL DEFAULT 0 CHECK (board_order >= 0)`,
+	`CREATE INDEX idx_issues_board_order ON issues (board_order, priority, updated_at, id)`,
+}
+
+// schemaV11 stores owner-scoped board filters. The owner is deliberately not
+// a foreign key: an open database has a fixed identity but no user rows. A
+// trigger still removes views with an account on authenticated installations.
+var schemaV11 = []string{
+	`CREATE TABLE board_views (
+		id           TEXT PRIMARY KEY,
+		name         TEXT NOT NULL,
+		owner        TEXT NOT NULL,
+		shared       INTEGER NOT NULL DEFAULT 0,
+		all_projects INTEGER NOT NULL DEFAULT 1,
+		priority_max INTEGER NOT NULL DEFAULT 4,
+		created_at   TEXT NOT NULL,
+		updated_at   TEXT NOT NULL,
+		CHECK (substr(id, 1, 5) = 'view-' AND length(id) = 29
+		       AND substr(id, 6) NOT GLOB '*[^0-9a-f]*'),
+		CHECK (name <> ''),
+		CHECK (owner <> ''),
+		CHECK (shared IN (0, 1)),
+		CHECK (all_projects IN (0, 1)),
+		CHECK (priority_max BETWEEN 0 AND 4)
+	) STRICT`,
+	`CREATE INDEX idx_board_views_owner ON board_views (owner, name, id)`,
+	`CREATE TABLE board_view_projects (
+		view    TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		project TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+		PRIMARY KEY (view, project)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TABLE board_view_labels (
+		view  TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		label TEXT NOT NULL,
+		PRIMARY KEY (view, label)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TABLE board_view_assignees (
+		view     TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		assignee TEXT NOT NULL,
+		PRIMARY KEY (view, assignee)
+	) STRICT, WITHOUT ROWID`,
+	`CREATE TRIGGER users_board_views_ad AFTER DELETE ON users BEGIN
+		DELETE FROM board_views WHERE owner = old.name;
+	END`,
 }
 
 // schemaV10 retains old projects without deleting any of their graph or blob

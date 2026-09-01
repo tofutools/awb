@@ -43,21 +43,21 @@ func (c *conditions) where() string {
 //
 // It is a method on the transaction so that the visibility scope is part of
 // every selection it builds, and therefore of every listing, search and facet:
-// a caller sees the issues of the projects they are a member of, and the
+// a caller sees the issues of the workspaces they are a member of, and the
 // unpaged total counts those and no others.
 func (t *Tx) selection(f *domain.Filter) *conditions {
 	c := &conditions{}
 
-	t.visible(c, "i.project")
+	t.visible(c, "i.workspace")
 	// Archived work remains reachable through stable direct URLs, but never
 	// participates in everyday listings, search, facets, readiness or pickers.
 	if !f.IncludeArchived {
-		c.add(`EXISTS (SELECT 1 FROM projects p WHERE p.key = i.project AND p.state = 'active')`)
+		c.add(`EXISTS (SELECT 1 FROM workspaces p WHERE p.key = i.workspace AND p.state = 'active')`)
 	}
 	c.addIn("i.status", anyArgs(f.EffectiveStatuses()))
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))
-	c.addIn("i.project", anyArgs(f.Projects))
+	c.addIn("i.workspace", anyArgs(f.Workspaces))
 
 	if f.PriorityMax != nil {
 		// Inclusive, and reading as urgency rather than as a number: because 0 is
@@ -92,6 +92,17 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		c.add(`i.id IN (SELECT subject FROM relations
 		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)
 	}
+	if f.Epic != nil {
+		const directEpic = `EXISTS (
+			SELECT 1 FROM relations er JOIN issues epic ON epic.id = er.other
+			 WHERE er.subject = i.id AND er.type = 'has-parent'
+			   AND epic.type = 'epic' AND epic.workspace = i.workspace`
+		if *f.Epic == "" {
+			c.add("NOT " + directEpic + ")")
+		} else {
+			c.add(directEpic+" AND epic.id = ?)", *f.Epic)
+		}
+	}
 	if len(f.Labels) > 0 {
 		// Repeated --label is ORed, like every other repeated filter, so all of the
 		// values go into one IN clause rather than one EXISTS each.
@@ -106,7 +117,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	// describe the same authorized result set.
 	for _, word := range strings.Fields(f.ListingFilter) {
 		c.add(`(
-			instr(awb_casefold(i.id || ' ' || i.project || ' ' || i.title || ' ' ||
+			instr(awb_casefold(i.id || ' ' || i.workspace || ' ' || i.title || ' ' ||
 				i.type || ' ' || i.status || ' P' || i.priority), awb_casefold(?)) > 0
 			OR EXISTS (SELECT 1 FROM issue_assignees a
 			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
@@ -183,9 +194,12 @@ func orderBy(sort domain.Sort) string {
 	), '')`
 
 	switch sort.Key {
+	case domain.SortOrder:
+		return " ORDER BY (i.board_order = 0) ASC, i.board_order " + direction +
+			", i.priority ASC, i.updated_at DESC, i.id ASC"
 	case domain.SortPriority:
-		// priority inserts created_at ascending before the tiebreak — oldest first
-		// within a priority — so --sort priority is the default order.
+		// Explicit priority keeps the historical oldest-first tiebreak; the natural
+		// order is the separate sparse-order case above.
 		return " ORDER BY i.priority " + direction + ", i.created_at ASC, i.id ASC"
 	case domain.SortCreated:
 		return " ORDER BY i.created_at " + direction + ", i.id ASC"
@@ -193,8 +207,8 @@ func orderBy(sort domain.Sort) string {
 		return " ORDER BY i.updated_at " + direction + ", i.id ASC"
 	case domain.SortID:
 		return " ORDER BY i.id " + direction
-	case domain.SortProject:
-		return " ORDER BY i.project " + direction + ", i.id ASC"
+	case domain.SortWorkspace:
+		return " ORDER BY i.workspace " + direction + ", i.id ASC"
 	case domain.SortStatus:
 		return " ORDER BY " + statusRank + " " + direction + ", i.id ASC"
 	case domain.SortAssignee:
@@ -217,7 +231,7 @@ func orderBy(sort domain.Sort) string {
 		}
 		return " ORDER BY relevance ASC, i.id ASC"
 	default:
-		return " ORDER BY i.priority ASC, i.created_at ASC, i.id ASC"
+		return " ORDER BY (i.board_order = 0) ASC, i.board_order ASC, i.priority ASC, i.updated_at DESC, i.id ASC"
 	}
 }
 

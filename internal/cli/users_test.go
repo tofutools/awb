@@ -94,24 +94,24 @@ func TestUserAddTakesAPreComputedHash(t *testing.T) {
 
 func TestUserFlagsAndMembership(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--project-admin", "--user-admin")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--workspace-admin", "--user-admin")
 	h.mustRunStdin("hunter2\n", "user", "add", "bob")
 
-	assert.Equal(t, "alice +project-admin +user-admin\nbob\n",
+	assert.Equal(t, "alice +workspace-admin +user-admin\nbob\n",
 		h.mustRun("user", "list", "--compact"))
 
-	h.mustRun("project", "grant", "awb", "bob", "--access", "admin")
+	h.mustRun("workspace", "grant", "awb", "bob", "--access", "admin")
 	assert.Equal(t, "bob awb:admin\n", h.mustRun("user", "show", "bob", "--compact"))
-	assert.Equal(t, "awb bob admin\n", h.mustRun("project", "members", "awb", "--compact"))
+	assert.Equal(t, "awb bob admin\n", h.mustRun("workspace", "members", "awb", "--compact"))
 
 	// Granting again replaces the level rather than adding a second row.
-	h.mustRun("project", "grant", "awb", "bob")
-	assert.Equal(t, "awb bob regular\n", h.mustRun("project", "members", "awb", "--compact"))
+	h.mustRun("workspace", "grant", "awb", "bob")
+	assert.Equal(t, "awb bob regular\n", h.mustRun("workspace", "members", "awb", "--compact"))
 
-	h.mustRun("project", "revoke", "awb", "bob")
-	assert.Empty(t, h.mustRun("project", "members", "awb", "--compact"))
+	h.mustRun("workspace", "revoke", "awb", "bob")
+	assert.Empty(t, h.mustRun("workspace", "members", "awb", "--compact"))
 
-	_, _, code := h.run("project", "grant", "awb", "bob", "--access", "owner")
+	_, _, code := h.run("workspace", "grant", "awb", "bob", "--access", "owner")
 	assert.Equal(t, 2, code, "the access vocabulary is fixed")
 }
 
@@ -138,7 +138,7 @@ func TestUserUpdate(t *testing.T) {
 func TestUserShowDefaultsToTheCaller(t *testing.T) {
 	h := newHarness(t)
 	h.mustRunStdin("hunter2\n", "user", "add", "mikael")
-	h.mustRun("project", "grant", "awb", "mikael", "--access", "admin")
+	h.mustRun("workspace", "grant", "awb", "mikael", "--access", "admin")
 
 	assert.Equal(t, "mikael awb:admin\n", h.mustRun("user", "show", "--compact"))
 
@@ -164,26 +164,26 @@ func TestUserDeleteNeedsForce(t *testing.T) {
 // The --json shape is the stable one, and is the same object the API returns.
 func TestUserJSON(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--project-admin")
-	h.mustRun("project", "grant", "awb", "alice", "--access", "admin")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--workspace-admin")
+	h.mustRun("workspace", "grant", "awb", "alice", "--access", "admin")
 
 	var user domain.User
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("user", "show", "alice", "--json")), &user))
 	assert.Equal(t, "alice", user.Name)
 	assert.Empty(t, user.FullName)
-	assert.True(t, user.ProjectAdmin)
+	assert.True(t, user.WorkspaceAdmin)
 	assert.False(t, user.UserAdmin)
 	assert.NotEmpty(t, user.CreatedAt)
-	require.Len(t, user.Projects, 1)
+	require.Len(t, user.Workspaces, 1)
 	assert.Equal(t, domain.Membership{
-		Project: "awb", User: "alice", Access: domain.AccessAdmin}, user.Projects[0])
+		Workspace: "awb", User: "alice", Access: domain.AccessAdmin}, user.Workspaces[0])
 
-	// An empty listing is [] and never null, and a project that is not there
+	// An empty listing is [] and never null, and a workspace that is not there
 	// is reported rather than answered with one.
-	h.mustRun("project", "create", "web")
-	assert.Equal(t, "[]\n", h.mustRun("project", "members", "web", "--json"))
+	h.mustRun("workspace", "create", "web")
+	assert.Equal(t, "[]\n", h.mustRun("workspace", "members", "web", "--json"))
 
-	_, _, code := h.run("project", "members", "nosuch", "--json")
+	_, _, code := h.run("workspace", "members", "nosuch", "--json")
 	assert.Equal(t, 3, code)
 }
 
@@ -196,7 +196,7 @@ func TestUsernameVocabulary(t *testing.T) {
 	}
 
 	h.mustRunStdin("hunter2\n", "user", "add", "claude-1")
-	id := h.create("t", "--project", "awb", "--assignee", "claude-1")
+	id := h.create("t", "--workspace", "awb", "--assignee", "claude-1")
 	assert.Contains(t, h.mustRun("show", id, "--compact"), "@claude-1")
 }
 

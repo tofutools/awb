@@ -5,12 +5,12 @@
 `awb` is an agent-first issue tracker: a single Go binary backed by SQLite, with
 a command line interface for coding agents, humans and scripts. It is a
 deliberately smaller, agent-first alternative to Jira, Linear and GitHub Issues;
-different projects can use different trackers.
+different workspaces can use different trackers.
 
 It takes the dependency-aware "what can I work on now" model seriously and
 leaves nearly everything else out. There is no permission model, no configurable
 workflow engine, no custom fields and no reporting suite. It targets
-individuals, small teams and open source projects.
+individuals, small teams and open source workspaces.
 
 ```console
 $ awb ready --compact
@@ -53,10 +53,10 @@ run `mise install` to install them.
 
 ```console
 $ awb init
-$ awb project create awb --name "Agent Work Board"
+$ awb workspace create awb --name "Agent Work Board"
 
 $ cat .awb.yaml                            # committed at the top of the working tree
-project: awb
+workspace: awb
 
 $ awb create "Parser crashes on empty input" --type bug --priority 1 --label parser
 awb-a3f9c1
@@ -79,8 +79,8 @@ Closing the blocker made the second issue ready, with nothing written to it:
 recorded state cannot disagree with it.
 
 To see the rest of it without typing any of it, `awb demo` fills a `demo`
-project with a sample data set covering every type, priority, status and
-relation. It refuses while that project exists, since it replaces the project
+workspace with a sample data set covering every type, priority, status and
+relation. It refuses while that workspace exists, since it replaces the workspace
 wholesale rather than reconciling it; `awb demo --force` says that deleting
 whatever is under the key is meant.
 
@@ -89,7 +89,7 @@ whatever is under the key is meant.
 | Command | What it does |
 | --- | --- |
 | `awb init` | Create the database. The only command that does. |
-| `awb status` | Show the active local database or remote server and web UI, identity, configuration, environment overrides and per-project issue counts. |
+| `awb status` | Show the active local database or remote server and web UI, identity, configuration, environment overrides and per-workspace issue counts. |
 | `awb create <title>` | Create an issue, with its labels and relations, in one transaction. Prints the new ID. |
 | `awb ready` | Open, unblocked, unassigned issues, highest priority first. |
 | `awb list` / `blocked` / `search` | The other listings. |
@@ -105,11 +105,11 @@ whatever is under the key is meant.
 | `awb attach list <id>` | The files attached to an issue. |
 | `awb attach show\|get\|delete <id> <name>` | One attachment: its metadata, its content, or its deletion. |
 | `awb delete <id> --force` | Hard delete. Not recoverable. |
-| `awb project create\|update\|show\|list\|delete` | Projects. |
-| `awb project grant\|revoke <key> <user>` | Who may work in a project, and at which level. |
-| `awb project members <key>` | The users with access to a project. |
+| `awb workspace create\|update\|show\|list\|delete` | Workspaces. |
+| `awb workspace grant\|revoke <key> <user>` | Who may work in a workspace, and at which level. |
+| `awb workspace members <key>` | The users with access to a workspace. |
 | `awb user add\|update\|show\|list\|delete` | The accounts a server authenticates and authorizes. |
-| `awb demo [--force]` | Fill a `demo` project with a sample data set. `--force` replaces an existing one. |
+| `awb demo [--force]` | Fill a `demo` workspace with a sample data set. `--force` replaces an existing one. |
 | `awb serve` | The HTTP API and the bundled web UI. |
 | `awb agent-guide [--write FILE]` | The usage block to give an agent. |
 | `awb agent-guide install-skills [--harness NAME]` | Install that guide as a skill for agent harnesses. |
@@ -117,7 +117,7 @@ whatever is under the key is meant.
 `awb <command> --help` has the detail. Exit codes are `0` success, `1` runtime
 error, `2` usage error, `3` not found, `4` constraint violation, `5` forbidden.
 
-A description is Markdown, and `awb show` and `awb project show` draw it as
+A description is Markdown, and `awb show` and `awb workspace show` draw it as
 such on a terminal: emphasis, headings, lists, code and links the terminal can
 open. Piped or redirected the description is the source text exactly as it was
 written, and so it is under `--json` and `--compact`.
@@ -197,13 +197,13 @@ Everything a team wants to express beyond this goes into labels.
 Every relation reads *subject — relation — other*, everywhere: in `awb create`,
 in `awb dep add`, and in the API. Only `blocked-by` affects readiness.
 
-An issue ID is `<project>-<hash>`, and any unambiguous prefix — or a bare hash —
+An issue ID is `<workspace>-<hash>`, and any unambiguous prefix — or a bare hash —
 works wherever an ID does.
 
 ## Teaching an agent
 
 There are two independent ways to teach agents about awb. Installing the skill
-does not read or change `AGENTS.md`, `CLAUDE.md` or any other project file.
+does not read or change `AGENTS.md`, `CLAUDE.md` or any other workspace file.
 
 Install the bundled `awb` skill into every supported agent harness's user
 skill directory:
@@ -235,7 +235,7 @@ re-run after upgrading.
 directory, in `.awb.yaml`, and everything follows from that:
 
 ```yaml
-project: web        # issues here belong to this project
+workspace: web        # issues here belong to this workspace
 label: frontend     # work here carries this label
 ```
 
@@ -243,7 +243,7 @@ The file is found by searching upwards from the working directory, so putting it
 at the top of a checkout gives that checkout its own scope. It is meant to be
 committed.
 
-The project is the default for `awb create` and the default `--project` filter.
+The workspace is the default for `awb create` and the default `--workspace` filter.
 The label is added to issues created here *in addition to* any `--label` given,
 so an issue created here stays visible here. `--no-context` ignores both for one
 invocation.
@@ -263,20 +263,20 @@ attachments: /files/awb/attachments     # defaults to "attachments" beside the d
 user: you                               # the account to log in as, remote mode only
 password: hunter2
 identity: you                           # default assignee, --mine, claim --as
-project: awb                            # default project for create and issue listings
+workspace: awb                            # default workspace for create and issue listings
 color: auto
 ```
 
 Precedence is command line flags, then `AWB_DB`, `AWB_ATTACHMENTS`, `AWB_USER`,
-`AWB_PASSWORD`, `AWB_IDENTITY`, `AWB_PROJECT` and `AWB_COLOR`, then `.awb.yaml`,
+`AWB_PASSWORD`, `AWB_IDENTITY`, `AWB_WORKSPACE` and `AWB_COLOR`, then `.awb.yaml`,
 then this file, then the defaults. `AWB_CONFIG_FILE` reads this file from
 somewhere else; a path it names must exist, so that a typo cannot quietly leave
 you with the defaults. A leading `~` in `AWB_CONFIG_FILE`, `AWB_DB` or
 `AWB_ATTACHMENTS` means the current user's home directory. The database lives at
 `$XDG_DATA_HOME/awb/awb.db` unless told otherwise, and one database spans
 everything you work on. Attachment content lives in `attachments` beside it,
-and `awb init` creates both. Pass `--all-projects` to an issue listing command
-to ignore the configured project for that invocation.
+and `awb init` creates both. Pass `--all-workspaces` to an issue listing command
+to ignore the configured workspace for that invocation.
 
 ## Server and API
 
@@ -287,7 +287,7 @@ $ awb serve
 
 That serves a JSON API, the OpenAPI 3.1 document describing it at
 `/openapi.json` and `/openapi.yaml`, and a web UI for browsing and editing
-projects and issues, searching, viewing dependency trees and posting comments.
+workspaces and issues, searching, viewing dependency trees and posting comments.
 
 That document — `openapi.yaml` in this repository — is the source of truth
 rather than a description written afterwards: the server's routing, decoding
@@ -297,7 +297,7 @@ UI is written against.
 The API mirrors the CLI one to one, and is complete enough to drive a fully
 functional read/write UI — it has optimistic concurrency through `ETag` and
 `If-Match`, paging with `X-Total-Count`, and facet endpoints for populating
-filter menus. The bundled UI uses that write surface to edit project and issue
+filter menus. The bundled UI uses that write surface to edit workspace and issue
 fields, lifecycle state, labels, relations, attachments and comments.
 
 Pointing the CLI at a server makes every command work against it:
@@ -359,8 +359,8 @@ themselves, and each describes a deployment published beyond this machine,
 which is the intention the refusal is about.
 
 ```console
-$ echo hunter2 | awb user add alice --user-admin --project-admin
-$ awb project grant awb bob --access regular
+$ echo hunter2 | awb user add alice --user-admin --workspace-admin
+$ awb workspace grant awb bob --access regular
 ```
 
 A password is read from stdin, never from a flag: on the command line it would
@@ -369,26 +369,26 @@ for and typed without echo. `--password-hash` takes a bcrypt hash computed
 elsewhere instead — what `htpasswd -Bn alice` writes — so the plaintext never
 reaches `awb` at all.
 
-A user works in the projects they have been granted access to and sees nothing
-else: a project they hold no access to, and every issue in it, is simply not
+A user works in the workspaces they have been granted access to and sees nothing
+else: a workspace they hold no access to, and every issue in it, is simply not
 there for them — absent from every listing, search, facet and tree, and answered
-"no such project" rather than "forbidden", since it is not theirs to know about.
+"no such workspace" rather than "forbidden", since it is not theirs to know about.
 
 The dependency graph is the exception, and deliberately: a visible issue's
-relations and blockers may *name* issues in projects you cannot reach, and
+relations and blockers may *name* issues in workspaces you cannot reach, and
 whether it is blocked is computed over all of them. Readiness has to be true —
 an issue held up by work you cannot see is still held up — and a name is all
 that is exposed, since fetching one of those issues is still "no such issue".
 
 | | |
 | --- | --- |
-| `regular` in a project | Work with its issues: read, create, edit, claim, close, attach. |
-| `admin` in a project | That, and granting and revoking the project's other users. |
-| `--project-admin` | Create, change and delete projects, and `admin` access in every one. |
+| `regular` in a workspace | Work with its issues: read, create, edit, claim, close, attach. |
+| `admin` in a workspace | That, and granting and revoking the workspace's other users. |
+| `--workspace-admin` | Create, change and delete workspaces, and `admin` access in every one. |
 | `--user-admin` | Create, change and delete users, which includes granting these two flags. |
 
-`admin` in a project is not power over the project itself: a project's own
-existence is `--project-admin`'s, because it is not something its members decide.
+`admin` in a workspace is not power over the workspace itself: a workspace's own
+existence is `--workspace-admin`'s, because it is not something its members decide.
 Anybody may change their own password and read their own account — `awb user
 show` with no argument — without being able to grant themselves anything.
 

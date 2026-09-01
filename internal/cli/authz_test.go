@@ -36,7 +36,7 @@ func TestAServerWithNoUsersAuthenticatesNobody(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "mikael", "the fixed identity stands in for a caller")
 
-	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -45,19 +45,19 @@ func TestAServerWithNoUsersAuthenticatesNobody(t *testing.T) {
 func TestAddingTheFirstUserTurnsAuthenticationOn(t *testing.T) {
 	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 
-	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
 
 	// The same handler, no restart.
-	resp, body := get(t, h, http.MethodGet, "/api/projects")
+	resp, body := get(t, h, http.MethodGet, "/api/workspaces")
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("WWW-Authenticate"), `realm="awb"`)
 	assert.JSONEq(t, `{"error":"unauthorized"}`, body)
 
-	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("alice", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 }
@@ -87,13 +87,13 @@ func TestCancelledRouteReadDoesNotPoisonLaterAuthentication(t *testing.T) {
 			requestFinished <- err
 		case "/healthy":
 			if err := db.Write(r.Context(), func(tx *storage.Tx) error {
-				return tx.InsertProject("healthy", "Healthy", "")
+				return tx.InsertWorkspace("healthy", "Healthy", "")
 			}); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			if err := db.Read(r.Context(), func(tx *storage.Tx) error {
-				_, err := tx.GetProject("healthy")
+				_, err := tx.GetWorkspace("healthy")
 				return err
 			}); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -142,7 +142,7 @@ func TestDeletingTheLastUserDoesNotOpenTheServer(t *testing.T) {
 	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
-	resp, _ := get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("alice", "hunter2")...)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	_, err = be.DeleteUser(t.Context(), "alice", "")
@@ -150,19 +150,19 @@ func TestDeletingTheLastUserDoesNotOpenTheServer(t *testing.T) {
 
 	// The same handler, no restart. There is no challenge, because no
 	// credentials could open a server with no accounts.
-	resp, body := get(t, h, http.MethodGet, "/api/projects")
+	resp, body := get(t, h, http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
 	assert.Contains(t, body, "no users")
 
 	// Nor do the credentials that used to work.
-	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("alice", "hunter2")...)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
 	// Adding one again makes the next request work, with no restart.
 	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "bob", Password: "hunter2"})
 	require.NoError(t, err)
-	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("bob", "hunter2")...)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("bob", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -180,7 +180,7 @@ func TestALockDoesNotDependOnHavingSeenTheUser(t *testing.T) {
 	_, err = be.DeleteUser(t.Context(), "alice", "")
 	require.NoError(t, err)
 
-	resp, _ := get(t, h, http.MethodGet, "/api/projects")
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
@@ -225,14 +225,14 @@ func TestNoAuthConsultsNoUsers(t *testing.T) {
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
 
-	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "the first user does not close this door")
 	assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
 
 	// Nor does deleting it lock one, there being nothing to lock.
 	_, err = be.DeleteUser(t.Context(), "alice", "")
 	require.NoError(t, err)
-	resp, _ = get(t, h, http.MethodGet, "/api/projects")
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -243,8 +243,8 @@ func TestWrongCredentialsSayNothingAboutTheAccount(t *testing.T) {
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
 
-	wrong, wrongBody := get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter3")...)
-	unknown, unknownBody := get(t, h, http.MethodGet, "/api/projects", basicAuth("mallory", "hunter2")...)
+	wrong, wrongBody := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("alice", "hunter3")...)
+	unknown, unknownBody := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("mallory", "hunter2")...)
 
 	assert.Equal(t, http.StatusUnauthorized, wrong.StatusCode)
 	assert.Equal(t, http.StatusUnauthorized, unknown.StatusCode)
@@ -271,7 +271,7 @@ func TestTheAPIAnswersWithTheCallersPermissions(t *testing.T) {
 	ctx := t.Context()
 
 	for _, key := range []string{"awb", "web"} {
-		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key})
 		require.NoError(t, err)
 	}
 	_, err := be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
@@ -279,21 +279,21 @@ func TestTheAPIAnswersWithTheCallersPermissions(t *testing.T) {
 	_, err = be.SetMember(ctx, "awb", "bob", domain.AccessRegular)
 	require.NoError(t, err)
 
-	resp, body := get(t, h, http.MethodGet, "/api/projects", basicAuth("bob", "hunter2")...)
+	resp, body := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("bob", "hunter2")...)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"), "the total counts what bob may see")
 
-	var projects []domain.Project
-	require.NoError(t, json.Unmarshal([]byte(body), &projects))
-	require.Len(t, projects, 1)
-	assert.Equal(t, "awb", projects[0].Key)
+	var workspaces []domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(body), &workspaces))
+	require.Len(t, workspaces, 1)
+	assert.Equal(t, "awb", workspaces[0].Key)
 
 	// One he cannot see is not found, and one he can see but may not create is
 	// forbidden.
-	resp, _ = get(t, h, http.MethodGet, "/api/projects/web", basicAuth("bob", "hunter2")...)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces/web", basicAuth("bob", "hunter2")...)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
-	resp, _ = send(t, h, http.MethodPost, "/api/projects", `{"key":"third"}`,
+	resp, _ = send(t, h, http.MethodPost, "/api/workspaces", `{"key":"third"}`,
 		append(basicAuth("bob", "hunter2"), "Origin", "http://127.0.0.1:7777")...)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
@@ -319,10 +319,10 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 
 	ctx := t.Context()
 	for _, key := range []string{"awb", "web"} {
-		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key})
 		require.NoError(t, err)
 	}
-	hidden, err := be.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	hidden, err := be.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
 	require.NoError(t, err)
@@ -335,7 +335,7 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close() })
 
 	// Forbidden: something bob can see and may not do.
-	_, err = client.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	_, err = client.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "third"})
 	require.Error(t, err)
 	assert.Equal(t, 5, awberr.ExitCode(err))
 
@@ -345,15 +345,15 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	assert.Equal(t, 3, awberr.ExitCode(err))
 
 	// And what he may do, he does.
-	issue, err := client.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	issue, err := client.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
-	assert.Equal(t, "awb", issue.Project)
+	assert.Equal(t, "awb", issue.Workspace)
 
 	// Wrong credentials are about the credentials rather than about the
 	// request, so they are exit code 1 and not 5.
 	wrong := remote.New(base, "bob", "hunter3", "bob")
 	t.Cleanup(func() { _ = wrong.Close() })
-	_, err = wrong.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	_, err = wrong.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.Error(t, err)
 	assert.Equal(t, 1, awberr.ExitCode(err))
 }
@@ -367,15 +367,15 @@ func TestRemoteCompletionUsesAuthenticatedSearchFacets(t *testing.T) {
 
 	ctx := t.Context()
 	for _, key := range []string{"awb", "hidden"} {
-		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key})
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key})
 		require.NoError(t, err)
 	}
 	_, err := be.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Parser failure", Labels: []string{"parser"},
+		Workspace: "awb", Title: "Parser failure", Labels: []string{"parser"},
 	})
 	require.NoError(t, err)
 	_, err = be.CreateIssue(ctx, backend.IssueCreate{
-		Project: "hidden", Title: "Parser elsewhere", Labels: []string{"secret"},
+		Workspace: "hidden", Title: "Parser elsewhere", Labels: []string{"secret"},
 	})
 	require.NoError(t, err)
 	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
@@ -406,7 +406,7 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	ctx := t.Context()
-	_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	_, err = be.CreateUser(ctx, backend.UserCreate{Name: "bob", Password: "hunter2"})
 	require.NoError(t, err)
@@ -418,7 +418,7 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 	t.Setenv("AWB_USER", "bob")
 	t.Setenv("AWB_PASSWORD", "hunter2")
 	t.Setenv("AWB_IDENTITY", "local-default")
-	t.Setenv("AWB_PROJECT", "")
+	t.Setenv("AWB_WORKSPACE", "")
 	t.Setenv("AWB_CONFIG_FILE", "")
 	t.Setenv("NO_COLOR", "1")
 	raw, err := os.ReadFile("../../openapi.yaml")
@@ -442,8 +442,8 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 			"configured_identity": "local-default",
 			"user": "bob",
 			"password_set": true,
-			"default_project": "",
-			"context_project": "",
+			"default_workspace": "",
+			"context_workspace": "",
 			"context_label": "",
 			"user_file": "",
 			"local_file": "",
@@ -455,10 +455,10 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 			{"name":"AWB_USER","value":"bob"},
 			{"name":"AWB_PASSWORD","value":"<redacted>"},
 			{"name":"AWB_IDENTITY","value":"local-default"},
-			{"name":"AWB_PROJECT","value":""},
+			{"name":"AWB_WORKSPACE","value":""},
 			{"name":"NO_COLOR","value":"1"}
 		],
-		"projects": [
+		"workspaces": [
 			{"key":"awb","name":"awb","open":0,"in_progress":0,"closed":0,"total":0}
 		]
 	}`, stdout.String())
@@ -469,10 +469,10 @@ func TestDescriptionReceiptWorkflowIsTheSameOverRemoteBackend(t *testing.T) {
 	server := httptest.NewServer(h)
 	t.Cleanup(server.Close)
 
-	_, err := be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err := be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	issue, err := be.CreateIssue(t.Context(), backend.IssueCreate{
-		Project: "awb", Title: "remote", Description: "old",
+		Workspace: "awb", Title: "remote", Description: "old",
 	})
 	require.NoError(t, err)
 
@@ -530,10 +530,10 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	ctx := t.Context()
-	_, err = be.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	_, err = be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	_, err = be.CreateUser(ctx, backend.UserCreate{
-		Name: "alice", Password: "hunter2", ProjectAdmin: true, UserAdmin: true})
+		Name: "alice", Password: "hunter2", WorkspaceAdmin: true, UserAdmin: true})
 	require.NoError(t, err)
 
 	base, err := url.Parse(server.URL)
@@ -548,12 +548,12 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	assert.Equal(t, "bob", created.Name)
 	assert.Equal(t, "Bob Builder", created.FullName)
 	assert.False(t, created.UserAdmin)
-	assert.Empty(t, created.Projects)
+	assert.Empty(t, created.Workspaces)
 
 	membership, err := client.AddMember(ctx, "awb", "bob", domain.AccessAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, domain.AccessAdmin, membership.Access)
-	assert.Equal(t, "awb", membership.Project)
+	assert.Equal(t, "awb", membership.Workspace)
 	assert.Equal(t, "bob", membership.User)
 	_, err = client.AddMember(ctx, "awb", "bob", domain.AccessRegular)
 	assert.Equal(t, awberr.Conflict, awberr.KindOf(err), err)
@@ -563,17 +563,17 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	require.Len(t, members.Members, 1)
 	assert.Equal(t, 1, members.Total)
 
-	preference, err := client.SetProjectIgnored(ctx, "awb", true)
+	preference, err := client.SetWorkspaceIgnored(ctx, "awb", true)
 	require.NoError(t, err)
 	assert.True(t, preference.Ignored)
-	_, err = client.GetProject(ctx, "awb")
+	_, err = client.GetWorkspace(ctx, "awb")
 	require.Error(t, err, "ordinary remote browsing still respects the preference")
 	members, err = client.ListMembers(ctx, "awb", nil, nil)
 	require.NoError(t, err, "the remote administration path bypasses only the preference")
 	require.Len(t, members.Members, 1)
 	_, err = client.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
 	require.NoError(t, err)
-	_, err = client.SetProjectIgnored(ctx, "awb", false)
+	_, err = client.SetWorkspaceIgnored(ctx, "awb", false)
 	require.NoError(t, err)
 
 	users, err := client.ListUsers(ctx, "", nil, nil)
@@ -583,12 +583,12 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	yes := true
 	fullName := "Bob Berg"
 	updated, err := client.UpdateUser(ctx, "bob", backend.UserPatch{
-		FullName: &fullName, ProjectAdmin: &yes,
+		FullName: &fullName, WorkspaceAdmin: &yes,
 	}, "")
 	require.NoError(t, err)
 	assert.Equal(t, fullName, updated.FullName)
-	assert.True(t, updated.ProjectAdmin)
-	require.Len(t, updated.Projects, 1)
+	assert.True(t, updated.WorkspaceAdmin)
+	require.Len(t, updated.Workspaces, 1)
 
 	removed, err := client.RemoveMember(ctx, "awb", "bob")
 	require.NoError(t, err)

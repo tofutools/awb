@@ -9,25 +9,25 @@ import {
 } from "../../static/profile.js";
 
 test("a user sees each administrative capability they hold", () => {
-  assert.deepEqual(accountRoles({ user_admin: true, project_admin: true }), [
+  assert.deepEqual(accountRoles({ user_admin: true, workspace_admin: true }), [
     "User administrator",
     "Workspace administrator",
   ]);
 });
 
 test("an account without administrative capabilities is a regular user", () => {
-  assert.deepEqual(accountRoles({ user_admin: false, project_admin: false }), ["Regular user"]);
+  assert.deepEqual(accountRoles({ user_admin: false, workspace_admin: false }), ["Regular user"]);
 });
 
 function user(overrides = {}) {
   return {
     name: "alice",
     full_name: "Alice Andersson",
-    project_admin: false,
+    workspace_admin: false,
     user_admin: false,
     created_at: "2026-08-31T10:00:00Z",
     updated_at: "2026-08-31T10:00:00Z",
-    projects: [],
+    workspaces: [],
     ...overrides,
   };
 }

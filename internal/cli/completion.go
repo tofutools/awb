@@ -49,18 +49,18 @@ func (e *env) queryCompletion(cmd *cobra.Command,
 	return values
 }
 
-// completeProjects lists the project keys visible through the selected local
+// completeWorkspaces lists the workspace keys visible through the selected local
 // or remote backend. A completion lookup is advisory: unavailable storage,
 // credentials or a server produce no suggestions rather than a shell error.
-func (e *env) completeProjects(cmd *cobra.Command, _ []string, _ string) []string {
+func (e *env) completeWorkspaces(cmd *cobra.Command, _ []string, _ string) []string {
 	return e.queryCompletion(cmd, func(ctx context.Context, be backend.Backend) ([]string, error) {
-		page, err := be.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+		page, err := be.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 		if err != nil {
 			return nil, err
 		}
-		values := make([]string, len(page.Projects))
-		for i, project := range page.Projects {
-			values[i] = project.Key
+		values := make([]string, len(page.Workspaces))
+		for i, workspace := range page.Workspaces {
+			values[i] = workspace.Key
 		}
 		return values, nil
 	})

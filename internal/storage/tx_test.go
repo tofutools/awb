@@ -88,13 +88,13 @@ func TestCancelledHTTPRequestDoesNotPoisonConnection(t *testing.T) {
 	})
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Write(r.Context(), func(tx *Tx) error {
-			return tx.InsertProject("healthy", "Healthy", "")
+			return tx.InsertWorkspace("healthy", "Healthy", "")
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if err := db.Read(r.Context(), func(tx *Tx) error {
-			if _, err := tx.GetProject("healthy"); err != nil {
+			if _, err := tx.GetWorkspace("healthy"); err != nil {
 				return err
 			}
 			hash, found, err := tx.PasswordHash("alice")
@@ -196,12 +196,12 @@ func openImmediateContender(t *testing.T, path string) *sql.DB {
 func assertPoolRemainsUsable(t *testing.T, db *DB) {
 	t.Helper()
 	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
-		return tx.InsertProject("healthy", "Healthy", "")
+		return tx.InsertWorkspace("healthy", "Healthy", "")
 	}))
 	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
-		project, err := tx.GetProject("healthy")
+		workspace, err := tx.GetWorkspace("healthy")
 		if err == nil {
-			assert.Equal(t, "Healthy", project.Name)
+			assert.Equal(t, "Healthy", workspace.Name)
 		}
 		return err
 	}))

@@ -72,7 +72,7 @@ type createParams struct {
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
-	Project        string   `long:"project" optional:"true" help:"the workspace to create the issue in (flag name retained for compatibility)"`
+	Workspace      string   `long:"workspace" optional:"true" help:"the workspace to create the issue in"`
 	HasParent      string   `long:"has-parent" optional:"true" help:"the new issue is part of decomposing this one"`
 	BlockedBy      []string `long:"blocked-by" collection:"array" optional:"true" help:"the new issue cannot start until this one is closed; repeatable"`
 	DiscoveredFrom []string `long:"discovered-from" collection:"array" optional:"true" help:"the new issue was found while working on this one; repeatable"`
@@ -101,20 +101,20 @@ func newCreateCommand(e *env) *cobra.Command {
 				return err
 			}
 
-			// The project is resolved as --project, else AWB_PROJECT, else the local
+			// The workspace is resolved as --workspace, else AWB_WORKSPACE, else the local
 			// file, else the user file.
-			target := cfg.DefaultProject
-			if cmd.Flags().Changed("project") {
-				target = p.Project
+			target := cfg.DefaultWorkspace
+			if cmd.Flags().Changed("workspace") {
+				target = p.Workspace
 			}
 			if target == "" {
 				return awberr.Usagef(
-					"no workspace: give the compatibility flag --project, set AWB_PROJECT, or put \"project\" in %s",
+					"no workspace: give --workspace, set AWB_WORKSPACE, or put \"workspace\" in %s",
 					".awb.yaml or the user configuration file")
 			}
 
 			req := backend.IssueCreate{
-				Project:   target,
+				Workspace: target,
 				Title:     p.Title,
 				Assignees: p.Assignees,
 				Type:      domain.Type(p.Type),
@@ -382,6 +382,59 @@ func newUpdateCommand(e *env) *cobra.Command {
 					file = *p.File
 				}
 				return descriptionPreconditionError(err, "issue", p.ID, file)
+			}
+			return e.mutated(issue)
+		},
+	}.ToCobra()
+}
+
+type moveParams struct {
+	ID        string `positional:"true" required:"true"`
+	Status    string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
+	Epic      string `long:"epic" optional:"true" help:"set direct membership in this same-workspace epic"`
+	NoEpic    bool   `long:"no-epic" optional:"true" help:"clear direct epic membership"`
+	Before    string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
+	After     string `long:"after" optional:"true" help:"place immediately after this issue"`
+	Direction string `long:"direction" optional:"true" alts:"earlier,later" help:"move one place in the transaction-time ordering scope"`
+}
+
+func newMoveCommand(e *env) *cobra.Command {
+	return boa.CmdT[moveParams]{
+		Use: "move", Short: "Move and manually position an issue atomically",
+		Long: "Move an issue to a workflow status and optionally a same-workspace epic.\n\n" +
+			"The workspace and ID never change. Status moves preserve the same assignment\n" +
+			"safety rules as claim, release, close and reopen.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
+			anchors := 0
+			for _, set := range []bool{p.Before != "", p.After != "", p.Direction != ""} {
+				if set {
+					anchors++
+				}
+			}
+			if anchors > 1 {
+				return awberr.Usagef("--before, --after and --direction are mutually exclusive")
+			}
+			if p.Epic != "" && p.NoEpic {
+				return awberr.Usagef("--epic and --no-epic are mutually exclusive")
+			}
+			var epic *string
+			if p.Epic != "" {
+				epic = &p.Epic
+			} else if p.NoEpic {
+				empty := ""
+				epic = &empty
+			}
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			issue, err := be.MoveIssue(cmd.Context(), p.ID, backend.IssueMove{
+				Status: domain.Status(p.Status), Epic: epic, Before: p.Before, After: p.After,
+				Direction: p.Direction,
+			}, "")
+			if err != nil {
+				return err
 			}
 			return e.mutated(issue)
 		},

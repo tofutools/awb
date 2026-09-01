@@ -14,7 +14,7 @@ import (
 // FilterFlags are the filters list, ready, blocked and search share.
 //
 // Repeated values of one filter are ORed; different filters are ANDed. No
-// Status, type, priority, label, assignee and project repeat; every other
+// Status, type, priority, label, assignee and workspace repeat; every other
 // filter may occur once.
 type FilterFlags struct {
 	Statuses      []string `long:"status" collection:"array" optional:"true" alts:"open,in_progress,closed" help:"select this status; repeatable (open, in_progress, closed)"`
@@ -26,8 +26,8 @@ type FilterFlags struct {
 	Assignees     []string `long:"assignee" collection:"array" optional:"true" help:"select this assignee; repeatable"`
 	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
 	Unassigned    bool     `long:"unassigned" optional:"true" help:"select unassigned issues"`
-	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this workspace; repeatable (flag name retained for compatibility)"`
-	AllProjects   bool     `long:"all-projects" optional:"true" help:"ignore the configured default workspace (flag name retained for compatibility)"`
+	Workspaces    []string `long:"workspace" collection:"array" optional:"true" help:"select this workspace; repeatable"`
+	AllWorkspaces bool     `long:"all-workspaces" optional:"true" help:"ignore the configured default workspace"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
 	Offset        *int     `long:"offset" optional:"true" help:"skip this many results"`
@@ -68,7 +68,7 @@ type filterOptions struct {
 func filterInit(e *env, opts filterOptions, fix func(*domain.Filter)) func(
 	*boa.HookContext, *FilterFlags, *cobra.Command) error {
 	return func(ctx *boa.HookContext, f *FilterFlags, _ *cobra.Command) error {
-		boa.GetParamT(ctx, &f.Projects).SetAlternativesFunc(e.completeProjects)
+		boa.GetParamT(ctx, &f.Workspaces).SetAlternativesFunc(e.completeWorkspaces)
 		boa.GetParamT(ctx, &f.Labels).SetAlternativesFunc(
 			func(cmd *cobra.Command, args []string, _ string) []string {
 				e.prepareCompletion(cmd)
@@ -189,7 +189,7 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 	if err := f.buildAssignee(e, cmd, opts, filter); err != nil {
 		return nil, err
 	}
-	if err := f.buildScope(cfg.DefaultProject, cfg.ContextLabel, cmd, filter); err != nil {
+	if err := f.buildScope(cfg.DefaultWorkspace, cfg.ContextLabel, cmd, filter); err != nil {
 		return nil, err
 	}
 
@@ -259,28 +259,28 @@ func (f *FilterFlags) buildAssignee(e *env, cmd *cobra.Command, opts filterOptio
 	return nil
 }
 
-// buildScope applies --project and --label, and their configured defaults.
+// buildScope applies --workspace and --label, and their configured defaults.
 //
-// An explicit --project replaces the default: an issue belongs to exactly one
-// project, so intersecting the two could only ever yield nothing, and the
-// explicit flag is what the person running the command means. --all-projects
-// removes only the project default. The context label works the same way as an
+// An explicit --workspace replaces the default: an issue belongs to exactly one
+// workspace, so intersecting the two could only ever yield nothing, and the
+// explicit flag is what the person running the command means. --all-workspaces
+// removes only the workspace default. The context label works the same way as an
 // explicit --label.
-func (f *FilterFlags) buildScope(defaultProject, contextLabel string, cmd *cobra.Command,
+func (f *FilterFlags) buildScope(defaultWorkspace, contextLabel string, cmd *cobra.Command,
 	filter *domain.Filter) error {
-	if f.AllProjects && cmd.Flags().Changed("project") {
-		return awberr.Usagef("--project and --all-projects are mutually exclusive")
+	if f.AllWorkspaces && cmd.Flags().Changed("workspace") {
+		return awberr.Usagef("--workspace and --all-workspaces are mutually exclusive")
 	}
-	if cmd.Flags().Changed("project") {
-		for _, p := range f.Projects {
-			key, err := domain.ValidateProjectKey(p)
+	if cmd.Flags().Changed("workspace") {
+		for _, p := range f.Workspaces {
+			key, err := domain.ValidateWorkspaceKey(p)
 			if err != nil {
 				return err
 			}
-			filter.Projects = append(filter.Projects, key)
+			filter.Workspaces = append(filter.Workspaces, key)
 		}
-	} else if !f.AllProjects && defaultProject != "" {
-		filter.Projects = []string{defaultProject}
+	} else if !f.AllWorkspaces && defaultWorkspace != "" {
+		filter.Workspaces = []string{defaultWorkspace}
 	}
 
 	if cmd.Flags().Changed("label") {

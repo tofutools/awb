@@ -17,7 +17,7 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// newInstance is a database with two projects and no users: direct mode, where
+// newInstance is a database with two workspaces and no users: direct mode, where
 // nothing is authorized. root is the unrestricted backend a CLI on the file
 // gets, and is what the fixtures are built with.
 func newInstance(t *testing.T) (root *local.Backend, ctx context.Context) {
@@ -29,7 +29,7 @@ func newInstance(t *testing.T) (root *local.Backend, ctx context.Context) {
 
 	root = local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
 	for _, key := range []string{"awb", "web"} {
-		_, err := root.CreateProject(t.Context(), backend.ProjectCreate{Key: key})
+		_, err := root.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: key})
 		require.NoError(t, err)
 	}
 	return root, t.Context()
@@ -38,19 +38,19 @@ func newInstance(t *testing.T) (root *local.Backend, ctx context.Context) {
 // addUser creates an account through the unrestricted backend, which is how a
 // real instance is bootstrapped.
 func addUser(t *testing.T, root *local.Backend, ctx context.Context, name string,
-	projectAdmin, userAdmin bool) {
+	workspaceAdmin, userAdmin bool) {
 	t.Helper()
 	_, err := root.CreateUser(ctx, backend.UserCreate{
 		Name: name, Password: "hunter2",
-		ProjectAdmin: projectAdmin, UserAdmin: userAdmin,
+		WorkspaceAdmin: workspaceAdmin, UserAdmin: userAdmin,
 	})
 	require.NoError(t, err)
 }
 
 func grant(t *testing.T, root *local.Backend, ctx context.Context,
-	project, user string, access domain.Access) {
+	workspace, user string, access domain.Access) {
 	t.Helper()
-	_, err := root.SetMember(ctx, project, user, access)
+	_, err := root.SetMember(ctx, workspace, user, access)
 	require.NoError(t, err)
 }
 
@@ -81,13 +81,13 @@ func TestDirectModeIsUnauthorized(t *testing.T) {
 	// backend acting as bob does everything anyway.
 	direct := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
 
-	page, err := direct.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	page, err := direct.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Len(t, page.Projects, 2)
+	assert.Len(t, page.Workspaces, 2)
 
-	_, err = direct.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	_, err = direct.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "third"})
 	require.NoError(t, err)
-	_, err = direct.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	_, err = direct.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
 	_, err = direct.CreateUser(ctx, backend.UserCreate{Name: "carol", Password: "hunter2"})
 	require.NoError(t, err)
@@ -95,25 +95,25 @@ func TestDirectModeIsUnauthorized(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A user works in the projects they are a member of and sees nothing else:
+// A user works in the workspaces they are a member of and sees nothing else:
 // every listing, and the unpaged total with it.
 func TestVisibilityIsMembership(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	inAwb, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	inAwb, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
-	inWeb, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	inWeb, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	workspaces, err := bob.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, projects.Projects, 1)
-	assert.Equal(t, "awb", projects.Projects[0].Key)
-	assert.Equal(t, 1, projects.Total, "the unpaged total counts what the caller may see")
+	require.Len(t, workspaces.Workspaces, 1)
+	assert.Equal(t, "awb", workspaces.Workspaces[0].Key)
+	assert.Equal(t, 1, workspaces.Total, "the unpaged total counts what the caller may see")
 
 	issues, err := bob.ListIssues(ctx, &domain.Filter{})
 	require.NoError(t, err)
@@ -126,29 +126,29 @@ func TestVisibilityIsMembership(t *testing.T) {
 	assert.Empty(t, hiddenMatch.Issues)
 	assert.Zero(t, hiddenMatch.Total, "the text filter narrows the authorized selection")
 
-	hiddenProject, err := bob.ListProjects(ctx, "web", domain.DefaultProjectSort, nil, nil)
+	hiddenWorkspace, err := bob.ListWorkspaces(ctx, "web", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Empty(t, hiddenProject.Projects)
-	assert.Zero(t, hiddenProject.Total)
+	assert.Empty(t, hiddenWorkspace.Workspaces)
+	assert.Zero(t, hiddenWorkspace.Total)
 
 	// The visible one is readable and the invisible one is not there at all.
 	_, err = bob.GetIssue(ctx, inAwb.ID)
 	require.NoError(t, err)
 	_, err = bob.GetIssue(ctx, inWeb.ID)
 	notFound(t, err)
-	_, err = bob.GetProject(ctx, "web")
+	_, err = bob.GetWorkspace(ctx, "web")
 	notFound(t, err)
 }
 
-func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
+func TestIgnoredWorkspacesAreScopedAndRecoverable(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 	grant(t, root, ctx, "web", "bob", domain.AccessRegular)
 
-	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Visible parser"})
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Visible parser"})
 	require.NoError(t, err)
-	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Hidden parser"})
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Hidden parser"})
 	require.NoError(t, err)
 	_, err = root.AddLabel(ctx, hidden.ID, "hidden-label", "")
 	require.NoError(t, err)
@@ -158,24 +158,24 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
-	preference, err := bob.SetProjectIgnored(ctx, "web", true)
+	preference, err := bob.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
 	assert.True(t, preference.Ignored)
 
-	preferences, err := bob.ListProjectPreferences(ctx)
+	preferences, err := bob.ListWorkspacePreferences(ctx)
 	require.NoError(t, err)
-	require.Len(t, preferences, 2, "the recovery path retains the ignored project")
-	assert.Equal(t, "web", preferences[1].Project.Key)
+	require.Len(t, preferences, 2, "the recovery path retains the ignored workspace")
+	assert.Equal(t, "web", preferences[1].Workspace.Key)
 	assert.True(t, preferences[1].Ignored)
 
-	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	workspaces, err := bob.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Equal(t, 1, projects.Total)
-	assert.Equal(t, "awb", projects.Projects[0].Key)
+	assert.Equal(t, 1, workspaces.Total)
+	assert.Equal(t, "awb", workspaces.Workspaces[0].Key)
 	account, err := bob.GetUser(ctx, "bob")
 	require.NoError(t, err)
-	require.Len(t, account.Projects, 1)
-	assert.Equal(t, "awb", account.Projects[0].Project)
+	require.Len(t, account.Workspaces, 1)
+	assert.Equal(t, "awb", account.Workspaces[0].Workspace)
 	issues, err := bob.ListIssues(ctx, &domain.Filter{Terms: []string{"parser"}})
 	require.NoError(t, err)
 	require.Len(t, issues.Issues, 1)
@@ -196,8 +196,8 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	navigation, err := bob.SearchNavigation(ctx, "hidden", 6)
 	require.NoError(t, err)
 	assert.Empty(t, navigation.Issues)
-	assert.Empty(t, navigation.Projects)
-	_, err = bob.GetProject(ctx, "web")
+	assert.Empty(t, navigation.Workspaces)
+	_, err = bob.GetWorkspace(ctx, "web")
 	notFound(t, err)
 	_, err = bob.GetIssue(ctx, hidden.ID)
 	notFound(t, err)
@@ -206,7 +206,7 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	}, "")
 	notFound(t, err)
 
-	preference, err = bob.SetProjectIgnored(ctx, "web", false)
+	preference, err = bob.SetWorkspaceIgnored(ctx, "web", false)
 	require.NoError(t, err)
 	assert.False(t, preference.Ignored)
 	_, err = bob.GetIssue(ctx, hidden.ID)
@@ -219,20 +219,40 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 		"re-enabling restores the historical relation snapshot")
 }
 
-// Ignoring a project is a presentation preference, not an authorization
+func TestBoardMoveCannotSeeOrSelectAnInaccessibleEpic(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	issue, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Visible work"})
+	require.NoError(t, err)
+	secret, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Secret epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+
+	secretID := secret.ID
+	_, err = root.WithUser("bob").MoveIssue(ctx, issue.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &secretID,
+	}, "")
+	notFound(t, err)
+	unchanged, err := root.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Empty(t, unchanged.Relations)
+	assert.Zero(t, unchanged.Order)
+}
+
+// Ignoring a workspace is a presentation preference, not an authorization
 // change. Its dedicated membership administration path therefore retains the
 // ordinary membership boundary while bypassing only that preference.
-func TestIgnoredProjectMembershipRemainsAdministrable(t *testing.T) {
+func TestIgnoredWorkspaceMembershipRemainsAdministrable(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "web", "bob", domain.AccessAdmin)
 
 	bob := root.WithUser("bob")
-	_, err := bob.SetProjectIgnored(ctx, "web", true)
+	_, err := bob.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
-	_, err = bob.GetProject(ctx, "web")
-	notFound(t, err, "ordinary project browsing still respects the preference")
+	_, err = bob.GetWorkspace(ctx, "web")
+	notFound(t, err, "ordinary workspace browsing still respects the preference")
 
 	page, err := bob.ListMembers(ctx, "web", nil, nil)
 	require.NoError(t, err)
@@ -246,7 +266,7 @@ func TestIgnoredProjectMembershipRemainsAdministrable(t *testing.T) {
 	assert.Equal(t, domain.AccessRegular, removed.Access)
 
 	_, err = bob.ListMembers(ctx, "awb", nil, nil)
-	notFound(t, err, "the recovery path does not reveal an unauthorized project")
+	notFound(t, err, "the recovery path does not reveal an unauthorized workspace")
 }
 
 func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {
@@ -254,21 +274,21 @@ func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "web", "bob", domain.AccessRegular)
 	bob := root.WithUser("bob")
-	_, err := bob.SetProjectIgnored(ctx, "web", true)
+	_, err := bob.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
 
 	directBob := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "bob")
-	_, err = directBob.GetProject(ctx, "web")
+	_, err = directBob.GetWorkspace(ctx, "web")
 	notFound(t, err)
 
 	// An identity without an account has no per-user preference and remains
 	// unrestricted, as direct mode was before preferences existed.
 	directOperator := local.New(root.DB(), storage.NewBlobs(t.TempDir()), "operator")
-	_, err = directOperator.GetProject(ctx, "web")
+	_, err = directOperator.GetWorkspace(ctx, "web")
 	require.NoError(t, err)
 }
 
-func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T) {
+func TestUserAdministratorDirectoryOmitsIgnoredWorkspaceAssociations(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "admin", false, true)
 	addUser(t, root, ctx, "bob", false, false)
@@ -277,15 +297,15 @@ func TestUserAdministratorDirectoryOmitsIgnoredProjectAssociations(t *testing.T)
 		grant(t, root, ctx, "web", user, domain.AccessRegular)
 	}
 	admin := root.WithUser("admin")
-	_, err := admin.SetProjectIgnored(ctx, "web", true)
+	_, err := admin.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
 
 	page, err := admin.ListUsers(ctx, "", nil, nil)
 	require.NoError(t, err)
 	require.Len(t, page.Users, 2, "user administration still sees the complete account directory")
 	for _, user := range page.Users {
-		require.Len(t, user.Projects, 1)
-		assert.Equal(t, "awb", user.Projects[0].Project)
+		require.Len(t, user.Workspaces, 1)
+		assert.Equal(t, "awb", user.Workspaces[0].Workspace)
 	}
 
 	page, err = admin.ListUsers(ctx, "web", nil, nil)
@@ -313,7 +333,7 @@ func TestUserListingFilterIsUnicodeCaseInsensitive(t *testing.T) {
 	assert.Equal(t, 1, page.Total)
 }
 
-func TestUserListingFilterCannotMatchUnauthorizedProjects(t *testing.T) {
+func TestUserListingFilterCannotMatchUnauthorizedWorkspaces(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	addUser(t, root, ctx, "carol", false, false)
@@ -332,13 +352,13 @@ func TestUserListingFilterCannotMatchUnauthorizedProjects(t *testing.T) {
 	assert.Equal(t, "carol", page.Users[0].Name)
 }
 
-func TestActivityUsesTheIssueProjectScope(t *testing.T) {
+func TestActivityUsesTheIssueWorkspaceScope(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
-	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Visible"})
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Visible"})
 	require.NoError(t, err)
-	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Hidden"})
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Hidden"})
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
@@ -355,23 +375,23 @@ func TestActivityUsesTheIssueProjectScope(t *testing.T) {
 	notFound(t, err)
 }
 
-// A project a caller cannot see is answered "no such project" and never
+// A workspace a caller cannot see is answered "no such workspace" and never
 // "forbidden": it is not theirs to know about.
-func TestAnInvisibleProjectIsNotFoundEverywhere(t *testing.T) {
+func TestAnInvisibleWorkspaceIsNotFoundEverywhere(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 	bob := root.WithUser("bob")
 
-	_, err := bob.GetProject(ctx, "web")
+	_, err := bob.GetWorkspace(ctx, "web")
 	notFound(t, err)
 
-	// A listing filtered to it reports the project rather than matching nothing.
-	_, err = bob.ListIssues(ctx, &domain.Filter{Projects: []string{"web"}})
+	// A listing filtered to it reports the workspace rather than matching nothing.
+	_, err = bob.ListIssues(ctx, &domain.Filter{Workspaces: []string{"web"}})
 	notFound(t, err)
 
 	// And creating an issue in it is the same answer.
-	_, err = bob.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	_, err = bob.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	notFound(t, err)
 
 	_, err = bob.ListMembers(ctx, "web", nil, nil)
@@ -385,11 +405,11 @@ func TestReferencesDoNotResolveOutsideTheScope(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 	bob := root.WithUser("bob")
 
-	// The full ID, the project-qualified prefix and the bare hash all say the
+	// The full ID, the workspace-qualified prefix and the bare hash all say the
 	// same thing.
 	hash := hidden.ID[len("web-"):]
 	for _, ref := range []string{hidden.ID, hidden.ID[:len("web-")+3], hash, hash[:3]} {
@@ -404,14 +424,14 @@ func TestReferencesDoNotResolveOutsideTheScope(t *testing.T) {
 }
 
 // Membership is the whole of the question for an issue: a member works with
-// the issues of their project, and admin adds nothing there.
-func TestAMemberWorksWithTheIssuesOfTheirProject(t *testing.T) {
+// the issues of their workspace, and admin adds nothing there.
+func TestAMemberWorksWithTheIssuesOfTheirWorkspace(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 	bob := root.WithUser("bob")
 
-	issue, err := bob.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	issue, err := bob.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
 
 	title := "Parser crashes on empty input"
@@ -427,8 +447,8 @@ func TestAMemberWorksWithTheIssuesOfTheirProject(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A project's own existence is the project_admin flag's, not its members'.
-func TestOnlyAProjectAdministratorManagesProjects(t *testing.T) {
+// A workspace's own existence is the workspace_admin flag's, not its members'.
+func TestOnlyAWorkspaceAdministratorManagesWorkspaces(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "carol", false, false)
 	addUser(t, root, ctx, "alice", true, false)
@@ -437,50 +457,50 @@ func TestOnlyAProjectAdministratorManagesProjects(t *testing.T) {
 	carol := root.WithUser("carol")
 	name := "Renamed"
 
-	_, err := carol.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	_, err := carol.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "third"})
 	forbidden(t, err)
 	// She can see awb, so changing it is refused rather than hidden.
-	_, err = carol.UpdateProject(ctx, "awb", backend.ProjectPatch{Name: &name}, "")
+	_, err = carol.UpdateWorkspace(ctx, "awb", backend.WorkspacePatch{Name: &name}, "")
 	forbidden(t, err)
-	_, err = carol.DeleteProject(ctx, "awb", false, "")
+	_, err = carol.DeleteWorkspace(ctx, "awb", false, "")
 	forbidden(t, err)
 
 	// One she cannot see is not found instead, the refusal never being the
 	// thing that reveals it.
-	_, err = carol.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &name}, "")
+	_, err = carol.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &name}, "")
 	notFound(t, err)
 
 	alice := root.WithUser("alice")
-	_, err = alice.CreateProject(ctx, backend.ProjectCreate{Key: "third"})
+	_, err = alice.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "third"})
 	require.NoError(t, err)
-	_, err = alice.UpdateProject(ctx, "awb", backend.ProjectPatch{Name: &name}, "")
+	_, err = alice.UpdateWorkspace(ctx, "awb", backend.WorkspacePatch{Name: &name}, "")
 	require.NoError(t, err)
 }
 
-// The project_admin flag holds admin access in every project, with no row
+// The workspace_admin flag holds admin access in every workspace, with no row
 // saying so — including the ones nobody has been given access to.
-func TestAProjectAdministratorSeesEverything(t *testing.T) {
+func TestAWorkspaceAdministratorSeesEverything(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", true, false)
-	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 
 	alice := root.WithUser("alice")
-	projects, err := alice.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	workspaces, err := alice.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Len(t, projects.Projects, 2)
+	assert.Len(t, workspaces.Workspaces, 2)
 
 	issues, err := alice.ListIssues(ctx, &domain.Filter{})
 	require.NoError(t, err)
 	assert.Len(t, issues.Issues, 1)
 
-	// And she may run the membership of a project she holds no row in.
+	// And she may run the membership of a workspace she holds no row in.
 	_, err = alice.SetMember(ctx, "web", "alice", domain.AccessRegular)
 	require.NoError(t, err)
 }
 
-// Adding and removing a project's users is what admin adds over regular.
-func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
+// Adding and removing a workspace's users is what admin adds over regular.
+func TestOnlyAWorkspacesAdministratorChangesItsMembership(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	addUser(t, root, ctx, "carol", false, false)
@@ -523,10 +543,10 @@ func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
 	notFound(t, err)
 }
 
-// The last stored project administrator may leave. A global project
+// The last stored workspace administrator may leave. A global workspace
 // administrator or direct database mode is the documented recovery path, and
 // the check is intentionally not a second, partial notion of administration.
-func TestTheLastStoredProjectAdministratorMayRemoveThemselves(t *testing.T) {
+func TestTheLastStoredWorkspaceAdministratorMayRemoveThemselves(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "carol", false, false)
 	grant(t, root, ctx, "awb", "carol", domain.AccessAdmin)
@@ -540,16 +560,16 @@ func TestTheLastStoredProjectAdministratorMayRemoveThemselves(t *testing.T) {
 	notFound(t, err, "the removal takes effect for the next operation")
 }
 
-// Revoking access makes the project and its issues vanish for that user, and
+// Revoking access makes the workspace and its issues vanish for that user, and
 // leaves their issues exactly as they were.
-func TestRevokingAccessHidesTheProjectAndKeepsTheWork(t *testing.T) {
+func TestRevokingAccessHidesTheWorkspaceAndKeepsTheWork(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
 	bob := root.WithUser("bob")
 	issue, err := bob.CreateIssue(ctx,
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
+		backend.IssueCreate{Workspace: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
 	require.NoError(t, err)
 
 	_, err = root.RemoveMember(ctx, "awb", "bob")
@@ -599,15 +619,15 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, users.Users, 4)
 
-	// Managing users confers no access to any project.
-	projects, err := dana.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	// Managing users confers no access to any workspace.
+	workspaces, err := dana.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Empty(t, projects.Projects)
+	assert.Empty(t, workspaces.Workspaces)
 }
 
 // A member's user directory includes collaborators and retained work history,
-// without exposing memberships in projects they cannot see.
-func TestMembersListUsersFromVisibleProjects(t *testing.T) {
+// without exposing memberships in workspaces they cannot see.
+func TestMembersListUsersFromVisibleWorkspaces(t *testing.T) {
 	root, ctx := newInstance(t)
 	for _, name := range []string{"alice", "bob", "carol", "dana", "erin"} {
 		addUser(t, root, ctx, name, false, name == "dana")
@@ -620,14 +640,14 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	// access to awb, as does Erin through the same multi-assignee issue. Carol's
 	// unrelated web membership must not come with it.
 	issue, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Parser crashes", Assignees: []string{"carol", "erin"},
+		Workspace: "awb", Title: "Parser crashes", Assignees: []string{"carol", "erin"},
 	})
 	require.NoError(t, err)
 	_, err = root.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 	grant(t, root, ctx, "web", "carol", domain.AccessRegular)
 	_, err = root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "web", Title: "Private redesign", Assignees: []string{"carol"},
+		Workspace: "web", Title: "Private redesign", Assignees: []string{"carol"},
 	})
 	require.NoError(t, err)
 
@@ -638,12 +658,12 @@ func TestMembersListUsersFromVisibleProjects(t *testing.T) {
 	assert.Equal(t, []string{"alice", "bob", "carol", "erin"}, []string{
 		page.Users[0].Name, page.Users[1].Name, page.Users[2].Name, page.Users[3].Name,
 	})
-	require.Len(t, page.Users[1].Projects, 1)
-	assert.Equal(t, "awb", page.Users[1].Projects[0].Project)
-	assert.Empty(t, page.Users[2].Projects, "carol's hidden web membership is not disclosed")
-	assert.Equal(t, []string{"awb"}, page.Users[2].ActivityProjects,
+	require.Len(t, page.Users[1].Workspaces, 1)
+	assert.Equal(t, "awb", page.Users[1].Workspaces[0].Workspace)
+	assert.Empty(t, page.Users[2].Workspaces, "carol's hidden web membership is not disclosed")
+	assert.Equal(t, []string{"awb"}, page.Users[2].ActivityWorkspaces,
 		"a closed issue remains activity history without disclosing hidden activity")
-	assert.Equal(t, []string{"awb"}, page.Users[3].ActivityProjects)
+	assert.Equal(t, []string{"awb"}, page.Users[3].ActivityWorkspaces)
 
 	// A user administrator retains the complete management listing.
 	all, err := root.WithUser("dana").ListUsers(ctx, "", nil, nil)
@@ -663,8 +683,8 @@ func TestAUserMayChangeTheirOwnProfileAndPassword(t *testing.T) {
 	self, err := bob.GetUser(ctx, "bob")
 	require.NoError(t, err)
 	assert.False(t, self.UserAdmin)
-	require.Len(t, self.Projects, 1, "which is how they learn what they may do")
-	assert.Equal(t, domain.AccessRegular, self.Projects[0].Access)
+	require.Len(t, self.Workspaces, 1, "which is how they learn what they may do")
+	assert.Equal(t, domain.AccessRegular, self.Workspaces[0].Access)
 
 	changed := "hunter3"
 	fullName := "Bob Builder"
@@ -716,12 +736,12 @@ func TestDeletingAUserTakesTheirMemberships(t *testing.T) {
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
 	issue, err := root.CreateIssue(ctx,
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
+		backend.IssueCreate{Workspace: "awb", Title: "Parser crashes", Assignees: []string{"bob"}})
 	require.NoError(t, err)
 
 	deleted, err := root.DeleteUser(ctx, "bob", "")
 	require.NoError(t, err)
-	require.Len(t, deleted.User.Projects, 1, "the memberships as they were")
+	require.Len(t, deleted.User.Workspaces, 1, "the memberships as they were")
 
 	members, err := root.ListMembers(ctx, "awb", nil, nil)
 	require.NoError(t, err)
@@ -738,7 +758,7 @@ func TestAnUnknownCallerIsRefused(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 
 	ghost := root.WithUser("nobody")
-	_, err := ghost.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	_, err := ghost.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	forbidden(t, err)
 }
 
@@ -749,28 +769,28 @@ func TestAUserNeverCarriesAPassword(t *testing.T) {
 
 	user, err := root.GetUser(ctx, "bob")
 	require.NoError(t, err)
-	assert.NotNil(t, user.Projects)
-	assert.Empty(t, user.Projects)
+	assert.NotNil(t, user.Workspaces)
+	assert.Empty(t, user.Workspaces)
 	assert.NotEmpty(t, user.CreatedAt)
 	assert.Equal(t, user.CreatedAt, user.UpdatedAt)
 }
 
-// A tree crosses projects, so it shows what the caller can see of a
+// A tree crosses workspaces, so it shows what the caller can see of a
 // decomposition rather than claiming to be the whole of one.
 func TestATreeStopsAtTheScope(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	parent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Epic"})
+	parent, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Epic"})
 	require.NoError(t, err)
 	visible, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Visible child",
+		Workspace: "awb", Title: "Visible child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
 	})
 	require.NoError(t, err)
 	_, err = root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "web", Title: "Hidden child",
+		Workspace: "web", Title: "Hidden child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
 	})
 	require.NoError(t, err)
@@ -786,7 +806,7 @@ func TestATreeStopsAtTheScope(t *testing.T) {
 }
 
 // The facet endpoints run the same selection as a listing, so they are scoped
-// with it: a label used only in a project the caller cannot see is not in use
+// with it: a label used only in a workspace the caller cannot see is not in use
 // as far as they are concerned.
 func TestFacetsAreScoped(t *testing.T) {
 	root, ctx := newInstance(t)
@@ -794,10 +814,10 @@ func TestFacetsAreScoped(t *testing.T) {
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
 	_, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignees: []string{"bob"}})
+		Workspace: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignees: []string{"bob"}})
 	require.NoError(t, err)
 	_, err = root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "web", Title: "Button drifts", Labels: []string{"css"}, Assignees: []string{"carol"}})
+		Workspace: "web", Title: "Button drifts", Labels: []string{"css"}, Assignees: []string{"carol"}})
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
@@ -819,9 +839,9 @@ func TestSearchIsScoped(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
-	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Parser drifts"})
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Parser drifts"})
 	require.NoError(t, err)
 
 	all, err := root.ListIssues(ctx, &domain.Filter{Terms: []string{"parser"}})
@@ -832,7 +852,7 @@ func TestSearchIsScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, scoped.Issues, 1)
 	assert.Equal(t, 1, scoped.Total)
-	assert.Equal(t, "awb", scoped.Issues[0].Project)
+	assert.Equal(t, "awb", scoped.Issues[0].Workspace)
 }
 
 func TestIssueSuggestionsAreScoped(t *testing.T) {
@@ -840,9 +860,9 @@ func TestIssueSuggestionsAreScoped(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
-	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Parser drifts"})
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Parser drifts"})
 	require.NoError(t, err)
 
 	page, err := root.WithUser("bob").SuggestIssues(ctx, "parser", nil)
@@ -858,7 +878,7 @@ func TestAttachmentsAreScoped(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 	_, err = root.AddAttachment(ctx, hidden.ID, backend.AttachmentCreate{
 		Name: "trace.txt", Content: strings.NewReader("boom")})
@@ -876,7 +896,7 @@ func TestAttachmentsAreScoped(t *testing.T) {
 	notFound(t, err)
 }
 
-// A member of a project may read who else works on it.
+// A member of a workspace may read who else works on it.
 func TestAMemberSeesTheMemberList(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
@@ -890,7 +910,7 @@ func TestAMemberSeesTheMemberList(t *testing.T) {
 	assert.Equal(t, 2, page.Total)
 	assert.Equal(t, "bob", page.Members[0].User, "ordered by username ascending")
 	assert.Equal(t, "carol", page.Members[1].User)
-	assert.Equal(t, "awb", page.Members[0].Project)
+	assert.Equal(t, "awb", page.Members[0].Workspace)
 }
 
 // The permissions are read inside the operation's own transaction, so a change
@@ -901,29 +921,29 @@ func TestPermissionsAreReadPerOperation(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	bob := root.WithUser("bob")
 
-	projects, err := bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	workspaces, err := bob.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Empty(t, projects.Projects)
+	assert.Empty(t, workspaces.Workspaces)
 
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	projects, err = bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	workspaces, err = bob.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
+	assert.Len(t, workspaces.Workspaces, 1, "the same backend, without reopening anything")
 }
 
-func TestOnlyProjectAdministratorsManageLifecycle(t *testing.T) {
+func TestOnlyWorkspaceAdministratorsManageLifecycle(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	addUser(t, root, ctx, "operator", true, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessAdmin)
 
-	_, err := root.WithUser("bob").ArchiveProject(ctx, "awb", "")
+	_, err := root.WithUser("bob").ArchiveWorkspace(ctx, "awb", "")
 	forbidden(t, err)
-	archived, err := root.WithUser("operator").ArchiveProject(ctx, "awb", "")
+	archived, err := root.WithUser("operator").ArchiveWorkspace(ctx, "awb", "")
 	require.NoError(t, err)
-	assert.Equal(t, domain.ProjectArchived, archived.State)
-	_, err = root.WithUser("bob").RestoreProject(ctx, "awb", "")
+	assert.Equal(t, domain.WorkspaceArchived, archived.State)
+	_, err = root.WithUser("bob").RestoreWorkspace(ctx, "awb", "")
 	forbidden(t, err)
 }
 
@@ -953,10 +973,10 @@ func TestTheGraphIsNotScopedAndReadinessIsTrue(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	blocker, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Button drifts"})
+	blocker, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Button drifts"})
 	require.NoError(t, err)
 	blocked, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Parser crashes",
+		Workspace: "awb", Title: "Parser crashes",
 		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: blocker.ID}},
 	})
 	require.NoError(t, err)
@@ -1002,15 +1022,15 @@ func TestTheRelationRulesSeeTheWholeGraph(t *testing.T) {
 
 	// mine -> hidden -> other, all by blocked-by, with the middle one out of
 	// bob's sight.
-	other, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Far end"})
+	other, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Far end"})
 	require.NoError(t, err)
 	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "web", Title: "Middle",
+		Workspace: "web", Title: "Middle",
 		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: other.ID}},
 	})
 	require.NoError(t, err)
 	mine, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Near end",
+		Workspace: "awb", Title: "Near end",
 		Relations: []backend.NewRelation{{Type: domain.RelBlockedBy, Other: hidden.ID}},
 	})
 	require.NoError(t, err)
@@ -1031,12 +1051,12 @@ func TestReparentingAnIssueWhoseParentIsInvisible(t *testing.T) {
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
 
-	hiddenParent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Epic"})
+	hiddenParent, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Epic"})
 	require.NoError(t, err)
-	visibleParent, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Other epic"})
+	visibleParent, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Other epic"})
 	require.NoError(t, err)
 	child, err := root.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "Child",
+		Workspace: "awb", Title: "Child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: hiddenParent.ID}},
 	})
 	require.NoError(t, err)

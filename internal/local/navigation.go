@@ -24,7 +24,7 @@ func (b *Backend) SearchNavigation(ctx context.Context, query string, limit int)
 		if results.Issues, err = tx.SearchIssuesForNavigation(query, limit); err != nil {
 			return err
 		}
-		if results.Projects, err = tx.SearchProjectsForNavigation(query, limit); err != nil {
+		if results.Workspaces, err = tx.SearchWorkspacesForNavigation(query, limit); err != nil {
 			return err
 		}
 		if caller.MayManageUsers() {

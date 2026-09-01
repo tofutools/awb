@@ -15,10 +15,10 @@ import (
 
 func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	want := map[string]string{
-		"/api/issues":   "needle frontend",
-		"/api/labels":   "needle frontend",
-		"/api/projects": "agent tracking",
-		"/api/users":    "alice awb",
+		"/api/issues":     "needle frontend",
+		"/api/labels":     "needle frontend",
+		"/api/workspaces": "agent tracking",
+		"/api/users":      "alice awb",
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, want[r.URL.Path], r.URL.Query().Get("filter"), r.URL.Path)
@@ -43,7 +43,7 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		Readiness:     domain.ReadinessReady,
 	})
 	require.NoError(t, err)
-	_, err = client.ListProjects(t.Context(), want["/api/projects"], domain.DefaultProjectSort, nil, nil)
+	_, err = client.ListWorkspaces(t.Context(), want["/api/workspaces"], domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
 	_, err = client.ListUsers(t.Context(), want["/api/users"], nil, nil)
 	require.NoError(t, err)

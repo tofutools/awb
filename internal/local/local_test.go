@@ -2,7 +2,9 @@ package local_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,7 +25,7 @@ func newBackend(t *testing.T) (*local.Backend, context.Context) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	b := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	_, err = b.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err = b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context()
 }
@@ -31,7 +33,7 @@ func newBackend(t *testing.T) (*local.Backend, context.Context) {
 func create(t *testing.T, b *local.Backend, ctx context.Context, title string,
 	mutate ...func(*backend.IssueCreate)) *domain.Issue {
 	t.Helper()
-	req := backend.IssueCreate{Project: "awb", Title: title}
+	req := backend.IssueCreate{Workspace: "awb", Title: title}
 	for _, m := range mutate {
 		m(&req)
 	}
@@ -50,8 +52,215 @@ func TestCreateIssueDefaults(t *testing.T) {
 	assert.Equal(t, domain.TypeTask, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 2, issue.Priority)
+	assert.Zero(t, issue.Order)
 	assert.Empty(t, issue.Assignees)
 	assert.True(t, issue.Ready())
+}
+
+func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
+	b, ctx := newBackend(t)
+	_, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
+	require.NoError(t, err)
+	create(t, b, ctx, "first")
+	create(t, b, ctx, "second")
+	create(t, b, ctx, "third")
+	page, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort})
+	require.NoError(t, err)
+	first, second, third := &page.Issues[0], &page.Issues[1], &page.Issues[2]
+
+	// The first manual move ranks the dragged issue without touching unrelated
+	// automatic rows.
+	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
+		Status: domain.StatusOpen,
+	}, "")
+	require.NoError(t, err)
+	assert.Positive(t, third.Order)
+	secondAfter, err := b.GetIssue(ctx, second.ID)
+	require.NoError(t, err)
+	assert.Zero(t, secondAfter.Order)
+	firstAutomatic, err := b.GetIssue(ctx, first.ID)
+	require.NoError(t, err)
+	assert.Zero(t, firstAutomatic.Order)
+
+	// A move between ranked neighbors chooses the sparse gap and leaves its
+	// neighbor's representation/ETag unchanged.
+	thirdTag := third.UpdatedAt
+	first, err = b.MoveIssue(ctx, first.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Before: third.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Less(t, first.Order, third.Order)
+	thirdAgain, err := b.GetIssue(ctx, third.ID)
+	require.NoError(t, err)
+	assert.Equal(t, thirdTag, thirdAgain.UpdatedAt)
+
+	second, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
+		Status: domain.StatusOpen, After: first.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Greater(t, second.Order, first.Order)
+	assert.Less(t, second.Order, third.Order)
+
+	automatic := create(t, b, ctx, "automatic anchor")
+	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Before: automatic.ID,
+	}, "")
+	require.NoError(t, err)
+	automatic, err = b.GetIssue(ctx, automatic.ID)
+	require.NoError(t, err)
+	assert.Greater(t, automatic.Order, third.Order)
+	activity, err := b.ListActivity(ctx, automatic.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "reordered", activity.Activity[0].Action,
+		"ranking an explicit automatic anchor records its stored-field mutation")
+
+	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Before: first.ID, After: third.ID,
+	}, "")
+	assert.Equal(t, 2, exitOf(err), "the two relative anchors are mutually exclusive")
+
+	// Epic swimlane and status change together without changing workspace or ID.
+	epicOne := create(t, b, ctx, "Epic one", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwo := create(t, b, ctx, "Epic two", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwoID := epicTwo.ID
+	moved, err := b.MoveIssue(ctx, first.ID, backend.IssueMove{
+		Status: domain.StatusInProgress, Epic: &epicTwoID,
+	}, backend.ETag(first.UpdatedAt))
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, moved.ID)
+	assert.Equal(t, "awb", moved.Workspace)
+	assert.Equal(t, domain.StatusInProgress, moved.Status)
+	assert.Equal(t, []string{"mikael"}, moved.Assignees)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	noEpic := ""
+	moved, err = b.MoveIssue(ctx, moved.ID, backend.IssueMove{Status: domain.StatusInProgress, Epic: &noEpic}, "")
+	require.NoError(t, err)
+	assert.NotContains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+	epicOneID := epicOne.ID
+	moved, err = b.MoveIssue(ctx, moved.ID, backend.IssueMove{Status: domain.StatusInProgress, Epic: &epicOneID}, "")
+	require.NoError(t, err)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicOne.ID, Direction: domain.DirectionOut})
+
+	webIssue, err := b.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "other workspace"})
+	require.NoError(t, err)
+	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{Status: domain.StatusOpen, Before: webIssue.ID}, "")
+	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
+}
+
+func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.T) {
+	b, ctx := newBackend(t)
+	dragged := create(t, b, ctx, "ranked")
+	dragged, err := b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
+		Status: domain.StatusOpen,
+	}, "")
+	require.NoError(t, err)
+	draggedOrder := dragged.Order
+	automatic := create(t, b, ctx, "automatic anchor")
+
+	dragged, err = b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Before: automatic.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Equal(t, draggedOrder, dragged.Order,
+		"placing the last ranked issue before an automatic anchor keeps its rank")
+
+	automatic, err = b.GetIssue(ctx, automatic.ID)
+	require.NoError(t, err)
+	assert.Greater(t, automatic.Order, dragged.Order)
+	activity, err := b.ListActivity(ctx, automatic.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, activity.Activity)
+	assert.Equal(t, "reordered", activity.Activity[0].Action,
+		"the anchor mutation is recorded even when the dragged issue is unchanged")
+}
+
+func TestMoveDirectionUsesTheTransactionTimeWorkspaceOrder(t *testing.T) {
+	b, ctx := newBackend(t)
+	for i := range 26 {
+		create(t, b, ctx, fmt.Sprintf("paged %02d", i))
+	}
+	limit, firstOffset, secondOffset := 25, 0, 25
+	firstPage, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &limit, Offset: &firstOffset})
+	require.NoError(t, err)
+	secondPage, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &limit, Offset: &secondOffset})
+	require.NoError(t, err)
+	require.Len(t, firstPage.Issues, 25)
+	require.Len(t, secondPage.Issues, 1)
+	anchor := firstPage.Issues[24]
+	moving := secondPage.Issues[0]
+	want := append(slices.Clone(firstPage.Issues), secondPage.Issues...)
+	want[24], want[25] = want[25], want[24]
+
+	moved, err := b.MoveIssue(ctx, moving.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Direction: "earlier",
+	}, "")
+	require.NoError(t, err)
+	assert.Positive(t, moved.Order)
+	anchorAfter, err := b.GetIssue(ctx, anchor.ID)
+	require.NoError(t, err)
+	assert.Less(t, moved.Order, anchorAfter.Order,
+		"direction resolves the neighbor outside the caller's visible offset page")
+	allLimit := 50
+	after, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &allLimit, Offset: &firstOffset})
+	require.NoError(t, err)
+	wantIDs := make([]string, len(want))
+	for i := range want {
+		wantIDs[i] = want[i].ID
+	}
+	afterIDs := make([]string, len(after.Issues))
+	for i := range after.Issues {
+		afterIDs[i] = after.Issues[i].ID
+	}
+	assert.Equal(t, wantIDs, afterIDs,
+		"one-place direction preserves every other automatic row's position")
+
+	_, err = b.MoveIssue(ctx, moving.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Direction: "earlier", Before: anchor.ID,
+	}, "")
+	assert.Equal(t, 2, exitOf(err))
+}
+
+func TestMoveIssueGuardsEpicMembershipAndCellOrderingAtomically(t *testing.T) {
+	b, ctx := newBackend(t)
+	epicOne := create(t, b, ctx, "Epic one", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwo := create(t, b, ctx, "Epic two", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	child := create(t, b, ctx, "Child", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: epicTwo.ID}}
+	})
+	peer := create(t, b, ctx, "Peer", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: epicTwo.ID}}
+	})
+
+	stale := backend.ETag(child.UpdatedAt)
+	changed := "Changed child"
+	child, err := b.UpdateIssue(ctx, child.ID, backend.IssuePatch{Title: &changed}, "")
+	require.NoError(t, err)
+	epicOneID := epicOne.ID
+	_, err = b.MoveIssue(ctx, child.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &epicOneID,
+	}, stale)
+	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+	child, err = b.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Contains(t, child.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	// The target anchor belongs to the old epic cell. Changing membership and
+	// ordering fails as one transaction, leaving the old relation intact.
+	_, err = b.MoveIssue(ctx, child.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &epicOneID, Before: peer.ID,
+	}, backend.ETag(child.UpdatedAt))
+	assert.Equal(t, 2, exitOf(err))
+	child, err = b.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Contains(t, child.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	feature := create(t, b, ctx, "Feature parent", func(req *backend.IssueCreate) { req.Type = domain.TypeFeature })
+	nested := create(t, b, ctx, "Nested", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: feature.ID}}
+	})
+	_, err = b.MoveIssue(ctx, nested.ID, backend.IssueMove{Status: domain.StatusOpen, Epic: &epicOneID}, "")
+	assert.Equal(t, 4, exitOf(err), "a board move never silently replaces a non-epic decomposition parent")
 }
 
 // Creating with an assignee is an atomic create-and-claim, so a new issue is
@@ -95,9 +304,9 @@ func TestCreateWithLabelsAndRelationsInOneTransaction(t *testing.T) {
 	assert.True(t, issue.Blocked)
 }
 
-func TestCreateRejectsUnknownProject(t *testing.T) {
+func TestCreateRejectsUnknownWorkspace(t *testing.T) {
 	b, ctx := newBackend(t)
-	_, err := b.CreateIssue(ctx, backend.IssueCreate{Project: "nosuch", Title: "t"})
+	_, err := b.CreateIssue(ctx, backend.IssueCreate{Workspace: "nosuch", Title: "t"})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 }
@@ -108,7 +317,7 @@ func TestCreateRejectsTwoParents(t *testing.T) {
 	c := create(t, b, ctx, "c")
 
 	_, err := b.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "t",
+		Workspace: "awb", Title: "t",
 		Relations: []backend.NewRelation{
 			{Type: domain.RelHasParent, Other: a.ID},
 			{Type: domain.RelHasParent, Other: c.ID},
@@ -544,12 +753,12 @@ func TestReadyAndBlockedListings(t *testing.T) {
 	assert.NotEqual(t, held.ID, ready.Issues[0].ID)
 }
 
-// A filter naming a project that is not there is a mistake to report, not a
+// A filter naming a workspace that is not there is a mistake to report, not a
 // listing that happens to match nothing.
-func TestFilterNamingAMissingProjectIsNotFound(t *testing.T) {
+func TestFilterNamingAMissingWorkspaceIsNotFound(t *testing.T) {
 	b, ctx := newBackend(t)
 
-	_, err := b.ListIssues(ctx, &domain.Filter{Projects: []string{"nosuch"}, Sort: domain.DefaultSort})
+	_, err := b.ListIssues(ctx, &domain.Filter{Workspaces: []string{"nosuch"}, Sort: domain.DefaultSort})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 
@@ -580,45 +789,45 @@ func TestDeleteIssue(t *testing.T) {
 	assert.Empty(t, orphan.Relations)
 }
 
-func TestProjectLifecycle(t *testing.T) {
+func TestWorkspaceLifecycle(t *testing.T) {
 	b, ctx := newBackend(t)
 
-	created, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	created, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
 	require.NoError(t, err)
 	assert.Equal(t, "web", created.Name, "the name defaults to the key")
 
 	name := "Web UI"
-	updated, err := b.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &name}, "")
+	updated, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &name}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "Web UI", updated.Name)
 
 	// An empty name restores the key.
 	empty := ""
-	restored, err := b.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &empty}, "")
+	restored, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &empty}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "web", restored.Name)
 
 	// A duplicate key conflicts.
-	_, err = b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	_, err = b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 }
 
-// project delete refuses while the project holds any issue at all, closed ones
+// workspace delete refuses while the workspace holds any issue at all, closed ones
 // included, so confirmation alone can never destroy closed history.
-func TestProjectDeletionAndCascade(t *testing.T) {
+func TestWorkspaceDeletionAndCascade(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")
 	_, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 
-	_, err = b.DeleteProject(ctx, "awb", false, "")
+	_, err = b.DeleteWorkspace(ctx, "awb", false, "")
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 
-	deleted, err := b.DeleteProject(ctx, "awb", true, "")
+	deleted, err := b.DeleteWorkspace(ctx, "awb", true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "awb", deleted.Project.Key)
+	assert.Equal(t, "awb", deleted.Workspace.Key)
 
 	// The issues went with it, closed ones included.
 	page, err := b.ListIssues(ctx, &domain.Filter{IncludeClosed: true, Sort: domain.DefaultSort})

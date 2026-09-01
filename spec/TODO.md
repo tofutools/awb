@@ -17,11 +17,11 @@ These are loose ends in what has shipped, not new scope.
 ## Version 2 — multi-user and multi-machine
 
 Authorization is done: users are rows with their password hashes, membership of
-a project is what a user may work in and all they can see, and two flags stand
-outside the projects for managing projects and managing users. What is left is
+a workspace is what a user may work in and all they can see, and two flags stand
+outside the workspaces for managing workspaces and managing users. What is left is
 below.
 
-* **A shared instance**, for a team or an open source project, rather than a
+* **A shared instance**, for a team or an open source workspace, rather than a
   local surface that happens to speak HTTP. That is a deployment and operations
   question as much as a code one: TLS termination, backup, and what happens to a
   claim when the person holding it leaves.
@@ -38,9 +38,9 @@ Each of these was considered and left out. They are recorded here so the
 reasoning is not lost and so they are not re-litigated by accident.
 
 * **Creation, deletion and administration in the web UI.** The bundled UI edits
-  existing projects and issues, including lifecycle state, labels, relations,
+  existing workspaces and issues, including lifecycle state, labels, relations,
   attachments and comments. Creating or hard-deleting records and managing
-  users or project membership remain command-line operations.
+  users or workspace membership remain command-line operations.
 
 * **An MCP server.** The command line is the agent interface, and a second one
   would be a second surface to keep in step.
@@ -48,9 +48,9 @@ reasoning is not lost and so they are not re-litigated by accident.
 * **Bulk import from stdin.** Reading a description from stdin exists; reading a
   stream of issues does not.
 
-* **Project activity and comments.** Issues have comments and append-only change
-  events. A project detail page could aggregate its issues' activity and, if a
-  concrete need emerges, hold project-scoped comments.
+* **Workspace activity and comments.** Issues have comments and append-only change
+  events. A workspace detail page could aggregate its issues' activity and, if a
+  concrete need emerges, hold workspace-scoped comments.
 
 * **Full history and compliance audit logs.** The issue activity stream is a
   work log, not reconstructable version history: hard deletion removes it and

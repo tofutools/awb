@@ -118,39 +118,39 @@ func TestParsePasswordHashRefusals(t *testing.T) {
 func TestCallerRules(t *testing.T) {
 	member := domain.Caller{Name: "bob"}
 	admin := domain.Caller{Name: "carol"}
-	projectAdmin := domain.Caller{Name: "alice", ProjectAdmin: true}
+	workspaceAdmin := domain.Caller{Name: "alice", WorkspaceAdmin: true}
 	userAdmin := domain.Caller{Name: "dana", UserAdmin: true}
 	direct := domain.Caller{Name: "mikael", Unrestricted: true}
 
 	// Membership alone decides what is visible and what may be worked on.
-	assert.True(t, member.MaySeeProject(domain.AccessRegular, true))
+	assert.True(t, member.MaySeeWorkspace(domain.AccessRegular, true))
 	assert.True(t, member.MayWorkOn(domain.AccessRegular, true))
-	assert.False(t, member.MayAdministerProject(domain.AccessRegular, true))
+	assert.False(t, member.MayAdministerWorkspace(domain.AccessRegular, true))
 
-	assert.True(t, admin.MayAdministerProject(domain.AccessAdmin, true))
+	assert.True(t, admin.MayAdministerWorkspace(domain.AccessAdmin, true))
 	assert.True(t, admin.MayWorkOn(domain.AccessAdmin, true))
-	assert.False(t, admin.MayManageProjects(), "admin in a project is not power over projects")
+	assert.False(t, admin.MayManageWorkspaces(), "admin in a workspace is not power over workspaces")
 
 	// A non-member sees nothing, whatever else they hold.
-	assert.False(t, member.MaySeeProject("", false))
-	assert.False(t, userAdmin.MaySeeProject("", false),
-		"managing users confers no access to any project")
+	assert.False(t, member.MaySeeWorkspace("", false))
+	assert.False(t, userAdmin.MaySeeWorkspace("", false),
+		"managing users confers no access to any workspace")
 
-	// A project administrator holds admin everywhere, with no row saying so.
-	access, ok := projectAdmin.AccessTo("", false)
+	// A workspace administrator holds admin everywhere, with no row saying so.
+	access, ok := workspaceAdmin.AccessTo("", false)
 	assert.True(t, ok)
 	assert.Equal(t, domain.AccessAdmin, access)
-	assert.True(t, projectAdmin.MayAdministerProject("", false))
-	assert.True(t, projectAdmin.MayManageProjects())
-	assert.False(t, projectAdmin.MayManageUsers(), "neither flag implies the other")
+	assert.True(t, workspaceAdmin.MayAdministerWorkspace("", false))
+	assert.True(t, workspaceAdmin.MayManageWorkspaces())
+	assert.False(t, workspaceAdmin.MayManageUsers(), "neither flag implies the other")
 
 	assert.True(t, userAdmin.MayManageUsers())
-	assert.False(t, userAdmin.MayManageProjects())
+	assert.False(t, userAdmin.MayManageWorkspaces())
 
 	// Direct mode is every rule saying yes.
-	assert.True(t, direct.MaySeeProject("", false))
-	assert.True(t, direct.MayAdministerProject("", false))
-	assert.True(t, direct.MayManageProjects())
+	assert.True(t, direct.MaySeeWorkspace("", false))
+	assert.True(t, direct.MayAdministerWorkspace("", false))
+	assert.True(t, direct.MayManageWorkspaces())
 	assert.True(t, direct.MayManageUsers())
 }
 
@@ -176,8 +176,8 @@ func TestCallerMayAlwaysSeeThemselves(t *testing.T) {
 func TestUserNormalizeCarriesAnEmptyArray(t *testing.T) {
 	user := domain.User{Name: "alice"}
 	user.Normalize()
-	assert.NotNil(t, user.Projects)
-	assert.Empty(t, user.Projects)
+	assert.NotNil(t, user.Workspaces)
+	assert.Empty(t, user.Workspaces)
 }
 
 func TestCompactUserLine(t *testing.T) {
@@ -186,17 +186,17 @@ func TestCompactUserLine(t *testing.T) {
 	assert.Equal(t, "alice", domain.CompactUserLine(user))
 
 	user = &domain.User{
-		Name: "alice", ProjectAdmin: true, UserAdmin: true,
-		Projects: []domain.Membership{
-			{Project: "awb", User: "alice", Access: domain.AccessAdmin},
-			{Project: "web", User: "alice", Access: domain.AccessRegular},
+		Name: "alice", WorkspaceAdmin: true, UserAdmin: true,
+		Workspaces: []domain.Membership{
+			{Workspace: "awb", User: "alice", Access: domain.AccessAdmin},
+			{Workspace: "web", User: "alice", Access: domain.AccessRegular},
 		},
 	}
-	assert.Equal(t, "alice +project-admin +user-admin awb:admin web:regular",
+	assert.Equal(t, "alice +workspace-admin +user-admin awb:admin web:regular",
 		domain.CompactUserLine(user))
 
 	assert.Equal(t, "awb alice admin", domain.CompactMembershipLine(&domain.Membership{
-		Project: "awb", User: "alice", Access: domain.AccessAdmin}))
+		Workspace: "awb", User: "alice", Access: domain.AccessAdmin}))
 }
 
 // Nothing that leaves the storage layer carries a password, in any output mode.

@@ -38,23 +38,31 @@ type Backend interface {
 	MayManageUsers(ctx context.Context) (bool, error)
 	SearchNavigation(ctx context.Context, query string, limit int) (NavigationResults, error)
 
-	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
-	GetProject(ctx context.Context, key string) (*domain.Project, error)
-	ListProjects(ctx context.Context, filter string, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
-	ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
-	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
-	ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
-	RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
-	ListProjectActivity(ctx context.Context, key string, limit, offset *int) (ProjectActivityPage, error)
-	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
-	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
-	SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error)
+	CreateWorkspace(ctx context.Context, req WorkspaceCreate) (*domain.Workspace, error)
+	GetWorkspace(ctx context.Context, key string) (*domain.Workspace, error)
+	ListWorkspaces(ctx context.Context, filter string, sort domain.WorkspaceSort, limit, offset *int) (WorkspacePage, error)
+	ListWorkspacesByState(ctx context.Context, filter string, state domain.WorkspaceStateFilter, sort domain.WorkspaceSort, limit, offset *int) (WorkspacePage, error)
+	UpdateWorkspace(ctx context.Context, key string, req WorkspacePatch, ifMatch string) (*domain.Workspace, error)
+	ArchiveWorkspace(ctx context.Context, key, ifMatch string) (*domain.Workspace, error)
+	RestoreWorkspace(ctx context.Context, key, ifMatch string) (*domain.Workspace, error)
+	ListWorkspaceActivity(ctx context.Context, key string, limit, offset *int) (WorkspaceActivityPage, error)
+	DeleteWorkspace(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedWorkspace, error)
+	ListWorkspacePreferences(ctx context.Context) ([]domain.WorkspacePreference, error)
+	SetWorkspaceIgnored(ctx context.Context, key string, ignored bool) (*domain.WorkspacePreference, error)
+
+	ListBoardViews(ctx context.Context) ([]domain.BoardView, error)
+	CreateBoardView(ctx context.Context, req BoardViewCreate) (*domain.BoardView, error)
+	GetBoardView(ctx context.Context, id string) (*domain.BoardView, error)
+	UpdateBoardView(ctx context.Context, id string, req BoardViewPatch, ifMatch string) (*domain.BoardView, error)
+	DeleteBoardView(ctx context.Context, id, ifMatch string) (*domain.BoardView, error)
+	GetBoard(ctx context.Context, ref string, query BoardQuery) (*domain.Board, error)
 
 	CreateIssue(ctx context.Context, req IssueCreate) (*domain.Issue, error)
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
 	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
+	MoveIssue(ctx context.Context, ref string, req IssueMove, ifMatch string) (*domain.Issue, error)
 	DeleteIssue(ctx context.Context, ref string, ifMatch string) (*DeletedIssue, error)
 
 	Claim(ctx context.Context, ref string, req ClaimRequest, ifMatch string) (*domain.Issue, error)
@@ -106,15 +114,15 @@ type Backend interface {
 	UpdateUser(ctx context.Context, name string, req UserPatch, ifMatch string) (*domain.User, error)
 	DeleteUser(ctx context.Context, name string, ifMatch string) (*DeletedUser, error)
 
-	// The membership operations. A membership is keyed on its project and its
+	// The membership operations. A membership is keyed on its workspace and its
 	// user, as an attachment is keyed on its issue and its name, so it has no
 	// identifier of its own and none of these takes an ifMatch: a membership
 	// has one field and setting it is idempotent. AddMember is the create-only
 	// form used when a stale caller must not replace an existing grant.
-	ListMembers(ctx context.Context, project string, limit, offset *int) (MemberPage, error)
-	AddMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
-	SetMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
-	RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error)
+	ListMembers(ctx context.Context, workspace string, limit, offset *int) (MemberPage, error)
+	AddMember(ctx context.Context, workspace, user string, access domain.Access) (*domain.Membership, error)
+	SetMember(ctx context.Context, workspace, user string, access domain.Access) (*domain.Membership, error)
+	RemoveMember(ctx context.Context, workspace, user string) (*domain.Membership, error)
 
 	// Close releases whatever the backend holds: the database file, or the idle
 	// connections of an HTTP client.
@@ -136,23 +144,53 @@ type IssuePage struct {
 	Total  int
 }
 
-// ProjectPage is a project listing with its unpaged total.
-type ProjectPage struct {
-	Projects []domain.Project
-	Total    int
+type BoardViewCreate struct {
+	Name          string
+	Shared        bool
+	AllWorkspaces bool
+	Workspaces    []string
+	Labels        []string
+	Assignees     []string
+	PriorityMax   int
 }
 
-type ProjectActivityPage struct {
-	Activity []domain.ProjectActivity
+type BoardViewPatch struct {
+	Name          *string
+	Shared        *bool
+	AllWorkspaces *bool
+	Workspaces    *[]string
+	Labels        *[]string
+	Assignees     *[]string
+	PriorityMax   *int
+}
+
+type BoardQuery struct {
+	LaneLimit  *int
+	LaneOffset *int
+	CardLimit  *int
+	CardOffset *int
+	Workspaces []string
+	Status     domain.Status
+	Epic       *string
+}
+
+// WorkspacePage is a workspace listing with its unpaged total.
+type WorkspacePage struct {
+	Workspaces []domain.Workspace
+	Total      int
+}
+
+type WorkspaceActivityPage struct {
+	Activity []domain.WorkspaceActivity
 	Total    int
 }
 
 // NavigationResults is the small, grouped autocomplete result used by clients
 // that navigate to records without first loading their full collections.
 type NavigationResults struct {
-	Issues   []domain.Issue
-	Projects []domain.Project
-	Users    []domain.User
+	Issues     []domain.Issue
+	Workspaces []domain.Workspace
+	Users      []domain.User
 }
 
 // FacetPage is a facet listing with its unpaged total. The total counts the
@@ -180,7 +218,7 @@ type UserPage struct {
 	Total int
 }
 
-// MemberPage is a project's member listing with its unpaged total.
+// MemberPage is a workspace's member listing with its unpaged total.
 type MemberPage struct {
 	Members []domain.Membership
 	Total   int
@@ -198,14 +236,14 @@ type UserCreate struct {
 	Password     string
 	PasswordHash string
 
-	ProjectAdmin bool
-	UserAdmin    bool
+	WorkspaceAdmin bool
+	UserAdmin      bool
 }
 
 // UserPatch is what awb user update and PATCH /api/users/{name} may change. A
 // nil field is left alone.
 //
-// The name itself is immutable, as a project key is: it is what the issues
+// The name itself is immutable, as a workspace key is: it is what the issues
 // that user works on record as their assignee, and renaming it would leave
 // that record pointing at nobody.
 type UserPatch struct {
@@ -214,8 +252,8 @@ type UserPatch struct {
 	PasswordHash *string
 	FullName     *string
 
-	ProjectAdmin *bool
-	UserAdmin    *bool
+	WorkspaceAdmin *bool
+	UserAdmin      *bool
 }
 
 // DeletedUser is what a delete returns: the user as they were immediately
@@ -240,10 +278,10 @@ type AttachmentCreate struct {
 }
 
 // IssueCreate is the body of awb create and of POST /api/issues. Everything
-// but Project and Title may be left at its zero value and then takes its
+// but Workspace and Title may be left at its zero value and then takes its
 // documented default.
 type IssueCreate struct {
-	Project     string
+	Workspace   string
 	Title       string
 	Description string
 	Type        domain.Type
@@ -291,16 +329,27 @@ type IssuePatch struct {
 	ExpectAssignees *[]string
 }
 
-// ProjectCreate is the body of awb project create and of POST /api/projects.
-type ProjectCreate struct {
+// IssueMove atomically changes workflow status, optional direct epic
+// membership, and sparse position. Workspace/workspace and issue ID are
+// immutable. A nil Epic preserves membership; a pointer to empty clears it.
+type IssueMove struct {
+	Status    domain.Status
+	Epic      *string
+	Before    string
+	After     string
+	Direction string
+}
+
+// WorkspaceCreate is the body of awb workspace create and of POST /api/workspaces.
+type WorkspaceCreate struct {
 	Key         string
 	Name        string
 	Description string
 }
 
-// ProjectPatch is what awb project update and PATCH /api/projects/{key} may
+// WorkspacePatch is what awb workspace update and PATCH /api/workspaces/{key} may
 // change. The key itself is immutable.
-type ProjectPatch struct {
+type WorkspacePatch struct {
 	Name        *string
 	Description *string
 }
@@ -347,15 +396,15 @@ type DeletedIssue struct {
 	RelationsRemoved int
 }
 
-// DeletedProject is what project delete returns: the project as it was immediately
+// DeletedWorkspace is what workspace delete returns: the workspace as it was immediately
 // before deletion.
 //
 // It deliberately carries no count of the issues --cascade took with it. Direct
-// mode knows that number, but the API response is a Project, whose
+// mode knows that number, but the API response is a Workspace, whose
 // active_issues excludes closed issues and so cannot stand in for it — and
 // giving the response a count would be a second, HTTP-only representation of a
 // shape the CLI also returns. Rather than let the two modes print different
 // numbers, neither prints one.
-type DeletedProject struct {
-	Project domain.Project
+type DeletedWorkspace struct {
+	Workspace domain.Workspace
 }

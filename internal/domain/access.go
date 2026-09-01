@@ -9,21 +9,21 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// Access is what one user may do in one project. It is the only per-project
-// vocabulary there is: a user either holds one of these in a project or holds
-// nothing there, and holding nothing means the project does not exist as far
+// Access is what one user may do in one workspace. It is the only per-workspace
+// vocabulary there is: a user either holds one of these in a workspace or holds
+// nothing there, and holding nothing means the workspace does not exist as far
 // as that user is concerned.
 type Access string
 
 const (
-	// AccessRegular is working with the issues of a project: reading them,
+	// AccessRegular is working with the issues of a workspace: reading them,
 	// creating them, editing them, claiming them and everything else awb does
 	// to an issue.
 	AccessRegular Access = "regular"
 	// AccessAdmin is AccessRegular and, in addition, adding and removing the
-	// project's other users. It is not power over the project itself: creating,
-	// renaming and deleting a project is the project_admin flag's, because a
-	// project's own existence is not something its members decide.
+	// workspace's other users. It is not power over the workspace itself: creating,
+	// renaming and deleting a workspace is the workspace_admin flag's, because a
+	// workspace's own existence is not something its members decide.
 	AccessAdmin Access = "admin"
 )
 
@@ -133,41 +133,41 @@ func CheckPassword(hash, password string) bool {
 // leaves the storage layer, so no listing, no response and no --json output
 // can carry it by accident.
 //
-// Projects is the user's memberships, ordered by project key ascending. It is
+// Workspaces is the user's memberships, ordered by workspace key ascending. It is
 // derived and read-only, exactly as an issue's relations are: membership is
 // changed by its own operations.
 type User struct {
-	Name             string       `json:"name"`
-	FullName         string       `json:"full_name"`
-	ProjectAdmin     bool         `json:"project_admin"`
-	UserAdmin        bool         `json:"user_admin"`
-	CreatedAt        string       `json:"created_at"`
-	UpdatedAt        string       `json:"updated_at"`
-	Projects         []Membership `json:"projects"`
-	ActivityProjects []string     `json:"-"`
+	Name               string       `json:"name"`
+	FullName           string       `json:"full_name"`
+	WorkspaceAdmin     bool         `json:"workspace_admin"`
+	UserAdmin          bool         `json:"user_admin"`
+	CreatedAt          string       `json:"created_at"`
+	UpdatedAt          string       `json:"updated_at"`
+	Workspaces         []Membership `json:"workspaces"`
+	ActivityWorkspaces []string     `json:"-"`
 }
 
 // Normalize replaces a nil membership slice with an empty one, so the JSON
 // encoding carries [] and never null.
 func (u *User) Normalize() {
-	if u.Projects == nil {
-		u.Projects = []Membership{}
+	if u.Workspaces == nil {
+		u.Workspaces = []Membership{}
 	}
 }
 
-// Membership is one user's access to one project. Both ends are named
-// whichever way round it is read, so the shape a project's member list returns
+// Membership is one user's access to one workspace. Both ends are named
+// whichever way round it is read, so the shape a workspace's member list returns
 // and the shape a user's own listing returns are one shape.
 type Membership struct {
-	Project string `json:"project"`
-	User    string `json:"user"`
-	Access  Access `json:"access"`
+	Workspace string `json:"workspace"`
+	User      string `json:"user"`
+	Access    Access `json:"access"`
 }
 
 // Caller is who is acting, as the authorization rules see them.
 //
 // It is built once per operation from the stored user row, and it is the only
-// input those rules take beyond the membership of the project in question.
+// input those rules take beyond the membership of the workspace in question.
 // Every rule below is a pure function of it, so the two surfaces cannot come
 // to different conclusions about the same caller.
 type Caller struct {
@@ -183,58 +183,64 @@ type Caller struct {
 	// is the same case.
 	Unrestricted bool
 
-	// ProjectAdmin may create, change and delete projects, and holds
+	// WorkspaceAdmin may create, change and delete workspaces, and holds
 	// AccessAdmin in every one of them — including the ones nobody has been
 	// given access to, since somebody has to be able to.
-	ProjectAdmin bool
+	WorkspaceAdmin bool
 	// UserAdmin may create, change and delete users, which includes granting
 	// both of these flags.
 	UserAdmin bool
 }
 
-// AccessTo is the caller's effective access to a project, given the membership
+// AccessTo is the caller's effective access to a workspace, given the membership
 // stored for them there and whether one is stored at all.
 //
 // It is where the two flags meet the membership table: an unrestricted caller
-// and a project administrator hold AccessAdmin everywhere without a row saying
+// and a workspace administrator hold AccessAdmin everywhere without a row saying
 // so, and everybody else holds exactly what their row says.
 func (c Caller) AccessTo(stored Access, member bool) (Access, bool) {
-	if c.Unrestricted || c.ProjectAdmin {
+	if c.Unrestricted || c.WorkspaceAdmin {
 		return AccessAdmin, true
 	}
 	return stored, member
 }
 
-// MaySeeProject reports whether the project is visible to the caller at all.
-// It is membership and nothing more: a project a user is not in does not exist
+// MaySeeWorkspace reports whether the workspace is visible to the caller at all.
+// It is membership and nothing more: a workspace a user is not in does not exist
 // for them, and neither do its issues.
-func (c Caller) MaySeeProject(stored Access, member bool) bool {
+func (c Caller) MaySeeWorkspace(stored Access, member bool) bool {
 	_, ok := c.AccessTo(stored, member)
 	return ok
 }
 
-// MayWorkOn reports whether the caller may change the issues of a project.
+// MayWorkOn reports whether the caller may change the issues of a workspace.
 // Every access level may, membership being the whole of the question; what
 // AccessAdmin adds is over the membership, not over the work.
 func (c Caller) MayWorkOn(stored Access, member bool) bool {
-	return c.MaySeeProject(stored, member)
+	return c.MaySeeWorkspace(stored, member)
 }
 
-// MayAdministerProject reports whether the caller may add and remove the
-// project's users.
-func (c Caller) MayAdministerProject(stored Access, member bool) bool {
+// MayAdministerWorkspace reports whether the caller may add and remove the
+// workspace's users.
+func (c Caller) MayAdministerWorkspace(stored Access, member bool) bool {
 	access, ok := c.AccessTo(stored, member)
 	return ok && access == AccessAdmin
 }
 
-// MayManageProjects reports whether the caller may create, change and delete
-// projects themselves. That is the project_admin flag alone: a project's own
+// MayManageWorkspaces reports whether the caller may create, change and delete
+// workspaces themselves. That is the workspace_admin flag alone: a workspace's own
 // administrators run its membership, not its existence.
-func (c Caller) MayManageProjects() bool { return c.Unrestricted || c.ProjectAdmin }
+func (c Caller) MayManageWorkspaces() bool { return c.Unrestricted || c.WorkspaceAdmin }
 
 // MayManageUsers reports whether the caller may create, change and delete
 // users.
 func (c Caller) MayManageUsers() bool { return c.Unrestricted || c.UserAdmin }
+
+// MayManageBoardView keeps a personal view personal: administrative flags do
+// not confer ownership of another user's saved workflow.
+func (c Caller) MayManageBoardView(owner string) bool {
+	return c.Unrestricted || c.Name == owner
+}
 
 // MaySeeUser reports whether the caller may read one user's account. A user
 // may always read their own, which is how anybody without the flag learns what

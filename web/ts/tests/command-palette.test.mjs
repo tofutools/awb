@@ -60,8 +60,8 @@ test("the header trigger advertises the palette shortcut accessibly on each plat
 test("navigation results become keyboard commands with stable routes", () => {
   const navigated = [];
   const commands = navigationResultCommands({
-    issues: [{ id: "awb-a1b2c3", project: "awb", title: "Palette" }],
-    projects: [{ key: "client-ui", name: "Client UI" }],
+    issues: [{ id: "awb-a1b2c3", workspace: "awb", title: "Palette" }],
+    workspaces: [{ key: "client-ui", name: "Client UI" }],
     users: [{ name: "mikael", full_name: "Mikael Ståldal" }],
   }, (href) => navigated.push(href));
   assert.deepEqual(commands.map(({ group }) => group), ["Issues", "Workspaces", "Users"]);
@@ -76,10 +76,10 @@ test("page and boundary keys clamp across grouped static and dynamic results", (
     command("ready", "Go to Ready"),
     ...navigationResultCommands({
       issues: [
-        { id: "awb-a1b2c3", project: "awb", title: "Palette" },
-        { id: "awb-d4e5f6", project: "awb", title: "Keyboard" },
+        { id: "awb-a1b2c3", workspace: "awb", title: "Palette" },
+        { id: "awb-d4e5f6", workspace: "awb", title: "Keyboard" },
       ],
-      projects: [{ key: "client-ui", name: "Client UI" }],
+      workspaces: [{ key: "client-ui", name: "Client UI" }],
       users: [{ name: "mikael", full_name: "Mikael Ståldal" }],
     }, () => {}),
     command("users", "Go to Users"),
@@ -112,7 +112,7 @@ test("navigation uses the refreshed backend result count", () => {
   assert.equal(nextPaletteSelection("End", 0, beforeResponseCount, 4), 1);
 
   // A ready backend response resets selection before appending its issue,
-  // project and user groups. Subsequent keys use that freshly rendered count.
+  // workspace and user groups. Subsequent keys use that freshly rendered count.
   const refreshedCount = beforeResponseCount + 3;
   const resetSelection = 0;
   assert.equal(nextPaletteSelection("PageDown", resetSelection, refreshedCount, 4), 4);

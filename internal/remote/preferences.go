@@ -8,18 +8,18 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-func (b *Backend) ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error) {
-	preferences := []domain.ProjectPreference{}
-	_, err := b.call(ctx, http.MethodGet, b.endpoint("/api/preferences/projects", nil),
+func (b *Backend) ListWorkspacePreferences(ctx context.Context) ([]domain.WorkspacePreference, error) {
+	preferences := []domain.WorkspacePreference{}
+	_, err := b.call(ctx, http.MethodGet, b.endpoint("/api/preferences/workspaces", nil),
 		nil, "", &preferences)
 	return preferences, err
 }
 
-func (b *Backend) SetProjectIgnored(ctx context.Context, key string, ignored bool) (
-	*domain.ProjectPreference, error) {
-	var preference domain.ProjectPreference
+func (b *Backend) SetWorkspaceIgnored(ctx context.Context, key string, ignored bool) (
+	*domain.WorkspacePreference, error) {
+	var preference domain.WorkspacePreference
 	_, err := b.call(ctx, http.MethodPut,
-		b.endpoint("/api/preferences/projects/"+url.PathEscape(key), nil),
+		b.endpoint("/api/preferences/workspaces/"+url.PathEscape(key), nil),
 		struct {
 			Ignored bool `json:"ignored"`
 		}{Ignored: ignored}, "", &preference)

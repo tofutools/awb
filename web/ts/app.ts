@@ -10,16 +10,20 @@ import {
   readyFilters,
   type Attachment,
   type Activity,
+  type Board,
+  type BoardView,
+  type BoardViewCreate,
+  type BoardViewPatch,
   type Facet,
   type Filters,
   type DirectoryUser,
   type Issue,
   type IssueTree,
   type Membership,
-  type Project,
-  type ProjectActivity,
-  type ProjectPreference,
-  type ProjectFilters,
+  type Workspace,
+  type WorkspaceActivity,
+  type WorkspacePreference,
+  type WorkspaceFilters,
   type User,
   type UserCreate,
   type UserFilters,
@@ -66,7 +70,7 @@ import {
   legacyIssueSearchHref,
   namedDestinations,
   navigationPath,
-  projectScopedHref,
+  workspaceScopedHref,
 } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import {
@@ -78,21 +82,22 @@ import {
 } from "./user-admin.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
 import {
-  mayManageProjectMembership,
+  mayManageWorkspaceMembership,
   membershipAdditionError,
   membershipChangeConfirmation,
   membershipSuggestions,
 } from "./membership.js";
 import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
+import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
 import { attachSearchClear } from "./search-control.js";
 import {
   accountMenuItems,
   preferenceStorage,
   readPaginationAutoHide,
   rememberPaginationAutoHide,
-  filterProjectPreferences,
+  filterWorkspacePreferences,
   showPagination,
-  projectPreferenceSummary,
+  workspacePreferenceSummary,
 } from "./preferences.js";
 import {
   formatUpdated,
@@ -125,20 +130,20 @@ let activeListingFilter: BackendListingFilter<HTMLElement> | null = null;
 const listingFilterOwners = new WeakMap<HTMLElement, BackendListingFilter<HTMLElement>>();
 let activeRenderRequest: AbortController | null = null;
 let renderGeneration = 0;
-let projectManager: boolean | null = null;
+let workspaceManager: boolean | null = null;
 
-async function mayManageProjects(): Promise<boolean> {
-  if (projectManager !== null) return projectManager;
+async function mayManageWorkspaces(): Promise<boolean> {
+  if (workspaceManager !== null) return workspaceManager;
   if (identity === "") return true;
   try {
-    projectManager = (await api.user(identity)).project_admin;
+    workspaceManager = (await api.user(identity)).workspace_admin;
   } catch (error) {
     // A server with no account rows is unrestricted even though it still has
     // an attribution identity for audit entries.
-    if (error instanceof ApiError && error.status === 404) projectManager = true;
+    if (error instanceof ApiError && error.status === 404) workspaceManager = true;
     else throw error;
   }
-  return projectManager;
+  return workspaceManager;
 }
 let pendingNotice: { message: string; error: boolean } | null = null;
 
@@ -185,7 +190,7 @@ function link(href: string, text: string, className = ""): HTMLAnchorElement {
  *
  * It is deliberately a single anchor around both rather than one around each:
  * two anchors to one destination would be two tab stops and two separate
- * announcements per row, which a long listing multiplies. A project need not
+ * announcements per row, which a long listing multiplies. A workspace need not
  * have a name, and the id alone then names the link.
  */
 function nameLink(href: string, id: string, title: string): HTMLElement {
@@ -204,7 +209,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "attachment" | "blocked" | "change" | "clock" | "info" | "issues" | "projects" | "ready" | "relation" | "search" | "tag" | "users";
+type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "info" | "issues" | "workspaces" | "ready" | "relation" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -212,11 +217,12 @@ function svgIcon(name: IconName): SVGSVGElement {
   const paths: Record<IconName, string> = {
     attachment: '<path d="m21.4 11.6-8.5 8.5a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"></path>',
     blocked: '<circle cx="12" cy="12" r="9"></circle><path d="m5.7 5.7 12.6 12.6"></path>',
+    boards: '<rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="11" rx="1"></rect><rect x="17" y="4" width="4" height="14" rx="1"></rect>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
     info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
-    projects: '<path d="M3 6h7l2 2h9v11H3z"></path>',
+    workspaces: '<path d="M3 6h7l2 2h9v11H3z"></path>',
     ready: '<path d="m5.5 5.1-3.5 6.9v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"></path><path d="M2 12h6l2 3h4l2-3h6"></path>',
     relation: '<path d="M10 13a5 5 0 0 0 7.1 0l2-2A5 5 0 0 0 12 3.9L10.9 5"></path><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"></path>',
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path>',
@@ -507,8 +513,10 @@ interface IssueColumn extends SortChoice {
 }
 
 const issueSortKeys = [
-  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers",
+  "order", "id", "workspace", "priority", "status", "assignee", "created", "updated", "type", "blockers",
 ] as const;
+
+let draggedListIssue: Issue | null = null;
 
 function textCell(className: string, text: string): HTMLElement {
   return element("span", className, text);
@@ -531,10 +539,10 @@ function badge(className: string, text: string): HTMLElement {
 
 function issueColumns(kind: ListingKind): IssueColumn[] {
   const issue: IssueColumn = { key: "id", label: "Issue", render: issueNameCell };
-  const project: IssueColumn = {
-    key: "project",
+  const workspace: IssueColumn = {
+    key: "workspace",
     label: "Workspace",
-    render: (row) => textCell("id", row.project),
+    render: (row) => textCell("id", row.workspace),
   };
   const priority: IssueColumn = {
     key: "priority",
@@ -550,7 +558,7 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   if (kind === "ready") {
     return [
       issue,
-      project,
+      workspace,
       {
         key: "type",
         label: "Type",
@@ -576,7 +584,7 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   if (kind === "blocked") {
     return [
       issue,
-      project,
+      workspace,
       priority,
       assignee,
       {
@@ -592,7 +600,7 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
 
   return [
     issue,
-    project,
+    workspace,
     priority,
     {
       key: "status",
@@ -708,13 +716,80 @@ function issueTable(
   table.append(head);
 
   const body = document.createElement("tbody");
+  const orderingEnabled = state.key === "order" && state.direction === "asc";
   for (const issue of issues) {
     const row = document.createElement("tr");
+    row.dataset.issue = issue.id;
+    const reorder = (direction: "earlier" | "later"): void => {
+      row.classList.add("moving");
+      void api.moveIssue(issue.id, { status: issue.status, direction }).then(() => render()).catch((error) => {
+        row.classList.remove("moving");
+        mutationError(row, error);
+      });
+    };
     for (const column of columns) {
       const td = document.createElement("td");
       td.dataset.label = column.label;
+      if (column === columns[0] && orderingEnabled) {
+        const drag = element("span", "list-row-drag", "⠿");
+        drag.draggable = matchMedia("(min-width: 701px)").matches;
+        drag.setAttribute("aria-label", `Drag ${issue.id} to reorder`);
+        drag.title = "Drag to reorder";
+        drag.addEventListener("dragstart", (event) => {
+          draggedListIssue = issue;
+          event.dataTransfer?.setData("text/plain", issue.id);
+          if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+        });
+        drag.addEventListener("dragend", () => { draggedListIssue = null; });
+        td.append(drag);
+        const order = element("span", "list-row-order");
+        const earlier = button("↑", "secondary-button list-row-order-button");
+        earlier.setAttribute("aria-label", `Move ${issue.id} earlier in workspace ${issue.workspace}`);
+        earlier.title = "Move earlier in this workspace";
+        earlier.addEventListener("click", () => reorder("earlier"));
+        const later = button("↓", "secondary-button list-row-order-button");
+        later.setAttribute("aria-label", `Move ${issue.id} later in workspace ${issue.workspace}`);
+        later.title = "Move later in this workspace";
+        later.addEventListener("click", () => reorder("later"));
+        order.append(earlier, later);
+        td.append(order);
+      }
       td.append(column.render(issue));
       row.append(td);
+    }
+    if (orderingEnabled) {
+      let before = issue.id;
+      let after = "";
+      row.addEventListener("dragover", (event) => {
+        if (draggedListIssue === null || draggedListIssue.id === issue.id || draggedListIssue.workspace !== issue.workspace) return;
+        event.preventDefault();
+        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+        before = below ? "" : issue.id;
+        after = below ? issue.id : "";
+        row.classList.toggle("drop-after", below);
+        row.classList.toggle("drop-before", !below);
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+      row.addEventListener("drop", (event) => {
+        const moving = draggedListIssue;
+        row.classList.remove("drop-before", "drop-after");
+        if (moving === null || moving.id === issue.id) return;
+        event.preventDefault();
+        draggedListIssue = null;
+        if (moving.workspace !== issue.workspace) {
+          mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
+          return;
+        }
+        row.classList.add("moving");
+        void api.moveIssue(moving.id, {
+          status: moving.status,
+          ...(before === "" ? {} : { before }),
+          ...(after === "" ? {} : { after }),
+        }).then(() => render()).catch((error) => {
+          row.classList.remove("moving");
+          mutationError(row, error);
+        });
+      });
     }
     body.append(row);
   }
@@ -868,7 +943,7 @@ function issueList(
 ): HTMLElement {
   const section = element("div", "listing");
   const tableHost = element("div", "listing-host");
-  const defaultKey = "priority";
+  const defaultKey = "order";
   const defaultDirection: SortDirection = "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
@@ -905,8 +980,8 @@ function issueList(
 /** filtersFrom reads the filter parameters a listing route carries. */
 function filtersFrom(query: URLSearchParams): Filters {
   const filters: Filters = {};
-  const project = query.getAll("project");
-  if (project.length > 0) filters.project = project;
+  const workspace = query.getAll("workspace");
+  if (workspace.length > 0) filters.workspace = workspace;
   const label = query.getAll("label");
   if (label.length > 0) filters.label = label;
   const assignee = query.getAll("assignee");
@@ -931,7 +1006,7 @@ function filtersFrom(query: URLSearchParams): Filters {
  */
 function facetBar(
   route: Route,
-  projects: Project[],
+  workspaces: Workspace[],
   labels: Facet[] | null,
   assignees: Facet[] | null,
   paginationControl: HTMLElement,
@@ -939,30 +1014,30 @@ function facetBar(
   const bar = element("div", "facets");
   const paginationGroup = lowestFacetGroup(labels, assignees);
 
-  const projectGroup = element("div", "facet-group projects");
-  const projectValues = element("span", "facet-values");
-  projectGroup.append(element("span", "facet-title", "workspaces"), projectValues);
-  const projectEmpty = emptyFacetLabel(projects);
-  if (projectEmpty !== null) {
-    projectValues.append(element("span", "facet-empty", projectEmpty));
+  const workspaceGroup = element("div", "facet-group workspaces");
+  const workspaceValues = element("span", "facet-values");
+  workspaceGroup.append(element("span", "facet-title", "workspaces"), workspaceValues);
+  const workspaceEmpty = emptyFacetLabel(workspaces);
+  if (workspaceEmpty !== null) {
+    workspaceValues.append(element("span", "facet-empty", workspaceEmpty));
   } else {
-    for (const project of projects) {
-      const active = route.query.getAll("project").includes(project.key);
+    for (const workspace of workspaces) {
+      const active = route.query.getAll("workspace").includes(workspace.key);
       const anchor = link(
-        facetHref(route, "project", project.key),
-        project.key,
+        facetHref(route, "workspace", workspace.key),
+        workspace.key,
         active ? "facet active" : "facet",
       );
-      anchor.dataset.facetName = "project";
-      anchor.dataset.facetValue = project.key;
-      projectValues.append(anchor);
+      anchor.dataset.facetName = "workspace";
+      anchor.dataset.facetValue = workspace.key;
+      workspaceValues.append(anchor);
     }
   }
-  if (paginationGroup === "project") {
-    projectGroup.classList.add("with-pagination");
-    projectGroup.append(paginationControl);
+  if (paginationGroup === "workspace") {
+    workspaceGroup.classList.add("with-pagination");
+    workspaceGroup.append(paginationControl);
   }
-  bar.append(projectGroup);
+  bar.append(workspaceGroup);
 
   const build = (name: string, title: string, facets: Facet[] | null): HTMLElement | null => {
     if (facets === null) return null;
@@ -1023,9 +1098,9 @@ async function viewListing(
 
   // Each listing is asked with the filters it accepts. Ready lists only
   // unassigned issues, so there is no assignee menu to offer there either.
-  let [page, projects, labels, assignees] = await Promise.all([
+  let [page, workspaces, labels, assignees] = await Promise.all([
     load(),
-    api.projects(filters["include-archived"] ? { state: "all" } : {}, signal),
+    api.workspaces(filters["include-archived"] ? { state: "all" } : {}, signal),
     api.labels(kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters), signal),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters), signal),
   ]);
@@ -1047,12 +1122,482 @@ async function viewListing(
     kind,
     facetBar(
       route,
-      projects.rows,
+      workspaces.rows,
       labels.rows,
       kind === "ready" ? null : assignees.rows,
       pagination(route, page.total),
     ),
   ));
+  return view;
+}
+
+const boardLanePageSize = 10;
+const boardCardPageSize = 8;
+let draggedBoardIssue: Issue | null = null;
+function boardStatusLabel(status: BoardStatus): string {
+  if (status === "in_progress") return "In progress";
+  return status[0].toUpperCase() + status.slice(1);
+}
+
+function boardLaneCollapseKey(ref: string): string {
+  return `awb.board.${ref}.collapsed-lanes`;
+}
+
+function collapsedBoardLanes(ref: string): Set<string> {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(boardLaneCollapseKey(ref)) ?? "[]");
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedBoardLanes(ref: string, workspaces: Set<string>): void {
+  try { localStorage.setItem(boardLaneCollapseKey(ref), JSON.stringify([...workspaces].sort())); } catch { /* presentation state is best-effort */ }
+}
+
+async function moveBoardIssue(
+  host: HTMLElement,
+  issue: Issue,
+  epic: string,
+  target: BoardStatus,
+  before = "",
+  after = "",
+  direction: "" | "earlier" | "later" = "",
+): Promise<void> {
+	const movedCardStatus = (): HTMLSelectElement | null =>
+		host.classList.contains("board-card") && host.dataset.issue === issue.id
+			? host.querySelector<HTMLSelectElement>(".board-status-select")
+			: null;
+  if (target === issue.status && (before === issue.id || after === issue.id)) return;
+  if (!legalBoardTargets(issue, identity).includes(target)) {
+    mutationError(host, new Error("This move would release somebody else's assignment."));
+    return;
+  }
+  if (target === "closed" && issue.status !== "closed") {
+    const confirmed = await confirmMutation(
+      "Close issue?",
+      `Close ${issue.id}? This can be reopened later.`,
+      host,
+      true,
+    );
+    if (!confirmed) {
+		const control = movedCardStatus();
+      if (control !== null) control.value = issue.status;
+      return;
+    }
+  }
+  host.classList.add("moving");
+  try {
+    await api.moveIssue(issue.id, {
+      status: target,
+      epic,
+      ...(before === "" ? {} : { before }),
+      ...(after === "" ? {} : { after }),
+      ...(direction === "" ? {} : { direction }),
+    });
+    await render();
+  } catch (error) {
+    host.classList.remove("moving");
+    mutationError(host, error);
+		const control = movedCardStatus();
+    if (control !== null) control.value = issue.status;
+  }
+}
+
+type BoardEpicChoice = { id: string; workspace: string; title: string };
+
+function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: BoardEpicChoice[]): HTMLElement {
+  const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
+  card.dataset.issue = issue.id;
+  const drag = element("span", "board-card-drag", "⠿");
+  drag.draggable = matchMedia("(min-width: 701px)").matches;
+  drag.setAttribute("aria-label", `Drag ${issue.id}`);
+  drag.title = "Drag to reorder or move";
+  drag.addEventListener("dragstart", (event) => {
+    draggedBoardIssue = issue;
+    event.dataTransfer?.setData("text/plain", issue.id);
+    if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+  });
+  drag.addEventListener("dragend", () => { draggedBoardIssue = null; });
+  const address = nameLink(`#/issues/${encodeURIComponent(issue.id)}`, issue.id, issue.title);
+  const top = element("div", "board-card-top");
+  top.append(address, drag);
+  card.append(top, issueBadges(issue));
+  const move = element("div", "board-card-move");
+  const epicLabel = element("label");
+  epicLabel.append(document.createTextNode("Epic"));
+  const epicSelect = document.createElement("select");
+  epicSelect.className = "board-epic-select";
+  epicSelect.setAttribute("aria-label", `Epic for ${issue.id}`);
+  const noEpic = document.createElement("option");
+  noEpic.value = "";
+  noEpic.textContent = "No epic";
+  noEpic.selected = epic === "";
+  epicSelect.append(noEpic);
+  for (const choice of epics.filter((candidate) => candidate.workspace === issue.workspace)) {
+    const option = document.createElement("option");
+    option.value = choice.id;
+    option.textContent = choice.title;
+    option.selected = choice.id === epic;
+    epicSelect.append(option);
+  }
+  epicLabel.append(epicSelect);
+  const statusLabel = element("label");
+  statusLabel.append(document.createTextNode("Status"));
+  const select = document.createElement("select");
+  select.className = "board-status-select";
+  select.setAttribute("aria-label", `Status for ${issue.id}`);
+  for (const status of legalBoardTargets(issue, identity)) {
+    const option = document.createElement("option");
+    option.value = status;
+    option.textContent = status === "closed" && status !== issue.status ? "Closed…" : boardStatusLabel(status);
+    option.selected = status === issue.status;
+    select.append(option);
+  }
+  epicSelect.addEventListener("change", () => void moveBoardIssue(card, issue, epicSelect.value, select.value as BoardStatus));
+  select.addEventListener("change", () => void moveBoardIssue(card, issue, epicSelect.value, select.value as BoardStatus));
+  statusLabel.append(select);
+  const order = element("span", "board-card-order");
+  const earlier = button("↑", "secondary-button board-card-order-button");
+  earlier.dataset.direction = "earlier";
+  earlier.setAttribute("aria-label", `Move ${issue.id} earlier in this board cell`);
+  earlier.title = "Move earlier in this board cell";
+  earlier.addEventListener("click", () => void moveBoardIssue(card, issue, epic, status, "", "", "earlier"));
+  const later = button("↓", "secondary-button board-card-order-button");
+  later.dataset.direction = "later";
+  later.setAttribute("aria-label", `Move ${issue.id} later in this board cell`);
+  later.title = "Move later in this board cell";
+  later.addEventListener("click", () => void moveBoardIssue(card, issue, epic, status, "", "", "later"));
+  order.append(earlier, later);
+  move.append(epicLabel, statusLabel, order);
+  card.append(move);
+  card.addEventListener("dragover", (event) => {
+    const moving = draggedBoardIssue;
+    if (moving !== null && moving.id !== issue.id && moving.workspace === issue.workspace && legalBoardTargets(moving, identity).includes(status)) {
+      event.preventDefault();
+      event.stopPropagation();
+      card.classList.add("drop-before");
+    }
+  });
+  card.addEventListener("dragleave", () => card.classList.remove("drop-before"));
+	card.addEventListener("drop", (event) => {
+		const moving = draggedBoardIssue;
+		card.classList.remove("drop-before");
+		if (moving === null || moving.id === issue.id) return;
+		event.preventDefault();
+		event.stopPropagation();
+		draggedBoardIssue = null;
+		if (moving.workspace !== issue.workspace) {
+			mutationError(card, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
+			return;
+		}
+		void moveBoardIssue(card, moving, epic, status, issue.id);
+	});
+  return card;
+}
+
+function syncBoardEpicChoices(root: HTMLElement, epics: BoardEpicChoice[], issuesByID: Map<string, Issue>): void {
+  for (const card of root.querySelectorAll<HTMLElement>(".board-card")) {
+    const issue = issuesByID.get(card.dataset.issue ?? "");
+    const select = card.querySelector<HTMLSelectElement>(".board-epic-select");
+    if (issue === undefined || select === null) continue;
+    const existing = new Set([...select.options].map((option) => option.value));
+    for (const choice of epics) {
+      if (choice.workspace !== issue.workspace || existing.has(choice.id)) continue;
+      const option = document.createElement("option");
+      option.value = choice.id;
+      option.textContent = choice.title;
+      select.append(option);
+    }
+  }
+}
+
+function boardColumn(
+  ref: string,
+  epic: Issue | null,
+  selectedWorkspaces: string[],
+  column: Board["lanes"][number]["columns"][number],
+  issuesByID: Map<string, Issue>,
+  epics: BoardEpicChoice[],
+): HTMLElement {
+  const host = element("section", "board-column");
+  host.dataset.status = column.status;
+  const laneKey = epic?.id ?? "no-epic";
+  const epicID = epic?.id ?? "";
+  const headingID = `board-column-${laneKey}-${column.status}`;
+  host.setAttribute("aria-labelledby", headingID);
+  const heading = element("header");
+  const title = element("h3", "", boardStatusLabel(column.status));
+  title.id = headingID;
+  const count = element("span", "board-column-count", String(column.total));
+  heading.append(title, count);
+  host.append(heading);
+  const cards = element("div", "board-cards");
+  const loadedIDs = new Set<string>();
+  const append = (issues: Issue[]): void => {
+    for (const issue of issues) {
+      if (loadedIDs.has(issue.id)) continue;
+      loadedIDs.add(issue.id);
+      issuesByID.set(issue.id, issue);
+      cards.append(boardCard(issue, epicID, column.status, epics));
+    }
+  };
+  append(column.issues);
+  if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
+  host.append(cards);
+  if (column.issues.length < column.total) {
+    let total = column.total;
+    let cursor = column.issues.length;
+    const more = button("", "secondary-button board-column-more");
+    const labelMore = (): void => {
+      const remaining = Math.max(0, total - loadedIDs.size);
+      more.textContent = `Load ${Math.min(boardCardPageSize, remaining)} more · ${loadedIDs.size} of ${total}`;
+    };
+    labelMore();
+    more.addEventListener("click", () => {
+      more.disabled = true;
+      void api.board(ref, {
+        ...(epic === null && selectedWorkspaces.length > 0 ? { workspace: selectedWorkspaces } : {}),
+        epic: epic?.id ?? "none", status: column.status, "lane-limit": 1,
+        "card-limit": boardCardPageSize, "card-offset": cursor,
+      }).then((page) => {
+        const nextColumn = page.lanes[0]?.columns[0];
+        if (nextColumn === undefined) { void render(); return; }
+        const next = nextColumn.issues;
+        cursor += next.length;
+        total = nextColumn.total;
+        count.textContent = String(total);
+        append(next);
+        if (loadedIDs.size > total || (cursor >= total && loadedIDs.size < total)) { void render(); return; }
+        if (loadedIDs.size >= total) more.remove();
+        else { more.disabled = false; labelMore(); }
+      }).catch((error) => { more.disabled = false; mutationError(host, error); });
+    });
+    host.append(more);
+  }
+  host.addEventListener("dragover", (event) => {
+    const issue = draggedBoardIssue;
+    if (issue !== null && (epic === null || issue.workspace === epic.workspace) && legalBoardTargets(issue, identity).includes(column.status)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.dataTransfer?.types.includes("text/plain") === true) event.preventDefault();
+  });
+  host.addEventListener("drop", (event) => {
+    const issue = draggedBoardIssue ?? issuesByID.get(event.dataTransfer?.getData("text/plain") ?? "");
+    draggedBoardIssue = null;
+    if (issue === undefined || issue === null) return;
+    event.preventDefault();
+    if (epic !== null && issue.workspace !== epic.workspace) {
+      mutationError(host, new Error(`Issues cannot move out of workspace ${issue.workspace}.`));
+      return;
+    }
+    void moveBoardIssue(host, issue, epicID, column.status);
+  });
+  return host;
+}
+
+function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, epics: BoardEpicChoice[]): HTMLElement {
+  const host = element("section", "board-lane");
+  const laneKey = lane.epic?.id ?? "no-epic";
+  const laneLabel = lane.epic?.title ?? "No epic";
+  const headingID = `board-lane-${laneKey}`;
+  host.setAttribute("aria-labelledby", headingID);
+  const heading = element("header", "board-lane-heading");
+  const name = element("div", "board-lane-name");
+  const title = element("h2");
+  title.id = headingID;
+  if (lane.epic === undefined) title.append(document.createTextNode("No epic"));
+  else title.append(element("code", "", lane.epic.workspace), document.createTextNode(` ${lane.epic.title}`));
+  name.append(title);
+  const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
+  const meta = element("div", "board-lane-meta");
+  meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
+  const columns = element("div", "board-columns");
+  columns.id = `board-lane-columns-${laneKey}`;
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics));
+	let isCollapsed = collapsedBoardLanes(ref).has(laneKey);
+  const toggle = button("", "secondary-button board-lane-toggle");
+  toggle.setAttribute("aria-controls", columns.id);
+  const sync = (): void => {
+    columns.hidden = isCollapsed;
+    host.classList.toggle("collapsed", isCollapsed);
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    toggle.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${laneLabel} swimlane`);
+    toggle.textContent = isCollapsed ? "▸ Expand" : "▾ Collapse";
+  };
+	toggle.addEventListener("click", () => {
+		isCollapsed = !isCollapsed;
+		const collapsed = collapsedBoardLanes(ref);
+		if (isCollapsed) collapsed.add(laneKey); else collapsed.delete(laneKey);
+    saveCollapsedBoardLanes(ref, collapsed);
+    sync();
+  });
+  meta.append(toggle);
+  heading.append(name, meta);
+  sync();
+  host.append(heading, columns);
+  return host;
+}
+
+async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route): Promise<void> {
+  let preferences: WorkspacePreference[] = [];
+  try { preferences = await api.workspacePreferences(); } catch {
+    const workspaces = await api.workspaces();
+    preferences = workspaces.rows.map((workspace) => ({ workspace, ignored: false }));
+  }
+  const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "board-view-dialog-heading");
+  const form = element("form", "board-view-form") as HTMLFormElement;
+  form.method = "dialog";
+  const heading = element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
+  heading.id = "board-view-dialog-heading";
+  form.append(heading);
+  const name = document.createElement("input");
+  name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
+  form.append(field("Name", name));
+  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && (source?.shared ?? false);
+  const sharedLabel = element("label", "board-view-check"); sharedLabel.append(shared, document.createTextNode("Anyone with the link can open this view"));
+  form.append(sharedLabel);
+  const all = document.createElement("input"); all.type = "checkbox"; all.checked = source?.all_workspaces ?? route.query.getAll("workspace").length === 0;
+  const allLabel = element("label", "board-view-check"); allLabel.append(all, document.createTextNode("All visible workspaces")); form.append(allLabel);
+  const selected = new Set(source?.workspaces ?? route.query.getAll("workspace"));
+  const workspaces = element("fieldset", "board-view-workspaces"); workspaces.append(element("legend", "", "Selected workspaces"));
+  for (const preference of preferences) {
+    const row = element("label"); const input = document.createElement("input"); input.type = "checkbox"; input.value = preference.workspace.key; input.checked = selected.has(preference.workspace.key);
+    row.append(input, document.createTextNode(`${preference.workspace.key} — ${preference.workspace.name}${preference.ignored ? " (ignored)" : ""}`)); workspaces.append(row);
+  }
+  workspaces.hidden = all.checked; all.addEventListener("change", () => { workspaces.hidden = all.checked; }); form.append(workspaces);
+  const labels = document.createElement("input"); labels.value = source?.labels.join(", ") ?? ""; labels.placeholder = "release, frontend"; form.append(field("Labels (any)", labels));
+  const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam"; form.append(field("Assignees (any)", assignees));
+  const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4)); form.append(field("Maximum priority", priority));
+  const error = element("p", "edit-error");
+  const actions = element("div", "board-view-dialog-actions");
+  const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
+  const save = element("button", "primary-button", source === null ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
+  actions.append(cancel);
+  if (source !== null && !duplicate && source.owner === identity) {
+    const remove = button("Delete", "danger-button");
+    remove.addEventListener("click", async () => {
+      const confirmed = await confirmMutation(
+        "Delete board view?",
+        `Delete “${source.name}”? Issues are not affected.`,
+        remove,
+        true,
+      );
+      if (!confirmed) return;
+      remove.disabled = true;
+      void api.deleteBoardView(source.id).then(() => { dialog.close(); location.hash = "#/boards"; }).catch((reason) => { remove.disabled = false; error.textContent = String(reason); });
+    });
+    actions.append(remove);
+  }
+  actions.append(save); form.append(error, actions); dialog.append(form); document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  form.addEventListener("submit", (event) => {
+    event.preventDefault(); save.disabled = true; error.textContent = "";
+    const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_workspaces: all.checked,
+      workspaces: all.checked ? [] : [...workspaces.querySelectorAll<HTMLInputElement>('input:checked')].map((input) => input.value),
+      labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4 };
+    let operation: Promise<BoardView>;
+    if (source !== null && !duplicate) {
+      const patch: BoardViewPatch = {};
+      if (body.name !== source.name) patch.name = body.name;
+      if (body.shared !== source.shared) patch.shared = body.shared;
+      if (body.all_workspaces !== source.all_workspaces) patch.all_workspaces = body.all_workspaces;
+      if (JSON.stringify(body.workspaces) !== JSON.stringify(source.workspaces)) patch.workspaces = body.workspaces;
+      if (JSON.stringify(body.labels) !== JSON.stringify(source.labels)) patch.labels = body.labels;
+      if (JSON.stringify(body.assignees) !== JSON.stringify(source.assignees)) patch.assignees = body.assignees;
+      if (body.priority_max !== source.priority_max) patch.priority_max = body.priority_max;
+      operation = api.updateBoardView(source.id, patch);
+    } else {
+      operation = api.createBoardView(body);
+    }
+    void operation.then((view) => { dialog.close(); location.hash = `#/boards/${view.id}`; }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
+  });
+  dialog.showModal(); name.focus();
+}
+
+async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
+  const ref = route.path[1] ?? "default";
+  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize, "card-limit": boardCardPageSize };
+  if (ref === "default") {
+    const workspaces = route.query.getAll("workspace"); if (workspaces.length > 0) filters.workspace = workspaces;
+  }
+  const [board, owned] = await Promise.all([api.board(ref, filters, signal), api.boardViews()]);
+  const view = element("div", "board-page");
+  const heading = element("div", "board-heading");
+  const title = element("div"); title.append(element("h1", "", "Boards"), element("p", "lede", "Move work through the existing awb workflow."));
+  const actions = element("div", "board-view-actions");
+  const pickerLabel = element("label"); pickerLabel.append(element("span", "", "View"));
+  const picker = document.createElement("select"); picker.setAttribute("aria-label", "Board view");
+  const option = (id: string, label: string): void => { const item = document.createElement("option"); item.value = id; item.textContent = label; item.selected = id === ref; picker.append(item); };
+  option("default", "Default board"); for (const item of owned) option(item.id, item.name);
+  if (board.view !== undefined && !owned.some((item) => item.id === board.view?.id)) option(board.view.id, board.view.name);
+  picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
+  const saved = board.view;
+  if (saved === undefined) {
+    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(null, false, route)); actions.append(save);
+  } else if (saved.owner === identity) {
+    const edit = button("Edit view"); edit.addEventListener("click", () => void api.boardView(saved.id).then((full) => openBoardViewEditor(full, false, route))); actions.append(edit);
+  } else {
+    const duplicate = button("Duplicate"); duplicate.addEventListener("click", () => void openBoardViewEditor(saved, true, route)); actions.append(duplicate);
+  }
+  if (saved?.shared) {
+    const share = button("Copy link", "primary-button");
+    share.addEventListener("click", () => {
+      if (navigator.clipboard === undefined) {
+        mutationError(view, new Error("Copy is unavailable in this browser."));
+        return;
+      }
+      void navigator.clipboard.writeText(location.href)
+        .then(() => { share.textContent = "Copied"; })
+        .catch((error: unknown) => mutationError(view, error));
+    });
+    actions.append(share);
+  }
+  heading.append(title, actions); view.append(heading);
+  if (saved !== undefined) {
+    const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
+    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
+    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`)); summary.append(owner, chips); view.append(summary);
+  }
+  view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted
+    ? "Some workspaces are archived or hidden by your access or ignored-workspace settings."
+    : "Workspace access and your ignored-workspace settings always apply to this view."));
+  const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
+  const selectedWorkspaces = filters.workspace ?? [];
+  const epics: BoardEpicChoice[] = board.lanes.flatMap((lane) => lane.epic === undefined
+    ? []
+    : [{ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title }]);
+  const loadedLanes = new Set<string>();
+  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics)); }
+  if (board.lane_total === 0) lanes.append(element("p", "empty", "No epic lanes match this view."));
+  view.append(lanes);
+  if (board.lanes.length < board.lane_total) {
+    let total = board.lane_total;
+    let cursor = board.lanes.length;
+    const more = button("", "secondary-button board-lanes-more");
+    const labelMore = (): void => { more.textContent = `Load up to ${boardLanePageSize} more epics · ${loadedLanes.size} of ${total}`; };
+    labelMore();
+    more.addEventListener("click", () => {
+      more.disabled = true; const nextFilters = { ...filters, "lane-offset": cursor };
+      void api.board(ref, nextFilters).then((page) => {
+        cursor += page.lanes.length;
+        total = page.lane_total;
+        for (const lane of page.lanes) {
+          const key = lane.epic?.id ?? "no-epic";
+          if (loadedLanes.has(key)) continue;
+          loadedLanes.add(key);
+          if (lane.epic !== undefined) epics.push({ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title });
+          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics));
+        }
+        syncBoardEpicChoices(lanes, epics, issuesByID);
+        if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }
+        if (loadedLanes.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
+      }).catch((error) => { more.disabled = false; mutationError(view, error); });
+    }); view.append(more);
+  }
   return view;
 }
 
@@ -1074,14 +1619,14 @@ function emptyFor(kind: string): string {
   return "No issues.";
 }
 
-const projectSortKeys = ["key", "active", "updated"] as const;
-const projectColumns: SortChoice[] = [
+const workspaceSortKeys = ["key", "active", "updated"] as const;
+const workspaceColumns: SortChoice[] = [
   { key: "key", label: "Workspace" },
   { key: "active", label: "Open" },
   { key: "updated", label: "Updated" },
 ];
 
-function projectSortButton(route: Route, key: string, label: string, state: SortState): HTMLElement {
+function workspaceSortButton(route: Route, key: string, label: string, state: SortState): HTMLElement {
   const button = element("button", "sort-button", label) as HTMLButtonElement;
   button.type = "button";
   const active = state.key === key;
@@ -1100,7 +1645,7 @@ function projectSortButton(route: Route, key: string, label: string, state: Sort
     : `Sort by ${label}`;
   button.addEventListener("click", () => {
     const query = new URLSearchParams(route.query);
-    const next = nextSortValue(query.get("sort"), key, projectSortKeys, "key");
+    const next = nextSortValue(query.get("sort"), key, workspaceSortKeys, "key");
     if (next === null) query.delete("sort");
     else query.set("sort", next);
     query.delete("page");
@@ -1109,16 +1654,16 @@ function projectSortButton(route: Route, key: string, label: string, state: Sort
   return button;
 }
 
-function projectTable(route: Route, projects: Project[], state: SortState): HTMLElement {
-  const table = element("table", "listing-table project-table") as HTMLTableElement;
+function workspaceTable(route: Route, workspaces: Workspace[], state: SortState): HTMLElement {
+  const table = element("table", "listing-table workspace-table") as HTMLTableElement;
   const head = document.createElement("thead");
   const heading = document.createElement("tr");
-  for (const column of projectColumns) {
+  for (const column of workspaceColumns) {
     const th = document.createElement("th");
     th.scope = "col";
     if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
     const controls = element("div", "column-heading");
-    controls.append(projectSortButton(route, column.key, column.label, state));
+    controls.append(workspaceSortButton(route, column.key, column.label, state));
     if (column.key === "updated") controls.append(updatedDisplayControl());
     th.append(controls);
     heading.append(th);
@@ -1127,29 +1672,29 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
   table.append(head);
 
   const body = document.createElement("tbody");
-  for (const project of projects) {
+  for (const workspace of workspaces) {
     const row = document.createElement("tr");
-    const href = `#/workspaces/${encodeURIComponent(project.key)}`;
+    const href = `#/workspaces/${encodeURIComponent(workspace.key)}`;
 
-    const projectCell = document.createElement("td");
-    projectCell.dataset.label = "Workspace";
-    projectCell.append(nameLink(href, project.key, project.name));
-    if (project.state === "archived") projectCell.append(element("span", "listing-badge archived-badge", "Archived"));
-    if (project.description !== "") {
-      const description = element("div", "project-description markdown");
-      description.innerHTML = renderMarkdown(project.description);
-      projectCell.append(description);
+    const workspaceCell = document.createElement("td");
+    workspaceCell.dataset.label = "Workspace";
+    workspaceCell.append(nameLink(href, workspace.key, workspace.name));
+    if (workspace.state === "archived") workspaceCell.append(element("span", "listing-badge archived-badge", "Archived"));
+    if (workspace.description !== "") {
+      const description = element("div", "workspace-description markdown");
+      description.innerHTML = renderMarkdown(workspace.description);
+      workspaceCell.append(description);
     }
-    row.append(projectCell);
+    row.append(workspaceCell);
 
     const active = document.createElement("td");
     active.dataset.label = "Open";
-    active.append(element("span", "open-count", String(project.active_issues)));
+    active.append(element("span", "open-count", String(workspace.active_issues)));
     row.append(active);
 
     const updated = document.createElement("td");
     updated.dataset.label = "Updated";
-    updated.append(updatedTimeElement(project.updated_at));
+    updated.append(updatedTimeElement(workspace.updated_at));
     row.append(updated);
     body.append(row);
   }
@@ -1157,10 +1702,10 @@ function projectTable(route: Route, projects: Project[], state: SortState): HTML
   return table;
 }
 
-async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
+async function viewWorkspaces(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const requested = pageNumber(route.query);
   const size = listingPageSize(route.query);
-  const filters: ProjectFilters = {
+  const filters: WorkspaceFilters = {
     limit: size,
     offset: (requested - 1) * size,
   };
@@ -1169,25 +1714,25 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   const filterText = route.query.get("filter");
   if (filterText !== null && filterText !== "") filters.filter = filterText;
   const sort = route.query.get("sort");
-  const apiSorts = projectSortKeys.flatMap((key) => [key, `-${key}`]);
-  if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as ProjectFilters["sort"];
-  let page = await api.projects(filters, signal);
+  const apiSorts = workspaceSortKeys.flatMap((key) => [key, `-${key}`]);
+  if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as WorkspaceFilters["sort"];
+  let page = await api.workspaces(filters, signal);
   const normalized = normalizePageRoute(route, page.total);
   if ((filters.offset ?? 0) !== (normalized - 1) * size) {
     filters.offset = (normalized - 1) * size;
-    page = await api.projects(filters, signal);
+    page = await api.workspaces(filters, signal);
   }
 
   const view = element("div");
-  const heading = element("div", "projects-heading");
+  const heading = element("div", "workspaces-heading");
   heading.append(element("h1", "", "Workspaces"));
   const create = button("New workspace", "primary-button") as HTMLButtonElement;
-  const createForm = projectCreateForm();
-  createForm.id = "project-creator";
+  const createForm = workspaceCreateForm();
+  createForm.id = "workspace-creator";
   createForm.hidden = true;
   create.setAttribute("aria-controls", createForm.id);
   create.setAttribute("aria-expanded", "false");
-  if (await mayManageProjects()) {
+  if (await mayManageWorkspaces()) {
     heading.append(create);
     create.addEventListener("click", () => {
       createForm.hidden = !createForm.hidden;
@@ -1201,7 +1746,7 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   }
   view.append(heading, createForm);
 
-  const tabs = element("div", "project-state-tabs");
+  const tabs = element("div", "workspace-state-tabs");
   const tabHref = (state: "active" | "archived"): string => {
     const query = new URLSearchParams(route.query);
     query.delete("page");
@@ -1217,10 +1762,10 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
 
   const listing = element("div", "listing");
   const host = element("div", "listing-host");
-  const state = sortState(route.query.get("sort"), projectSortKeys, "key");
+  const state = sortState(route.query.get("sort"), workspaceSortKeys, "key");
   const listingActions = element("div", "listing-actions");
   listingActions.append(
-    mobileSortControl(route, projectColumns, "Natural order"),
+    mobileSortControl(route, workspaceColumns, "Natural order"),
     mobileUpdatedDisplayControl(),
     pagination(route, page.total),
   );
@@ -1228,7 +1773,7 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
     host.append(element("p", "empty", filterText === null
       ? lifecycle === "archived" ? "No archived workspaces." : "No workspaces yet. Create one above or with: awb workspace create <key>"
       : "No workspaces match this filter."));
-  } else host.append(projectTable(route, page.rows, state));
+  } else host.append(workspaceTable(route, page.rows, state));
   listing.append(listingFilter(
     route,
     "Filter all workspaces…",
@@ -1241,8 +1786,8 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   return view;
 }
 
-function projectCreateForm(): HTMLFormElement {
-  const form = element("form", "edit-panel project-create-panel") as HTMLFormElement;
+function workspaceCreateForm(): HTMLFormElement {
+  const form = element("form", "edit-panel workspace-create-panel") as HTMLFormElement;
   form.append(element("h2", "", "Create workspace"), element("p", "muted", "The key becomes every issue ID prefix in this workspace and cannot be changed. Issues cannot move between workspaces."));
   const key = document.createElement("input");
   key.name = "key";
@@ -1253,7 +1798,7 @@ function projectCreateForm(): HTMLFormElement {
   name.name = "name";
   name.maxLength = 500;
   const description = createMarkdownEditor("", "description", "Workspace description (Markdown)");
-  const preview = element("p", "project-key-preview muted", "Issue IDs will use this key as their prefix.");
+  const preview = element("p", "workspace-key-preview muted", "Issue IDs will use this key as their prefix.");
   key.addEventListener("input", () => {
     preview.textContent = key.value === "" ? "Issue IDs will use this key as their prefix." : `Issue IDs will start with ${key.value}-.`;
   });
@@ -1270,12 +1815,12 @@ function projectCreateForm(): HTMLFormElement {
     event.preventDefault();
     submit.disabled = true;
     try {
-      const project = await api.createProject({
+      const workspace = await api.createWorkspace({
         key: key.value,
         name: name.value,
         description: description.textarea.value,
       });
-      location.hash = `#/workspaces/${encodeURIComponent(project.key)}`;
+      location.hash = `#/workspaces/${encodeURIComponent(workspace.key)}`;
     } catch (error) {
       submit.disabled = false;
       mutationError(form, error);
@@ -1313,32 +1858,32 @@ function userTable(users: DirectoryUser[], manageable: boolean): HTMLElement {
 
     const memberships = document.createElement("td");
     memberships.dataset.label = "Memberships";
-    const membershipList = element("div", "user-projects");
-    for (const membership of user.projects) {
-      const project = element("span", "listing-badge user-project", membership.project);
-      project.title = `${membership.access} access`;
-      membershipList.append(project);
+    const membershipList = element("div", "user-workspaces");
+    for (const membership of user.workspaces) {
+      const workspace = element("span", "listing-badge user-workspace", membership.workspace);
+      workspace.title = `${membership.access} access`;
+      membershipList.append(workspace);
     }
-    if (user.projects.length === 0) membershipList.append(element("span", "muted", "—"));
+    if (user.workspaces.length === 0) membershipList.append(element("span", "muted", "—"));
     memberships.append(membershipList);
     row.append(memberships);
 
     const activity = document.createElement("td");
     activity.dataset.label = "Activity";
-    const activityList = element("div", "user-projects");
-    for (const projectName of user.activity_projects) {
-      activityList.append(element("span", "listing-badge user-project", projectName));
+    const activityList = element("div", "user-workspaces");
+    for (const workspaceName of user.activity_workspaces) {
+      activityList.append(element("span", "listing-badge user-workspace", workspaceName));
     }
-    if (user.activity_projects.length === 0) activityList.append(element("span", "muted", "—"));
+    if (user.activity_workspaces.length === 0) activityList.append(element("span", "muted", "—"));
     activity.append(activityList);
     row.append(activity);
 
     const roles = document.createElement("td");
     roles.dataset.label = "Roles";
     const roleList = element("div", "user-roles");
-    if (user.project_admin) roleList.append(element("span", "listing-badge", "workspace admin"));
+    if (user.workspace_admin) roleList.append(element("span", "listing-badge", "workspace admin"));
     if (user.user_admin) roleList.append(element("span", "listing-badge", "user admin"));
-    if (!user.project_admin && !user.user_admin) roleList.append(element("span", "muted", "member"));
+    if (!user.workspace_admin && !user.user_admin) roleList.append(element("span", "muted", "member"));
     roles.append(roleList);
     row.append(roles);
     body.append(row);
@@ -1423,14 +1968,14 @@ function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElemen
   fullName.value = user.full_name;
   fullName.maxLength = 500;
   fullName.autocomplete = "name";
-  const projectAdmin = document.createElement("input");
-  projectAdmin.type = "checkbox";
-  projectAdmin.checked = user.project_admin;
+  const workspaceAdmin = document.createElement("input");
+  workspaceAdmin.type = "checkbox";
+  workspaceAdmin.checked = user.workspace_admin;
   const userAdmin = document.createElement("input");
   userAdmin.type = "checkbox";
   userAdmin.checked = user.user_admin;
-  const projectAdminLabel = element("label", "check-field user-role-field");
-  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
+  const workspaceAdminLabel = element("label", "check-field user-role-field");
+  workspaceAdminLabel.append(workspaceAdmin, element("span", "", "Workspace administrator"));
   const userAdminLabel = element("label", "check-field user-role-field");
   userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
   const lastUserAdmin = user.user_admin
@@ -1445,7 +1990,7 @@ function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElemen
   const submit = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   submit.type = "submit";
   const message = formMessage();
-  form.append(field("Full name", fullName), projectAdminLabel, userAdminLabel, roleWarning, submit, message);
+  form.append(field("Full name", fullName), workspaceAdminLabel, userAdminLabel, roleWarning, submit, message);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (lastUserAdmin && !userAdmin.checked && !window.confirm(
@@ -1458,7 +2003,7 @@ function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElemen
     try {
       await api.updateUser(user.name, {
         full_name: fullName.value,
-        project_admin: projectAdmin.checked,
+        workspace_admin: workspaceAdmin.checked,
         user_admin: userAdmin.checked,
       });
       await refreshCaller();
@@ -1523,21 +2068,21 @@ function userPasswordResetForm(user: User): HTMLFormElement {
 }
 
 function userMembershipList(user: User): HTMLElement {
-  const list = element("ul", "profile-projects");
-  for (const membership of user.projects) {
-    const item = element("li", "profile-project");
+  const list = element("ul", "profile-workspaces");
+  for (const membership of user.workspaces) {
+    const item = element("li", "profile-workspace");
     item.append(
       link(
-        `#/workspaces/${encodeURIComponent(membership.project)}/members`,
-        membership.project,
-        "profile-project-name",
+        `#/workspaces/${encodeURIComponent(membership.workspace)}/members`,
+        membership.workspace,
+        "profile-workspace-name",
       ),
-      element("span", "profile-project-title", "Workspace Members page"),
+      element("span", "profile-workspace-title", "Workspace Members page"),
       element("span", "listing-badge", membership.access),
     );
     list.append(item);
   }
-  if (user.projects.length === 0) list.append(element("li", "empty", "No workspace memberships."));
+  if (user.workspaces.length === 0) list.append(element("li", "empty", "No workspace memberships."));
   return list;
 }
 
@@ -1642,12 +2187,12 @@ function userCreateForm(): HTMLFormElement {
   password.maxLength = 72;
   password.autocomplete = "new-password";
   const confirmation = password.cloneNode() as HTMLInputElement;
-  const projectAdmin = document.createElement("input");
-  projectAdmin.type = "checkbox";
+  const workspaceAdmin = document.createElement("input");
+  workspaceAdmin.type = "checkbox";
   const userAdmin = document.createElement("input");
   userAdmin.type = "checkbox";
-  const projectAdminLabel = element("label", "check-field user-role-field");
-  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
+  const workspaceAdminLabel = element("label", "check-field user-role-field");
+  workspaceAdminLabel.append(workspaceAdmin, element("span", "", "Workspace administrator"));
   const userAdminLabel = element("label", "check-field user-role-field");
   userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
   const submit = element("button", "primary-button", "Create user") as HTMLButtonElement;
@@ -1656,7 +2201,7 @@ function userCreateForm(): HTMLFormElement {
   form.append(
     field("Username", username), field("Full name", fullName),
     field("Password", password), field("Confirm password", confirmation),
-    projectAdminLabel, userAdminLabel, submit, message,
+    workspaceAdminLabel, userAdminLabel, submit, message,
   );
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1673,7 +2218,7 @@ function userCreateForm(): HTMLFormElement {
       name: username.value,
       full_name: fullName.value,
       password: password.value,
-      project_admin: projectAdmin.checked,
+      workspace_admin: workspaceAdmin.checked,
       user_admin: userAdmin.checked,
     };
     try {
@@ -1702,17 +2247,17 @@ async function viewUserCreate(): Promise<HTMLElement> {
   return view;
 }
 
-async function viewProject(key: string, signal?: AbortSignal): Promise<HTMLElement> {
-  const [project, activity, canManage, memberPage, currentUser] = await Promise.all([
-    api.project(key),
-    api.projectActivity(key),
-    mayManageProjects(),
-    api.projectMembers(key, signal),
+async function viewWorkspace(key: string, signal?: AbortSignal): Promise<HTMLElement> {
+  const [workspace, activity, canManage, memberPage, currentUser] = await Promise.all([
+    api.workspace(key),
+    api.workspaceActivity(key),
+    mayManageWorkspaces(),
+    api.workspaceMembers(key, signal),
     identity === "" ? Promise.resolve(null) : api.user(identity),
   ]);
-  const view = element("div", "project-view");
-  if (project.state === "archived") {
-    const banner = element("div", "project-archive-banner");
+  const view = element("div", "workspace-view");
+  if (workspace.state === "archived") {
+    const banner = element("div", "workspace-archive-banner");
     banner.setAttribute("role", "status");
     banner.append(
       element("strong", "", "Archived"),
@@ -1722,13 +2267,13 @@ async function viewProject(key: string, signal?: AbortSignal): Promise<HTMLEleme
   }
   const heading = element("div", "detail-heading");
   const title = element("div");
-  title.append(element("div", "issue-key", project.key), element("h1", "", project.name));
+  title.append(element("div", "issue-key", workspace.key), element("h1", "", workspace.name));
   const edit = button("Edit workspace");
   heading.append(title);
-  if (canManage && project.state === "active") heading.append(edit);
+  if (canManage && workspace.state === "active") heading.append(edit);
   view.append(heading);
 
-  const form = projectEditForm(project);
+  const form = workspaceEditForm(workspace);
   form.hidden = true;
   edit.addEventListener("click", () => {
     form.hidden = !form.hidden;
@@ -1740,31 +2285,31 @@ async function viewProject(key: string, signal?: AbortSignal): Promise<HTMLEleme
   });
   view.append(form);
 
-  const description = element("section", "project-detail-description");
+  const description = element("section", "workspace-detail-description");
   description.append(element("h2", "", "Description"));
-  if (project.description === "") description.append(element("p", "empty", "No description."));
+  if (workspace.description === "") description.append(element("p", "empty", "No description."));
   else {
     const body = element("div", "markdown");
-    body.innerHTML = renderMarkdown(project.description);
+    body.innerHTML = renderMarkdown(workspace.description);
     description.append(body);
   }
   view.append(description);
-  const facts = element("p", "project-facts");
+  const facts = element("p", "workspace-facts");
   facts.append(
-    document.createTextNode(`${project.active_issues} open issue${project.active_issues === 1 ? "" : "s"} · Updated `),
-    updatedTimeElement(project.updated_at),
+    document.createTextNode(`${workspace.active_issues} open issue${workspace.active_issues === 1 ? "" : "s"} · Updated `),
+    updatedTimeElement(workspace.updated_at),
   );
   view.append(facts, link(
-    `#/issues?project=${encodeURIComponent(project.key)}${project.state === "archived" ? "&include-archived=true&include-closed=true" : ""}`,
-    project.state === "archived" ? "View this workspace's historical issues" : "View this workspace's issues",
+    `#/issues?workspace=${encodeURIComponent(workspace.key)}${workspace.state === "archived" ? "&include-archived=true&include-closed=true" : ""}`,
+    workspace.state === "archived" ? "View this workspace's historical issues" : "View this workspace's issues",
     "action",
   ));
-  view.append(projectLifecycleCard(project, activity.rows, canManage));
-  view.append(projectMembershipSection(project, memberPage.rows, currentUser));
+  view.append(workspaceLifecycleCard(workspace, activity.rows, canManage));
+  view.append(workspaceMembershipSection(workspace, memberPage.rows, currentUser));
   return view;
 }
 
-async function changeProjectMembership(
+async function changeWorkspaceMembership(
   host: HTMLElement,
   controls: Iterable<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>,
   operation: () => Promise<unknown>,
@@ -1808,7 +2353,7 @@ async function changeProjectMembership(
   }
 }
 
-function projectMembershipSection(project: Project, members: Membership[], currentUser: User | null): HTMLElement {
+function workspaceMembershipSection(workspace: Workspace, members: Membership[], currentUser: User | null): HTMLElement {
   const section = element("section", "profile-card membership-card");
   const heading = element("div", "membership-heading");
   const title = element("div");
@@ -1823,8 +2368,8 @@ function projectMembershipSection(project: Project, members: Membership[], curre
   heading.append(title, element("span", "membership-count", String(members.length)));
   section.append(heading);
 
-  const manageable = mayManageProjectMembership(identity, currentUser, project.key, members);
-  if (manageable) section.append(projectMembershipEditor(project, members));
+  const manageable = mayManageWorkspaceMembership(identity, currentUser, workspace.key, members);
+  if (manageable) section.append(workspaceMembershipEditor(workspace, members));
   else section.append(element("p", "membership-help", "Workspace administrators can change membership and access."));
 
   if (members.length === 0) {
@@ -1868,11 +2413,11 @@ function projectMembershipSection(project: Project, members: Membership[], curre
           access.value = member.access;
           return;
         }
-        void changeProjectMembership(
+        void changeWorkspaceMembership(
           accessCell,
           rowControls,
-          () => api.setProjectMember(project.key, member.user, next),
-          `@${member.user} now has ${next} access to workspace ${project.key}.`,
+          () => api.setWorkspaceMember(workspace.key, member.user, next),
+          `@${member.user} now has ${next} access to workspace ${workspace.key}.`,
         ).then(() => {
           // On failure the row remains mounted, so restore what the server
           // still holds. A successful render has already detached this row.
@@ -1886,16 +2431,16 @@ function projectMembershipSection(project: Project, members: Membership[], curre
     actions.dataset.label = "Actions";
     if (manageable) {
       const remove = button("Remove", "danger-button membership-remove");
-      remove.setAttribute("aria-label", `Remove @${member.user} from workspace ${project.key}`);
+      remove.setAttribute("aria-label", `Remove @${member.user} from workspace ${workspace.key}`);
       rowControls.push(remove);
       remove.addEventListener("click", () => {
         if (!window.confirm(membershipChangeConfirmation(member, members, identity, null))) return;
-        const losesAccess = member.user === identity && currentUser?.project_admin !== true;
-        void changeProjectMembership(
+        const losesAccess = member.user === identity && currentUser?.workspace_admin !== true;
+        void changeWorkspaceMembership(
           actions,
           rowControls,
-          () => api.removeProjectMember(project.key, member.user),
-          `@${member.user} was removed from workspace ${project.key}.`,
+          () => api.removeWorkspaceMember(workspace.key, member.user),
+          `@${member.user} was removed from workspace ${workspace.key}.`,
           true,
           losesAccess,
         );
@@ -1910,7 +2455,7 @@ function projectMembershipSection(project: Project, members: Membership[], curre
   return section;
 }
 
-function projectMembershipEditor(project: Project, members: Membership[]): HTMLFormElement {
+function workspaceMembershipEditor(workspace: Workspace, members: Membership[]): HTMLFormElement {
   const form = element("form", "compact-editor membership-editor") as HTMLFormElement;
   const input = document.createElement("input");
   input.required = true;
@@ -1938,11 +2483,11 @@ function projectMembershipEditor(project: Project, members: Membership[]): HTMLF
       mutationError(form, new Error(duplicate));
       return;
     }
-    void changeProjectMembership(
+    void changeWorkspaceMembership(
       form,
       [input, access, add],
-      () => api.addProjectMember(project.key, user, next),
-      `@${user} was added with ${next} access to workspace ${project.key}.`,
+      () => api.addWorkspaceMember(workspace.key, user, next),
+      `@${user} was added with ${next} access to workspace ${workspace.key}.`,
       false,
       false,
       true,
@@ -1951,52 +2496,52 @@ function projectMembershipEditor(project: Project, members: Membership[]): HTMLF
   return form;
 }
 
-async function viewProjectMembership(key: string, signal?: AbortSignal): Promise<HTMLElement> {
+async function viewWorkspaceMembership(key: string, signal?: AbortSignal): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
   const [preferences, memberPage, currentUser] = await Promise.all([
-    api.projectPreferences(),
-    api.projectMembers(key, signal),
+    api.workspacePreferences(),
+    api.workspaceMembers(key, signal),
     api.user(identity),
   ]);
-  const preference = preferences.find((candidate) => candidate.project.key === key);
-  if (preference === undefined) throw new ApiError(404, `no such project: ${key}`);
+  const preference = preferences.find((candidate) => candidate.workspace.key === key);
+  if (preference === undefined) throw new ApiError(404, `no such workspace: ${key}`);
 
-  const view = element("div", "project-view membership-admin-view");
+  const view = element("div", "workspace-view membership-admin-view");
   const heading = element("div", "detail-heading");
   const title = element("div");
   title.append(
-    element("div", "issue-key", preference.project.key),
-    element("h1", "", preference.project.name),
+    element("div", "issue-key", preference.workspace.key),
+    element("h1", "", preference.workspace.name),
     element("p", "lede", preference.ignored ? "Ignored workspace administration" : "Workspace administration"),
   );
   heading.append(title, link("#/settings", "Back to settings", "secondary-button"));
-  view.append(heading, projectMembershipSection(preference.project, memberPage.rows, currentUser));
+  view.append(heading, workspaceMembershipSection(preference.workspace, memberPage.rows, currentUser));
   return view;
 }
 
-function projectLifecycleCard(project: Project, activity: ProjectActivity[], canManage: boolean): HTMLElement {
-  const card = element("section", "project-lifecycle-card");
+function workspaceLifecycleCard(workspace: Workspace, activity: WorkspaceActivity[], canManage: boolean): HTMLElement {
+  const card = element("section", "workspace-lifecycle-card");
   card.append(element("h2", "", "Lifecycle"));
-  if (project.state === "archived") {
+  if (workspace.state === "archived") {
     card.append(element("p", "", "Issues, comments, attachments, transitions and relations are read-only while this workspace is archived. Issues remain in this workspace and cannot be transferred elsewhere."));
-    if (project.archived_at !== "") {
-      const meta = element("p", "muted", `Archived${project.archived_by === "" ? "" : ` by @${project.archived_by}`} · `);
-      meta.append(updatedTimeElement(project.archived_at));
+    if (workspace.archived_at !== "") {
+      const meta = element("p", "muted", `Archived${workspace.archived_by === "" ? "" : ` by @${workspace.archived_by}`} · `);
+      meta.append(updatedTimeElement(workspace.archived_at));
       card.append(meta);
     }
     if (canManage) {
       const restore = element("button", "primary-button", "Restore workspace") as HTMLButtonElement;
       restore.type = "button";
-      restore.addEventListener("click", () => void mutate(card, [restore], () => api.restoreProject(project.key)));
+      restore.addEventListener("click", () => void mutate(card, [restore], () => api.restoreWorkspace(workspace.key)));
       card.append(restore);
     }
   } else {
     card.append(element("p", "", "Archive this workspace to remove it from everyday discovery and make its retained work read-only. Its issues keep their stable workspace-prefixed IDs."));
-    if (canManage) card.append(projectArchiveConfirmation(project, card));
+    if (canManage) card.append(workspaceArchiveConfirmation(workspace, card));
   }
   if (activity.length > 0) {
     card.append(element("h3", "", "Lifecycle history"));
-    const list = element("ol", "project-lifecycle-history");
+    const list = element("ol", "workspace-lifecycle-history");
     for (const entry of activity) {
       const item = document.createElement("li");
       item.append(document.createTextNode(`${entry.action === "archived" ? "Archived" : "Restored"}${entry.actor === "" ? "" : ` by @${entry.actor}`} · `), updatedTimeElement(entry.created_at));
@@ -2007,37 +2552,37 @@ function projectLifecycleCard(project: Project, activity: ProjectActivity[], can
   return card;
 }
 
-function projectArchiveConfirmation(project: Project, host: HTMLElement): HTMLElement {
-  const form = element("form", "project-archive-form") as HTMLFormElement;
+function workspaceArchiveConfirmation(workspace: Workspace, host: HTMLElement): HTMLElement {
+  const form = element("form", "workspace-archive-form") as HTMLFormElement;
   const input = document.createElement("input");
-  input.placeholder = project.key;
-  input.setAttribute("aria-label", `Type ${project.key} to confirm`);
+  input.placeholder = workspace.key;
+  input.setAttribute("aria-label", `Type ${workspace.key} to confirm`);
   const archive = element("button", "archive-button", "Archive workspace") as HTMLButtonElement;
   archive.type = "submit";
   archive.disabled = true;
-  input.addEventListener("input", () => { archive.disabled = input.value !== project.key; });
-  form.append(element("label", "", `Type ${project.key} to confirm`), input, archive);
+  input.addEventListener("input", () => { archive.disabled = input.value !== workspace.key; });
+  form.append(element("label", "", `Type ${workspace.key} to confirm`), input, archive);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (input.value !== project.key) return;
-    void mutate(host, [input, archive], () => api.archiveProject(project.key));
+    if (input.value !== workspace.key) return;
+    void mutate(host, [input, archive], () => api.archiveWorkspace(workspace.key));
   });
   return form;
 }
 
-function projectEditForm(project: Project): HTMLFormElement {
+function workspaceEditForm(workspace: Workspace): HTMLFormElement {
   const form = element("form", "edit-panel") as HTMLFormElement;
   form.append(element("h2", "", "Edit workspace"));
   const name = document.createElement("input");
-  name.value = project.name;
+  name.value = workspace.name;
   name.maxLength = 500;
-  const description = createMarkdownEditor(project.description, undefined, "Project description (Markdown)");
+  const description = createMarkdownEditor(workspace.description, undefined, "Workspace description (Markdown)");
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
   form.append(field("Name", name), markdownField("Description (Markdown)", description), save);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [save], () => api.updateProject(project.key, {
+    void mutate(form, [save], () => api.updateWorkspace(workspace.key, {
       name: name.value,
       description: description.textarea.value,
     }));
@@ -2047,7 +2592,7 @@ function projectEditForm(project: Project): HTMLFormElement {
 
 async function viewIssue(id: string): Promise<HTMLElement> {
   const issue = await api.issue(id);
-  const [activity, project] = await Promise.all([api.activity(id), api.project(issue.project)]);
+  const [activity, workspace] = await Promise.all([api.activity(id), api.workspace(issue.workspace)]);
 
   const view = element("div", "issue-view");
   view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
@@ -2136,13 +2681,13 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
   view.append(content, sidebar, sidebarToggle);
-  if (project.state === "archived") {
-    view.classList.add("archived-project-issue");
-    const banner = element("div", "project-archive-banner issue-archive-banner");
+  if (workspace.state === "archived") {
+    view.classList.add("archived-workspace-issue");
+    const banner = element("div", "workspace-archive-banner issue-archive-banner");
     banner.setAttribute("role", "status");
     banner.append(
       element("strong", "", "Read-only"),
-      document.createTextNode(`Workspace ${project.key} is archived.`),
+      document.createTextNode(`Workspace ${workspace.key} is archived.`),
     );
     content.prepend(banner);
     editButton.remove();
@@ -2157,7 +2702,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     showEditor(false);
     editButton.focus();
   });
-  if (existingDraft !== undefined && project.state === "active") showEditor(true);
+  if (existingDraft !== undefined && workspace.state === "active") showEditor(true);
   return view;
 }
 
@@ -2404,7 +2949,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
     facts.append(row);
   };
   add("ID", element("span", "id", issue.id));
-  add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.project)}`, issue.project));
+  add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.workspace)}`, issue.workspace));
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
   type.className = "sidebar-select";
   type.setAttribute("aria-label", "Type");
@@ -2648,7 +3193,7 @@ function assigneeInspector(issue: Issue): [HTMLElement, HTMLElement] {
   assignee.setAttribute("aria-label", "Assignee");
   const assigneeAutocomplete = attachAutocomplete(assignee, async (query, signal) => {
     const [members, users] = await Promise.all([
-      api.projectMembers(issue.project, signal),
+      api.workspaceMembers(issue.workspace, signal),
       api.users({}, signal),
     ]);
     const memberNames = new Set(members.rows.map((member) => member.user));
@@ -2926,10 +3471,11 @@ function chrome(): HTMLElement {
     anchor.append(svgIcon(icon), document.createTextNode(label));
     return anchor;
   };
-  nav.append(navLink(projectScopedHref("ready", route.query), "Ready", "ready"));
-  nav.append(navLink(projectScopedHref("issues", route.query), "Issues", "issues"));
-  nav.append(navLink(projectScopedHref("blocked", route.query), "Blocked", "blocked"));
-  nav.append(navLink(projectScopedHref("workspaces", route.query), "Workspaces", "projects"));
+  nav.append(navLink(workspaceScopedHref("ready", route.query), "Ready", "ready"));
+  nav.append(navLink(workspaceScopedHref("issues", route.query), "Issues", "issues"));
+  nav.append(navLink(workspaceScopedHref("blocked", route.query), "Blocked", "blocked"));
+  nav.append(navLink(workspaceScopedHref("boards", route.query), "Boards", "boards"));
+  nav.append(navLink(workspaceScopedHref("workspaces", route.query), "Workspaces", "workspaces"));
   nav.append(navLink("#/users", "Users", "users"));
   const brand = link("#/ready", "", "brand");
   const mark = document.createElement("img");
@@ -2950,19 +3496,19 @@ function chrome(): HTMLElement {
   return header;
 }
 
-function profileProjectList(user: User, projects: Project[]): HTMLElement {
-  const list = element("ul", "profile-projects");
-  const memberships = new Map(user.projects.map((membership) => [membership.project, membership.access]));
-  for (const project of projects) {
-    const item = element("li", "profile-project");
-    const query = new URLSearchParams({ project: project.key });
-    item.append(link(`#/issues?${query.toString()}`, project.key, "profile-project-name"));
-    if (project.name !== "") item.append(element("span", "profile-project-title", project.name));
-    const access = user.project_admin ? "admin" : memberships.get(project.key);
+function profileWorkspaceList(user: User, workspaces: Workspace[]): HTMLElement {
+  const list = element("ul", "profile-workspaces");
+  const memberships = new Map(user.workspaces.map((membership) => [membership.workspace, membership.access]));
+  for (const workspace of workspaces) {
+    const item = element("li", "profile-workspace");
+    const query = new URLSearchParams({ workspace: workspace.key });
+    item.append(link(`#/issues?${query.toString()}`, workspace.key, "profile-workspace-name"));
+    if (workspace.name !== "") item.append(element("span", "profile-workspace-title", workspace.name));
+    const access = user.workspace_admin ? "admin" : memberships.get(workspace.key);
     if (access !== undefined) item.append(element("span", "listing-badge", access));
     list.append(item);
   }
-  if (projects.length === 0) list.append(element("li", "empty", "No workspace access."));
+  if (workspaces.length === 0) list.append(element("li", "empty", "No workspace access."));
   return list;
 }
 
@@ -3060,7 +3606,7 @@ function fullNameForm(user: User, onUpdated: (updated: User) => void): HTMLFormE
 
 async function viewProfile(): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
-  const [user, projects] = await Promise.all([api.user(identity), api.projects()]);
+  const [user, workspaces] = await Promise.all([api.user(identity), api.workspaces()]);
   const view = element("div", "profile-view");
   const heading = element("div", "profile-heading");
   heading.append(avatar(user.name, "profile-avatar"));
@@ -3099,16 +3645,16 @@ async function viewProfile(): Promise<HTMLElement> {
     if (updatedValue !== undefined) updatedValue.textContent = profileIdentity(updated).updated;
   }));
   const access = element("section", "profile-card");
-  access.append(element("h2", "", "Workspace access"), profileProjectList(user, projects.rows));
+  access.append(element("h2", "", "Workspace access"), profileWorkspaceList(user, workspaces.rows));
   const security = element("section", "profile-card");
   security.append(element("h2", "", "Password"), passwordForm(user));
   view.append(details, profile, access, security);
   return view;
 }
 
-function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement {
-  const card = element("section", "profile-card ignored-projects-card");
-  const heading = element("div", "ignored-projects-heading");
+function ignoredWorkspacesSettingsCard(workspaces: WorkspacePreference[]): HTMLElement {
+  const card = element("section", "profile-card ignored-workspaces-card");
+  const heading = element("div", "ignored-workspaces-heading");
   const copy = element("div");
   copy.append(
     element("h2", "", "Ignored workspaces"),
@@ -3119,59 +3665,59 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
         "They always remain available here so you can re-enable them.",
     ),
   );
-  const summary = element("span", "ignored-summary", projectPreferenceSummary(projects));
+  const summary = element("span", "ignored-summary", workspacePreferenceSummary(workspaces));
   heading.append(copy, summary);
 
-  const filterLabel = element("label", "project-preference-filter");
+  const filterLabel = element("label", "workspace-preference-filter");
   filterLabel.append(element("span", "visually-hidden", "Find a workspace"));
   const filter = document.createElement("input");
   filter.type = "search";
   filter.placeholder = "Find a workspace by name or key";
-  const filterControl = element("span", "search-control project-preference-search");
+  const filterControl = element("span", "search-control workspace-preference-search");
   const filterClear = attachSearchClear(filter);
   filterControl.append(filter, filterClear.button);
   filterLabel.append(filterControl);
 
-  const list = element("ul", "project-preference-list");
-  const rows = new Map<ProjectPreference, HTMLElement>();
-  for (const preference of projects) {
-    const row = element("li", `project-preference-row${preference.ignored ? " ignored" : ""}`);
-    const name = element("span", "project-preference-identity");
+  const list = element("ul", "workspace-preference-list");
+  const rows = new Map<WorkspacePreference, HTMLElement>();
+  for (const preference of workspaces) {
+    const row = element("li", `workspace-preference-row${preference.ignored ? " ignored" : ""}`);
+    const name = element("span", "workspace-preference-identity");
     name.append(
-      element("code", "", preference.project.key),
-      element("span", "", preference.project.name),
+      element("code", "", preference.workspace.key),
+      element("span", "", preference.workspace.name),
     );
     const state = element(
       "span",
-      `project-preference-state ${preference.ignored ? "ignored-state" : "active-state"}`,
+      `workspace-preference-state ${preference.ignored ? "ignored-state" : "active-state"}`,
       preference.ignored ? "Ignored" : "Active",
     );
     const action = element(
       "button",
-      "secondary-button project-preference-action",
+      "secondary-button workspace-preference-action",
       preference.ignored ? "Re-enable" : "Ignore",
     ) as HTMLButtonElement;
     action.type = "button";
     action.addEventListener("click", () => {
-      void mutate(row, [action], () => api.setProjectIgnored(
-        preference.project.key, !preference.ignored,
+      void mutate(row, [action], () => api.setWorkspaceIgnored(
+        preference.workspace.key, !preference.ignored,
       ));
     });
-    const actions = element("span", "project-preference-actions");
+    const actions = element("span", "workspace-preference-actions");
     actions.append(link(
-      `#/workspaces/${encodeURIComponent(preference.project.key)}/members`,
+      `#/workspaces/${encodeURIComponent(preference.workspace.key)}/members`,
       "Members",
-      "secondary-button project-preference-members",
+      "secondary-button workspace-preference-members",
     ));
     actions.append(action);
     row.append(name, state, actions);
     rows.set(preference, row);
     list.append(row);
   }
-  const empty = element("p", "project-preference-empty empty", "No authorized workspaces match your search.");
-  empty.hidden = projects.length !== 0;
+  const empty = element("p", "workspace-preference-empty empty", "No authorized workspaces match your search.");
+  empty.hidden = workspaces.length !== 0;
   const refresh = (): void => {
-    const visible = new Set(filterProjectPreferences(projects, filter.value));
+    const visible = new Set(filterWorkspacePreferences(workspaces, filter.value));
     for (const [preference, row] of rows) row.hidden = !visible.has(preference);
     empty.hidden = visible.size !== 0;
   };
@@ -3182,9 +3728,9 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
 
 async function viewSettings(): Promise<HTMLElement> {
   if (identity === "") throw new Error("No authenticated user is available.");
-  let projectPreferences: ProjectPreference[] | null = null;
+  let workspacePreferences: WorkspacePreference[] | null = null;
   try {
-    projectPreferences = await api.projectPreferences();
+    workspacePreferences = await api.workspacePreferences();
   } catch (error) {
     // An open/no-auth server has an attribution identity but no account row,
     // and therefore no per-user preference owner. Its existing browser-local
@@ -3221,7 +3767,7 @@ async function viewSettings(): Promise<HTMLElement> {
   });
   card.append(preference);
   view.append(card);
-  if (projectPreferences !== null) view.append(ignoredProjectsSettingsCard(projectPreferences));
+  if (workspacePreferences !== null) view.append(ignoredWorkspacesSettingsCard(workspacePreferences));
   return view;
 }
 
@@ -3308,12 +3854,14 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
       return route.path.length > 1 ? viewIssue(route.path[1]) : viewListing(route, "issues", signal);
     case "blocked":
       return viewListing(route, "blocked", signal);
+    case "boards":
+      return viewBoards(route, signal);
     case "workspaces":
-    case "projects": // Legacy browser route; links emitted by this UI use /workspaces.
+    case "workspaces":
       if (route.path.length > 2 && route.path[2] === "members") {
-        return viewProjectMembership(route.path[1], signal);
+        return viewWorkspaceMembership(route.path[1], signal);
       }
-      return route.path.length > 1 ? viewProject(route.path[1], signal) : viewProjects(route, signal);
+      return route.path.length > 1 ? viewWorkspace(route.path[1], signal) : viewWorkspaces(route, signal);
     case "profile":
       return viewProfile();
     case "settings":
@@ -3336,7 +3884,7 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
 
 function markActiveNav(route: Route): void {
   const rawCurrent = route.path[0] ?? "ready";
-  const current = rawCurrent === "projects" ? "workspaces" : rawCurrent;
+  const current = rawCurrent === "workspaces" ? "workspaces" : rawCurrent;
   for (const anchor of app.querySelectorAll("nav a")) {
     const target = navigationPath(anchor.getAttribute("href") ?? "");
     anchor.classList.toggle("active", target === current);
@@ -3355,9 +3903,9 @@ async function start(): Promise<void> {
       keywords: destination.keywords,
       group: "Navigation",
       run: () => {
-        location.hash = destination.projectScoped === undefined
+        location.hash = destination.workspaceScoped === undefined
           ? destination.path
-          : projectScopedHref(destination.projectScoped, route.query);
+          : workspaceScopedHref(destination.workspaceScoped, route.query);
       },
     }));
     if (identity !== "") commands.push({
@@ -3382,7 +3930,7 @@ async function start(): Promise<void> {
 async function refreshCaller(): Promise<void> {
   // Account administration can change the current caller's workspace role.
   // Force the next workspace view to resolve that effective capability again.
-  projectManager = null;
+  workspaceManager = null;
   try {
     const caller = await api.identity();
     identity = caller.identity;

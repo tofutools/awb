@@ -122,19 +122,19 @@ func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
 		"blocker IDs lead to their issues too")
 	assert.Contains(t, issues, "\x1b]8;;\x07", "each hyperlink is closed")
 
-	projects := renderRemote(config.ColorAlways, true, func(e *env) {
-		require.NoError(t, e.printProjects([]domain.Project{{Key: "demo", Name: "Demo"}}))
+	workspaces := renderRemote(config.ColorAlways, true, func(e *env) {
+		require.NoError(t, e.printWorkspaces([]domain.Workspace{{Key: "demo", Name: "Demo"}}))
 	})
-	assert.Contains(t, projects,
-		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
-		"the web UI represents a project as its filtered issue listing")
+	assert.Contains(t, workspaces,
+		"\x1b]8;;https://example.com/awb/#/issues?workspace=demo\x07demo",
+		"the web UI represents a workspace as its filtered issue listing")
 }
 
 // JSON cannot carry an OSC 8 sequence, so it names the same web destinations
 // explicitly. Both fields are part of the CLI shape even in direct mode; an
 // empty value says that the local database has no associated web address.
 func TestJSONIncludesWebLinks(t *testing.T) {
-	issue := domain.Issue{ID: "demo-eeec94", Project: "demo", Title: "Release"}
+	issue := domain.Issue{ID: "demo-eeec94", Workspace: "demo", Title: "Release"}
 	issues := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
 		require.NoError(t, e.printIssues([]domain.Issue{issue}, false))
@@ -143,16 +143,16 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(issues), &issueList))
 	require.Len(t, issueList, 1)
 	assert.Equal(t, "https://example.com/awb/#/issues/demo-eeec94", issueList[0]["issue_link"])
-	assert.Equal(t, "https://example.com/awb/#/issues?project=demo", issueList[0]["project_link"])
+	assert.Equal(t, "https://example.com/awb/#/issues?workspace=demo", issueList[0]["workspace_link"])
 
-	projects := renderRemote(config.ColorNever, false, func(e *env) {
+	workspaces := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
-		require.NoError(t, e.printProjects([]domain.Project{{Key: "demo", Name: "Demo"}}))
+		require.NoError(t, e.printWorkspaces([]domain.Workspace{{Key: "demo", Name: "Demo"}}))
 	})
-	var projectList []map[string]any
-	require.NoError(t, json.Unmarshal([]byte(projects), &projectList))
-	require.Len(t, projectList, 1)
-	assert.Equal(t, "https://example.com/awb/#/issues?project=demo", projectList[0]["project_link"])
+	var workspaceList []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(workspaces), &workspaceList))
+	require.Len(t, workspaceList, 1)
+	assert.Equal(t, "https://example.com/awb/#/issues?workspace=demo", workspaceList[0]["workspace_link"])
 
 	local := render(0, func(e *env) {
 		e.json = true
@@ -161,27 +161,27 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	var localIssue map[string]any
 	require.NoError(t, json.Unmarshal([]byte(local), &localIssue))
 	assert.Equal(t, "", localIssue["issue_link"])
-	assert.Equal(t, "", localIssue["project_link"])
+	assert.Equal(t, "", localIssue["workspace_link"])
 }
 
 func TestRemoteDetailIdentifiersAreClickable(t *testing.T) {
 	issue := domain.Issue{
-		ID: "demo-eeec94", Project: "demo", Title: "Release", Status: domain.StatusOpen,
+		ID: "demo-eeec94", Workspace: "demo", Title: "Release", Status: domain.StatusOpen,
 		Blockers:  []string{"demo-bff7dc"},
 		Relations: []domain.Relation{{Type: domain.RelRelated, Other: "demo-bbd9d3"}},
 	}
 	out := renderRemote(config.ColorAlways, true, func(e *env) { e.printIssueDetail(&issue) })
 	assert.Contains(t, out, "Workspace", "human output uses the product vocabulary")
 	for _, destination := range []string{
-		"#/issues/demo-eeec94", "#/issues?project=demo", "#/issues/demo-bff7dc", "#/issues/demo-bbd9d3",
+		"#/issues/demo-eeec94", "#/issues?workspace=demo", "#/issues/demo-bff7dc", "#/issues/demo-bbd9d3",
 	} {
 		assert.Contains(t, out, "https://example.com/awb/"+destination)
 	}
 
-	project := renderRemote(config.ColorAlways, true, func(e *env) {
-		e.printProjectDetail(&domain.Project{Key: "demo", Name: "Demo"})
+	workspace := renderRemote(config.ColorAlways, true, func(e *env) {
+		e.printWorkspaceDetail(&domain.Workspace{Key: "demo", Name: "Demo"})
 	})
-	assert.Contains(t, project, "https://example.com/awb/#/issues?project=demo")
+	assert.Contains(t, workspace, "https://example.com/awb/#/issues?workspace=demo")
 }
 
 func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
@@ -192,18 +192,18 @@ func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
 				UI: "https://example.com/awb/#/workspaces",
 			},
 			Configuration: statusConfiguration{Color: config.ColorAlways},
-			Projects:      []statusProject{{Key: "demo", Name: "Demo", Open: 2, Total: 2}},
+			Workspaces:    []statusWorkspace{{Key: "demo", Name: "Demo", Open: 2, Total: 2}},
 		}))
 	})
 	assert.Contains(t, out,
 		"\x1b]8;;https://example.com/awb/#/workspaces\x07https://example.com/awb/#/workspaces",
 		"the visible full UI URL opens the workspace index")
 	assert.Contains(t, out,
-		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
-		"the project key opens its filtered issue listing")
+		"\x1b]8;;https://example.com/awb/#/issues?workspace=demo\x07demo",
+		"the workspace key opens its filtered issue listing")
 	assert.Contains(t, out,
-		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07Demo",
-		"the project name opens the same listing")
+		"\x1b]8;;https://example.com/awb/#/issues?workspace=demo\x07Demo",
+		"the workspace name opens the same listing")
 
 	plain := ansi.Strip(out)
 	var header, row string
