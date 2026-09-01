@@ -11,7 +11,7 @@ import (
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
 const issueColumns = `id, workspace, title, description, type, status, priority, board_order,
-	created_at, updated_at`
+	board_hidden, created_at, updated_at, closed_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -20,7 +20,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt)
+		&i.Priority, &i.Order, &i.BoardHidden, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +292,7 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	now := Now()
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
+	issue.ClosedAt = ""
 	assignees := issue.Assignees
 	if err := validateAssignment(issue.Status, assignees); err != nil {
 		return err
@@ -306,9 +307,10 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt)
+			issue.Status, issue.Priority, issue.Order, issue.BoardHidden,
+			issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
 		if err == nil {
 			for position, assignee := range assignees {
 				if _, err := t.q.ExecContext(t.ctx,
@@ -340,6 +342,7 @@ type IssueFields struct {
 	Status      domain.Status
 	Priority    int
 	Order       int
+	BoardHidden bool
 	Assignees   []string
 }
 
@@ -347,7 +350,8 @@ type IssueFields struct {
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Order: i.Order, Assignees: slices.Clone(i.Assignees),
+		Priority: i.Priority, Order: i.Order, BoardHidden: i.BoardHidden,
+		Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -362,10 +366,19 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	if before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
 		before.Priority == fields.Priority && before.Order == fields.Order &&
+		before.BoardHidden == fields.BoardHidden &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
+	closedAt := issue.ClosedAt
+	if before.Status != fields.Status {
+		if fields.Status == domain.StatusClosed {
+			closedAt = updated
+		} else {
+			closedAt = ""
+		}
+	}
 	if before.Type == domain.TypeEpic && fields.Type != domain.TypeEpic {
 		if err := t.removeBoardViewEpicSelections(issue.ID); err != nil {
 			return err
@@ -375,10 +388,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
 		   SET title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
-		       updated_at = ?
+		       board_hidden = ?, updated_at = ?, closed_at = ?
 		 WHERE id = ?`,
 		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
-		updated, issue.ID)
+		fields.BoardHidden, updated, closedAt, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
@@ -402,6 +415,8 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
 	issue.Order = fields.Order
+	issue.BoardHidden = fields.BoardHidden
+	issue.ClosedAt = closedAt
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
 	return nil

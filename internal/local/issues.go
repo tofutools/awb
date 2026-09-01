@@ -275,6 +275,9 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 			}
 			fields.Priority = priority
 		}
+		if req.BoardHidden != nil {
+			fields.BoardHidden = *req.BoardHidden
+		}
 
 		return tx.UpdateIssue(issue, fields)
 	})

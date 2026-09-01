@@ -54,6 +54,12 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	if !f.IncludeArchived {
 		c.add(`EXISTS (SELECT 1 FROM workspaces p WHERE p.key = i.workspace AND p.state = 'active')`)
 	}
+	if f.BoardOnly {
+		c.add("i.board_hidden = 0")
+	}
+	if f.ClosedAfter != "" {
+		c.add("(i.status <> 'closed' OR i.closed_at >= ?)", f.ClosedAfter)
+	}
 	c.addIn("i.status", anyArgs(f.EffectiveStatuses()))
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))

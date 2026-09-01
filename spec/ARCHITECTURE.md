@@ -185,6 +185,11 @@ A saved board view belongs to one user and stores filter scope, not a materializ
 issue set. It may be shared by link, but every reader's current authorization
 and ignored-workspace preferences still apply. Empty selected scope and “all”
 are distinct states so disappearing access cannot silently widen a saved view.
+Each saved view also owns its closed-issue retention window; the default board
+accepts the same window as a request preference. Board-hidden issues never enter
+the projection, and a closed issue remains there only until its most recent
+close is older than that window. Card pagination remains independent for every
+epic and status column.
 
 Ignoring a workspace is per-user presentation state. Normal discovery excludes
 it, while the dedicated preference recovery path can still list it. This layer

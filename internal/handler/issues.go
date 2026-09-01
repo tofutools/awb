@@ -83,6 +83,7 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 		Description: optString(req.Description),
 		Type:        optType(req.Type),
 		Priority:    optPriority(req.Priority),
+		BoardHidden: optBool(req.BoardHidden),
 
 		ExpectStatus: optStatus(req.Status),
 	}

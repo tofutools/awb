@@ -21,7 +21,8 @@ func toBoardView(view *domain.BoardView) api.BoardView {
 		Shared: view.Shared, AllWorkspaces: view.AllWorkspaces, Workspaces: workspaces,
 		AllEpics: view.AllEpics, Epics: epics, IncludeNoEpic: view.IncludeNoEpic,
 		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees),
-		PriorityMax: api.Priority(view.PriorityMax), CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
+		PriorityMax: api.Priority(view.PriorityMax), ClosedDays: view.ClosedDays,
+		CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
 }
 
 func toBoardViews(views []domain.BoardView) []api.BoardView {
@@ -105,7 +106,8 @@ func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate)
 	view, err := h.backendFor(ctx).CreateBoardView(ctx, backend.BoardViewCreate{Name: req.Name,
 		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
 		AllEpics: req.AllEpics.Or(true), Epics: stringsFromIssueIDs(req.Epics), IncludeNoEpic: req.IncludeNoEpic.Or(true),
-		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees), PriorityMax: int(req.PriorityMax.Or(4))})
+		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees),
+		PriorityMax: int(req.PriorityMax.Or(4)), ClosedDays: req.ClosedDays.Or(30)})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +128,7 @@ func (h *Handler) UpdateBoardView(ctx context.Context, req *api.BoardViewPatch, 
 		Name: optString(req.Name), Shared: optBool(req.Shared), AllWorkspaces: optBool(req.AllWorkspaces),
 		Workspaces: optWorkspaces(req.Workspaces), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
 		AllEpics: optBool(req.AllEpics), Epics: optIssueIDs(req.Epics), IncludeNoEpic: optBool(req.IncludeNoEpic),
-		PriorityMax: optPriority(req.PriorityMax)}, params.IfMatch.Or(""))
+		PriorityMax: optPriority(req.PriorityMax), ClosedDays: optInt(req.ClosedDays)}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +156,7 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 	if value, ok := params.Epic.Get(); ok {
 		query.Epic = &value
 	}
+	query.ClosedDays = optInt(params.ClosedDays)
 	board, err := h.backendFor(ctx).GetBoard(ctx, params.Ref, query)
 	if err != nil {
 		return nil, err

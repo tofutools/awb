@@ -48,6 +48,22 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 	assert.Greater(t, page.Activity[0].ID, page.Activity[1].ID)
 }
 
+func TestBoardVisibilityChangeIsAudited(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "board visibility")
+	hidden := true
+	_, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{BoardHidden: &hidden}, "")
+	require.NoError(t, err)
+
+	page, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Activity, 2)
+	assert.Equal(t, "updated", page.Activity[0].Action)
+	require.Equal(t, []domain.ActivityChange{{
+		Field: "board_hidden", From: json.RawMessage(`false`), To: json.RawMessage(`true`),
+	}}, page.Activity[0].Changes)
+}
+
 func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {
 	b, ctx := newBackend(t)
 	commented := create(t, b, ctx, "commented")
