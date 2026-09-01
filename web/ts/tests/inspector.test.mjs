@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { inspectorPopoverPosition, inspectorStatusAction } from "../../static/inspector.js";
+import {
+  deferInspectorPopoverOpen,
+  inspectorPopoverPosition,
+  inspectorStatusAction,
+} from "../../static/inspector.js";
 
 test("the native status control dispatches domain transitions", () => {
   assert.equal(inspectorStatusAction("open", "open"), "none");
@@ -10,6 +14,16 @@ test("the native status control dispatches domain transitions", () => {
   assert.equal(inspectorStatusAction("in_progress", "closed"), "close");
   assert.equal(inspectorStatusAction("closed", "open"), "reopen");
   assert.equal(inspectorStatusAction("closed", "in_progress"), "claim");
+});
+
+test("the close editor waits for the native select activation to finish", async () => {
+  let opened = false;
+  deferInspectorPopoverOpen(() => {
+    opened = true;
+  });
+  assert.equal(opened, false);
+  await new Promise((resolve) => setTimeout(resolve));
+  assert.equal(opened, true);
 });
 
 test("an inspector popover stays in the viewport and flips above its trigger", () => {
