@@ -27,9 +27,15 @@ Exit status is the machine-readable error class:
 | `4` | Conflict with stored state |
 | `5` | Forbidden |
 
-Commands do not prompt. Destructive operations require an explicit `--force`.
-The only full-screen interaction is `--interactive` on list, blocked, and
-search; it refuses to start unless both input and output are terminals.
+Work commands do not prompt. Destructive operations require an explicit
+`--force`. Password entry for `user add` and `user update --password` is the
+intentional exception: a terminal prompts with echo disabled, while scripts
+pipe the password through standard input or supply a bcrypt hash where the
+command supports one.
+
+The full-screen interaction is always requested with `--interactive`. It is
+available on issue list, ready, blocked, search, workspace list, and user list,
+and refuses to start unless both input and output are terminals.
 
 ## Finding work
 
@@ -42,9 +48,11 @@ awb blocked --compact               # active blocked issues and their blockers
 awb search parser regression        # title and description contain every term
 ```
 
-`ready` is intentionally opinionated and ordered by priority. It does not
-accept assignee filters because its question is “what can nobody in particular
-pick up next?” Use `list --mine` to find your own work.
+`ready` is intentionally opinionated. Its default order respects manual board
+position first, then falls back to priority and update time for automatically
+positioned work. It does not accept assignee filters because its question is
+“what can nobody in particular pick up next?” Use `list --mine` to find your
+own work, or `ready --sort priority` when strict priority order is desired.
 
 Listings can be scoped by workspace, label, type, priority, status, assignee,
 and update time. A configured workspace applies by default; use

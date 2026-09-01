@@ -18,7 +18,8 @@ agent before it can safely pick up work.
 ## Why awb
 
 - **Agents can discover work.** `awb ready` returns open, unblocked,
-  unassigned issues in priority order.
+  unassigned issues in the team's work order, with priority as the automatic
+  fallback.
 - **Coordination is atomic.** Claiming an issue joins its assignees and moves it
   to `in_progress` in one transaction. Concurrent agents cannot both perform a
   conflicting write unnoticed.
@@ -36,8 +37,7 @@ agent before it can safely pick up work.
 
 ## Try it
 
-Install a release binary for Linux or macOS from
-[GitHub Releases](https://github.com/tofutools/awb/releases), or install with Go:
+Install with Go:
 
 ```console
 go install github.com/tofutools/awb@latest
@@ -78,10 +78,12 @@ $ awb comment add app-a3f9c1 --body "Reproduced with an empty token stream."
 $ awb close app-a3f9c1 --reason "Guard against the empty token stream"
 ```
 
-Every command is non-interactive unless interactivity is explicitly requested.
-Successful mutations are transactional, errors have classified exit codes, and
-the compact vocabulary fits in a short agent instruction. Print or install that
-instruction with:
+Work commands are non-interactive unless interactivity is explicitly requested.
+Account password commands are the deliberate exception: they read from standard
+input and hide terminal entry, while scripts can pipe a password or provide a
+bcrypt hash. Successful mutations are transactional, errors have classified
+exit codes, and the compact vocabulary fits in a short agent instruction. Print
+or install that instruction with:
 
 ```console
 awb agent-guide

@@ -5,8 +5,7 @@ The same data can be served to a browser or remote CLI later.
 
 ## Install
 
-Download a Linux or macOS binary from
-[GitHub Releases](https://github.com/tofutools/awb/releases), or use Go:
+Install with Go:
 
 ```console
 go install github.com/tofutools/awb@latest
