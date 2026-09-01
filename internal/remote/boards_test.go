@@ -28,7 +28,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4}`, string(body))
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4,"closed_days":30}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
@@ -43,6 +43,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, []string{"awb", "web"}, r.URL.Query()["workspace"])
 			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
+			assert.Equal(t, "14", r.URL.Query().Get("closed-days"))
 			assert.Equal(t, "open", r.URL.Query().Get("status"))
 			assert.Equal(t, "awb-epic", r.URL.Query().Get("epic"))
 			_, _ = w.Write([]byte(`{"lanes":[]}`))
@@ -67,7 +68,8 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, views, 1)
 	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{Name: "Release", Shared: true,
-		AllWorkspaces: false, Workspaces: []string{"awb"}, AllEpics: true, IncludeNoEpic: true, PriorityMax: 4})
+		AllWorkspaces: false, Workspaces: []string{"awb"}, AllEpics: true, IncludeNoEpic: true, PriorityMax: 4,
+		ClosedDays: 30})
 	require.NoError(t, err)
 	name := "Release"
 	_, err = client.UpdateBoardView(t.Context(), id, backend.BoardViewPatch{Name: &name}, `"etag"`)
@@ -76,9 +78,9 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, id, created.ID)
 
-	laneLimit, cardOffset, epic := 7, 3, "awb-epic"
+	laneLimit, cardOffset, closedDays, epic := 7, 3, 14, "awb-epic"
 	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
-		Workspaces: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
+		ClosedDays: &closedDays, Workspaces: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
 		Status: domain.StatusOpen, Epic: &epic, Direction: "earlier",

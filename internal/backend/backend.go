@@ -155,6 +155,7 @@ type BoardViewCreate struct {
 	Labels        []string
 	Assignees     []string
 	PriorityMax   int
+	ClosedDays    int
 }
 
 type BoardViewPatch struct {
@@ -168,6 +169,7 @@ type BoardViewPatch struct {
 	Labels        *[]string
 	Assignees     *[]string
 	PriorityMax   *int
+	ClosedDays    *int
 }
 
 type BoardQuery struct {
@@ -175,6 +177,7 @@ type BoardQuery struct {
 	LaneOffset *int
 	CardLimit  *int
 	CardOffset *int
+	ClosedDays *int
 	Workspaces []string
 	Status     domain.Status
 	Epic       *string
@@ -318,6 +321,7 @@ type IssuePatch struct {
 	Description *string
 	Type        *domain.Type
 	Priority    *int
+	BoardHidden *bool
 
 	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,

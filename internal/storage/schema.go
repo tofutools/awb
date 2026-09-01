@@ -31,6 +31,16 @@ var migrations = [][]string{
 	schemaV12,
 	schemaV13,
 	schemaV14,
+	schemaV15,
+}
+
+// schemaV15 records board-only presentation state and the instant of the most
+// recent close, and gives each saved view its closed-card retention window.
+var schemaV15 = []string{
+	`ALTER TABLE issues ADD COLUMN board_hidden INTEGER NOT NULL DEFAULT 0 CHECK (board_hidden IN (0, 1))`,
+	`ALTER TABLE issues ADD COLUMN closed_at TEXT NOT NULL DEFAULT ''`,
+	`UPDATE issues SET closed_at = updated_at WHERE status = 'closed'`,
+	`ALTER TABLE board_views ADD COLUMN closed_days INTEGER NOT NULL DEFAULT 30 CHECK (closed_days BETWEEN 0 AND 3650)`,
 }
 
 // schemaV14 lets a saved board pin epic lanes independently of its workspace

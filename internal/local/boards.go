@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -11,10 +12,12 @@ import (
 )
 
 const (
-	defaultBoardLaneLimit = 10
-	maximumBoardLaneLimit = 50
-	defaultBoardCardLimit = 50
-	maximumBoardCardLimit = 50
+	defaultBoardLaneLimit  = 10
+	maximumBoardLaneLimit  = 50
+	defaultBoardCardLimit  = 50
+	maximumBoardCardLimit  = 50
+	defaultBoardClosedDays = 30
+	maximumBoardClosedDays = 3650
 )
 
 func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
@@ -31,8 +34,12 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if err != nil {
 		return nil, err
 	}
+	if req.ClosedDays < 0 || req.ClosedDays > maximumBoardClosedDays {
+		return nil, awberr.Usagef("board closed days must be between 0 and %d", maximumBoardClosedDays)
+	}
 	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
-		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority}
+		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority,
+		ClosedDays: req.ClosedDays}
 	seen := map[string]bool{}
 	for _, value := range req.Workspaces {
 		valid, err := domain.ValidateWorkspaceKey(value)
@@ -81,7 +88,8 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
 	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
 		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
-		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees, PriorityMax: view.PriorityMax}
+		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees,
+		PriorityMax: view.PriorityMax, ClosedDays: view.ClosedDays}
 }
 
 func validateBoardViewEpics(tx *storage.Tx, view *domain.BoardView, requested []string) error {
@@ -331,6 +339,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if req.PriorityMax != nil {
 			next.PriorityMax = *req.PriorityMax
 		}
+		if req.ClosedDays != nil {
+			next.ClosedDays = *req.ClosedDays
+		}
 		valid, err := validateBoardView(boardCreateFrom(&next))
 		if err != nil {
 			return err
@@ -433,6 +444,13 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	if query.CardLimit, err = boundedBoardLimit(query.CardLimit, defaultBoardCardLimit, maximumBoardCardLimit, "card"); err != nil {
 		return nil, err
 	}
+	closedDays := defaultBoardClosedDays
+	if query.ClosedDays != nil {
+		closedDays = *query.ClosedDays
+	}
+	if closedDays < 0 || closedDays > maximumBoardClosedDays {
+		return nil, awberr.Usagef("board closed days must be between 0 and %d", maximumBoardClosedDays)
+	}
 	for name, offset := range map[string]*int{"lane": query.LaneOffset, "card": query.CardOffset} {
 		if offset != nil && *offset < 0 {
 			return nil, awberr.Usagef("board %s offset must not be negative", name)
@@ -470,6 +488,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 			shown.Normalize()
 			result.View = &shown
+			closedDays = view.ClosedDays
 		}
 		laneSelection := selected
 		if len(query.Workspaces) > 0 {
@@ -581,7 +600,14 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			for _, status := range statuses {
 				filter := &domain.Filter{Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
-					Offset: query.CardOffset, Sort: domain.DefaultSort}
+					Offset: query.CardOffset, Sort: domain.DefaultSort, BoardOnly: true}
+				if status == domain.StatusClosed {
+					if closedDays == 0 {
+						filter.ClosedAfter = "9999-12-31T23:59:59.999Z"
+					} else {
+						filter.ClosedAfter = domain.FormatTime(time.Now().UTC().Add(-time.Duration(closedDays) * 24 * time.Hour))
+					}
+				}
 				if view != nil {
 					filter.Labels = view.Labels
 					filter.Assignees = view.Assignees

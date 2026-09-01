@@ -84,6 +84,57 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.Equal(t, []string{"awb", "web"}, restored.Workspaces)
 }
 
+func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
+	root, ctx := newInstance(t)
+	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "visible"})
+	require.NoError(t, err)
+	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "hidden"})
+	require.NoError(t, err)
+	closed, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "closed"})
+	require.NoError(t, err)
+
+	boardHidden := true
+	hidden, err = root.UpdateIssue(ctx, hidden.ID, backend.IssuePatch{BoardHidden: &boardHidden}, "")
+	require.NoError(t, err)
+	assert.True(t, hidden.BoardHidden)
+	closed, err = root.CloseIssue(ctx, closed.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+	assert.NotEmpty(t, closed.ClosedAt)
+
+	thirty := 30
+	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty})
+	require.NoError(t, err)
+	assert.Equal(t, []string{visible.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
+	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues))
+
+	zero := 0
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &zero})
+	require.NoError(t, err)
+	assert.Empty(t, board.Lanes[0].Columns[2].Issues)
+	assert.Zero(t, board.Lanes[0].Columns[2].Total)
+
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Recent", AllWorkspaces: true,
+		AllEpics: true, IncludeNoEpic: true, PriorityMax: 4, ClosedDays: 0})
+	require.NoError(t, err)
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &thirty})
+	require.NoError(t, err)
+	assert.Empty(t, board.Lanes[0].Columns[2].Issues, "a saved view uses its stored setting")
+	view, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{ClosedDays: &thirty}, backend.ETag(view.UpdatedAt))
+	require.NoError(t, err)
+	assert.Equal(t, 30, view.ClosedDays)
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero})
+	require.NoError(t, err)
+	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "query settings do not override a saved view")
+}
+
+func issueIDs(issues []domain.Issue) []string {
+	ids := make([]string, len(issues))
+	for i := range issues {
+		ids[i] = issues[i].ID
+	}
+	return ids
+}
+
 func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)

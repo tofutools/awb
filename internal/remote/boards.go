@@ -21,6 +21,7 @@ type boardViewCreateBody struct {
 	Labels        []string `json:"labels"`
 	Assignees     []string `json:"assignees"`
 	PriorityMax   int      `json:"priority_max"`
+	ClosedDays    int      `json:"closed_days"`
 }
 type boardViewPatchBody struct {
 	Name          *string   `json:"name,omitempty"`
@@ -33,6 +34,7 @@ type boardViewPatchBody struct {
 	Labels        *[]string `json:"labels,omitempty"`
 	Assignees     *[]string `json:"assignees,omitempty"`
 	PriorityMax   *int      `json:"priority_max,omitempty"`
+	ClosedDays    *int      `json:"closed_days,omitempty"`
 }
 
 func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error) {
@@ -57,7 +59,7 @@ func (b *Backend) GetBoardView(ctx context.Context, id string) (*domain.BoardVie
 func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.BoardViewPatch, ifMatch string) (*domain.BoardView, error) {
 	body := boardViewPatchBody{Name: req.Name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
 		Workspaces: req.Workspaces, AllEpics: req.AllEpics, Epics: req.Epics, IncludeNoEpic: req.IncludeNoEpic,
-		Labels: req.Labels, Assignees: req.Assignees, PriorityMax: req.PriorityMax}
+		Labels: req.Labels, Assignees: req.Assignees, PriorityMax: req.PriorityMax, ClosedDays: req.ClosedDays}
 	var view domain.BoardView
 	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/board-views/"+url.PathEscape(id), nil), body, ifMatch, &view)
 	return &view, err
@@ -78,6 +80,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	set("lane-offset", query.LaneOffset)
 	set("card-limit", query.CardLimit)
 	set("card-offset", query.CardOffset)
+	set("closed-days", query.ClosedDays)
 	for _, workspace := range query.Workspaces {
 		values.Add("workspace", workspace)
 	}

@@ -50,10 +50,12 @@ type Issue struct {
 	Status      Status       `json:"status"`
 	Priority    int          `json:"priority"`
 	Order       int          `json:"order"`
+	BoardHidden bool         `json:"board_hidden"`
 	Labels      []string     `json:"labels"`
 	Assignees   []string     `json:"assignees"`
 	CreatedAt   string       `json:"created_at"`
 	UpdatedAt   string       `json:"updated_at"`
+	ClosedAt    string       `json:"closed_at"`
 	Blocked     bool         `json:"blocked"`
 	Blockers    []string     `json:"blockers"`
 	Relations   []Relation   `json:"relations"`
@@ -120,6 +122,7 @@ type BoardView struct {
 	Labels        []string `json:"labels"`
 	Assignees     []string `json:"assignees"`
 	PriorityMax   int      `json:"priority_max"`
+	ClosedDays    int      `json:"closed_days"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }

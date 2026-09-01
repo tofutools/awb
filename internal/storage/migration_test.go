@@ -99,6 +99,36 @@ func TestV8AddsAnEmptyFullNameToExistingUsers(t *testing.T) {
 	}))
 }
 
+func TestV15AddsBoardVisibilityAndClosedRetention(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 14)
+	const timestamp = "2026-01-01T00:00:00.000Z"
+	_, err := raw.ExecContext(t.Context(), `
+		INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+		VALUES ('awb', 'AWB', '', 'active', '', '', ?, ?);
+		INSERT INTO issues (id, workspace, title, description, type, status, priority, board_order, created_at, updated_at)
+		VALUES ('awb-aaaaaa', 'awb', 'done', '', 'task', 'closed', 2, 0, ?, ?);
+		INSERT INTO board_views (id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at, all_epics, include_no_epic)
+		VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Release', 'alice', 0, 1, 4, ?, ?, 1, 1)`,
+		timestamp, timestamp, timestamp, timestamp, timestamp, timestamp)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		issue, readErr := tx.GetIssue("awb-aaaaaa")
+		require.NoError(t, readErr)
+		assert.False(t, issue.BoardHidden)
+		assert.Equal(t, timestamp, issue.ClosedAt)
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, 30, view.ClosedDays)
+		return nil
+	}))
+}
+
 func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
 	raw := openAtVersion(t, path, 10)

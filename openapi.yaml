@@ -765,6 +765,10 @@ paths:
         - name: card-offset
           in: query
           schema: { type: integer, minimum: 0 }
+        - name: closed-days
+          in: query
+          description: Closed issues remain on the default board for this many days. Saved views use their stored value.
+          schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
         - name: workspace
           in: query
           schema:
@@ -1692,7 +1696,7 @@ components:
       additionalProperties: false
       required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
         epics, include_no_epic, labels,
-        assignees, priority_max, created_at, updated_at]
+        assignees, priority_max, closed_days, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
         name: { type: string, minLength: 1, maxLength: 100 }
@@ -1714,6 +1718,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
+        closed_days: { type: integer, minimum: 0, maximum: 3650 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
@@ -1742,6 +1747,11 @@ components:
         priority_max:
           $ref: '#/components/schemas/Priority'
           default: 4
+        closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          default: 30
 
     BoardViewPatch:
       type: object
@@ -1770,6 +1780,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
+        closed_days: { type: integer, minimum: 0, maximum: 3650 }
         id: { $ref: '#/components/schemas/BoardViewID' }
         owner: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -2107,8 +2118,8 @@ components:
         unchanged data therefore produce byte-identical output.
       additionalProperties: false
       required:
-        [id, workspace, title, description, type, status, priority, order, labels,
-         assignees, created_at, updated_at, blocked, blockers,
+        [id, workspace, title, description, type, status, priority, order, board_hidden, labels,
+         assignees, created_at, updated_at, closed_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
@@ -2134,6 +2145,9 @@ components:
           type: integer
           minimum: 0
           description: Sparse manual rank; zero means priority/recency fallback.
+        board_hidden:
+          type: boolean
+          description: Whether this issue is explicitly omitted from every board while remaining visible elsewhere.
         labels:
           type: array
           description: Sorted.
@@ -2150,6 +2164,9 @@ components:
             increasing per issue, so it identifies a version rather than an
             instant. Adding or removing a relation or an attachment does not
             move it.
+        closed_at:
+          type: string
+          description: Empty unless closed; otherwise the instant of the most recent transition to closed.
         blocked:
           type: boolean
           description: |
@@ -2468,6 +2485,7 @@ components:
         description: { type: string }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
+        board_hidden: { type: boolean }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -2480,6 +2498,7 @@ components:
         order: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
+        closed_at: { type: string }
         blocked: { type: boolean }
         blockers: { type: array, items: { type: string } }
         relations: { type: array, items: { $ref: '#/components/schemas/Relation' } }
