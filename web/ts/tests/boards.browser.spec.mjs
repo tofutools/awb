@@ -71,6 +71,19 @@ async function pointerDrag(page, source, target, below = false) {
   await page.mouse.up();
 }
 
+async function columnBackgroundDrag(page, source, column, target) {
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  const targetBox = await target.boundingBox();
+  expect(targetBox).not.toBeNull();
+  const cards = column.locator(".board-cards");
+  await source.dispatchEvent("dragstart", { dataTransfer: transfer });
+  await cards.dispatchEvent("dragover", { clientY: targetBox.y + 1, dataTransfer: transfer });
+  await expect(target).toHaveClass(/drop-before/);
+  await expect(column.locator(".drop-after")).toHaveCount(0);
+  await cards.dispatchEvent("drop", { clientY: targetBox.y + 1, dataTransfer: transfer });
+  await source.dispatchEvent("dragend", { dataTransfer: transfer });
+}
+
 test("save, share and work from a responsive board", async ({ page }) => {
   test.skip(baseURL === undefined, "set AWB_BROWSER_BASE_URL to a disposable awb serve instance");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -308,6 +321,22 @@ test("save, share and work from a responsive board", async ({ page }) => {
     const titles = await releaseTitles();
     return titles.indexOf("Build the full text search index") < titles.indexOf("Browse the widget catalogue");
   }).toBe(true);
+
+  // Column whitespace resolves to the nearest visible card edge instead of
+  // presenting every populated column as an append-to-bottom target.
+  const reorderedColumn = currentReleaseLane.locator(".board-column[data-status='in_progress']");
+  const reorderedCards = reorderedColumn.locator(".board-card");
+  const sourceID = await reorderedCards.last().getAttribute("data-issue");
+  const targetID = await reorderedCards.first().getAttribute("data-issue");
+  expect(sourceID).toBeTruthy();
+  expect(targetID).toBeTruthy();
+  await columnBackgroundDrag(
+    page,
+    reorderedColumn.locator(`.board-card[data-issue='${sourceID}']`),
+    reorderedColumn,
+    reorderedColumn.locator(`.board-card[data-issue='${targetID}']`),
+  );
+  await expect.poll(() => reorderedColumn.locator(".board-card").first().getAttribute("data-issue")).toBe(sourceID);
 
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
