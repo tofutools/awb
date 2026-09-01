@@ -171,6 +171,14 @@ interface IssueCreateDefaults {
   assignToMe?: boolean;
 }
 
+type NewIssueRelation = NonNullable<IssueCreate["relations"]>[number];
+
+interface StagedIssueResources {
+  element: HTMLElement;
+  relations: NewIssueRelation[];
+  attachments: Map<string, File>;
+}
+
 // Sidebar and resource edits save immediately and therefore rerender the
 // route. Keep the main form's unsaved text through that rerender instead of
 // silently replacing it with the last stored issue.
@@ -501,6 +509,142 @@ function issueForm(
   return { form, title, description, submit, actions };
 }
 
+function stagedIssueResources(epic?: Issue): StagedIssueResources {
+  const resources = element("div", "issue-create-resources");
+  const relations: NewIssueRelation[] = epic === undefined
+    ? []
+    : [{ type: "has-parent", other: epic.id }];
+  const attachments = new Map<string, File>();
+
+  const relationSection = element("section", "issue-create-resource");
+  relationSection.append(element("h3", "", "Relations"));
+  const relationList = element("ul", "relations resource-list issue-create-resource-list");
+  const renderRelations = (): void => {
+    relationList.replaceChildren();
+    for (const relation of relations) {
+      const row = element("li");
+      row.append(
+        element("span", "id", "New issue"),
+        element("span", "relation-type", relation.type),
+        element("span", "id", relation.other),
+      );
+      if (relation.other !== epic?.id || relation.type !== "has-parent") {
+        const remove = button("Remove", "inline-button danger-button");
+        remove.addEventListener("click", () => {
+          relations.splice(relations.indexOf(relation), 1);
+          renderRelations();
+        });
+        row.append(remove);
+      }
+      relationList.append(row);
+    }
+    relationList.hidden = relations.length === 0;
+  };
+  const disclosureRow = element("div", "relation-disclosure-row");
+  const disclose = button("", "relation-disclosure");
+  disclose.append(svgIcon("relation"), document.createTextNode("+ Add relation"));
+  disclosureRow.append(disclose, element("span", "relation-hint", "Create a dependency or association"));
+  const relationFields = element("div", "relation-fields");
+  relationFields.hidden = true;
+  const relationType = select(["blocked-by", "has-parent", "discovered-from", "related"]);
+  relationType.setAttribute("aria-label", "Relation type");
+  const other = document.createElement("input");
+  other.placeholder = "Other issue ID";
+  other.setAttribute("aria-label", "Other issue ID");
+  const otherAutocomplete = attachAutocomplete(other, async (query, signal) => {
+    const page = await api.issueSuggestions(query, signal);
+    return page.rows.map((candidate) => ({ value: candidate.id, label: candidate.id, detail: candidate.title }));
+  });
+  const addRelation = button("Add relation", "quiet-action");
+  relationFields.append(relationType, otherAutocomplete, addRelation);
+  disclose.addEventListener("click", () => {
+    disclosureRow.hidden = true;
+    relationFields.hidden = false;
+    other.focus();
+  });
+  addRelation.addEventListener("click", () => {
+    relationSection.querySelector(".edit-error")?.remove();
+    const target = other.value.trim();
+    if (target === "") {
+      mutationError(relationSection, new Error("Choose another issue."));
+      return;
+    }
+    const type = relationType.value as NewIssueRelation["type"];
+    if (relations.some((relation) => relation.type === type && relation.other === target)) {
+      mutationError(relationSection, new Error("That relation is already staged."));
+      return;
+    }
+    if (type === "has-parent" && relations.some((relation) => relation.type === "has-parent")) {
+      mutationError(relationSection, new Error("An issue can have only one parent."));
+      return;
+    }
+    relations.push({ type, other: target });
+    other.value = "";
+    relationFields.hidden = true;
+    disclosureRow.hidden = false;
+    renderRelations();
+  });
+  other.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.key !== "Enter") return;
+    event.preventDefault();
+    addRelation.click();
+  });
+  renderRelations();
+  relationSection.append(relationList, disclosureRow, relationFields);
+
+  const attachmentSection = element("section", "issue-create-resource");
+  attachmentSection.append(element("h3", "", "Attachments"));
+  const attachmentList = element("ul", "attachments resource-list issue-create-resource-list");
+  const renderAttachments = (): void => {
+    attachmentList.replaceChildren();
+    for (const selected of attachments.values()) {
+      const row = element("li");
+      row.append(
+        element("span", "name", selected.name),
+        element("span", "size", formatSize(selected.size)),
+        element("span", "content-type", selected.type || "application/octet-stream"),
+      );
+      const remove = button("Remove", "inline-button danger-button");
+      remove.addEventListener("click", () => {
+        attachments.delete(selected.name);
+        renderAttachments();
+      });
+      row.append(remove);
+      attachmentList.append(row);
+    }
+    attachmentList.hidden = attachments.size === 0;
+  };
+  const attachmentEditor = element("div", "compact-editor attachment-editor");
+  const file = document.createElement("input");
+  file.type = "file";
+  file.multiple = true;
+  file.className = "attachment-file-input";
+  file.setAttribute("aria-label", "Attachment files");
+  const picker = element("label", "attachment-picker") as HTMLLabelElement;
+  picker.append(svgIcon("attachment"), document.createTextNode("Drop files here or "), element("span", "attachment-browse", "browse"), file);
+  attachmentEditor.append(picker);
+  const stageFiles = (selected: FileList | File[]): void => {
+    for (const item of selected) attachments.set(item.name, item);
+    file.value = "";
+    renderAttachments();
+  };
+  file.addEventListener("change", () => { if (file.files !== null) stageFiles(file.files); });
+  attachmentEditor.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    attachmentEditor.classList.add("drag-active");
+  });
+  attachmentEditor.addEventListener("dragleave", () => attachmentEditor.classList.remove("drag-active"));
+  attachmentEditor.addEventListener("drop", (event) => {
+    event.preventDefault();
+    attachmentEditor.classList.remove("drag-active");
+    if (event.dataTransfer?.files !== undefined) stageFiles(event.dataTransfer.files);
+  });
+  renderAttachments();
+  attachmentSection.append(attachmentList, attachmentEditor);
+  resources.append(relationSection, attachmentSection);
+  return { element: resources, relations, attachments };
+}
+
 async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promise<void> {
   const page = await api.workspaces();
   const workspaces = page.rows.filter((workspace) => workspace.state !== "archived");
@@ -521,6 +665,8 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   const metadata = element("div", "edit-field-row");
   metadata.append(field("Workspace", workspace), field("Type", type), field("Priority", priority));
   editor.form.insertBefore(metadata, editor.form.children[1]);
+  const staged = stagedIssueResources(defaults.epic);
+  editor.form.insertBefore(staged.element, editor.actions);
 
   if (defaults.epic !== undefined) {
     workspace.value = defaults.epic.workspace;
@@ -562,9 +708,17 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
       type: type.value as IssueCreate["type"],
       priority: Number(priority.value) as IssueCreate["priority"],
       ...(assign.checked && identity !== "" ? { assignees: [identity] } : {}),
-      ...(defaults.epic === undefined ? {} : { relations: [{ type: "has-parent", other: defaults.epic.id }] }),
+      ...(staged.relations.length === 0 ? {} : { relations: staged.relations }),
     };
-    void api.createIssue(body).then((created) => {
+    void api.createIssue(body).then(async (created) => {
+      try {
+        await Promise.all([...staged.attachments.values()].map((file) => api.addAttachment(created.id, file)));
+      } catch (error) {
+        pendingNotice = {
+          message: `Issue ${created.id} was created, but an attachment could not be uploaded: ${error instanceof Error ? error.message : String(error)}`,
+          error: true,
+        };
+      }
       dialog.close();
       location.hash = `#/issues/${created.id}`;
     }).catch((error) => {

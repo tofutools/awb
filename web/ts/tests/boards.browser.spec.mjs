@@ -54,6 +54,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   const inProgressColumn = releaseLane.locator(".board-column[data-status='in_progress']");
+  const relatedID = await page.locator(".board-card").first().getAttribute("data-issue");
+  expect(relatedID).toBeTruthy();
   await inProgressColumn.getByRole("button", { name: /Create in progress issue/ }).click();
   const createDialog = page.getByRole("dialog", { name: "New issue" });
   await expect(createDialog.getByLabel("Workspace")).toHaveValue("demo");
@@ -63,6 +65,17 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await createDialog.getByLabel("Title").fill("Created from the board");
   await createDialog.getByLabel("Type").selectOption("feature");
   await createDialog.getByLabel("Priority").selectOption("1");
+  await createDialog.getByRole("button", { name: /Add relation/ }).click();
+  await createDialog.getByLabel("Relation type").selectOption("related");
+  await createDialog.getByLabel("Other issue ID").fill(relatedID);
+  await createDialog.getByRole("button", { name: "Add relation", exact: true }).click();
+  await expect(createDialog.locator(".issue-create-resource-list.relations")).toContainText(relatedID);
+  await createDialog.getByLabel("Attachment files").setInputFiles({
+    name: "release-notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Ready to publish.\n"),
+  });
+  await expect(createDialog.locator(".issue-create-resource-list.attachments")).toContainText("release-notes.txt");
   await createDialog.getByRole("button", { name: "Create issue" }).click();
   await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
   const createdID = page.url().split("/").at(-1);
@@ -71,6 +84,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(created.type).toBe("feature");
   expect(created.priority).toBe(1);
   expect(created.relations.some((relation) => relation.type === "has-parent")).toBe(true);
+  expect(created.relations.some((relation) => relation.type === "related" && relation.other === relatedID)).toBe(true);
+  expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");
   if (caller !== "") expect(created.assignees).toContain(caller);
   await page.goto(`${baseURL}/#/boards`);
 

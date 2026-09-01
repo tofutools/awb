@@ -1130,6 +1130,20 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .issue-create-assign { display: inline-flex; gap: 0.4rem; align-items: center; margin-right: auto; color: var(--muted); font-size: 0.85rem; }
 .issue-create-assign input { min-width: auto; accent-color: var(--accent); }
+.issue-create-resources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.issue-create-resource {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.issue-create-resource h3 { margin: 0 0 0.45rem; color: var(--fg); font-size: 0.95rem; }
+.issue-create-resource .compact-editor { margin-bottom: 0; }
+.issue-create-resource-list { margin-bottom: 0.5rem; }
+.issue-create-resource-list[hidden] { display: none; }
+.issue-create-resource .relations li { grid-template-columns: minmax(6rem, auto) minmax(7rem, auto) minmax(7rem, 1fr) auto; }
+.issue-create-resource .attachments li { grid-template-columns: minmax(7rem, 1fr) auto auto auto; }
 .primary-button, .secondary-button, .danger-button, .inline-button {
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--line);
@@ -1409,6 +1423,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .board-column { scroll-snap-align: start; }
   .board-card-move { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); }
   .issue-create-form .edit-field-row { grid-template-columns: 1fr; }
+  .issue-create-resources { grid-template-columns: 1fr; }
 }
 .comment-composer {
   display: grid;
