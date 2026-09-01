@@ -711,11 +711,14 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
       ...(staged.relations.length === 0 ? {} : { relations: staged.relations }),
     };
     void api.createIssue(body).then(async (created) => {
-      try {
-        await Promise.all([...staged.attachments.values()].map((file) => api.addAttachment(created.id, file)));
-      } catch (error) {
+      const files = [...staged.attachments.values()];
+      const uploads = await Promise.allSettled(files.map((file) => api.addAttachment(created.id, file)));
+      const failed = uploads.flatMap((upload, index) => upload.status === "rejected"
+        ? [{ file: files[index], reason: upload.reason as unknown }]
+        : []);
+      if (failed.length > 0) {
         pendingNotice = {
-          message: `Issue ${created.id} was created, but an attachment could not be uploaded: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Issue ${created.id} was created, but ${failed.length === 1 ? "an attachment" : `${failed.length} attachments`} could not be uploaded: ${failed.map(({ file, reason }) => `${file.name} (${reason instanceof Error ? reason.message : String(reason)})`).join(", ")}`,
           error: true,
         };
       }
