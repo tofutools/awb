@@ -54,6 +54,12 @@ import {
   type PaletteCommand,
 } from "./command-palette.js";
 import { renderMarkdown } from "./markdown.js";
+import {
+  activateMarkdownEditors,
+  createMarkdownEditor,
+  destroyMarkdownEditors,
+  type MarkdownEditor,
+} from "./markdown-editor.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import {
@@ -339,6 +345,7 @@ function mobileUpdatedDisplayControl(): HTMLElement {
 }
 
 function clear(node: HTMLElement): void {
+  destroyMarkdownEditors(node);
   node.replaceChildren();
 }
 
@@ -429,6 +436,12 @@ function field(labelText: string, control: HTMLElement): HTMLLabelElement {
   const label = element("label", "edit-field") as HTMLLabelElement;
   label.append(element("span", "edit-field-label", labelText), control);
   return label;
+}
+
+function markdownField(labelText: string, editor: MarkdownEditor): HTMLElement {
+  const wrapper = element("div", "edit-field");
+  wrapper.append(element("span", "edit-field-label", labelText), editor.element);
+  return wrapper;
 }
 
 function select(values: readonly string[], current = ""): HTMLSelectElement {
@@ -1180,7 +1193,10 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
       createForm.hidden = !createForm.hidden;
       create.setAttribute("aria-expanded", String(!createForm.hidden));
       create.textContent = createForm.hidden ? "New workspace" : "Hide creator";
-      if (!createForm.hidden) createForm.querySelector<HTMLInputElement>("input")?.focus();
+      if (!createForm.hidden) {
+        activateMarkdownEditors(createForm);
+        createForm.querySelector<HTMLInputElement>("input")?.focus();
+      }
     });
   }
   view.append(heading, createForm);
@@ -1236,21 +1252,29 @@ function projectCreateForm(): HTMLFormElement {
   const name = document.createElement("input");
   name.name = "name";
   name.maxLength = 500;
-  const description = document.createElement("textarea");
-  description.name = "description";
-  description.rows = 5;
+  const description = createMarkdownEditor("", "description", "Workspace description (Markdown)");
   const preview = element("p", "project-key-preview muted", "Issue IDs will use this key as their prefix.");
   key.addEventListener("input", () => {
     preview.textContent = key.value === "" ? "Issue IDs will use this key as their prefix." : `Issue IDs will start with ${key.value}-.`;
   });
   const submit = element("button", "primary-button", "Create workspace") as HTMLButtonElement;
   submit.type = "submit";
-  form.append(field("Key", key), preview, field("Name (optional)", name), field("Description (Markdown)", description), submit);
+  form.append(
+    field("Key", key),
+    preview,
+    field("Name (optional)", name),
+    markdownField("Description (Markdown)", description),
+    submit,
+  );
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     submit.disabled = true;
     try {
-      const project = await api.createProject({ key: key.value, name: name.value, description: description.value });
+      const project = await api.createProject({
+        key: key.value,
+        name: name.value,
+        description: description.textarea.value,
+      });
       location.hash = `#/workspaces/${encodeURIComponent(project.key)}`;
     } catch (error) {
       submit.disabled = false;
@@ -1709,7 +1733,10 @@ async function viewProject(key: string, signal?: AbortSignal): Promise<HTMLEleme
   edit.addEventListener("click", () => {
     form.hidden = !form.hidden;
     edit.textContent = form.hidden ? "Edit workspace" : "Hide editor";
-    if (!form.hidden) form.querySelector<HTMLInputElement>("input")?.focus();
+    if (!form.hidden) {
+      activateMarkdownEditors(form);
+      form.querySelector<HTMLInputElement>("input")?.focus();
+    }
   });
   view.append(form);
 
@@ -2004,17 +2031,15 @@ function projectEditForm(project: Project): HTMLFormElement {
   const name = document.createElement("input");
   name.value = project.name;
   name.maxLength = 500;
-  const description = document.createElement("textarea");
-  description.value = project.description;
-  description.rows = 10;
+  const description = createMarkdownEditor(project.description, undefined, "Project description (Markdown)");
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
-  form.append(field("Name", name), field("Description (Markdown)", description), save);
+  form.append(field("Name", name), markdownField("Description (Markdown)", description), save);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [save], () => api.updateProject(project.key, {
       name: name.value,
-      description: description.value,
+      description: description.textarea.value,
     }));
   });
   return form;
@@ -2059,6 +2084,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     relationSection.editor.hidden = !show;
     relationSection.section.hidden = !show && issue.relations.length === 0;
     editButton.textContent = show ? "Hide editor" : "Edit issue";
+    if (show) activateMarkdownEditors(editForm);
   };
   editButton.addEventListener("click", () => {
     showEditor(editForm.hidden === true);
@@ -2204,10 +2230,11 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
   title.required = true;
   title.maxLength = 500;
 
-  const description = document.createElement("textarea");
-  description.name = "description";
-  description.value = draft?.description ?? issue.description;
-  description.rows = 10;
+  const description = createMarkdownEditor(
+    draft?.description ?? issue.description,
+    "description",
+    "Issue description (Markdown)",
+  );
 
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
@@ -2216,18 +2243,18 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
     save,
   );
-  form.append(field("Title", title), field("Description (Markdown)", description), actions);
+  form.append(field("Title", title), markdownField("Description (Markdown)", description), actions);
   const rememberDraft = (): void => {
-    issueEditDrafts.set(issue.id, { title: title.value, description: description.value });
+    issueEditDrafts.set(issue.id, { title: title.value, description: description.textarea.value });
   };
   title.addEventListener("input", rememberDraft);
-  description.addEventListener("input", rememberDraft);
+  description.textarea.addEventListener("input", rememberDraft);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [save], async () => {
       const updated = await api.updateIssue(issue.id, {
         title: title.value,
-        description: description.value,
+        description: description.textarea.value,
       });
       issueEditDrafts.delete(issue.id);
       return updated;

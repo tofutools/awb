@@ -172,6 +172,9 @@ func TestStaticAssetsAreServed(t *testing.T) {
 	resp, body = get(t, h, http.MethodGet, "/vendor/markdown-it-14.1.0.js")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.NotEmpty(t, body)
+	resp, body = get(t, h, http.MethodGet, "/vendor/codemirror-6.43.3.js")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotEmpty(t, body)
 
 	// A deep link falls back to the shell, so client-side routing works.
 	resp, body = get(t, h, http.MethodGet, "/issues/awb-a1b2c3")

@@ -17,6 +17,7 @@
     "rootDir": ".",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "paths": {
+      "codemirror": ["./vendor/codemirror.d.ts"],
       "markdown-it": ["./vendor/markdown-it.d.ts"],
       "dompurify": ["./vendor/dompurify.d.ts"]
     }
