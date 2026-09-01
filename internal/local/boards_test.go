@@ -221,6 +221,29 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
 }
 
+func TestChangingAPinnedEpicTypeMovesTheBoardViewVersion(t *testing.T) {
+	root, ctx := newInstance(t)
+	epic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Pinned epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Pinned", AllWorkspaces: true,
+		AllEpics: false, Epics: []string{epic.ID}, PriorityMax: 4})
+	require.NoError(t, err)
+
+	nextType := domain.TypeTask
+	_, err = root.UpdateIssue(ctx, epic.ID, backend.IssuePatch{Type: &nextType}, backend.ETag(epic.UpdatedAt))
+	require.NoError(t, err)
+	updated, err := root.GetBoardView(ctx, view.ID)
+	require.NoError(t, err)
+	assert.Empty(t, updated.Epics)
+	assert.Greater(t, updated.UpdatedAt, view.UpdatedAt)
+
+	name := "stale"
+	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(view.UpdatedAt))
+	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(updated.UpdatedAt))
+	require.NoError(t, err, "the cleaned-up view remains editable")
+}
+
 func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	root, ctx := newInstance(t)
 	for i := range 51 {

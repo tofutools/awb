@@ -278,3 +278,15 @@ func (t *Tx) bumpBoardViewsSelectingEpic(epic string) error {
 	}
 	return nil
 }
+
+// removeBoardViewEpicSelections advances each affected version before an issue
+// stops being an epic, then removes the now-invalid pinned lane.
+func (t *Tx) removeBoardViewEpicSelections(epic string) error {
+	if err := t.bumpBoardViewsSelectingEpic(epic); err != nil {
+		return err
+	}
+	if _, err := t.q.ExecContext(t.ctx, `DELETE FROM board_view_epics WHERE epic = ?`, epic); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "remove board view selections of epic %s", epic)
+	}
+	return nil
+}

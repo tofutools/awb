@@ -366,6 +366,11 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		return nil
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
+	if before.Type == domain.TypeEpic && fields.Type != domain.TypeEpic {
+		if err := t.removeBoardViewEpicSelections(issue.ID); err != nil {
+			return err
+		}
+	}
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
