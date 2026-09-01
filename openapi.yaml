@@ -2471,9 +2471,11 @@ components:
       additionalProperties: false
       description: |
         Atomically changes workflow status, optional direct epic membership,
-        and sparse manual position. The issue's workspace/workspace and ID are
+        and sparse manual position. The issue's workspace and ID are
         immutable. When `epic` is present, an empty value clears direct epic
         membership; a non-empty value must name an epic in the same workspace.
+        Moving to `open` clears assignees. Moving from `closed` to `in_progress`
+        assigns the request identity and replaces the historical assignee set.
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/Status' }

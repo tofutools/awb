@@ -148,6 +148,29 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
 }
 
+func TestMoveIssueRestartsClosedWorkAndCanClearAnyAssignment(t *testing.T) {
+	b, ctx := newBackend(t)
+	closed := create(t, b, ctx, "closed", func(req *backend.IssueCreate) {
+		req.Assignees = []string{"alice", "bob"}
+	})
+	closed, err := b.CloseIssue(ctx, closed.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+
+	restarted, err := b.MoveIssue(ctx, closed.ID, backend.IssueMove{Status: domain.StatusInProgress}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusInProgress, restarted.Status)
+	assert.Equal(t, []string{"mikael"}, restarted.Assignees,
+		"restarting closed work replaces its historical assignees with the caller")
+
+	held := create(t, b, ctx, "held by others", func(req *backend.IssueCreate) {
+		req.Assignees = []string{"alice", "bob"}
+	})
+	opened, err := b.MoveIssue(ctx, held.ID, backend.IssueMove{Status: domain.StatusOpen}, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusOpen, opened.Status)
+	assert.Empty(t, opened.Assignees)
+}
+
 func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.T) {
 	b, ctx := newBackend(t)
 	dragged := create(t, b, ctx, "ranked")
