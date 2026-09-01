@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -852,6 +853,79 @@ func TestBlockerSortingJoinsAscending(t *testing.T) {
 	// come second.
 	assert.Equal(t, []string{two, one}, []string{issues[0].ID, issues[1].ID})
 	assert.Equal(t, []string{low, high}, issues[0].Blockers, "and the visible list is the joined one")
+}
+
+// Each of the three project orderings, in both directions. The descending form
+// reverses the named key only: after a derived key the p.key tiebreak stays
+// ascending, exactly as the issue listings' id tiebreak does.
+func TestProjectListOrderings(t *testing.T) {
+	db := newDB(t)
+	// Keys, active counts and update times are each deliberately in a different
+	// order, so no two orderings agree by accident.
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		for _, key := range []string{"beta", "alpha", "gamma"} {
+			if err := tx.InsertProject(key, key, ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	// gamma two open issues, alpha one, beta none.
+	for _, key := range []string{"gamma", "gamma", "alpha"} {
+		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+			return tx.InsertIssue(&domain.Issue{
+				Project: key, Title: "t", Type: domain.DefaultType,
+				Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
+			})
+		}))
+	}
+	// Updated once, twice and three times, so updated_at runs beta, gamma, alpha
+	// whether or not the writes land in one millisecond: an update that does not
+	// advance the clock still forces the row's timestamp a millisecond upward.
+	updates := map[string]int{"beta": 1, "gamma": 2, "alpha": 3}
+	for _, key := range []string{"beta", "gamma", "alpha"} {
+		for i := range updates[key] {
+			require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+				project, err := tx.GetProject(key)
+				if err != nil {
+					return err
+				}
+				// A rename that changes nothing is a no-op, so each one differs.
+				return tx.UpdateProject(project, fmt.Sprintf("%s %d", key, i), "")
+			}))
+		}
+	}
+
+	keys := func(sort domain.ProjectSort) []string {
+		t.Helper()
+		projects := read(t, db, func(tx *storage.Tx) ([]domain.Project, error) {
+			projects, _, err := tx.ListProjects("", sort, nil, nil)
+			return projects, err
+		})
+		found := make([]string, len(projects))
+		for i, project := range projects {
+			found[i] = project.Key
+		}
+		return found
+	}
+
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, keys(domain.DefaultProjectSort),
+		"the default, which an absent key also gives")
+	assert.Equal(t, []string{"alpha", "beta", "gamma"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortByKey}))
+	assert.Equal(t, []string{"gamma", "beta", "alpha"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortByKey, Desc: true}),
+		"-key is descending, not the ascending default")
+
+	assert.Equal(t, []string{"beta", "alpha", "gamma"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortActive}), "0, 1, 2 open issues")
+	assert.Equal(t, []string{"gamma", "alpha", "beta"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}))
+
+	assert.Equal(t, []string{"beta", "gamma", "alpha"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated}), "least recently touched first")
+	assert.Equal(t, []string{"alpha", "gamma", "beta"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated, Desc: true}))
 }
 
 // Two invocations against unchanged data must agree, so every order is total.
