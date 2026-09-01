@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   commentSubmitShortcut,
+  confirmationDecision,
   inspectorDismissShortcut,
   issueEditorShortcut,
 } from "../../static/keyboard.js";
@@ -45,4 +46,15 @@ test("Escape closes an inspector field only after an inner control has declined 
   assert.equal(inspectorDismissShortcut({ key: "Escape", defaultPrevented: false }), true);
   assert.equal(inspectorDismissShortcut({ key: "Escape", defaultPrevented: true }), false);
   assert.equal(inspectorDismissShortcut({ key: "Enter", defaultPrevented: false }), false);
+});
+
+test("Enter confirms and Escape cancels a mutation confirmation", () => {
+  assert.equal(confirmationDecision(key()), "confirm");
+  assert.equal(confirmationDecision(key({ key: "Escape" })), "cancel");
+});
+
+test("other keys and input-method composition do not decide a confirmation", () => {
+  assert.equal(confirmationDecision(key({ key: "Space" })), undefined);
+  assert.equal(confirmationDecision(key({ isComposing: true })), undefined);
+  assert.equal(confirmationDecision(key({ key: "Escape", isComposing: true })), undefined);
 });

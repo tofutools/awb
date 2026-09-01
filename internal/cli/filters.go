@@ -26,8 +26,8 @@ type FilterFlags struct {
 	Assignees     []string `long:"assignee" collection:"array" optional:"true" help:"select this assignee; repeatable"`
 	Mine          bool     `long:"mine" optional:"true" help:"shorthand for --assignee <your identity>"`
 	Unassigned    bool     `long:"unassigned" optional:"true" help:"select unassigned issues"`
-	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this project; repeatable"`
-	AllProjects   bool     `long:"all-projects" optional:"true" help:"ignore the configured default project"`
+	Projects      []string `long:"project" collection:"array" optional:"true" help:"select this workspace; repeatable (flag name retained for compatibility)"`
+	AllProjects   bool     `long:"all-projects" optional:"true" help:"ignore the configured default workspace (flag name retained for compatibility)"`
 	Parent        string   `long:"parent" optional:"true" help:"select the direct children of this issue"`
 	Limit         *int     `long:"limit" help:"cap the number of results; zero returns none"`
 	Offset        *int     `long:"offset" optional:"true" help:"skip this many results"`
@@ -39,8 +39,9 @@ type FilterFlags struct {
 	Sort string `long:"sort" optional:"true"`
 }
 
-// checkPaging refuses a negative window. Zero is meaningful for both and is
-// left alone: no rows returned, and no rows skipped.
+// checkPaging refuses a negative window, so every paged listing words the
+// refusal identically. Zero is meaningful for both and is left alone: no rows
+// returned, and no rows skipped.
 func checkPaging(limit, offset *int) error {
 	if limit != nil && *limit < 0 {
 		return awberr.Usagef("--limit must not be negative")

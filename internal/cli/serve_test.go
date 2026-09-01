@@ -1095,6 +1095,17 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		}
 	}
 
+	// Archived, then restored, so the workspace activity has two entries to
+	// order and the state listings are not empty.
+	_, err = be.CreateProject(ctx, backend.ProjectCreate{Key: "old", Name: "Retired"})
+	require.NoError(t, err)
+	_, err = be.ArchiveProject(ctx, "old", "")
+	require.NoError(t, err)
+	_, err = be.RestoreProject(ctx, "old", "")
+	require.NoError(t, err)
+	_, err = be.ArchiveProject(ctx, "old", "")
+	require.NoError(t, err)
+
 	ids := make([]string, 0, 8)
 	for range 4 {
 		for _, project := range []string{"awb", "web"} {
@@ -1138,7 +1149,9 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		"/api/issues", "/api/ready", "/api/blocked", "/api/search?q=parser",
 		"/api/issues/suggestions?q=tied",
 		"/api/navigation?q=tied", "/api/navigation?q=awb",
-		"/api/projects", "/api/preferences/projects", "/api/projects/awb/members",
+		"/api/projects", "/api/projects?state=archived", "/api/projects?state=all",
+		"/api/projects/awb/activity",
+		"/api/preferences/projects", "/api/projects/awb/members",
 		"/api/users", "/api/labels", "/api/assignees",
 		"/api/issues/" + blocker, "/api/issues/" + blocker + "/attachments",
 		"/api/issues/" + blocker + "/activity",

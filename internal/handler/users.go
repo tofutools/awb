@@ -109,6 +109,17 @@ func (h *Handler) ListProjectMembers(ctx context.Context, params api.ListProject
 	}, nil
 }
 
+// AddProjectMember creates a membership without replacing a concurrent grant.
+func (h *Handler) AddProjectMember(ctx context.Context, req *api.MembershipCreate,
+	params api.AddProjectMemberParams) (*api.Membership, error) {
+	membership, err := h.backendFor(ctx).AddMember(ctx, string(params.Key),
+		string(req.User), domain.Access(req.Access))
+	if err != nil {
+		return nil, err
+	}
+	return toMembership(membership), nil
+}
+
 // SetProjectMember replaces whatever access the user held in the project. The
 // two ends may appear in the body but may not disagree with the path, which is
 // what identifies the membership.

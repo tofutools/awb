@@ -78,8 +78,8 @@ export function navigationResultCommands(results: NavigationResults, navigate: (
       label: project.name,
       hint: project.key,
       keywords: project.key,
-      group: "Projects",
-      run: () => navigate(`#/projects/${encodeURIComponent(project.key)}`),
+      group: "Workspaces",
+      run: () => navigate(`#/workspaces/${encodeURIComponent(project.key)}`),
     })),
     ...results.users.map((user) => ({
       id: `user:${user.name}`,
@@ -159,7 +159,8 @@ export class CommandPalette {
     const title = document.createElement("h2");
     title.id = "command-palette-title";
     title.textContent = "Go to";
-    this.input.placeholder = "Search issues, projects, users, and views…";
+    this.input.type = "search";
+    this.input.placeholder = "Search issues, workspaces, users, and views…";
     this.input.autocomplete = "off";
     this.input.setAttribute("role", "combobox");
     this.input.setAttribute("aria-autocomplete", "list");

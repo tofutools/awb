@@ -29,6 +29,9 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 		if err != nil {
 			return err
 		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
+			return err
+		}
 		activity = domain.Activity{
 			Issue: issue.ID, Kind: domain.ActivityKindComment,
 			Actor: actor, Body: validated,

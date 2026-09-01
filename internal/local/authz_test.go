@@ -219,6 +219,36 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 		"re-enabling restores the historical relation snapshot")
 }
 
+// Ignoring a project is a presentation preference, not an authorization
+// change. Its dedicated membership administration path therefore retains the
+// ordinary membership boundary while bypassing only that preference.
+func TestIgnoredProjectMembershipRemainsAdministrable(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "alice", false, false)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "web", "bob", domain.AccessAdmin)
+
+	bob := root.WithUser("bob")
+	_, err := bob.SetProjectIgnored(ctx, "web", true)
+	require.NoError(t, err)
+	_, err = bob.GetProject(ctx, "web")
+	notFound(t, err, "ordinary project browsing still respects the preference")
+
+	page, err := bob.ListMembers(ctx, "web", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Members, 1)
+	assert.Equal(t, "bob", page.Members[0].User)
+
+	_, err = bob.SetMember(ctx, "web", "alice", domain.AccessRegular)
+	require.NoError(t, err)
+	removed, err := bob.RemoveMember(ctx, "web", "alice")
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessRegular, removed.Access)
+
+	_, err = bob.ListMembers(ctx, "awb", nil, nil)
+	notFound(t, err, "the recovery path does not reveal an unauthorized project")
+}
+
 func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
@@ -461,6 +491,17 @@ func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
 	forbidden(t, err, "a regular member cannot promote themselves")
 
 	carol := root.WithUser("carol")
+	_, err = carol.AddMember(ctx, "awb", "bob", domain.AccessAdmin)
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err), err)
+	members, err := carol.ListMembers(ctx, "awb", nil, nil)
+	require.NoError(t, err)
+	for _, member := range members.Members {
+		if member.User == "bob" {
+			assert.Equal(t, domain.AccessRegular, member.Access,
+				"a stale create must not replace the concurrent grant")
+		}
+	}
+
 	membership, err := carol.SetMember(ctx, "awb", "bob", domain.AccessAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, domain.AccessAdmin, membership.Access)
@@ -480,6 +521,23 @@ func TestOnlyAProjectsAdministratorChangesItsMembership(t *testing.T) {
 	// And a membership must name an account that exists.
 	_, err = carol.SetMember(ctx, "awb", "nobody", domain.AccessRegular)
 	notFound(t, err)
+}
+
+// The last stored project administrator may leave. A global project
+// administrator or direct database mode is the documented recovery path, and
+// the check is intentionally not a second, partial notion of administration.
+func TestTheLastStoredProjectAdministratorMayRemoveThemselves(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "carol", false, false)
+	grant(t, root, ctx, "awb", "carol", domain.AccessAdmin)
+
+	carol := root.WithUser("carol")
+	removed, err := carol.RemoveMember(ctx, "awb", "carol")
+	require.NoError(t, err)
+	assert.Equal(t, domain.AccessAdmin, removed.Access)
+
+	_, err = carol.ListMembers(ctx, "awb", nil, nil)
+	notFound(t, err, "the removal takes effect for the next operation")
 }
 
 // Revoking access makes the project and its issues vanish for that user, and
@@ -518,6 +576,11 @@ func TestOnlyAUserAdministratorManagesUsers(t *testing.T) {
 		_, err := be.CreateUser(ctx, backend.UserCreate{Name: "eve", Password: "hunter2"})
 		forbidden(t, err)
 		_, err = be.GetUser(ctx, "dana")
+		forbidden(t, err)
+		_, err = be.GetUser(ctx, "nobody")
+		forbidden(t, err, "the authorization check precedes lookup and does not disclose existence")
+		fullName := "Dana Doe"
+		_, err = be.UpdateUser(ctx, "dana", backend.UserPatch{FullName: &fullName}, "")
 		forbidden(t, err)
 		_, err = be.DeleteUser(ctx, "dana", "")
 		forbidden(t, err)
@@ -847,6 +910,21 @@ func TestPermissionsAreReadPerOperation(t *testing.T) {
 	projects, err = bob.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, projects.Projects, 1, "the same backend, without reopening anything")
+}
+
+func TestOnlyProjectAdministratorsManageLifecycle(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	addUser(t, root, ctx, "operator", true, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessAdmin)
+
+	_, err := root.WithUser("bob").ArchiveProject(ctx, "awb", "")
+	forbidden(t, err)
+	archived, err := root.WithUser("operator").ArchiveProject(ctx, "awb", "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.ProjectArchived, archived.State)
+	_, err = root.WithUser("bob").RestoreProject(ctx, "awb", "")
+	forbidden(t, err)
 }
 
 // An empty patch is still a read of the account, and answers with it, so a

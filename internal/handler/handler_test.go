@@ -662,7 +662,7 @@ func TestIdentity(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodGet, "/api/identity", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"identity":"mikael"}`, payload)
+	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 }
 
 func TestProjects(t *testing.T) {

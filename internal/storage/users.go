@@ -368,20 +368,20 @@ func (t *Tx) hydrateActivityProjects(users []domain.User, visibleOnly bool) erro
 		 WHERE `+where+`
 		 ORDER BY p.user ASC, p.project ASC`, args...)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "read user project involvement")
+		return awberr.Wrap(awberr.Runtime, err, "read user workspace involvement")
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var project, user string
 		if err := rows.Scan(&project, &user); err != nil {
-			return awberr.Wrap(awberr.Runtime, err, "read user project involvement")
+			return awberr.Wrap(awberr.Runtime, err, "read user workspace involvement")
 		}
 		if u := byName[user]; u != nil {
 			u.ActivityProjects = append(u.ActivityProjects, project)
 		}
 	}
-	return awberr.Wrap(awberr.Runtime, rows.Err(), "read user project involvement")
+	return awberr.Wrap(awberr.Runtime, rows.Err(), "read user workspace involvement")
 }
 
 // hydrateMemberships fills in the Projects of a page of users in one query.

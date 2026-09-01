@@ -100,6 +100,28 @@ func (h *harness) mustRun(args ...string) string {
 	return stdout
 }
 
+func TestProjectArchiveAndRestoreCommands(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("create", "retained", "--project", "awb")
+	archived := h.mustRun("workspace", "archive", "awb", "--json")
+	assert.Contains(t, archived, `"state": "archived"`)
+	activity := h.mustRun("project", "activity", "awb", "--compact")
+	assert.Contains(t, activity, " awb archived @mikael")
+	assert.JSONEq(t, `[]`, h.mustRun("project", "list", "--json"))
+	assert.Contains(t, h.mustRun("project", "list", "--archived", "--json"), `"key": "awb"`)
+	_, stderr, code := h.run("create", "blocked", "--project", "awb")
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "archived")
+	restored := h.mustRun("project", "restore", "awb", "--json")
+	assert.Contains(t, restored, `"state": "active"`)
+	var audit []domain.ProjectActivity
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "activity", "awb", "--json")), &audit))
+	require.Len(t, audit, 2)
+	assert.Equal(t, "restored", audit[0].Action)
+	h.mustRun("create", "resumed", "--project", "awb")
+	assert.Contains(t, h.mustRun("workspace", "show", "awb", "--json"), `"key": "awb"`)
+}
+
 // create makes an issue and returns its ID.
 func (h *harness) create(args ...string) string {
 	h.t.Helper()
@@ -526,6 +548,14 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 		h.mustRun("attach", "add", blocker, path, "--name", name)
 	}
 
+	// An archived workspace, so --archived and its activity have rows to order
+	// rather than empty listings that would agree with themselves. Archived,
+	// restored and archived again, so the history has more than one entry.
+	h.mustRun("project", "create", "old")
+	h.mustRun("project", "archive", "old")
+	h.mustRun("project", "restore", "old")
+	h.mustRun("project", "archive", "old")
+
 	h.mustRunStdin("hunter2\n", "user", "add", "alice")
 	h.mustRunStdin("hunter2\n", "user", "add", "bob")
 	h.mustRun("project", "grant", "awb", "bob")
@@ -537,6 +567,8 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 		{"project", "list"}, {"user", "list"}, {"project", "members", "awb"},
 		{"attach", "list", blocker}, {"activity", blocker}, {"comment", "list", blocker},
 		{"dep", "tree", parent}, {"show", blocker}, {"status"},
+		{"project", "activity", "old"},
+		{"project", "list", "--archived"}, {"project", "list", "--all"},
 	}
 	// Every key --sort accepts, in both directions, has to be as reproducible as
 	// the default. Taking them from the domain vocabulary rather than a literal
@@ -885,8 +917,8 @@ func TestAgentGuide(t *testing.T) {
 	guide := h.mustRun("agent-guide")
 	assert.Contains(t, guide, "awb ready --compact")
 	assert.Contains(t, guide, "Quoted `\\n` sequences")
-	assert.Contains(t, guide, "awb project description get <key> --output project.md")
-	assert.Contains(t, guide, "awb project update <key> --description-file project.md")
+	assert.Contains(t, guide, "awb workspace description get <key> --output workspace.md")
+	assert.Contains(t, guide, "awb workspace update <key> --description-file workspace.md")
 	assert.Contains(t, guide, "`--json` selects an output format")
 	assert.Contains(t, guide, "Exit codes")
 	assert.Contains(t, guide, "awb --help")
@@ -1025,7 +1057,7 @@ func TestProjectRemovalWithoutCascade(t *testing.T) {
 	h.mustRun("project", "create", "empty")
 
 	summary := h.mustRun("project", "delete", "empty", "--force")
-	assert.Equal(t, "Deleted project empty.\n", summary)
+	assert.Equal(t, "Deleted workspace empty.\n", summary)
 }
 
 // awb project show prints one project in each of the three modes, and reports a

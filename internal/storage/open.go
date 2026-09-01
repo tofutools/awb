@@ -118,15 +118,17 @@ func openExisting(ctx context.Context, path string, adopt bool) (*DB, error) {
 	return &DB{db: db, path: path}, nil
 }
 
-// dsn builds the connection string. Foreign keys are on and a busy timeout is
-// set, so several local processes can use the same file safely. WAL
-// journalling is a property of the file and is set by the first migration.
+// dsn builds the connection string. Foreign keys are on, non-read-only
+// database/sql transactions begin immediately, and a busy timeout is set, so
+// several local processes can use the same file safely. WAL journalling is a
+// property of the file and is set by the first migration.
 func dsn(path string) string {
-	return fmt.Sprintf("%s?_pragma=foreign_keys=on&_pragma=busy_timeout=%d", path, busyTimeoutMS)
+	return fmt.Sprintf("%s?_pragma=foreign_keys=on&_pragma=busy_timeout=%d&_txlock=immediate",
+		path, busyTimeoutMS)
 }
 
 func readOnlyDSN(path string) string {
-	return fmt.Sprintf("file:%s?mode=ro&_pragma=foreign_keys=on&_pragma=busy_timeout=%d",
+	return fmt.Sprintf("file:%s?mode=ro&_pragma=foreign_keys=on&_pragma=busy_timeout=%d&_txlock=immediate",
 		path, busyTimeoutMS)
 }
 

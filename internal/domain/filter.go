@@ -163,7 +163,7 @@ func ParseProjectSort(s string) (ProjectSort, error) {
 			return ProjectSort{Key: key, Desc: desc}, nil
 		}
 	}
-	return ProjectSort{}, awberr.Usagef("invalid project sort %q: must be one of %s",
+	return ProjectSort{}, awberr.Usagef("invalid workspace sort %q: must be one of %s",
 		s, ProjectSortHelp())
 }
 
@@ -194,6 +194,9 @@ type Filter struct {
 	// IncludeClosed widens whatever status set is in force to include closed
 	// issues.
 	IncludeClosed bool
+	// IncludeArchived is reserved for explicit history/export paths. Ordinary
+	// listings and every target picker leave it false.
+	IncludeArchived bool
 
 	Types      []Type
 	Priorities []int

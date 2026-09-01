@@ -33,12 +33,19 @@ type Backend interface {
 	// same as Identity in direct mode; against a server it is the server's
 	// answer, which may differ from the client's configured default identity.
 	AuthenticatedIdentity(ctx context.Context) (string, error)
+	// MayManageUsers is the caller's effective capability, including the
+	// unrestricted direct and no-auth modes where no stored flag is consulted.
+	MayManageUsers(ctx context.Context) (bool, error)
 	SearchNavigation(ctx context.Context, query string, limit int) (NavigationResults, error)
 
 	CreateProject(ctx context.Context, req ProjectCreate) (*domain.Project, error)
 	GetProject(ctx context.Context, key string) (*domain.Project, error)
 	ListProjects(ctx context.Context, filter string, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
+	ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter, sort domain.ProjectSort, limit, offset *int) (ProjectPage, error)
 	UpdateProject(ctx context.Context, key string, req ProjectPatch, ifMatch string) (*domain.Project, error)
+	ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
+	RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error)
+	ListProjectActivity(ctx context.Context, key string, limit, offset *int) (ProjectActivityPage, error)
 	DeleteProject(ctx context.Context, key string, cascade bool, ifMatch string) (*DeletedProject, error)
 	ListProjectPreferences(ctx context.Context) ([]domain.ProjectPreference, error)
 	SetProjectIgnored(ctx context.Context, key string, ignored bool) (*domain.ProjectPreference, error)
@@ -102,8 +109,10 @@ type Backend interface {
 	// The membership operations. A membership is keyed on its project and its
 	// user, as an attachment is keyed on its issue and its name, so it has no
 	// identifier of its own and none of these takes an ifMatch: a membership
-	// has one field and setting it is idempotent.
+	// has one field and setting it is idempotent. AddMember is the create-only
+	// form used when a stale caller must not replace an existing grant.
 	ListMembers(ctx context.Context, project string, limit, offset *int) (MemberPage, error)
+	AddMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
 	SetMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
 	RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error)
 
@@ -130,6 +139,11 @@ type IssuePage struct {
 // ProjectPage is a project listing with its unpaged total.
 type ProjectPage struct {
 	Projects []domain.Project
+	Total    int
+}
+
+type ProjectActivityPage struct {
+	Activity []domain.ProjectActivity
 	Total    int
 }
 
