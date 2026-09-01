@@ -1193,7 +1193,10 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
       createForm.hidden = !createForm.hidden;
       create.setAttribute("aria-expanded", String(!createForm.hidden));
       create.textContent = createForm.hidden ? "New workspace" : "Hide creator";
-      if (!createForm.hidden) createForm.querySelector<HTMLInputElement>("input")?.focus();
+      if (!createForm.hidden) {
+        activateMarkdownEditors(createForm);
+        createForm.querySelector<HTMLInputElement>("input")?.focus();
+      }
     });
   }
   view.append(heading, createForm);
@@ -1278,7 +1281,6 @@ function projectCreateForm(): HTMLFormElement {
       mutationError(form, error);
     }
   });
-  activateMarkdownEditors(form);
   return form;
 }
 
