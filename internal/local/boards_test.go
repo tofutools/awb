@@ -106,7 +106,7 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	closed, err = root.CloseIssue(ctx, closed.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, closed.ClosedAt)
-	closedEpic, err = root.CloseIssue(ctx, closedEpic.ID, backend.CloseRequest{}, "")
+	_, err = root.CloseIssue(ctx, closedEpic.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 
 	thirty := 30
