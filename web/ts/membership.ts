@@ -28,9 +28,8 @@ export function membershipSuggestions(users: DirectoryUser[], members: Membershi
   }));
 }
 
-/** The add form never doubles as an access editor. Besides making duplicate
- * intent explicit, this prevents a stale page from recreating a membership
- * another administrator has just revoked. */
+/** The add form never doubles as an access editor. Existing access is changed
+ * explicitly in that member's row. */
 export function membershipAdditionError(user: string, members: Membership[]): string | null {
   const existing = members.find((membership) => membership.user === user);
   if (existing === undefined) return null;
@@ -52,14 +51,23 @@ export function membershipChangeConfirmation(
   const lastStoredAdmin = member.access === "admin"
     && nextAccess !== "admin"
     && members.filter((candidate) => candidate.access === "admin").length === 1;
-  const action = removing ? `remove @${member.user} from this project` : `change @${member.user} to regular access`;
+  const action = removing
+    ? `remove @${member.user} from this project`
+    : `change @${member.user} to ${nextAccess} access`;
 
   if (lastStoredAdmin) {
-    const selfWarning = self ? " You will lose access to this membership page." : "";
+    const selfWarning = self
+      ? removing
+        ? " You will lose access to this membership page."
+        : " You will lose the membership management controls unless you are a global project administrator."
+      : "";
     return `This is the last stored project administrator.${selfWarning} `
       + "Only a global project administrator or direct database access can restore project administration. "
       + `Do you want to ${action}?`;
   }
-  if (self) return `Do you want to ${action}? You may lose access to this project.`;
+  if (self && removing) return `Do you want to ${action}? You may lose access to this project.`;
+  if (self && member.access === "admin" && nextAccess === "regular") {
+    return `Do you want to ${action}? You will lose project administration.`;
+  }
   return `Do you want to ${action}?`;
 }

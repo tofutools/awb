@@ -56,10 +56,21 @@ test("self-removal and the last stored administrator get explicit warnings", () 
   assert.match(lastAdmin, /lose access/);
   assert.match(lastAdmin, /direct database access/);
 
+  const lastAdminDemotion = membershipChangeConfirmation(alice, [alice, bob], "alice", "regular");
+  assert.match(lastAdminDemotion, /lose the membership management controls/);
+  assert.doesNotMatch(lastAdminDemotion, /lose access to this membership page/);
+
   const ordinaryRemoval = membershipChangeConfirmation(bob, [alice, bob], "alice", null);
   assert.equal(ordinaryRemoval, "Do you want to remove @bob from this project?");
 
+  const promotion = membershipChangeConfirmation(bob, [alice, bob], "alice", "admin");
+  assert.equal(promotion, "Do you want to change @bob to admin access?");
+  assert.equal(
+    membershipChangeConfirmation(bob, [alice, bob], "bob", "admin"),
+    "Do you want to change @bob to admin access?",
+  );
+
   const twoAdmins = [alice, membership("carol", "admin")];
-  assert.match(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /may lose access/);
+  assert.match(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /lose project administration/);
   assert.doesNotMatch(membershipChangeConfirmation(alice, twoAdmins, "alice", "regular"), /last stored/);
 });

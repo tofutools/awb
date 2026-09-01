@@ -1443,22 +1443,50 @@ function projectMembershipSection(project: Project, members: Membership[], curre
     const user = element("span", "user-name");
     user.append(avatar(member.user), element("span", "user-identity", `@${member.user}`));
     userCell.append(user);
+    const rowControls: Array<HTMLButtonElement | HTMLSelectElement> = [];
 
     const accessCell = document.createElement("td");
     accessCell.dataset.label = "Access";
-    accessCell.append(element("span", "listing-badge", member.access));
+    if (manageable) {
+      const access = select(["regular", "admin"], member.access);
+      access.setAttribute("aria-label", `Access for @${member.user}`);
+      for (const option of access.options) {
+        option.textContent = option.value === "admin" ? "Administrator" : "Regular access";
+      }
+      rowControls.push(access);
+      access.addEventListener("change", () => {
+        const next = access.value as Membership["access"];
+        if (next === member.access) return;
+        if (!window.confirm(membershipChangeConfirmation(member, members, identity, next))) {
+          access.value = member.access;
+          return;
+        }
+        void changeProjectMembership(
+          accessCell,
+          rowControls,
+          () => api.setProjectMember(project.key, member.user, next),
+          `@${member.user} now has ${next} access to ${project.key}.`,
+        ).then(() => {
+          // On failure the row remains mounted, so restore what the server
+          // still holds. A successful render has already detached this row.
+          if (access.isConnected) access.value = member.access;
+        });
+      });
+      accessCell.append(access);
+    } else accessCell.append(element("span", "listing-badge", member.access));
 
     const actions = document.createElement("td");
     actions.dataset.label = "Actions";
     if (manageable) {
       const remove = button("Remove", "danger-button membership-remove");
       remove.setAttribute("aria-label", `Remove @${member.user} from ${project.key}`);
+      rowControls.push(remove);
       remove.addEventListener("click", () => {
         if (!window.confirm(membershipChangeConfirmation(member, members, identity, null))) return;
         const losesAccess = member.user === identity && currentUser?.project_admin !== true;
         void changeProjectMembership(
-          row,
-          [remove],
+          actions,
+          rowControls,
           () => api.removeProjectMember(project.key, member.user),
           `@${member.user} was removed from ${project.key}.`,
           true,
