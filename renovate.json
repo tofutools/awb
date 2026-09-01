@@ -5,6 +5,15 @@
     "group:all",
     "schedule:monthly"
   ],
+  "packageRules": [
+    {
+      "description": "Keep the Go version used by CI current",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
@@ -34,16 +43,6 @@
       ],
       "depNameTemplate": "golang.org/x/vuln",
       "datasourceTemplate": "go"
-    },
-    {
-      "customType": "regex",
-      "description": "Update golangci-lint installed by CI",
-      "managerFilePatterns": ["/^\\.github/.*\\.ya?ml$/"],
-      "matchStrings": [
-        "golangci-lint-action@[^\\s]+[^\\n]*\\n\\s+with:\\n\\s+version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
-      ],
-      "depNameTemplate": "golangci/golangci-lint",
-      "datasourceTemplate": "github-releases"
     }
   ],
   "vulnerabilityAlerts": {
