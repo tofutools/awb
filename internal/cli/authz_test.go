@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -59,6 +60,78 @@ func TestAddingTheFirstUserTurnsAuthenticationOn(t *testing.T) {
 	resp, _ = get(t, h, http.MethodGet, "/api/projects", basicAuth("alice", "hunter2")...)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
+}
+
+// Cancelling a route read must not leave its pooled connection inside a
+// transaction: authentication on the very next request is itself a database
+// read, so it is where a poisoned one first surfaced in serve.
+func TestCancelledRouteReadDoesNotPoisonLaterAuthentication(t *testing.T) {
+	_, be := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
+	})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	db := be.DB()
+	db.SQL().SetMaxOpenConns(1)
+
+	transactionStarted := make(chan struct{})
+	requestFinished := make(chan error, 1)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cancel":
+			err := db.Read(r.Context(), func(*storage.Tx) error {
+				close(transactionStarted)
+				<-r.Context().Done()
+				return r.Context().Err()
+			})
+			requestFinished <- err
+		case "/healthy":
+			if err := db.Write(r.Context(), func(tx *storage.Tx) error {
+				return tx.InsertProject("healthy", "Healthy", "")
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := db.Read(r.Context(), func(tx *storage.Tx) error {
+				_, err := tx.GetProject("healthy")
+				return err
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	h := (&authenticator{db: db, realm: "awb"}).Middleware(log.New(io.Discard, "", 0))(next)
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/cancel", nil)
+	require.NoError(t, err)
+	req.SetBasicAuth("alice", "hunter2")
+	response := make(chan error, 1)
+	go func() {
+		resp, doErr := server.Client().Do(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		response <- doErr
+	}()
+	<-transactionStarted
+	cancel()
+	require.ErrorIs(t, <-response, context.Canceled)
+	require.ErrorIs(t, <-requestFinished, context.Canceled)
+
+	req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/healthy", nil)
+	require.NoError(t, err)
+	req.SetBasicAuth("alice", "hunter2")
+	resp, err := server.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 // Deleting the last user does not undo that. A server that has authenticated
