@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -121,6 +122,39 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	return c
 }
 
+// statusRank and typeRank order a vocabulary column by what its values mean
+// rather than by how they are spelled: status runs open, in_progress, closed,
+// and type runs epic, feature, bug, task, chore. Sorting the stored text would
+// give closed first and bug before epic, which is an order about the alphabet
+// and not about the work.
+//
+// They are built from the vocabulary itself, so a value added there takes its
+// declared place here without a second list to remember.
+var (
+	statusRank = vocabularyRank("i.status", domain.Statuses)
+	typeRank   = vocabularyRank("i.type", domain.Types)
+)
+
+// vocabularyRank renders the CASE expression the two above are. Each value is
+// written as a SQL string literal with any inner apostrophe doubled, which is
+// how SQLite escapes one, exactly as ftsQuery doubles an inner double quote.
+// Today's vocabularies hold none, so the escaping is what keeps that from
+// being something to remember when one does.
+//
+// The ELSE is unreachable: the schema's CHECK constraint closes both
+// vocabularies, so it exists to keep the expression from ever being NULL, not
+// because a row could take it.
+func vocabularyRank[T ~string](column string, values []T) string {
+	var b strings.Builder
+	b.WriteString("CASE " + column)
+	for rank, value := range values {
+		b.WriteString(" WHEN '" + strings.ReplaceAll(string(value), "'", "''") + "'" +
+			" THEN " + strconv.Itoa(rank))
+	}
+	b.WriteString(" ELSE " + strconv.Itoa(len(values)) + " END")
+	return b.String()
+}
+
 // orderBy renders a listing's ordering. Every sort ends with id ascending as a
 // final tiebreak, so the order is total and two invocations against unchanged
 // data agree. The "-" prefix reverses the named key only: the created_at and
@@ -130,22 +164,22 @@ func orderBy(sort domain.Sort) string {
 	if sort.Desc {
 		direction = "DESC"
 	}
+	// The ORDER BY belongs to group_concat itself rather than to a subquery
+	// feeding it: only the aggregate's own clause fixes the order the values are
+	// joined in, so the sort key is the same string on every run and the paging
+	// it drives cannot reshuffle.
 	const assignees = `COALESCE((
-		SELECT group_concat(assignee, ' ')
-		  FROM (SELECT a.assignee
-		          FROM issue_assignees a
-		         WHERE a.issue = i.id
-		         ORDER BY a.position)
+		SELECT group_concat(a.assignee, ' ' ORDER BY a.position)
+		  FROM issue_assignees a
+		 WHERE a.issue = i.id
 	), '')`
 	const blockers = `COALESCE((
-		SELECT group_concat(other, ' ')
-		  FROM (SELECT r.other
-		          FROM relations r
-		         WHERE r.subject = i.id AND r.type = 'blocked-by'
-		           AND i.status <> 'closed'
-		           AND EXISTS (SELECT 1 FROM issues b
-		                        WHERE b.id = r.other AND b.status <> 'closed')
-		         ORDER BY r.other)
+		SELECT group_concat(r.other, ' ' ORDER BY r.other)
+		  FROM relations r
+		 WHERE r.subject = i.id AND r.type = 'blocked-by'
+		   AND i.status <> 'closed'
+		   AND EXISTS (SELECT 1 FROM issues b
+		                WHERE b.id = r.other AND b.status <> 'closed')
 	), '')`
 
 	switch sort.Key {
@@ -162,13 +196,13 @@ func orderBy(sort domain.Sort) string {
 	case domain.SortProject:
 		return " ORDER BY i.project " + direction + ", i.id ASC"
 	case domain.SortStatus:
-		return " ORDER BY i.status " + direction + ", i.id ASC"
+		return " ORDER BY " + statusRank + " " + direction + ", i.id ASC"
 	case domain.SortAssignee:
 		// The visible assignee list is assignment-ordered. Page by that same
 		// joined representation, keeping unassigned issues last in both directions.
 		return " ORDER BY (" + assignees + " = '') ASC, " + assignees + " " + direction + ", i.id ASC"
 	case domain.SortType:
-		return " ORDER BY i.type " + direction + ", i.id ASC"
+		return " ORDER BY " + typeRank + " " + direction + ", i.id ASC"
 	case domain.SortBlockers:
 		// The hydrated blocker list is sorted by id. Ordering by the same joined
 		// representation makes paging agree with the visible column. Issues with

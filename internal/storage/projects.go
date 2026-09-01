@@ -110,15 +110,17 @@ func (t *Tx) ListProjectsByState(filter string, state domain.ProjectStateFilter,
 	}
 	active := `(SELECT count(*) FROM issues i
 		         WHERE i.project = p.key AND i.status <> 'closed')`
-	order := "p.key " + direction
+	// Every branch names its own order, including the by-key one. The direction
+	// applies to the named key alone; the key tiebreak after a derived order
+	// stays ascending, as the issue listings' id tiebreak does.
+	order := "p.key ASC" // an absent sort key, which is the default order
 	switch sort.Key {
+	case domain.ProjectSortByKey:
+		order = "p.key " + direction
 	case domain.ProjectSortActive:
 		order = active + " " + direction + ", p.key ASC"
 	case domain.ProjectSortUpdated:
 		order = "p.updated_at " + direction + ", p.key ASC"
-	case domain.ProjectSortByKey:
-	default:
-		order = "p.key ASC"
 	}
 
 	query := `

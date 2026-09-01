@@ -1063,3 +1063,142 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 		assert.Equal(t, name, deleted.Name)
 	}
 }
+
+// Every listing the API publishes returns the same answer in the same sequence
+// twice running — including on the sort keys the CLI does not offer, and on the
+// endpoints that exist only over HTTP. The data below is deliberately tied on
+// every key: same title, same priority, same type, same labels, same
+// description, all created within the resolution of the stored timestamps, so
+// what separates the rows is the tiebreak alone.
+//
+// This is the breadth half of the guarantee: it says every endpoint reaches an
+// answer that does not vary. That each order is also the intended one is the
+// job of the tests that name an expected sequence — TestListOrderIsTotal and
+// the per-listing tests in internal/storage.
+func TestEveryAPIListingIsDeterministic(t *testing.T) {
+	h, be := newServeHandlerOn(t,
+		serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
+	ctx := t.Context()
+
+	_, err := be.CreateUser(ctx, backend.UserCreate{
+		Name: "mikael", Password: "hunter2", ProjectAdmin: true, UserAdmin: true})
+	require.NoError(t, err)
+	// Two of these share a prefix with the awb project key and with the ids of
+	// the issues in it, so one navigation query reaches all three of its groups.
+	for _, name := range []string{"adam", "zoe", "awbot", "awbee"} {
+		_, err := be.CreateUser(ctx, backend.UserCreate{Name: name, Password: "hunter2"})
+		require.NoError(t, err)
+	}
+	for _, key := range []string{"awb", "web"} {
+		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key, Name: "Agent Work Board"})
+		require.NoError(t, err)
+		for _, user := range []string{"mikael", "adam", "zoe", "awbot", "awbee"} {
+			_, err := be.SetMember(ctx, key, user, domain.AccessRegular)
+			require.NoError(t, err)
+		}
+	}
+
+	// Archived, then restored, so the workspace activity has two entries to
+	// order and the state listings are not empty.
+	_, err = be.CreateProject(ctx, backend.ProjectCreate{Key: "old", Name: "Retired"})
+	require.NoError(t, err)
+	_, err = be.ArchiveProject(ctx, "old", "")
+	require.NoError(t, err)
+	_, err = be.RestoreProject(ctx, "old", "")
+	require.NoError(t, err)
+	_, err = be.ArchiveProject(ctx, "old", "")
+	require.NoError(t, err)
+
+	ids := make([]string, 0, 8)
+	for range 4 {
+		for _, project := range []string{"awb", "web"} {
+			issue, err := be.CreateIssue(ctx, backend.IssueCreate{
+				Project: project, Title: "tied", Description: "tied parser text",
+				Labels: []string{"b", "a"}})
+			require.NoError(t, err)
+			ids = append(ids, issue.ID)
+		}
+	}
+	blocker, parent := ids[0], ids[4]
+	for _, id := range ids[1:4] {
+		_, err := be.AddRelation(ctx, id,
+			backend.RelationRequest{Type: domain.RelBlockedBy, Other: blocker}, "")
+		require.NoError(t, err)
+	}
+	for _, id := range ids[5:8] {
+		_, err := be.AddRelation(ctx, id,
+			backend.RelationRequest{Type: domain.RelHasParent, Other: parent}, "")
+		require.NoError(t, err)
+	}
+	// Two assignees on one issue, so sort=assignee joins a list rather than a
+	// single name and the position order it joins in is what decides.
+	for _, who := range []string{"zoe", "adam"} {
+		_, err := be.Claim(ctx, ids[5], backend.ClaimRequest{Assignee: who}, "")
+		require.NoError(t, err)
+	}
+	_, err = be.Claim(ctx, ids[6], backend.ClaimRequest{Assignee: "mikael"}, "")
+	require.NoError(t, err)
+	for _, body := range []string{"one", "two"} {
+		_, err := be.AddComment(ctx, blocker, body)
+		require.NoError(t, err)
+	}
+	for _, name := range []string{"c.txt", "a.txt", "b.txt"} {
+		_, err := be.AddAttachment(ctx, blocker, backend.AttachmentCreate{
+			Name: name, ContentType: "text/plain", Content: strings.NewReader("x")})
+		require.NoError(t, err)
+	}
+
+	paths := []string{
+		"/api/issues", "/api/ready", "/api/blocked", "/api/search?q=parser",
+		"/api/issues/suggestions?q=tied",
+		"/api/navigation?q=tied", "/api/navigation?q=awb",
+		"/api/projects", "/api/projects?state=archived", "/api/projects?state=all",
+		"/api/projects/old/activity",
+		"/api/preferences/projects", "/api/projects/awb/members",
+		"/api/users", "/api/labels", "/api/assignees",
+		"/api/issues/" + blocker, "/api/issues/" + blocker + "/attachments",
+		"/api/issues/" + blocker + "/activity",
+		"/api/issues/" + blocker + "/activity?kind=comment",
+		"/api/issues/" + parent + "/tree",
+	}
+	for _, key := range domain.SortKeys {
+		paths = append(paths, "/api/issues?sort="+string(key), "/api/issues?sort=-"+string(key))
+	}
+	for _, key := range []string{"relevance", "-relevance"} {
+		paths = append(paths, "/api/search?q=parser&sort="+key)
+	}
+	for _, key := range []string{"key", "active", "updated"} {
+		paths = append(paths, "/api/projects?sort="+key, "/api/projects?sort=-"+key)
+	}
+
+	credentials := basicAuth("mikael", "hunter2")
+
+	// Navigation returns three independently capped groups. A query that reached
+	// only one of them would leave the other two orders untested while the
+	// response as a whole still compared equal, so check all three are populated.
+	_, navigation := get(t, h, http.MethodGet, "/api/navigation?q=awb", credentials...)
+	var groups struct {
+		Issues   []domain.Issue   `json:"issues"`
+		Projects []domain.Project `json:"projects"`
+		Users    []domain.User    `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(navigation), &groups))
+	assert.NotEmpty(t, groups.Issues)
+	assert.NotEmpty(t, groups.Projects)
+	assert.NotEmpty(t, groups.Users)
+
+	for _, path := range paths {
+		resp, first := get(t, h, http.MethodGet, path, credentials...)
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.NotEmpty(t, first, path)
+		// An empty array is a non-empty body, so comparing one against itself
+		// would say nothing about the order of a listing that returned no rows.
+		// Every path above is seeded to return some.
+		assert.NotEqual(t, "[]", strings.TrimSpace(first),
+			"%s returned no rows, so its order went untested", path)
+		for range 3 {
+			_, again := get(t, h, http.MethodGet, path, credentials...)
+			assert.Equal(t, first, again, path)
+		}
+	}
+}
