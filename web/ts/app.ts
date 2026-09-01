@@ -3295,7 +3295,10 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
       if (action === "none") return;
       if (action === "close") {
         status.value = issue.status;
-        openCloseEditor();
+        // A native select can finish its activation after dispatching change.
+        // Opening here synchronously lets that same activation light-dismiss
+        // the popover immediately on some browsers, leaving no visible action.
+        setTimeout(openCloseEditor);
         return;
       }
       if (target === "open" && issue.assignees.length > 0) {

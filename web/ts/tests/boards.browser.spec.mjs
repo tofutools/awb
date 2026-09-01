@@ -121,6 +121,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");
   if (caller !== "") expect(created.assignees).toContain(caller);
 
+  const sidebarStatus = page.getByLabel("Status", { exact: true });
+  const originalStatus = await sidebarStatus.inputValue();
+  await sidebarStatus.selectOption("closed");
+  await expect(page.getByRole("dialog", { name: "Close issue" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(sidebarStatus).toHaveValue(originalStatus);
+
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.
   await page.goto(`${baseURL}/#/issues`);
