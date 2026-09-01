@@ -40,25 +40,73 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await releaseLane.getByRole("button", { name: /Collapse Ship the 1.0 release.*swimlane/ }).click();
   await expect(releaseLane.locator(".board-columns")).toBeHidden();
+	const initialNoEpicLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) });
+	await initialNoEpicLane.getByRole("button", { name: /Collapse No epic swimlane/ }).click();
+	await expect(initialNoEpicLane.locator(".board-columns")).toBeHidden();
   await page.reload();
   const persistedReleaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await expect(persistedReleaseLane.getByRole("button", { name: /Expand Ship the 1.0 release.*swimlane/ })).toBeVisible();
   await expect(persistedReleaseLane.locator(".board-columns")).toBeHidden();
+	const persistedNoEpicLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) });
+	await expect(persistedNoEpicLane.getByRole("button", { name: /Expand No epic swimlane/ })).toBeVisible();
+	await expect(persistedNoEpicLane.locator(".board-columns")).toBeHidden();
   await persistedReleaseLane.getByRole("button", { name: /Expand Ship the 1.0 release.*swimlane/ }).click();
   await expect(persistedReleaseLane.locator(".board-columns")).toBeVisible();
+	await persistedNoEpicLane.getByRole("button", { name: /Expand No epic swimlane/ }).click();
 
   const secondEpic = await page.evaluate(async () => {
     const response = await fetch("api/issues", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project: "demo", title: "Platform epic", type: "epic" }),
+      body: JSON.stringify({ workspace: "demo", title: "Platform epic", type: "epic" }),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json();
   });
-  expect(secondEpic.project).toBe("demo");
+  expect(secondEpic.workspace).toBe("demo");
   await page.reload();
   await expect(page.locator(".board-lane")).toHaveCount(3);
+
+  // A drop on a card in the shared No epic lane must not bubble into the
+  // column and accidentally assign manual rank across workspace boundaries.
+  const otherIssue = await page.evaluate(async () => {
+    const workspace = await fetch("api/workspaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "other" }),
+    });
+    if (!workspace.ok) throw new Error(await workspace.text());
+    const issue = await fetch("api/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: "other", title: "Other workspace issue" }),
+    });
+    if (!issue.ok) throw new Error(await issue.text());
+    return issue.json();
+  });
+  await page.reload();
+  const crossWorkspaceSource = page.locator(`.board-card[data-issue="${otherIssue.id}"] .board-card-drag`);
+  const crossWorkspaceTarget = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) })
+    .locator('.board-card[data-issue^="demo-"]').first();
+  const transfer = await page.evaluateHandle(() => new DataTransfer());
+  await crossWorkspaceSource.dispatchEvent("dragstart", { dataTransfer: transfer });
+  await crossWorkspaceTarget.dispatchEvent("drop", { dataTransfer: transfer });
+  await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).order, otherIssue.id)).toBe(0);
+
+  // A failed card-to-card move must not reset the status control of the card
+  // used as the drop target; that card represents a different issue.
+  const failedMoveSource = page.locator(".board-card", { hasText: "Build the full text search index" });
+  const failedMoveTarget = page.locator(".board-card", { hasText: "Browse the widget catalogue" });
+  const targetStatus = failedMoveTarget.getByLabel(/Status for demo-/);
+  await expect(targetStatus).toHaveValue("in_progress");
+  await page.route("**/api/issues/*/move", async (route) => {
+    await route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"simulated failure"}' });
+  }, { times: 1 });
+  const failedTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await failedMoveSource.getByLabel(/Drag demo-/).dispatchEvent("dragstart", { dataTransfer: failedTransfer });
+  await failedMoveTarget.dispatchEvent("drop", { dataTransfer: failedTransfer });
+  await expect(failedMoveTarget.locator(".edit-error")).toBeVisible();
+  await expect(targetStatus).toHaveValue("in_progress");
 
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
@@ -115,6 +163,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
     return rowTitles.indexOf("Browse the widget catalogue") < rowTitles.indexOf("Build the full text search index");
   }).toBe(true);
 
+	await page.setViewportSize({ width: 710, height: 900 });
+	await page.goto(`${baseURL}/#/boards`);
+	const breakpointHandle = page.locator(".board-card-drag").first();
+	await expect(breakpointHandle).toBeVisible();
+	await expect.poll(() => breakpointHandle.evaluate((handle) => handle.draggable)).toBe(true);
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/#/boards`);
   await expect(page.locator(".board-columns").first()).toHaveCSS("overflow-x", "auto");
@@ -123,13 +177,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
       const response = await fetch("api/issues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: "demo", title: `Overflow epic ${index}`, type: "epic" }),
+        body: JSON.stringify({ workspace: "demo", title: `Overflow epic ${index}`, type: "epic" }),
       });
       if (!response.ok) throw new Error(await response.text());
     }
   });
   await page.reload();
-  const responsiveCard = page.locator(".board-card").first();
+  const responsiveCard = page.locator('.board-card[data-issue^="demo-"]').first();
   const movedID = await responsiveCard.getAttribute("data-issue");
   expect(movedID).toBeTruthy();
   await expect(responsiveCard.getByLabel(/Drag demo-/)).toBeHidden();
@@ -158,7 +212,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
       const response = await fetch("api/issues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: "demo", title: `Pagination task ${index}`, type: "task" }),
+        body: JSON.stringify({ workspace: "demo", title: `Pagination task ${index}`, type: "task" }),
       });
       if (!response.ok) throw new Error(await response.text());
     }

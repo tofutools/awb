@@ -2,10 +2,10 @@ import { ApiError, type User, type UserPatch } from "./api.js";
 
 /** Account roles are independent capabilities, so an administrator who holds
  * both sees both rather than one role hiding the other. */
-export function accountRoles(user: Pick<User, "project_admin" | "user_admin">): string[] {
+export function accountRoles(user: Pick<User, "workspace_admin" | "user_admin">): string[] {
   const roles: string[] = [];
   if (user.user_admin) roles.push("User administrator");
-  if (user.project_admin) roles.push("Workspace administrator");
+  if (user.workspace_admin) roles.push("Workspace administrator");
   if (roles.length === 0) roles.push("Regular user");
   return roles;
 }

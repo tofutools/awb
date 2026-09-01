@@ -21,16 +21,16 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 		grant(t, root, ctx, "awb", name, domain.AccessRegular)
 	}
 	grant(t, root, ctx, "web", "alice", domain.AccessRegular)
-	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "shared"})
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "shared"})
 	require.NoError(t, err)
-	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "alice only"})
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "alice only"})
 	require.NoError(t, err)
 
 	alice := root.WithUser("alice")
 	shared, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: " Release ", Shared: true,
-		AllProjects: false, Projects: []string{"awb", "web"}, PriorityMax: 4})
+		AllWorkspaces: false, Workspaces: []string{"awb", "web"}, PriorityMax: 4})
 	require.NoError(t, err)
-	private, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Private", AllProjects: true, PriorityMax: 4})
+	private, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Private", AllWorkspaces: true, PriorityMax: 4})
 	require.NoError(t, err)
 	assert.Equal(t, "Release", shared.Name)
 
@@ -50,14 +50,14 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	notFound(t, err, "a private view's delete endpoint does not disclose it")
 	visible, err := bob.GetBoardView(ctx, shared.ID)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"awb"}, visible.Projects, "view metadata cannot disclose an inaccessible key")
+	assert.Equal(t, []string{"awb"}, visible.Workspaces, "view metadata cannot disclose an inaccessible key")
 
 	board, err := bob.GetBoard(ctx, shared.ID, backend.BoardQuery{})
 	require.NoError(t, err)
 	require.Len(t, board.Lanes, 1)
 	assert.Nil(t, board.Lanes[0].Epic)
-	assert.Equal(t, "awb", board.Lanes[0].Columns[0].Issues[0].Project)
-	assert.True(t, board.ProjectsOmitted)
+	assert.Equal(t, "awb", board.Lanes[0].Columns[0].Issues[0].Workspace)
+	assert.True(t, board.WorkspacesOmitted)
 	_, err = bob.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{}, "")
 	forbidden(t, err)
 
@@ -66,7 +66,7 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	views, err = alice.ListBoardViews(ctx)
 	require.NoError(t, err)
 	for _, view := range views {
-		assert.NotContains(t, view.Projects, "web", "owned view listings do not disclose revoked projects")
+		assert.NotContains(t, view.Workspaces, "web", "owned view listings do not disclose revoked workspaces")
 	}
 	renamed := "Release train"
 	unshared := false
@@ -74,50 +74,50 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	require.NoError(t, err, "an unrelated edit preserves an inaccessible stored selection")
 	assert.Equal(t, renamed, updated.Name)
 	assert.False(t, updated.Shared)
-	assert.Equal(t, []string{"awb"}, updated.Projects, "the mutation response is scoped too")
+	assert.Equal(t, []string{"awb"}, updated.Workspaces, "the mutation response is scoped too")
 	visibleReplacement := []string{"awb"}
-	_, err = alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Projects: &visibleReplacement}, backend.ETag(updated.UpdatedAt))
+	_, err = alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Workspaces: &visibleReplacement}, backend.ETag(updated.UpdatedAt))
 	require.NoError(t, err, "replacing visible selections preserves inaccessible stored selections")
 	grant(t, root, ctx, "web", "alice", domain.AccessRegular)
 	restored, err := alice.GetBoardView(ctx, shared.ID)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"awb", "web"}, restored.Projects)
+	assert.Equal(t, []string{"awb", "web"}, restored.Workspaces)
 }
 
 func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)
-	for _, project := range []string{"awb", "web"} {
-		grant(t, root, ctx, project, "alice", domain.AccessRegular)
+	for _, workspace := range []string{"awb", "web"} {
+		grant(t, root, ctx, workspace, "alice", domain.AccessRegular)
 	}
 	for _, title := range []string{"first", "second"} {
-		_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: title, Labels: []string{"release"}})
+		_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: title, Labels: []string{"release"}})
 		require.NoError(t, err)
 	}
-	_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "ignored", Labels: []string{"release"}})
+	_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "ignored", Labels: []string{"release"}})
 	require.NoError(t, err)
 	alice := root.WithUser("alice")
-	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Release", AllProjects: false,
-		Projects: []string{"awb", "web"}, Labels: []string{"release"}, PriorityMax: 2})
+	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Release", AllWorkspaces: false,
+		Workspaces: []string{"awb", "web"}, Labels: []string{"release"}, PriorityMax: 2})
 	require.NoError(t, err)
-	_, err = alice.SetProjectIgnored(ctx, "web", true)
+	_, err = alice.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
 	views, err := alice.ListBoardViews(ctx)
 	require.NoError(t, err)
 	require.Len(t, views, 1)
-	assert.Equal(t, []string{"awb", "web"}, views[0].Projects, "the owner can still edit an ignored selection")
+	assert.Equal(t, []string{"awb", "web"}, views[0].Workspaces, "the owner can still edit an ignored selection")
 	one, zero := 1, 0
 	board, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{LaneLimit: &one, LaneOffset: &zero, CardLimit: &one})
 	require.NoError(t, err)
 	assert.Equal(t, 1, board.LaneTotal)
-	assert.True(t, board.ProjectsOmitted)
+	assert.True(t, board.WorkspacesOmitted)
 	require.Len(t, board.Lanes, 1)
 	open := board.Lanes[0].Columns[0]
 	assert.Equal(t, domain.StatusOpen, open.Status)
 	assert.Equal(t, 2, open.Total)
 	assert.Len(t, open.Issues, 1)
 
-	second, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{Projects: []string{"awb"}, Status: domain.StatusOpen,
+	second, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{Workspaces: []string{"awb"}, Status: domain.StatusOpen,
 		CardLimit: &one, CardOffset: &one})
 	require.NoError(t, err)
 	require.Len(t, second.Lanes, 1)
@@ -130,16 +130,16 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)
 	grant(t, root, ctx, "awb", "alice", domain.AccessRegular)
-	visibleEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser epic", Type: domain.TypeEpic})
+	visibleEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser epic", Type: domain.TypeEpic})
 	require.NoError(t, err)
-	child, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser child",
+	child, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Parser child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: visibleEpic.ID}}})
 	require.NoError(t, err)
-	loose, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Loose work"})
+	loose, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Loose work"})
 	require.NoError(t, err)
-	hiddenEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Secret epic", Type: domain.TypeEpic})
+	hiddenEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Secret epic", Type: domain.TypeEpic})
 	require.NoError(t, err)
-	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Secret child",
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "Secret child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: hiddenEpic.ID}}})
 	require.NoError(t, err)
 
@@ -155,7 +155,7 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	for _, lane := range board.Lanes {
 		for _, column := range lane.Columns {
 			for _, issue := range column.Issues {
-				assert.Equal(t, "awb", issue.Project)
+				assert.Equal(t, "awb", issue.Workspace)
 				assert.NotEqual(t, domain.TypeEpic, issue.Type, "epics are lane headers, not cards")
 			}
 		}
@@ -181,7 +181,7 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	root, ctx := newInstance(t)
 	for i := range 51 {
-		_, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: fmt.Sprintf("issue %02d", i)})
+		_, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: fmt.Sprintf("issue %02d", i)})
 		require.NoError(t, err)
 	}
 	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{})
@@ -201,20 +201,20 @@ func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	assert.Equal(t, 2, exitOf(err))
 }
 
-func TestDeletingASelectedProjectMovesTheBoardViewETag(t *testing.T) {
+func TestDeletingASelectedWorkspaceMovesTheBoardViewETag(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)
 	grant(t, root, ctx, "web", "alice", domain.AccessRegular)
 	alice := root.WithUser("alice")
-	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Web", AllProjects: false,
-		Projects: []string{"web"}, PriorityMax: 4})
+	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Web", AllWorkspaces: false,
+		Workspaces: []string{"web"}, PriorityMax: 4})
 	require.NoError(t, err)
 
-	_, err = root.DeleteProject(ctx, "web", false, "")
+	_, err = root.DeleteWorkspace(ctx, "web", false, "")
 	require.NoError(t, err)
 	updated, err := alice.GetBoardView(ctx, view.ID)
 	require.NoError(t, err)
-	assert.Empty(t, updated.Projects)
+	assert.Empty(t, updated.Workspaces)
 	assert.Greater(t, updated.UpdatedAt, view.UpdatedAt)
 
 	name := "stale edit"
@@ -225,22 +225,22 @@ func TestDeletingASelectedProjectMovesTheBoardViewETag(t *testing.T) {
 
 func TestArchivedWorkspaceSelectionIsDormantAndRestored(t *testing.T) {
 	root, ctx := newInstance(t)
-	epic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Dormant epic", Type: domain.TypeEpic})
+	epic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Dormant epic", Type: domain.TypeEpic})
 	require.NoError(t, err)
-	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Current work", AllProjects: false,
-		Projects: []string{"awb"}, PriorityMax: 4})
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Current work", AllWorkspaces: false,
+		Workspaces: []string{"awb"}, PriorityMax: 4})
 	require.NoError(t, err)
-	workspace, err := root.GetProject(ctx, "awb")
+	workspace, err := root.GetWorkspace(ctx, "awb")
 	require.NoError(t, err)
-	archived, err := root.ArchiveProject(ctx, "awb", backend.ETag(workspace.UpdatedAt))
+	archived, err := root.ArchiveWorkspace(ctx, "awb", backend.ETag(workspace.UpdatedAt))
 	require.NoError(t, err)
 
 	hidden, err := root.GetBoardView(ctx, view.ID)
 	require.NoError(t, err)
-	assert.Empty(t, hidden.Projects, "archived workspaces are omitted from normal board metadata")
+	assert.Empty(t, hidden.Workspaces, "archived workspaces are omitted from normal board metadata")
 	board, err := root.GetBoard(ctx, view.ID, backend.BoardQuery{})
 	require.NoError(t, err)
-	assert.True(t, board.ProjectsOmitted)
+	assert.True(t, board.WorkspacesOmitted)
 	require.Len(t, board.Lanes, 1)
 	for _, column := range board.Lanes[0].Columns {
 		assert.Empty(t, column.Issues)
@@ -253,13 +253,13 @@ func TestArchivedWorkspaceSelectionIsDormantAndRestored(t *testing.T) {
 	name := "Renamed while archived"
 	updated, err := root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(view.UpdatedAt))
 	require.NoError(t, err, "an unrelated edit preserves a dormant workspace selection")
-	assert.Empty(t, updated.Projects)
-	_, err = root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Archived", Projects: []string{"awb"}, PriorityMax: 4})
+	assert.Empty(t, updated.Workspaces)
+	_, err = root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Archived", Workspaces: []string{"awb"}, PriorityMax: 4})
 	notFound(t, err, "an archived workspace cannot be newly selected")
 
-	_, err = root.RestoreProject(ctx, "awb", backend.ETag(archived.UpdatedAt))
+	_, err = root.RestoreWorkspace(ctx, "awb", backend.ETag(archived.UpdatedAt))
 	require.NoError(t, err)
 	restored, err := root.GetBoardView(ctx, view.ID)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"awb"}, restored.Projects)
+	assert.Equal(t, []string{"awb"}, restored.Workspaces)
 }

@@ -7,31 +7,31 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-func (h *Handler) ListProjectPreferences(ctx context.Context) ([]api.ProjectPreference, error) {
-	preferences, err := h.backendFor(ctx).ListProjectPreferences(ctx)
+func (h *Handler) ListWorkspacePreferences(ctx context.Context) ([]api.WorkspacePreference, error) {
+	preferences, err := h.backendFor(ctx).ListWorkspacePreferences(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]api.ProjectPreference, len(preferences))
+	result := make([]api.WorkspacePreference, len(preferences))
 	for i := range preferences {
-		result[i] = toProjectPreference(&preferences[i])
+		result[i] = toWorkspacePreference(&preferences[i])
 	}
 	return result, nil
 }
 
-func (h *Handler) SetProjectIgnored(ctx context.Context, req *api.ProjectPreferenceSet,
-	params api.SetProjectIgnoredParams) (*api.ProjectPreference, error) {
-	preference, err := h.backendFor(ctx).SetProjectIgnored(ctx, string(params.Key), req.Ignored)
+func (h *Handler) SetWorkspaceIgnored(ctx context.Context, req *api.WorkspacePreferenceSet,
+	params api.SetWorkspaceIgnoredParams) (*api.WorkspacePreference, error) {
+	preference, err := h.backendFor(ctx).SetWorkspaceIgnored(ctx, string(params.Key), req.Ignored)
 	if err != nil {
 		return nil, err
 	}
-	result := toProjectPreference(preference)
+	result := toWorkspacePreference(preference)
 	return &result, nil
 }
 
-func toProjectPreference(preference *domain.ProjectPreference) api.ProjectPreference {
-	return api.ProjectPreference{
-		Project: toProject(&preference.Project),
-		Ignored: preference.Ignored,
+func toWorkspacePreference(preference *domain.WorkspacePreference) api.WorkspacePreference {
+	return api.WorkspacePreference{
+		Workspace: toWorkspace(&preference.Workspace),
+		Ignored:   preference.Ignored,
 	}
 }

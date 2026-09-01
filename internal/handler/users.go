@@ -9,7 +9,7 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// userResponse is projectResponse for a user, whose tag is built from their
+// userResponse is workspaceResponse for a user, whose tag is built from their
 // own updated_at: a membership granted or withdrawn does not invalidate it,
 // exactly as a new relation does not invalidate an issue's.
 func userResponse(user *domain.User) *api.UserHeaders {
@@ -34,12 +34,12 @@ func (h *Handler) ListUsers(ctx context.Context, params api.ListUsersParams) (
 func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate) (
 	*api.UserCreatedHeaders, error) {
 	user, err := h.backendFor(ctx).CreateUser(ctx, backend.UserCreate{
-		Name:         string(req.Name),
-		FullName:     string(req.FullName.Or("")),
-		Password:     string(req.Password.Or("")),
-		PasswordHash: string(req.PasswordHash.Or("")),
-		ProjectAdmin: req.ProjectAdmin.Or(false),
-		UserAdmin:    req.UserAdmin.Or(false),
+		Name:           string(req.Name),
+		FullName:       string(req.FullName.Or("")),
+		Password:       string(req.Password.Or("")),
+		PasswordHash:   string(req.PasswordHash.Or("")),
+		WorkspaceAdmin: req.WorkspaceAdmin.Or(false),
+		UserAdmin:      req.UserAdmin.Or(false),
 	})
 	if err != nil {
 		return nil, err
@@ -61,8 +61,8 @@ func (h *Handler) GetUser(ctx context.Context, params api.GetUserParams) (
 }
 
 // UpdateUser replaces each field the body carries and leaves the others alone.
-// name may appear but may not change, exactly as a project's key may not;
-// projects and the timestamps are derived and their values ignored, so a UI can
+// name may appear but may not change, exactly as a workspace's key may not;
+// workspaces and the timestamps are derived and their values ignored, so a UI can
 // send back the object it read. As elsewhere, they are still validated against
 // the schema declared for each.
 func (h *Handler) UpdateUser(ctx context.Context, req *api.UserPatch,
@@ -73,11 +73,11 @@ func (h *Handler) UpdateUser(ctx context.Context, req *api.UserPatch,
 	}
 
 	user, err := h.backendFor(ctx).UpdateUser(ctx, name, backend.UserPatch{
-		Password:     optPassword(req.Password),
-		PasswordHash: optPasswordHash(req.PasswordHash),
-		FullName:     optUserFullName(req.FullName),
-		ProjectAdmin: optBool(req.ProjectAdmin),
-		UserAdmin:    optBool(req.UserAdmin),
+		Password:       optPassword(req.Password),
+		PasswordHash:   optPasswordHash(req.PasswordHash),
+		FullName:       optUserFullName(req.FullName),
+		WorkspaceAdmin: optBool(req.WorkspaceAdmin),
+		UserAdmin:      optBool(req.UserAdmin),
 	}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (h *Handler) DeleteUser(ctx context.Context, params api.DeleteUserParams) (
 	return &user, nil
 }
 
-func (h *Handler) ListProjectMembers(ctx context.Context, params api.ListProjectMembersParams) (
+func (h *Handler) ListWorkspaceMembers(ctx context.Context, params api.ListWorkspaceMembersParams) (
 	*api.MembershipListHeaders, error) {
 	page, err := h.backendFor(ctx).ListMembers(ctx, string(params.Key),
 		optInt(params.Limit), optInt(params.Offset))
@@ -109,9 +109,9 @@ func (h *Handler) ListProjectMembers(ctx context.Context, params api.ListProject
 	}, nil
 }
 
-// AddProjectMember creates a membership without replacing a concurrent grant.
-func (h *Handler) AddProjectMember(ctx context.Context, req *api.MembershipCreate,
-	params api.AddProjectMemberParams) (*api.Membership, error) {
+// AddWorkspaceMember creates a membership without replacing a concurrent grant.
+func (h *Handler) AddWorkspaceMember(ctx context.Context, req *api.MembershipCreate,
+	params api.AddWorkspaceMemberParams) (*api.Membership, error) {
 	membership, err := h.backendFor(ctx).AddMember(ctx, string(params.Key),
 		string(req.User), domain.Access(req.Access))
 	if err != nil {
@@ -120,29 +120,29 @@ func (h *Handler) AddProjectMember(ctx context.Context, req *api.MembershipCreat
 	return toMembership(membership), nil
 }
 
-// SetProjectMember replaces whatever access the user held in the project. The
+// SetWorkspaceMember replaces whatever access the user held in the workspace. The
 // two ends may appear in the body but may not disagree with the path, which is
 // what identifies the membership.
-func (h *Handler) SetProjectMember(ctx context.Context, req *api.MembershipSet,
-	params api.SetProjectMemberParams) (*api.Membership, error) {
-	project, user := string(params.Key), string(params.User)
-	if sent, ok := req.Project.Get(); ok && string(sent) != project {
-		return nil, awberr.Usagef("a membership names the project in its path")
+func (h *Handler) SetWorkspaceMember(ctx context.Context, req *api.MembershipSet,
+	params api.SetWorkspaceMemberParams) (*api.Membership, error) {
+	workspace, user := string(params.Key), string(params.User)
+	if sent, ok := req.Workspace.Get(); ok && string(sent) != workspace {
+		return nil, awberr.Usagef("a membership names the workspace in its path")
 	}
 	if sent, ok := req.User.Get(); ok && string(sent) != user {
 		return nil, awberr.Usagef("a membership names the user in its path")
 	}
 
-	membership, err := h.backendFor(ctx).SetMember(ctx, project, user, domain.Access(req.Access))
+	membership, err := h.backendFor(ctx).SetMember(ctx, workspace, user, domain.Access(req.Access))
 	if err != nil {
 		return nil, err
 	}
 	return toMembership(membership), nil
 }
 
-// RemoveProjectMember answers with the membership as it was immediately before
+// RemoveWorkspaceMember answers with the membership as it was immediately before
 // it was withdrawn.
-func (h *Handler) RemoveProjectMember(ctx context.Context, params api.RemoveProjectMemberParams) (
+func (h *Handler) RemoveWorkspaceMember(ctx context.Context, params api.RemoveWorkspaceMemberParams) (
 	*api.Membership, error) {
 	membership, err := h.backendFor(ctx).RemoveMember(ctx, string(params.Key), string(params.User))
 	if err != nil {
@@ -153,13 +153,13 @@ func (h *Handler) RemoveProjectMember(ctx context.Context, params api.RemoveProj
 
 func toUser(user *domain.User) api.User {
 	return api.User{
-		Name:         api.Username(user.Name),
-		FullName:     api.UserFullName(user.FullName),
-		ProjectAdmin: user.ProjectAdmin,
-		UserAdmin:    user.UserAdmin,
-		CreatedAt:    api.Timestamp(user.CreatedAt),
-		UpdatedAt:    api.Timestamp(user.UpdatedAt),
-		Projects:     toMemberships(user.Projects),
+		Name:           api.Username(user.Name),
+		FullName:       api.UserFullName(user.FullName),
+		WorkspaceAdmin: user.WorkspaceAdmin,
+		UserAdmin:      user.UserAdmin,
+		CreatedAt:      api.Timestamp(user.CreatedAt),
+		UpdatedAt:      api.Timestamp(user.UpdatedAt),
+		Workspaces:     toMemberships(user.Workspaces),
 	}
 }
 
@@ -175,19 +175,19 @@ func toDirectoryUsers(users []domain.User) []api.UserDirectoryEntry {
 	out := make([]api.UserDirectoryEntry, len(users))
 	for i := range users {
 		user := toUser(&users[i])
-		projects := make([]api.ProjectKey, len(users[i].ActivityProjects))
-		for j := range users[i].ActivityProjects {
-			projects[j] = api.ProjectKey(users[i].ActivityProjects[j])
+		workspaces := make([]api.WorkspaceKey, len(users[i].ActivityWorkspaces))
+		for j := range users[i].ActivityWorkspaces {
+			workspaces[j] = api.WorkspaceKey(users[i].ActivityWorkspaces[j])
 		}
 		out[i] = api.UserDirectoryEntry{
-			Name:             user.Name,
-			FullName:         user.FullName,
-			ProjectAdmin:     user.ProjectAdmin,
-			UserAdmin:        user.UserAdmin,
-			CreatedAt:        user.CreatedAt,
-			UpdatedAt:        user.UpdatedAt,
-			Projects:         user.Projects,
-			ActivityProjects: projects,
+			Name:               user.Name,
+			FullName:           user.FullName,
+			WorkspaceAdmin:     user.WorkspaceAdmin,
+			UserAdmin:          user.UserAdmin,
+			CreatedAt:          user.CreatedAt,
+			UpdatedAt:          user.UpdatedAt,
+			Workspaces:         user.Workspaces,
+			ActivityWorkspaces: workspaces,
 		}
 	}
 	return out
@@ -195,9 +195,9 @@ func toDirectoryUsers(users []domain.User) []api.UserDirectoryEntry {
 
 func toMembership(m *domain.Membership) *api.Membership {
 	return &api.Membership{
-		Project: api.ProjectKey(m.Project),
-		User:    api.Username(m.User),
-		Access:  api.Access(m.Access),
+		Workspace: api.WorkspaceKey(m.Workspace),
+		User:      api.Username(m.User),
+		Access:    api.Access(m.Access),
 	}
 }
 

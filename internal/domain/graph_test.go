@@ -34,7 +34,7 @@ func TestCanonicalRelation(t *testing.T) {
 	assert.Equal(t, "awb-a", a)
 	assert.Equal(t, "awb-b", b)
 
-	// Comparison is over the whole ID string, so the project part counts.
+	// Comparison is over the whole ID string, so the workspace part counts.
 	a, b = domain.CanonicalRelation(domain.RelRelated, "zzz-a", "aaa-z")
 	assert.Equal(t, "aaa-z", a)
 	assert.Equal(t, "zzz-a", b)

@@ -227,7 +227,7 @@ func (b *Backend) sweep(ctx context.Context, digests []string) {
 		return
 	}
 	// Deliberately the raw transaction rather than this backend's own write:
-	// the rows this reads are addressed by digest and belong to no project, and
+	// the rows this reads are addressed by digest and belong to no workspace, and
 	// the delete that led here has already been permitted and committed. Asking
 	// again as the caller would only give the sweep a way to fail — leaving a
 	// file behind — because an account was removed between the two.

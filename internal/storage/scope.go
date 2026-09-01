@@ -2,7 +2,7 @@ package storage
 
 import "strings"
 
-// Scope is the set of projects a caller may see, carried by the transaction so
+// Scope is the set of workspaces a caller may see, carried by the transaction so
 // that every read inside it is answered from the same set.
 //
 // It is put on the Tx rather than passed to each query for one reason: a read
@@ -23,8 +23,8 @@ type Scope struct {
 // Everything is the scope that hides nothing.
 func Everything() Scope { return Scope{} }
 
-// VisibleTo is the scope of one user: the projects they are a member of, and
-// nothing else. A caller who holds AccessAdmin everywhere — a project
+// VisibleTo is the scope of one user: the workspaces they are a member of, and
+// nothing else. A caller who holds AccessAdmin everywhere — a workspace
 // administrator — is given Everything instead, because their access does not
 // come from rows.
 func VisibleTo(user string) Scope { return Scope{user: user, restricted: true} }
@@ -46,7 +46,7 @@ func (t *Tx) Restrict(scope Scope) { t.scope = scope }
 // Scope is what this transaction may see.
 func (t *Tx) Scope() Scope { return t.scope }
 
-// visible adds the visibility condition over a column holding a project key,
+// visible adds the visibility condition over a column holding a workspace key,
 // and does nothing at all when the scope is unrestricted — so an unscoped
 // query is the same SQL it was before there were users.
 func (t *Tx) visible(c *conditions, column string) {
@@ -55,11 +55,11 @@ func (t *Tx) visible(c *conditions, column string) {
 			return
 		}
 	} else {
-		c.add(column+` IN (SELECT project FROM project_members WHERE user = ?)`, t.scope.user)
+		c.add(column+` IN (SELECT workspace FROM workspace_members WHERE user = ?)`, t.scope.user)
 	}
 	if t.scope.ignoredBy != "" {
-		c.add(`NOT EXISTS (SELECT 1 FROM ignored_projects ip
-			WHERE ip.user = ? AND ip.project = `+column+`)`, t.scope.ignoredBy)
+		c.add(`NOT EXISTS (SELECT 1 FROM ignored_workspaces ip
+			WHERE ip.user = ? AND ip.workspace = `+column+`)`, t.scope.ignoredBy)
 	}
 }
 
@@ -70,12 +70,12 @@ func (t *Tx) visibleClause(column string) (string, []any) {
 	clauses := []string{}
 	args := []any{}
 	if t.scope.restricted {
-		clauses = append(clauses, column+` IN (SELECT project FROM project_members WHERE user = ?)`)
+		clauses = append(clauses, column+` IN (SELECT workspace FROM workspace_members WHERE user = ?)`)
 		args = append(args, t.scope.user)
 	}
 	if t.scope.ignoredBy != "" {
-		clauses = append(clauses, `NOT EXISTS (SELECT 1 FROM ignored_projects ip
-			WHERE ip.user = ? AND ip.project = `+column+`)`)
+		clauses = append(clauses, `NOT EXISTS (SELECT 1 FROM ignored_workspaces ip
+			WHERE ip.user = ? AND ip.workspace = `+column+`)`)
 		args = append(args, t.scope.ignoredBy)
 	}
 	if len(clauses) == 0 {
@@ -92,6 +92,6 @@ func (t *Tx) notIgnoredClause(column string) (string, []any) {
 	if t.scope.ignoredBy == "" {
 		return "1 = 1", nil
 	}
-	return `NOT EXISTS (SELECT 1 FROM ignored_projects ip
-		WHERE ip.user = ? AND ip.project = ` + column + `)`, []any{t.scope.ignoredBy}
+	return `NOT EXISTS (SELECT 1 FROM ignored_workspaces ip
+		WHERE ip.user = ? AND ip.workspace = ` + column + `)`, []any{t.scope.ignoredBy}
 }

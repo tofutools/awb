@@ -35,7 +35,7 @@ test("empty applicable facet groups remain visible", () => {
 test("pagination follows the lowest applicable facet row", () => {
   assert.equal(lowestFacetGroup([], []), "assignee");
   assert.equal(lowestFacetGroup([], null), "label");
-  assert.equal(lowestFacetGroup(null, null), "project");
+  assert.equal(lowestFacetGroup(null, null), "workspace");
 });
 
 test("sort state accepts known signed keys and otherwise uses the natural order", () => {
@@ -49,10 +49,10 @@ test("sort state accepts known signed keys and otherwise uses the natural order"
 });
 
 test("showing closed issues preserves the rest of the listing route", () => {
-  const query = new URLSearchParams("project=awb&label=frontend&sort=-updated&page=3");
+  const query = new URLSearchParams("workspace=awb&label=frontend&sort=-updated&page=3");
   assert.equal(
     withClosedIssues(query, true).toString(),
-    "project=awb&label=frontend&sort=-updated&include-closed=true",
+    "workspace=awb&label=frontend&sort=-updated&include-closed=true",
   );
   assert.equal(query.has("include-closed"), false, "the current route is not mutated");
 });
@@ -62,8 +62,8 @@ test("backend pagination uses canonical one-based route state", () => {
   assert.equal(pageNumber(new URLSearchParams("page=3")), 3);
   assert.equal(pageNumber(new URLSearchParams("page=-1")), 1);
   assert.equal(pageNumber(new URLSearchParams("page=not-a-number")), 1);
-  assert.equal(withPage(new URLSearchParams("project=awb&page=3"), 1).toString(), "project=awb");
-  assert.equal(withPage(new URLSearchParams("project=awb"), 4).toString(), "project=awb&page=4");
+  assert.equal(withPage(new URLSearchParams("workspace=awb&page=3"), 1).toString(), "workspace=awb");
+  assert.equal(withPage(new URLSearchParams("workspace=awb"), 4).toString(), "workspace=awb&page=4");
 });
 
 test("page size is a fixed UI choice and changing it resets the page", () => {
@@ -72,12 +72,12 @@ test("page size is a fixed UI choice and changing it resets the page", () => {
   assert.equal(pageSizeFrom(new URLSearchParams("size=25")), 25);
   assert.equal(pageSizeFrom(new URLSearchParams("size=37")), 10);
   assert.equal(
-    withPageSize(new URLSearchParams("project=awb&page=4"), 100).toString(),
-    "project=awb&size=100",
+    withPageSize(new URLSearchParams("workspace=awb&page=4"), 100).toString(),
+    "workspace=awb&size=100",
   );
   assert.equal(
-    withPageSize(new URLSearchParams("project=awb&page=4&size=25"), 10).toString(),
-    "project=awb",
+    withPageSize(new URLSearchParams("workspace=awb&page=4&size=25"), 10).toString(),
+    "workspace=awb",
   );
 });
 
@@ -107,8 +107,8 @@ test("pagination ranges are clamped to the unpaged backend total", () => {
 });
 
 test("hiding closed issues restores the default status set", () => {
-  const query = new URLSearchParams("project=awb&include-closed=true&filter=docs");
-  assert.equal(withClosedIssues(query, false).toString(), "project=awb&filter=docs");
+  const query = new URLSearchParams("workspace=awb&include-closed=true&filter=docs");
+  assert.equal(withClosedIssues(query, false).toString(), "workspace=awb&filter=docs");
 });
 
 test("sort headers cycle ascending, descending, then natural order", () => {

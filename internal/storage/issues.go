@@ -10,7 +10,7 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, project, title, description, type, status, priority, board_order,
+const issueColumns = `id, workspace, title, description, type, status, priority, board_order,
 	created_at, updated_at`
 
 type rowScanner interface {
@@ -19,7 +19,7 @@ type rowScanner interface {
 
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
+	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.Type, &i.Status,
 		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -39,14 +39,14 @@ func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
-// IssueProjectState reads only the lifecycle guard for an already-resolved
+// IssueWorkspaceState reads only the lifecycle guard for an already-resolved
 // endpoint. Relation maintenance may address an existing counterpart outside
 // the caller's scope (the visible relation already names it), so this check is
 // intentionally independent of presentation scope.
-func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
-	var state domain.ProjectState
+func (t *Tx) IssueWorkspaceState(id string) (domain.WorkspaceState, error) {
+	var state domain.WorkspaceState
 	err := t.q.QueryRowContext(t.ctx, `SELECT p.state FROM issues i
-		JOIN projects p ON p.key = i.project WHERE i.id = ?`, id).Scan(&state)
+		JOIN workspaces p ON p.key = i.workspace WHERE i.id = ?`, id).Scan(&state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", awberr.NotFoundf("no such issue: %s", id)
 	}
@@ -55,11 +55,11 @@ func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
 
 // getIssueRow reads the stored half of one issue by its exact ID.
 //
-// An issue in a project outside the transaction's scope is not found rather
-// than refused, exactly as such a project itself is: a caller who is not a
+// An issue in a workspace outside the transaction's scope is not found rather
+// than refused, exactly as such a workspace itself is: a caller who is not a
 // member is not told that the issue exists.
 func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
-	visible, args := t.visibleClause("issues.project")
+	visible, args := t.visibleClause("issues.workspace")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
 		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
 		append([]any{id}, args...)...))
@@ -86,22 +86,22 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 // one invisible issue resolves, and uniqueness is uniqueness among what the
 // caller can see.
 func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
-	visible, scopeArgs := t.visibleClause("issues.project")
+	visible, scopeArgs := t.visibleClause("issues.workspace")
 	var (
 		rows *sql.Rows
 		err  error
 	)
-	if ref.Project == "" {
-		// A bare hash matches on the hash part of any ID, in any project.
+	if ref.Workspace == "" {
+		// A bare hash matches on the hash part of any ID, in any workspace.
 		rows, err = t.q.QueryContext(t.ctx,
 			`SELECT id FROM issues
-			  WHERE substr(id, length(project) + 2) LIKE ? || '%' AND `+visible+`
+			  WHERE substr(id, length(workspace) + 2) LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`, append([]any{ref.Hash}, scopeArgs...)...)
 	} else {
 		rows, err = t.q.QueryContext(t.ctx,
-			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%' AND `+visible+`
+			`SELECT id FROM issues WHERE workspace = ? AND id LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`,
-			append([]any{ref.Project, ref.Project + "-" + ref.Hash}, scopeArgs...)...)
+			append([]any{ref.Workspace, ref.Workspace + "-" + ref.Hash}, scopeArgs...)...)
 	}
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "resolve issue %s", ref.Raw)
@@ -213,8 +213,8 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 // both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
-	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.project")
-	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.project")
+	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.workspace")
+	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.workspace")
 	args := append(anyArgs(ids), visibleOutArgs...)
 	args = append(args, anyArgs(ids)...)
 	args = append(args, visibleInArgs...)
@@ -253,7 +253,7 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 // whatever its blocked-by relations still say, which is what makes it
 // impossible for the recorded state to disagree with the dependency graph.
 func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
-	notIgnored, ignoredArgs := t.notIgnoredClause("other.project")
+	notIgnored, ignoredArgs := t.notIgnoredClause("other.workspace")
 	args := append(ignoredArgs, anyArgs(ids)...)
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT r.subject, r.other, `+notIgnored+` AS show_name
@@ -286,7 +286,7 @@ func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
 }
 
 // InsertIssue stores a new issue, drawing a fresh salt and retrying on a
-// same-project ID collision inside the same transaction.
+// same-workspace ID collision inside the same transaction.
 func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	const maxAttempts = 8
 	now := Now()
@@ -302,12 +302,12 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		if err != nil {
 			return err
 		}
-		issue.ID = domain.MakeID(issue.Project, domain.MintHash(issue.Title, now, salt))
+		issue.ID = domain.MakeID(issue.Workspace, domain.MintHash(issue.Title, now, salt))
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
+			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.Type,
 			issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
 			for position, assignee := range assignees {
@@ -329,7 +329,7 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		return awberr.Wrap(awberr.Runtime, err, "create issue")
 	}
 	return awberr.Runtimef("could not mint a free issue id in workspace %s after %d attempts",
-		issue.Project, maxAttempts)
+		issue.Workspace, maxAttempts)
 }
 
 // IssueFields are the stored fields an update may change.
@@ -415,9 +415,9 @@ type OrderChange struct {
 // cross cells; a regular list leaves both nil and orders within the workspace.
 func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction string,
 	status *domain.Status, epic *string) ([]OrderChange, error) {
-	visible, args := t.visibleClause("project")
-	where := "project = ? AND " + visible
-	args = append([]any{issue.Project}, args...)
+	visible, args := t.visibleClause("workspace")
+	where := "workspace = ? AND " + visible
+	args = append([]any{issue.Workspace}, args...)
 	if status != nil {
 		where += " AND status = ?"
 		args = append(args, *status)
@@ -425,7 +425,7 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction stri
 	if epic != nil {
 		const directEpic = `EXISTS (SELECT 1 FROM relations er JOIN issues parent ON parent.id = er.other
 			WHERE er.subject = issues.id AND er.type = 'has-parent'
-			  AND parent.type = 'epic' AND parent.project = issues.project`
+			  AND parent.type = 'epic' AND parent.workspace = issues.workspace`
 		if *epic == "" {
 			where += " AND NOT " + directEpic + ")"
 		} else {

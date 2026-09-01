@@ -48,7 +48,7 @@ func newHarness(t *testing.T) *harness {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	t.Setenv("AWB_DB", filepath.Join(root, "awb.db"))
 	t.Setenv("AWB_IDENTITY", "mikael")
-	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_COLOR", "AWB_CONFIG_FILE"} {
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_WORKSPACE", "AWB_COLOR", "AWB_CONFIG_FILE"} {
 		t.Setenv(name, "")
 	}
 	// The default table mode is coloured only when stdout is a terminal, which it
@@ -61,7 +61,7 @@ func newHarness(t *testing.T) *harness {
 
 	h := &harness{t: t, dir: work}
 	h.mustRun("init")
-	h.mustRun("project", "create", "awb", "--name", "Agent Work Board")
+	h.mustRun("workspace", "create", "awb", "--name", "Agent Work Board")
 	return h
 }
 
@@ -100,25 +100,25 @@ func (h *harness) mustRun(args ...string) string {
 	return stdout
 }
 
-func TestProjectArchiveAndRestoreCommands(t *testing.T) {
+func TestWorkspaceArchiveAndRestoreCommands(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("create", "retained", "--project", "awb")
+	h.mustRun("create", "retained", "--workspace", "awb")
 	archived := h.mustRun("workspace", "archive", "awb", "--json")
 	assert.Contains(t, archived, `"state": "archived"`)
-	activity := h.mustRun("project", "activity", "awb", "--compact")
+	activity := h.mustRun("workspace", "activity", "awb", "--compact")
 	assert.Contains(t, activity, " awb archived @mikael")
-	assert.JSONEq(t, `[]`, h.mustRun("project", "list", "--json"))
-	assert.Contains(t, h.mustRun("project", "list", "--archived", "--json"), `"key": "awb"`)
-	_, stderr, code := h.run("create", "blocked", "--project", "awb")
+	assert.JSONEq(t, `[]`, h.mustRun("workspace", "list", "--json"))
+	assert.Contains(t, h.mustRun("workspace", "list", "--archived", "--json"), `"key": "awb"`)
+	_, stderr, code := h.run("create", "blocked", "--workspace", "awb")
 	assert.Equal(t, 4, code)
 	assert.Contains(t, stderr, "archived")
-	restored := h.mustRun("project", "restore", "awb", "--json")
+	restored := h.mustRun("workspace", "restore", "awb", "--json")
 	assert.Contains(t, restored, `"state": "active"`)
-	var audit []domain.ProjectActivity
-	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "activity", "awb", "--json")), &audit))
+	var audit []domain.WorkspaceActivity
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("workspace", "activity", "awb", "--json")), &audit))
 	require.Len(t, audit, 2)
 	assert.Equal(t, "restored", audit[0].Action)
-	h.mustRun("create", "resumed", "--project", "awb")
+	h.mustRun("create", "resumed", "--workspace", "awb")
 	assert.Contains(t, h.mustRun("workspace", "show", "awb", "--json"), `"key": "awb"`)
 }
 
@@ -128,14 +128,14 @@ func (h *harness) create(args ...string) string {
 	return strings.TrimSpace(h.mustRun(append([]string{"create"}, args...)...))
 }
 
-func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
+func TestStatusShowsLocalConfigurationAndExactWorkspaceCounts(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("AWB_PASSWORD", "hunter2")
 
-	h.create("Open", "--project", "awb")
-	inProgress := h.create("In progress", "--project", "awb")
+	h.create("Open", "--workspace", "awb")
+	inProgress := h.create("In progress", "--workspace", "awb")
 	h.mustRun("claim", inProgress)
-	closed := h.create("Closed", "--project", "awb")
+	closed := h.create("Closed", "--workspace", "awb")
 	h.mustRun("close", closed, "--reason", "done")
 
 	stdout := h.mustRun("status", "--json")
@@ -158,13 +158,13 @@ func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
 			Name  string `json:"name"`
 			Value string `json:"value"`
 		} `json:"environment"`
-		Projects []struct {
+		Workspaces []struct {
 			Key        string `json:"key"`
 			Open       int    `json:"open"`
 			InProgress int    `json:"in_progress"`
 			Closed     int    `json:"closed"`
 			Total      int    `json:"total"`
-		} `json:"projects"`
+		} `json:"workspaces"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(stdout), &report))
 	assert.Equal(t, "local", report.Connection.Mode)
@@ -183,12 +183,12 @@ func TestStatusShowsLocalConfigurationAndExactProjectCounts(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "<redacted>", password)
-	require.Len(t, report.Projects, 1)
-	assert.Equal(t, "awb", report.Projects[0].Key)
-	assert.Equal(t, 1, report.Projects[0].Open)
-	assert.Equal(t, 1, report.Projects[0].InProgress)
-	assert.Equal(t, 1, report.Projects[0].Closed)
-	assert.Equal(t, 3, report.Projects[0].Total)
+	require.Len(t, report.Workspaces, 1)
+	assert.Equal(t, "awb", report.Workspaces[0].Key)
+	assert.Equal(t, 1, report.Workspaces[0].Open)
+	assert.Equal(t, 1, report.Workspaces[0].InProgress)
+	assert.Equal(t, 1, report.Workspaces[0].Closed)
+	assert.Equal(t, 3, report.Workspaces[0].Total)
 }
 
 // Enum-like parameters advertise their complete vocabulary to Boa, which
@@ -209,16 +209,16 @@ func TestEnumParameterCompletions(t *testing.T) {
 		{"list priority", []string{"list", "--priority"}, []string{"0", "1", "2", "3", "4"}},
 		{"list priority max", []string{"list", "--priority-max"}, []string{"0", "1", "2", "3", "4"}},
 		{"list sort", []string{"list", "--sort"}, []string{
-			"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
-			"project", "-project", "status", "-status", "assignee", "-assignee",
+			"order", "-order", "priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
+			"workspace", "-workspace", "status", "-status", "assignee", "-assignee",
 			"type", "-type", "blockers", "-blockers"}},
 		{"search sort", []string{"search", "--sort"}, []string{
-			"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
-			"project", "-project", "status", "-status", "assignee", "-assignee",
+			"order", "-order", "priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
+			"workspace", "-workspace", "status", "-status", "assignee", "-assignee",
 			"type", "-type", "blockers", "-blockers", "relevance", "-relevance"}},
-		{"project list sort", []string{"project", "list", "--sort"}, []string{
+		{"workspace list sort", []string{"workspace", "list", "--sort"}, []string{
 			"key", "-key", "active", "-active", "updated", "-updated"}},
-		{"project access", []string{"project", "grant", "--access"}, []string{"regular", "admin"}},
+		{"workspace access", []string{"workspace", "grant", "--access"}, []string{"regular", "admin"}},
 		{"color", []string{"--color"}, []string{"auto", "always", "never"}},
 		{"install skills harness", []string{"agent-guide", "install-skills", "--harness"}, []string{"all", "claude", "codex", "opencode", "copilot"}},
 	}
@@ -240,12 +240,12 @@ func TestEnumParameterCompletions(t *testing.T) {
 // and Boa makes flags already present on the command available to the lookup.
 func TestDataBackedFilterCompletions(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "web")
-	h.create("Backend task", "--project", "awb", "--label", "backend", "--assignee", "alice")
-	h.create("Backend bug", "--project", "awb", "--type", "bug", "--label", "crash", "--assignee", "carol")
-	h.create("Ready task", "--project", "awb", "--label", "ready")
-	h.create("Parser failure", "--project", "awb", "--label", "parser")
-	h.create("Frontend task", "--project", "web", "--label", "frontend", "--assignee", "bob")
+	h.mustRun("workspace", "create", "web")
+	h.create("Backend task", "--workspace", "awb", "--label", "backend", "--assignee", "alice")
+	h.create("Backend bug", "--workspace", "awb", "--type", "bug", "--label", "crash", "--assignee", "carol")
+	h.create("Ready task", "--workspace", "awb", "--label", "ready")
+	h.create("Parser failure", "--workspace", "awb", "--label", "parser")
+	h.create("Frontend task", "--workspace", "web", "--label", "frontend", "--assignee", "bob")
 
 	complete := func(args ...string) []string {
 		t.Helper()
@@ -257,34 +257,34 @@ func TestDataBackedFilterCompletions(t *testing.T) {
 		return lines[:len(lines)-1]
 	}
 
-	assert.ElementsMatch(t, []string{"awb", "web"}, complete("list", "--project"))
+	assert.ElementsMatch(t, []string{"awb", "web"}, complete("list", "--workspace"))
 	assert.Equal(t, []string{"backend", "crash", "parser", "ready"},
-		complete("list", "--project", "awb", "--label"))
+		complete("list", "--workspace", "awb", "--label"))
 	assert.Equal(t, []string{"crash"},
-		complete("list", "--project", "awb", "--type", "bug", "--label"))
+		complete("list", "--workspace", "awb", "--type", "bug", "--label"))
 	assert.Equal(t, []string{"bob"},
-		complete("list", "--project", "web", "--assignee"))
+		complete("list", "--workspace", "web", "--assignee"))
 	assert.Equal(t, []string{"parser", "ready"},
-		complete("ready", "--project", "awb", "--label"))
+		complete("ready", "--workspace", "awb", "--label"))
 	assert.Equal(t, []string{"parser"}, complete("search", "Parser", "--label"))
-	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("workspace: awb\n"), 0o600))
 	assert.Equal(t, []string{"backend", "crash", "parser", "ready"}, complete("list", "--label"))
 	assert.Equal(t, []string{"backend", "crash", "frontend", "parser", "ready"},
 		complete("--no-context", "list", "--label"))
 
 	otherDB := filepath.Join(h.root(), "other.db")
 	h.mustRun("--db", otherDB, "init")
-	h.mustRun("--db", otherDB, "project", "create", "other")
+	h.mustRun("--db", otherDB, "workspace", "create", "other")
 	assert.Equal(t, []string{"other"},
-		complete("--db", otherDB, "list", "--project"))
-	assert.Empty(t, complete("--db", "https://", "list", "--project"),
+		complete("--db", otherDB, "list", "--workspace"))
+	assert.Empty(t, complete("--db", "https://", "list", "--workspace"),
 		"a completion lookup failure is silent")
 }
 
 // The end-to-end example from the README, run verbatim.
 func TestWorkedExample(t *testing.T) {
 	h := newHarness(t)
-	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("workspace: awb\n"), 0o600))
 
 	first := h.create("Parser crashes on empty input", "--type", "bug", "--priority", "1",
 		"--label", "parser")
@@ -308,7 +308,7 @@ func TestWorkedExample(t *testing.T) {
 // which print a one-line summary.
 func TestMutatingCommandsAreSilent(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb")
+	id := h.create("t", "--workspace", "awb")
 
 	for _, args := range [][]string{
 		{"claim", id},
@@ -333,27 +333,29 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 
 func TestMoveKeepsWorkspaceAndIDWhileChangingEpicAndPosition(t *testing.T) {
 	h := newHarness(t)
-	epic := h.create("Epic", "--project", "awb", "--type", "epic")
-	first := h.create("first", "--project", "awb", "--has-parent", epic)
-	id := h.create("move me", "--project", "awb")
+	epic := h.create("Epic", "--workspace", "awb", "--type", "epic")
+	first := h.create("first", "--workspace", "awb", "--has-parent", epic)
+	id := h.create("move me", "--workspace", "awb")
 	var moved domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("move", id,
 		"--epic", epic, "--status", "open", "--before", first, "--json")), &moved))
 	assert.Equal(t, id, moved.ID)
-	assert.Equal(t, "awb", moved.Project)
+	assert.Equal(t, "awb", moved.Workspace)
 	assert.Positive(t, moved.Order)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic, Direction: domain.DirectionOut})
+	earlier := moved.Order
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("move", id,
 		"--epic", epic, "--status", "open", "--direction", "later", "--json")), &moved))
-	_, stderr, code := h.run("move", id, "--project", "web", "--status", "open")
+	assert.Greater(t, moved.Order, earlier)
+	_, stderr, code := h.run("move", id, "--workspace", "web", "--status", "open")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "unknown flag: --project", "the CLI exposes no workspace transfer")
+	assert.Contains(t, stderr, "unknown flag: --workspace", "the CLI exposes no workspace transfer")
 }
 
 // Under --json every mutating command prints the resulting object.
 func TestJSONMutationsPrintTheObject(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb")
+	id := h.create("t", "--workspace", "awb")
 
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("claim", id, "--json")), &issue))
@@ -362,7 +364,7 @@ func TestJSONMutationsPrintTheObject(t *testing.T) {
 
 	// A deleting command prints the object as it was immediately before deletion,
 	// relations included.
-	other := h.create("other", "--project", "awb")
+	other := h.create("other", "--workspace", "awb")
 	h.mustRun("dep", "add", id, "--blocked-by", other)
 
 	var deleted domain.Issue
@@ -386,14 +388,14 @@ func TestPersistentFlagsWorkBeforeAndAfterSubcommands(t *testing.T) {
 	h := newHarness(t)
 
 	assert.Equal(t,
-		h.mustRun("project", "list", "--compact"),
-		h.mustRun("--compact", "project", "list"),
+		h.mustRun("workspace", "list", "--compact"),
+		h.mustRun("--compact", "workspace", "list"),
 	)
 }
 
 // The CLI offers exactly the orderings the API declares. The two surfaces are
 // meant to be one vocabulary, and they were not: --sort accepted four of the
-// nine issue keys and awb project list accepted none at all, because the flag
+// nine issue keys and awb workspace list accepted none at all, because the flag
 // carried its own copy of the list instead of taking the parser's. Both now
 // read from the domain, and this compares that against the document the API is
 // generated from, so a key added to one arrives in the other or this fails.
@@ -419,7 +421,7 @@ func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(openAPI.YAML(), &document))
 
 	// The enum a path declares inline for its sort parameter; the shared one
-	// lives in components and is what every listing but search and projects uses.
+	// lives in components and is what every listing but search and workspaces uses.
 	inline := func(path string) []string {
 		t.Helper()
 		for _, p := range document.Paths[path].Get.Parameters {
@@ -440,8 +442,8 @@ func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
 		"the issue listings")
 	assert.ElementsMatch(t, domain.SortAlternatives(true), inline("/api/search"),
 		"search, which adds relevance")
-	assert.ElementsMatch(t, domain.ProjectSortAlternatives(), inline("/api/projects"),
-		"the project listing")
+	assert.ElementsMatch(t, domain.WorkspaceSortAlternatives(), inline("/api/workspaces"),
+		"the workspace listing")
 }
 
 // --limit and --offset cut a window out of a listing without disturbing the
@@ -451,10 +453,10 @@ func TestListingsPage(t *testing.T) {
 	// Four of each at least, so a two-wide window at offset two lands inside the
 	// listing rather than running off the end.
 	for _, key := range []string{"mid", "yew", "zed"} {
-		h.mustRun("project", "create", key)
+		h.mustRun("workspace", "create", key)
 	}
 	for range 5 {
-		h.create("tied", "--project", "awb")
+		h.create("tied", "--workspace", "awb")
 	}
 	for _, name := range []string{"carol", "alice", "dan", "bob"} {
 		h.mustRunStdin("hunter2\n", "user", "add", name)
@@ -477,8 +479,8 @@ func TestListingsPage(t *testing.T) {
 	}
 
 	for _, listing := range [][]string{
-		{"list", "--all-projects", "--sort", "id", "--compact"},
-		{"project", "list", "--compact"},
+		{"list", "--all-workspaces", "--sort", "id", "--compact"},
+		{"workspace", "list", "--compact"},
 		{"user", "list", "--compact"},
 	} {
 		name := strings.Join(listing[:len(listing)-1], " ")
@@ -510,14 +512,14 @@ func TestListingsPage(t *testing.T) {
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
 	for i := range 5 {
-		h.create("issue", "--project", "awb", "--label", "b", "--label", "a",
+		h.create("issue", "--workspace", "awb", "--label", "b", "--label", "a",
 			"--priority", string(rune('0'+i%5)))
 	}
 
 	for _, args := range [][]string{
 		{"list", "--json"}, {"list", "--compact"},
 		{"ready", "--json"}, {"ready", "--compact"},
-		{"project", "list", "--json"},
+		{"workspace", "list", "--json"},
 	} {
 		first := h.mustRun(args...)
 		for range 3 {
@@ -538,12 +540,12 @@ func TestOutputIsDeterministic(t *testing.T) {
 // beside the feature each listing belongs to.
 func TestEveryListingIsDeterministic(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "web", "--name", "Agent Work Board")
+	h.mustRun("workspace", "create", "web", "--name", "Agent Work Board")
 
 	ids := make([]string, 0, 8)
 	for range 4 {
-		for _, project := range []string{"awb", "web"} {
-			ids = append(ids, h.create("tied", "--project", project,
+		for _, workspace := range []string{"awb", "web"} {
+			ids = append(ids, h.create("tied", "--workspace", workspace,
 				"--label", "b", "--label", "a", "--description", "tied parser text"))
 		}
 	}
@@ -571,36 +573,36 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 	// An archived workspace, so --archived and its activity have rows to order
 	// rather than empty listings that would agree with themselves. Archived,
 	// restored and archived again, so the history has more than one entry.
-	h.mustRun("project", "create", "old")
-	h.mustRun("project", "archive", "old")
-	h.mustRun("project", "restore", "old")
-	h.mustRun("project", "archive", "old")
+	h.mustRun("workspace", "create", "old")
+	h.mustRun("workspace", "archive", "old")
+	h.mustRun("workspace", "restore", "old")
+	h.mustRun("workspace", "archive", "old")
 
 	h.mustRunStdin("hunter2\n", "user", "add", "alice")
 	h.mustRunStdin("hunter2\n", "user", "add", "bob")
-	h.mustRun("project", "grant", "awb", "bob")
-	h.mustRun("project", "grant", "awb", "alice")
-	h.mustRun("project", "grant", "web", "alice")
+	h.mustRun("workspace", "grant", "awb", "bob")
+	h.mustRun("workspace", "grant", "awb", "alice")
+	h.mustRun("workspace", "grant", "web", "alice")
 
 	listings := [][]string{
 		{"list"}, {"ready"}, {"blocked"}, {"search", "parser"},
-		{"project", "list"}, {"user", "list"}, {"project", "members", "awb"},
+		{"workspace", "list"}, {"user", "list"}, {"workspace", "members", "awb"},
 		{"attach", "list", blocker}, {"activity", blocker}, {"comment", "list", blocker},
 		{"dep", "tree", parent}, {"show", blocker}, {"status"},
-		{"project", "activity", "old"},
-		{"project", "list", "--archived"}, {"project", "list", "--all"},
+		{"workspace", "activity", "old"},
+		{"workspace", "list", "--archived"}, {"workspace", "list", "--all"},
 	}
 	// Every key --sort accepts, in both directions, has to be as reproducible as
 	// the default. Taking them from the domain vocabulary rather than a literal
 	// list is what makes a key added there arrive here too.
 	for _, key := range domain.SortAlternatives(false) {
-		listings = append(listings, []string{"list", "--all-projects", "--sort", key})
+		listings = append(listings, []string{"list", "--all-workspaces", "--sort", key})
 	}
 	for _, key := range domain.SortAlternatives(true) {
 		listings = append(listings, []string{"search", "parser", "--sort", key})
 	}
-	for _, key := range domain.ProjectSortAlternatives() {
-		listings = append(listings, []string{"project", "list", "--sort", key})
+	for _, key := range domain.WorkspaceSortAlternatives() {
+		listings = append(listings, []string{"workspace", "list", "--sort", key})
 	}
 
 	for _, args := range listings {
@@ -621,7 +623,7 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 // show --compact prints the same single line a listing would and nothing else.
 func TestShowCompactIsOneLine(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("A title", "--project", "awb", "--description", "See [x](https://example.com/1).")
+	id := h.create("A title", "--workspace", "awb", "--description", "See [x](https://example.com/1).")
 
 	line := h.mustRun("show", id, "--compact")
 	assert.Equal(t, id+` P2 open task "A title"`+"\n", line)
@@ -635,7 +637,7 @@ func TestShowCompactIsOneLine(t *testing.T) {
 // The default mode prints the description and lists the links beneath it.
 func TestShowDefaultShowsLinks(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb", "--description", "See [CI run](https://ci.example.com/1).")
+	id := h.create("t", "--workspace", "awb", "--description", "See [CI run](https://ci.example.com/1).")
 
 	out := h.mustRun("show", id)
 	assert.Contains(t, out, "See [CI run](https://ci.example.com/1).", "the description is verbatim")
@@ -643,27 +645,27 @@ func TestShowDefaultShowsLinks(t *testing.T) {
 	assert.Contains(t, out, "https://ci.example.com/1")
 }
 
-// Directory context: the local file's project filters listings and is the
+// Directory context: the local file's workspace filters listings and is the
 // creation default, and its label is added to issues created here in addition
 // to any --label given.
 func TestDirectoryContext(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "web")
+	h.mustRun("workspace", "create", "web")
 	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"),
-		[]byte("project: awb\nlabel: frontend\n"), 0o600))
+		[]byte("workspace: awb\nlabel: frontend\n"), 0o600))
 
 	id := h.create("in context", "--label", "extra")
 
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
-	assert.Equal(t, "awb", issue.Project, "the context project is the creation default")
+	assert.Equal(t, "awb", issue.Workspace, "the context workspace is the creation default")
 	assert.Equal(t, []string{"extra", "frontend"}, issue.Labels,
 		"the context label is added, not substituted")
 
-	// An explicit --project replaces the context one.
-	elsewhere := h.create("elsewhere", "--project", "web")
+	// An explicit --workspace replaces the context one.
+	elsewhere := h.create("elsewhere", "--workspace", "web")
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", elsewhere, "--json")), &issue))
-	assert.Equal(t, "web", issue.Project)
+	assert.Equal(t, "web", issue.Workspace)
 
 	// Listings are scoped to the context by default.
 	assert.NotContains(t, h.mustRun("list", "--compact"), elsewhere)
@@ -672,37 +674,37 @@ func TestDirectoryContext(t *testing.T) {
 	assert.Contains(t, h.mustRun("list", "--compact", "--no-context"), elsewhere)
 }
 
-// A project from the user configuration or AWB_PROJECT is the default filter,
-// just like a project from directory context. An explicit project replaces it,
-// and --all-projects removes it without giving up the other filters.
-func TestConfiguredDefaultProjectFiltersListings(t *testing.T) {
+// A workspace from the user configuration or AWB_WORKSPACE is the default filter,
+// just like a workspace from directory context. An explicit workspace replaces it,
+// and --all-workspaces removes it without giving up the other filters.
+func TestConfiguredDefaultWorkspaceFiltersListings(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "web")
-	awb := h.create("in awb", "--project", "awb")
-	web := h.create("in web", "--project", "web")
+	h.mustRun("workspace", "create", "web")
+	awb := h.create("in awb", "--workspace", "awb")
+	web := h.create("in web", "--workspace", "web")
 
 	userConfig := filepath.Join(h.root(), "config.yaml")
-	require.NoError(t, os.WriteFile(userConfig, []byte("project: awb\n"), 0o600))
+	require.NoError(t, os.WriteFile(userConfig, []byte("workspace: awb\n"), 0o600))
 	t.Setenv("AWB_CONFIG_FILE", userConfig)
 
 	assert.Contains(t, h.mustRun("list", "--compact"), awb)
 	assert.NotContains(t, h.mustRun("list", "--compact"), web)
-	assert.Contains(t, h.mustRun("list", "--compact", "--project", "web"), web)
-	assert.Contains(t, h.mustRun("list", "--compact", "--all-projects"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--workspace", "web"), web)
+	assert.Contains(t, h.mustRun("list", "--compact", "--all-workspaces"), web)
 
-	t.Setenv("AWB_PROJECT", "web")
+	t.Setenv("AWB_WORKSPACE", "web")
 	assert.NotContains(t, h.mustRun("list", "--compact"), awb)
 	assert.Contains(t, h.mustRun("list", "--compact"), web)
 
-	_, stderr, code := h.run("list", "--project", "awb", "--all-projects")
+	_, stderr, code := h.run("list", "--workspace", "awb", "--all-workspaces")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "--project and --all-projects are mutually exclusive")
+	assert.Contains(t, stderr, "--workspace and --all-workspaces are mutually exclusive")
 }
 
 // A subdirectory is reached by the upward search.
 func TestDirectoryContextFromASubdirectory(t *testing.T) {
 	h := newHarness(t)
-	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("project: awb\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(h.dir, ".awb.yaml"), []byte("workspace: awb\n"), 0o600))
 
 	deep := filepath.Join(h.dir, "a", "b")
 	require.NoError(t, os.MkdirAll(deep, 0o700))
@@ -716,8 +718,8 @@ func TestDirectoryContextFromASubdirectory(t *testing.T) {
 // fixed order.
 func TestCompactLineFormat(t *testing.T) {
 	h := newHarness(t)
-	blocker := h.create("blocker", "--project", "awb")
-	id := h.create("Has \"quotes\" in it", "--project", "awb", "--priority", "1",
+	blocker := h.create("blocker", "--workspace", "awb")
+	id := h.create("Has \"quotes\" in it", "--workspace", "awb", "--priority", "1",
 		"--type", "bug", "--label", "z", "--label", "a",
 		"--assignee", "claude-1", "--blocked-by", blocker)
 
@@ -735,9 +737,9 @@ func TestCompactLineFormat(t *testing.T) {
 // dep tree --compact prefixes each node with two spaces per level of depth.
 func TestDepTreeCompact(t *testing.T) {
 	h := newHarness(t)
-	root := h.create("root", "--project", "awb")
-	child := h.create("child", "--project", "awb", "--has-parent", root)
-	grandchild := h.create("grandchild", "--project", "awb", "--has-parent", child)
+	root := h.create("root", "--workspace", "awb")
+	child := h.create("child", "--workspace", "awb", "--has-parent", root)
+	grandchild := h.create("grandchild", "--workspace", "awb", "--has-parent", child)
 
 	out := h.mustRun("dep", "tree", root, "--compact")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -773,7 +775,7 @@ func TestDescriptionFromStdin(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	code := cli.Execute(t.Context(), "test", openAPI,
-		[]string{"create", "t", "--project", "awb", "--description-file", "-"},
+		[]string{"create", "t", "--workspace", "awb", "--description-file", "-"},
 		&out, &errOut, strings.NewReader("  body\n\n"))
 	require.Equal(t, 0, code, errOut.String())
 
@@ -784,14 +786,13 @@ func TestDescriptionFromStdin(t *testing.T) {
 		"a trailing line feed from a heredoc is part of the description")
 }
 
-// A grouping command rejects a name that is not one of its subcommands, so a
-// removed spelling — project ls, add and rm, renamed to list, create and
-// delete — is a usage error and not a silent help page.
+// A grouping command rejects a name that is not one of its subcommands, and
+// the former top-level Project spelling is not retained as an alias.
 func TestUnknownSubcommandIsAUsageError(t *testing.T) {
 	h := newHarness(t)
 	for _, args := range [][]string{
-		{"project", "ls"}, {"project", "add", "k"}, {"project", "rm", "k"},
-		{"project", "wat"}, {"dep", "wat"}, {"label", "wat"}, {"wat"},
+		{"workspace", "ls"}, {"workspace", "add", "k"}, {"workspace", "rm", "k"},
+		{"workspace", "wat"}, {"project", "list"}, {"dep", "wat"}, {"label", "wat"}, {"wat"},
 	} {
 		stdout, stderr, code := h.run(args...)
 		assert.Equal(t, 2, code, args)
@@ -817,20 +818,20 @@ func TestArgumentCountErrorsAreUsageErrors(t *testing.T) {
 
 func TestRepeatableStringFlagsDoNotSplitCommas(t *testing.T) {
 	h := newHarness(t)
-	_, _, code := h.run("create", "t", "--project", "awb", "--label", "one,two")
+	_, _, code := h.run("create", "t", "--workspace", "awb", "--label", "one,two")
 	assert.Equal(t, 2, code, "one flag occurrence is one label, not a comma-separated list")
 }
 
 func TestDescriptionFlagsAreMutuallyExclusive(t *testing.T) {
 	h := newHarness(t)
-	_, _, code := h.run("create", "t", "--project", "awb",
+	_, _, code := h.run("create", "t", "--workspace", "awb",
 		"--description", "a", "--description-file", "-")
 	assert.Equal(t, 2, code)
 }
 
 func TestFetchedIssueDescriptionUpdateUsesReceipt(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb", "--description", "old\n")
+	id := h.create("t", "--workspace", "awb", "--description", "old\n")
 	file := filepath.Join(h.dir, "issue.md")
 
 	assert.Empty(t, h.mustRun("description", "get", id, "--output", file))
@@ -850,7 +851,7 @@ func TestFetchedIssueDescriptionUpdateUsesReceipt(t *testing.T) {
 
 func TestDescriptionUpdateRequiresReceiptUnlessForced(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb")
+	id := h.create("t", "--workspace", "awb")
 	file := filepath.Join(h.dir, "issue.md")
 	require.NoError(t, os.WriteFile(file, []byte("replacement"), 0o600))
 
@@ -868,8 +869,8 @@ func TestDescriptionUpdateRequiresReceiptUnlessForced(t *testing.T) {
 
 func TestDescriptionReceiptRejectsWrongEntityAndBackend(t *testing.T) {
 	h := newHarness(t)
-	first := h.create("first", "--project", "awb", "--description", "one")
-	second := h.create("second", "--project", "awb", "--description", "two")
+	first := h.create("first", "--workspace", "awb", "--description", "one")
+	second := h.create("second", "--workspace", "awb", "--description", "two")
 	file := filepath.Join(h.dir, "issue.md")
 	h.mustRun("description", "get", first, "--output", file)
 	require.NoError(t, os.WriteFile(file, []byte("replacement"), 0o600))
@@ -880,8 +881,8 @@ func TestDescriptionReceiptRejectsWrongEntityAndBackend(t *testing.T) {
 
 	otherDB := filepath.Join(h.root(), "other.db")
 	h.mustRun("--db", otherDB, "init")
-	h.mustRun("--db", otherDB, "project", "create", "awb")
-	other := strings.TrimSpace(h.mustRun("--db", otherDB, "create", "other", "--project", "awb"))
+	h.mustRun("--db", otherDB, "workspace", "create", "awb")
+	other := strings.TrimSpace(h.mustRun("--db", otherDB, "create", "other", "--workspace", "awb"))
 	_, stderr, code = h.run("--db", otherDB, "update", other, "--description-file", file)
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "another backend")
@@ -889,7 +890,7 @@ func TestDescriptionReceiptRejectsWrongEntityAndBackend(t *testing.T) {
 
 func TestStaleDescriptionReceiptTellsCallerToFetchAgain(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb", "--description", "old")
+	id := h.create("t", "--workspace", "awb", "--description", "old")
 	file := filepath.Join(h.dir, "issue.md")
 	h.mustRun("description", "get", id, "--output", file)
 	h.mustRun("update", id, "--title", "changed meanwhile")
@@ -905,23 +906,23 @@ func TestStaleDescriptionReceiptTellsCallerToFetchAgain(t *testing.T) {
 	assert.Equal(t, "old", issue.Description)
 }
 
-func TestFetchedProjectDescriptionUpdateUsesReceipt(t *testing.T) {
+func TestFetchedWorkspaceDescriptionUpdateUsesReceipt(t *testing.T) {
 	h := newHarness(t)
-	file := filepath.Join(h.dir, "project.md")
-	h.mustRun("project", "description", "get", "awb", "--output", file)
-	require.NoError(t, os.WriteFile(file, []byte("project body\n"), 0o600))
-	h.mustRun("project", "update", "awb", "--description-file", file)
+	file := filepath.Join(h.dir, "workspace.md")
+	h.mustRun("workspace", "description", "get", "awb", "--output", file)
+	require.NoError(t, os.WriteFile(file, []byte("workspace body\n"), 0o600))
+	h.mustRun("workspace", "update", "awb", "--description-file", file)
 
-	var project domain.Project
+	var workspace domain.Workspace
 	require.NoError(t, json.Unmarshal(
-		[]byte(h.mustRun("project", "show", "awb", "--json")), &project))
-	assert.Equal(t, "project body\n", project.Description)
+		[]byte(h.mustRun("workspace", "show", "awb", "--json")), &workspace))
+	assert.Equal(t, "workspace body\n", workspace.Description)
 }
 
 // An issue is reachable by any unambiguous prefix, and by a bare hash.
 func TestIssueReferences(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("t", "--project", "awb")
+	id := h.create("t", "--workspace", "awb")
 	_, hash, ok := domain.SplitID(id)
 	require.True(t, ok)
 
@@ -945,7 +946,7 @@ func TestAgentGuide(t *testing.T) {
 	assert.Contains(t, guide, "awb <group> <command> --help")
 
 	path := filepath.Join(h.dir, "AGENTS.md")
-	require.NoError(t, os.WriteFile(path, []byte("# Project\n\nText.\n"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("# Workspace\n\nText.\n"), 0o600))
 
 	h.mustRun("agent-guide", "--write", path)
 	h.mustRun("agent-guide", "--write", path)
@@ -957,7 +958,7 @@ func TestAgentGuide(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(content, "<!-- awb:begin -->"),
 		"a second run replaces the block rather than appending a duplicate")
 	assert.Equal(t, 1, strings.Count(content, "<!-- awb:end -->"))
-	assert.True(t, strings.HasPrefix(content, "# Project\n\nText.\n\n"),
+	assert.True(t, strings.HasPrefix(content, "# Workspace\n\nText.\n\n"),
 		"the block is appended after a blank line, leaving the file's own text alone")
 }
 
@@ -994,7 +995,7 @@ func TestInstallSkillsCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	agents := filepath.Join(h.dir, "AGENTS.md")
-	require.NoError(t, os.WriteFile(agents, []byte("project instructions\n"), 0o600))
+	require.NoError(t, os.WriteFile(agents, []byte("workspace instructions\n"), 0o600))
 
 	out := h.mustRun("agent-guide", "install-skills", "--harness", "claude")
 	path := filepath.Join(home, ".claude", "skills", "awb")
@@ -1003,9 +1004,9 @@ func TestInstallSkillsCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(definition), "name: awb")
 	assert.Contains(t, string(definition), "awb ready --compact")
-	projectInstructions, err := os.ReadFile(agents)
+	workspaceInstructions, err := os.ReadFile(agents)
 	require.NoError(t, err)
-	assert.Equal(t, "project instructions\n", string(projectInstructions),
+	assert.Equal(t, "workspace instructions\n", string(workspaceInstructions),
 		"install-skills is independent of the agent-guide --write mechanism")
 
 	_, _, code := h.run("agent-guide", "install-skills", "--harness", "unknown")
@@ -1034,8 +1035,8 @@ func TestInitIsIdempotentAndUnique(t *testing.T) {
 // --mine is shorthand for the configured identity; ready rejects it.
 func TestMine(t *testing.T) {
 	h := newHarness(t)
-	mine := h.create("mine", "--project", "awb", "--assignee", "mikael")
-	h.create("theirs", "--project", "awb", "--assignee", "claude-1")
+	mine := h.create("mine", "--workspace", "awb", "--assignee", "mikael")
+	h.create("theirs", "--workspace", "awb", "--assignee", "claude-1")
 
 	out := h.mustRun("list", "--compact", "--mine")
 	assert.Contains(t, out, mine)
@@ -1047,17 +1048,17 @@ func TestMine(t *testing.T) {
 
 // The deleting summary must not claim a number one of the two modes cannot
 // know. Regression: it used to report the count of *active* issues in remote
-// mode, so a project holding one open and one closed issue reported "1 issue"
-// remotely and "2" directly, and a project of only closed issues reported none
+// mode, so a workspace holding one open and one closed issue reported "1 issue"
+// remotely and "2" directly, and a workspace of only closed issues reported none
 // at all while deleting them.
-func TestProjectRemovalSummaryIsModeIndependent(t *testing.T) {
+func TestWorkspaceRemovalSummaryIsModeIndependent(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "doomed")
-	open := h.create("open one", "--project", "doomed")
-	closed := h.create("closed one", "--project", "doomed")
+	h.mustRun("workspace", "create", "doomed")
+	open := h.create("open one", "--workspace", "doomed")
+	closed := h.create("closed one", "--workspace", "doomed")
 	h.mustRun("close", closed)
 
-	summary := h.mustRun("project", "delete", "doomed", "--force", "--cascade")
+	summary := h.mustRun("workspace", "delete", "doomed", "--force", "--cascade")
 
 	// Whatever it says, it says nothing a remote client could not also say.
 	assert.Contains(t, summary, "doomed")
@@ -1072,48 +1073,48 @@ func TestProjectRemovalSummaryIsModeIndependent(t *testing.T) {
 }
 
 // Without --cascade the summary is the plain one.
-func TestProjectRemovalWithoutCascade(t *testing.T) {
+func TestWorkspaceRemovalWithoutCascade(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "empty")
+	h.mustRun("workspace", "create", "empty")
 
-	summary := h.mustRun("project", "delete", "empty", "--force")
+	summary := h.mustRun("workspace", "delete", "empty", "--force")
 	assert.Equal(t, "Deleted workspace empty.\n", summary)
 }
 
-// awb project show prints one project in each of the three modes, and reports a
+// awb workspace show prints one workspace in each of the three modes, and reports a
 // key that is not there as not found like every other lookup.
-func TestProjectShow(t *testing.T) {
+func TestWorkspaceShow(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "update", "awb",
+	h.mustRun("workspace", "update", "awb",
 		"--description", "The **board** itself.\n", "--force")
-	h.create("open one", "--project", "awb")
+	h.create("open one", "--workspace", "awb")
 
-	out := h.mustRun("project", "show", "awb")
+	out := h.mustRun("workspace", "show", "awb")
 	assert.Contains(t, out, "awb")
 	assert.Contains(t, out, "Agent Work Board")
 	assert.Contains(t, out, "Open:")
 	// There is no window here, so the description is the source text as written.
 	assert.Contains(t, out, "The **board** itself.")
 
-	assert.Equal(t, "awb 1 \"Agent Work Board\"\n", h.mustRun("project", "show", "awb", "--compact"),
-		"the same line project list prints")
+	assert.Equal(t, "awb 1 \"Agent Work Board\"\n", h.mustRun("workspace", "show", "awb", "--compact"),
+		"the same line workspace list prints")
 
-	var project domain.Project
-	require.NoError(t, json.Unmarshal([]byte(h.mustRun("project", "show", "awb", "--json")), &project))
-	assert.Equal(t, "awb", project.Key)
-	assert.Equal(t, "The **board** itself.\n", project.Description)
-	assert.Equal(t, 1, project.ActiveIssues)
+	var workspace domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("workspace", "show", "awb", "--json")), &workspace))
+	assert.Equal(t, "awb", workspace.Key)
+	assert.Equal(t, "The **board** itself.\n", workspace.Description)
+	assert.Equal(t, 1, workspace.ActiveIssues)
 
-	_, _, code := h.run("project", "show", "nosuch")
+	_, _, code := h.run("workspace", "show", "nosuch")
 	assert.Equal(t, 3, code)
 }
 
-// demoIssues reads every issue of the demo project, closed ones included.
+// demoIssues reads every issue of the demo workspace, closed ones included.
 func (h *harness) demoIssues() []domain.Issue {
 	h.t.Helper()
 	var issues []domain.Issue
 	require.NoError(h.t, json.Unmarshal(
-		[]byte(h.mustRun("list", "--project", "demo", "--include-closed", "--json")), &issues))
+		[]byte(h.mustRun("list", "--workspace", "demo", "--include-closed", "--json")), &issues))
 	return issues
 }
 
@@ -1197,8 +1198,8 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	assert.NotZero(t, severalBlockers, "an issue with more than one blocker")
 
 	// Both halves of readiness have something to show.
-	assert.NotEmpty(t, h.mustRun("ready", "--project", "demo", "--compact"))
-	assert.NotEmpty(t, h.mustRun("blocked", "--project", "demo", "--compact"))
+	assert.NotEmpty(t, h.mustRun("ready", "--workspace", "demo", "--compact"))
+	assert.NotEmpty(t, h.mustRun("blocked", "--workspace", "demo", "--compact"))
 
 	// The decomposition is more than one level deep, so dep tree shows a tree
 	// rather than a list. A grandchild is indented two levels, four spaces.
@@ -1207,27 +1208,27 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 }
 
 // awb demo prints a summary line — one of the deliberate exceptions to
-// "mutating commands print nothing on success" — and the project itself under
+// "mutating commands print nothing on success" — and the workspace itself under
 // --json.
 func TestDemoOutput(t *testing.T) {
 	h := newHarness(t)
 	assert.Contains(t, h.mustRun("demo"), "demo")
 
-	var project domain.Project
-	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--force", "--json")), &project))
-	assert.Equal(t, "demo", project.Key)
-	assert.NotZero(t, project.ActiveIssues, "the count is the one after the issues were created")
+	var workspace domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--force", "--json")), &workspace))
+	assert.Equal(t, "demo", workspace.Key)
+	assert.NotZero(t, workspace.ActiveIssues, "the count is the one after the issues were created")
 }
 
-// A second run replaces the demo project wholesale, clearing whatever else is
+// A second run replaces the demo workspace wholesale, clearing whatever else is
 // in it, and touches nothing outside it.
-func TestDemoReplacesTheProject(t *testing.T) {
+func TestDemoReplacesTheWorkspace(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun("demo")
 	first := h.demoIssues()
 
-	stray := h.create("not part of the data set", "--project", "demo")
-	elsewhere := h.create("in another project", "--project", "awb")
+	stray := h.create("not part of the data set", "--workspace", "demo")
+	elsewhere := h.create("in another workspace", "--workspace", "awb")
 
 	// Without --force it refuses, and changes nothing. The refusal depends on
 	// what is stored, so it is a conflict rather than a usage error.
@@ -1244,12 +1245,12 @@ func TestDemoReplacesTheProject(t *testing.T) {
 	h.mustRun("show", elsewhere)
 }
 
-// The refusal is about the project existing, not about what it holds: an empty
-// demo project still needs --force, because the command replaces the project
+// The refusal is about the workspace existing, not about what it holds: an empty
+// demo workspace still needs --force, because the command replaces the workspace
 // rather than its contents.
-func TestDemoRefusesAnExistingEmptyProject(t *testing.T) {
+func TestDemoRefusesAnExistingEmptyWorkspace(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "demo")
+	h.mustRun("workspace", "create", "demo")
 
 	_, _, code := h.run("demo")
 	assert.Equal(t, 4, code)
@@ -1257,11 +1258,11 @@ func TestDemoRefusesAnExistingEmptyProject(t *testing.T) {
 	h.mustRun("demo", "--force")
 }
 
-// Replacing the demo project drops the relations its issues were on either end
-// of, so an issue in another project blocked by a demo issue becomes unblocked.
-// No other project is created or deleted, but that is not the same as leaving
+// Replacing the demo workspace drops the relations its issues were on either end
+// of, so an issue in another workspace blocked by a demo issue becomes unblocked.
+// No other workspace is created or deleted, but that is not the same as leaving
 // everything outside alone.
-func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
+func TestDemoClearsRelationsIntoOtherWorkspaces(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun("demo")
 
@@ -1275,7 +1276,7 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 	}
 	require.NotEmpty(t, blocker)
 
-	dependent := h.create("waiting on the demo", "--project", "awb", "--blocked-by", blocker)
+	dependent := h.create("waiting on the demo", "--workspace", "awb", "--blocked-by", blocker)
 
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
@@ -1284,7 +1285,7 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 	h.mustRun("demo", "--force")
 
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", dependent, "--json")), &issue))
-	assert.False(t, issue.Blocked, "the blocker went with the project it was in")
+	assert.False(t, issue.Blocked, "the blocker went with the workspace it was in")
 	assert.Empty(t, issue.Relations)
 }
 
@@ -1292,7 +1293,7 @@ func TestDemoClearsRelationsIntoOtherProjects(t *testing.T) {
 // and only its metadata goes in the database.
 func TestAttach(t *testing.T) {
 	h := newHarness(t)
-	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--workspace", "awb"))
 
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
@@ -1355,8 +1356,8 @@ func TestAttach(t *testing.T) {
 // what identifies one.
 func TestAttachOneNamePerIssue(t *testing.T) {
 	h := newHarness(t)
-	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
-	other := strings.TrimSpace(h.mustRun("create", "Tokeniser", "--project", "awb"))
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--workspace", "awb"))
+	other := strings.TrimSpace(h.mustRun("create", "Tokeniser", "--workspace", "awb"))
 
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
@@ -1375,7 +1376,7 @@ func TestAttachOneNamePerIssue(t *testing.T) {
 // "-" reads the content from stdin, which has no name of its own.
 func TestAttachNameAndContentType(t *testing.T) {
 	h := newHarness(t)
-	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--workspace", "awb"))
 
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
@@ -1401,7 +1402,7 @@ func TestAttachNameAndContentType(t *testing.T) {
 // destructive command takes.
 func TestAttachDeleteNeedsForce(t *testing.T) {
 	h := newHarness(t)
-	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--workspace", "awb"))
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
 	h.mustRun("attach", "add", id, path)
@@ -1419,7 +1420,7 @@ func TestAttachmentsDirectory(t *testing.T) {
 	h := newHarness(t)
 	elsewhere := filepath.Join(h.dir, "elsewhere")
 
-	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--project", "awb"))
+	id := strings.TrimSpace(h.mustRun("create", "Parser crashes", "--workspace", "awb"))
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("boom\n"), 0o600))
 
@@ -1541,14 +1542,14 @@ func TestServeRejectsAnUnusablePublicURL(t *testing.T) {
 // scroll asked for something that cannot happen here.
 func TestInteractiveNeedsATerminal(t *testing.T) {
 	h := newHarness(t)
-	h.create("Something to look at", "--project", "awb")
+	h.create("Something to look at", "--workspace", "awb")
 
 	for _, args := range [][]string{
 		{"list", "-i"},
 		{"ready", "--interactive"},
 		{"blocked", "-i"},
 		{"search", "something", "-i"},
-		{"project", "list", "-i"},
+		{"workspace", "list", "-i"},
 		{"user", "list", "-i"},
 	} {
 		stdout, stderr, code := h.run(args...)
@@ -1566,7 +1567,7 @@ func TestInteractiveIsNotAnOutputMode(t *testing.T) {
 	for _, args := range [][]string{
 		{"list", "-i", "--json"},
 		{"list", "-i", "--compact"},
-		{"project", "list", "-i", "--json"},
+		{"workspace", "list", "-i", "--json"},
 		{"user", "list", "-i", "--compact"},
 	} {
 		_, stderr, code := h.run(args...)
@@ -1579,9 +1580,9 @@ func TestInteractiveIsNotAnOutputMode(t *testing.T) {
 // terminal.
 func TestListingsAreUnchangedWithoutInteractive(t *testing.T) {
 	h := newHarness(t)
-	id := h.create("Still printed", "--project", "awb")
+	id := h.create("Still printed", "--workspace", "awb")
 
 	assert.Contains(t, h.mustRun("list"), id)
-	assert.Contains(t, h.mustRun("project", "list"), "awb")
+	assert.Contains(t, h.mustRun("workspace", "list"), "awb")
 	assert.Contains(t, h.mustRun("user", "list", "--json"), "[]")
 }

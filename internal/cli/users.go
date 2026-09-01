@@ -140,10 +140,10 @@ func readPipedPassword(e *env) (string, error) {
 
 type userAddParams struct {
 	PasswordFlags
-	Name         string `positional:"true" required:"true"`
-	FullName     string `long:"full-name" optional:"true" help:"the user's descriptive name"`
-	ProjectAdmin bool   `long:"project-admin" optional:"true" help:"may create, change and delete workspaces, and works in every one of them"`
-	UserAdmin    bool   `long:"user-admin" optional:"true" help:"may create, change and delete users"`
+	Name           string `positional:"true" required:"true"`
+	FullName       string `long:"full-name" optional:"true" help:"the user's descriptive name"`
+	WorkspaceAdmin bool   `long:"workspace-admin" optional:"true" help:"may create, change and delete workspaces, and works in every one of them"`
+	UserAdmin      bool   `long:"user-admin" optional:"true" help:"may create, change and delete users"`
 }
 
 func newUserAddCommand(e *env) *cobra.Command {
@@ -176,12 +176,12 @@ func newUserAddCommand(e *env) *cobra.Command {
 				return err
 			}
 			user, err := be.CreateUser(cmd.Context(), backend.UserCreate{
-				Name:         p.Name,
-				FullName:     p.FullName,
-				Password:     password,
-				PasswordHash: hash,
-				ProjectAdmin: p.ProjectAdmin,
-				UserAdmin:    p.UserAdmin,
+				Name:           p.Name,
+				FullName:       p.FullName,
+				Password:       password,
+				PasswordHash:   hash,
+				WorkspaceAdmin: p.WorkspaceAdmin,
+				UserAdmin:      p.UserAdmin,
 			})
 			if err != nil {
 				return err
@@ -197,8 +197,8 @@ type userUpdateParams struct {
 	FullName *string `long:"full-name" help:"replace the user's descriptive name; empty clears it"`
 	// The two flags are pointers because each has three states and not two:
 	// granted, withdrawn, and left exactly as it was.
-	ProjectAdmin *bool `long:"project-admin" help:"may create, change and delete workspaces, and works in every one of them"`
-	UserAdmin    *bool `long:"user-admin" help:"may create, change and delete users"`
+	WorkspaceAdmin *bool `long:"workspace-admin" help:"may create, change and delete workspaces, and works in every one of them"`
+	UserAdmin      *bool `long:"user-admin" help:"may create, change and delete users"`
 }
 
 func newUserUpdateCommand(e *env) *cobra.Command {
@@ -221,9 +221,9 @@ func newUserUpdateCommand(e *env) *cobra.Command {
 			}
 
 			patch := backend.UserPatch{
-				FullName:     p.FullName,
-				ProjectAdmin: p.ProjectAdmin,
-				UserAdmin:    p.UserAdmin,
+				FullName:       p.FullName,
+				WorkspaceAdmin: p.WorkspaceAdmin,
+				UserAdmin:      p.UserAdmin,
 			}
 			if password != "" {
 				patch.Password = &password
@@ -360,14 +360,14 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-type projectGrantParams struct {
+type workspaceGrantParams struct {
 	Key    string `positional:"true" required:"true"`
 	User   string `positional:"true" required:"true"`
 	Access string `long:"access" default:"regular" optional:"true" alts:"regular,admin" help:"regular to work with the workspace's issues, admin to also grant and revoke its users"`
 }
 
-func newProjectGrantCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectGrantParams]{
+func newWorkspaceGrantCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceGrantParams]{
 		Use:   "grant",
 		Short: "Give a user access to a workspace",
 		Long: "Give a user access to a workspace, replacing whatever they had there before,\n" +
@@ -376,10 +376,10 @@ func newProjectGrantCommand(e *env) *cobra.Command {
 			"editing them, claiming them, everything awb does to an issue. admin is that\n" +
 			"and, in addition, granting and revoking the workspace's other users.\n\n" +
 			"admin is not power over the workspace itself. Creating, renaming and deleting\n" +
-			"a workspace is what awb user's --project-admin compatibility flag confers, because a workspace's\n" +
+			"a workspace is what awb user's --workspace-admin flag confers, because a workspace's\n" +
 			"own existence is not something its members decide.",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *projectGrantParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *workspaceGrantParams, cmd *cobra.Command, _ []string) error {
 			access, err := domain.ParseAccess(p.Access)
 			if err != nil {
 				return err
@@ -398,13 +398,13 @@ func newProjectGrantCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
-type projectRevokeParams struct {
+type workspaceRevokeParams struct {
 	Key  string `positional:"true" required:"true"`
 	User string `positional:"true" required:"true"`
 }
 
-func newProjectRevokeCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectRevokeParams]{
+func newWorkspaceRevokeCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceRevokeParams]{
 		Use:   "revoke",
 		Short: "Take away a user's access to a workspace",
 		Long: "Take away a user's access to a workspace, which makes the workspace and every\n" +
@@ -412,7 +412,7 @@ func newProjectRevokeCommand(e *env) *cobra.Command {
 			"Their issues are left exactly as they are, assignee included: the record of\n" +
 			"who did the work outlives the access that let them do it.",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *projectRevokeParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *workspaceRevokeParams, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
@@ -425,21 +425,21 @@ func newProjectRevokeCommand(e *env) *cobra.Command {
 				return e.writeJSON(membership)
 			}
 			return e.summarise("Revoked %s access of %s to workspace %s.\n",
-				membership.Access, membership.User, membership.Project)
+				membership.Access, membership.User, membership.Workspace)
 		},
 	}.ToCobra()
 }
 
-type projectMembersParams struct {
+type workspaceMembersParams struct {
 	Key string `positional:"true" required:"true"`
 }
 
-func newProjectMembersCommand(e *env) *cobra.Command {
-	return boa.CmdT[projectMembersParams]{
+func newWorkspaceMembersCommand(e *env) *cobra.Command {
+	return boa.CmdT[workspaceMembersParams]{
 		Use:         "members",
 		Short:       "List the users with access to a workspace",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *projectMembersParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *workspaceMembersParams, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err

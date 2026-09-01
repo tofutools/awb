@@ -140,7 +140,7 @@ export interface PageWindow {
   last: number;
 }
 
-export type FacetGroup = "project" | "label" | "assignee";
+export type FacetGroup = "workspace" | "label" | "assignee";
 
 /** lowestFacetGroup names the final applicable detail row above an issue
  * listing. Pagination shares that row so it stays visually attached to the
@@ -151,7 +151,7 @@ export function lowestFacetGroup(
 ): FacetGroup {
   if (assignees !== null) return "assignee";
   if (labels !== null) return "label";
-  return "project";
+  return "workspace";
 }
 
 /** pageWindow describes the range represented by a backend page. */

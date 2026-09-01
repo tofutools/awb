@@ -15,7 +15,7 @@ import (
 
 func TestCommentsAndActivityAPI(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Timeline"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
 		`{"body":"A **Markdown** comment.\n"}`)
@@ -37,7 +37,7 @@ func TestCommentsAndActivityAPI(t *testing.T) {
 
 func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Remote timeline"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Remote timeline"}`)
 	base, err := url.Parse(a.server.URL)
 	require.NoError(t, err)
 	client := remote.New(base, "", "", "mikael")
@@ -55,7 +55,7 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 
 func TestCommentAndActivityRefusals(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Timeline"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
 	resp, _ := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments", `{"body":"  "}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)

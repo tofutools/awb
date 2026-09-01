@@ -11,8 +11,8 @@ import (
 
 func TestIssueSortAcceptsWebListingColumns(t *testing.T) {
 	for _, value := range []string{
-		"project", "status", "assignee", "type", "blockers",
-		"-project", "-status", "-assignee", "-type", "-blockers",
+		"workspace", "status", "assignee", "type", "blockers",
+		"-workspace", "-status", "-assignee", "-type", "-blockers",
 	} {
 		sort, err := domain.ParseSort(value, false)
 		require.NoError(t, err, value)
@@ -20,12 +20,12 @@ func TestIssueSortAcceptsWebListingColumns(t *testing.T) {
 	}
 }
 
-func TestProjectSortVocabulary(t *testing.T) {
-	sort, err := domain.ParseProjectSort("-active")
+func TestWorkspaceSortVocabulary(t *testing.T) {
+	sort, err := domain.ParseWorkspaceSort("-active")
 	require.NoError(t, err)
-	assert.Equal(t, domain.ProjectSortActive, sort.Key)
+	assert.Equal(t, domain.WorkspaceSortActive, sort.Key)
 	assert.True(t, sort.Desc)
 
-	_, err = domain.ParseProjectSort("name")
+	_, err = domain.ParseWorkspaceSort("name")
 	assert.Error(t, err)
 }

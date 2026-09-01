@@ -25,7 +25,7 @@ func newBackend(t *testing.T) (*local.Backend, context.Context) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	b := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	_, err = b.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err = b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context()
 }
@@ -33,7 +33,7 @@ func newBackend(t *testing.T) (*local.Backend, context.Context) {
 func create(t *testing.T, b *local.Backend, ctx context.Context, title string,
 	mutate ...func(*backend.IssueCreate)) *domain.Issue {
 	t.Helper()
-	req := backend.IssueCreate{Project: "awb", Title: title}
+	req := backend.IssueCreate{Workspace: "awb", Title: title}
 	for _, m := range mutate {
 		m(&req)
 	}
@@ -59,7 +59,7 @@ func TestCreateIssueDefaults(t *testing.T) {
 
 func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	b, ctx := newBackend(t)
-	_, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	_, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
 	require.NoError(t, err)
 	create(t, b, ctx, "first")
 	create(t, b, ctx, "second")
@@ -128,7 +128,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	}, backend.ETag(first.UpdatedAt))
 	require.NoError(t, err)
 	assert.Equal(t, first.ID, moved.ID)
-	assert.Equal(t, "awb", moved.Project)
+	assert.Equal(t, "awb", moved.Workspace)
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Equal(t, []string{"mikael"}, moved.Assignees)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
@@ -142,7 +142,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicOne.ID, Direction: domain.DirectionOut})
 
-	webIssue, err := b.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "other workspace"})
+	webIssue, err := b.CreateIssue(ctx, backend.IssueCreate{Workspace: "web", Title: "other workspace"})
 	require.NoError(t, err)
 	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{Status: domain.StatusOpen, Before: webIssue.ID}, "")
 	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
@@ -304,9 +304,9 @@ func TestCreateWithLabelsAndRelationsInOneTransaction(t *testing.T) {
 	assert.True(t, issue.Blocked)
 }
 
-func TestCreateRejectsUnknownProject(t *testing.T) {
+func TestCreateRejectsUnknownWorkspace(t *testing.T) {
 	b, ctx := newBackend(t)
-	_, err := b.CreateIssue(ctx, backend.IssueCreate{Project: "nosuch", Title: "t"})
+	_, err := b.CreateIssue(ctx, backend.IssueCreate{Workspace: "nosuch", Title: "t"})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 }
@@ -317,7 +317,7 @@ func TestCreateRejectsTwoParents(t *testing.T) {
 	c := create(t, b, ctx, "c")
 
 	_, err := b.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "t",
+		Workspace: "awb", Title: "t",
 		Relations: []backend.NewRelation{
 			{Type: domain.RelHasParent, Other: a.ID},
 			{Type: domain.RelHasParent, Other: c.ID},
@@ -753,12 +753,12 @@ func TestReadyAndBlockedListings(t *testing.T) {
 	assert.NotEqual(t, held.ID, ready.Issues[0].ID)
 }
 
-// A filter naming a project that is not there is a mistake to report, not a
+// A filter naming a workspace that is not there is a mistake to report, not a
 // listing that happens to match nothing.
-func TestFilterNamingAMissingProjectIsNotFound(t *testing.T) {
+func TestFilterNamingAMissingWorkspaceIsNotFound(t *testing.T) {
 	b, ctx := newBackend(t)
 
-	_, err := b.ListIssues(ctx, &domain.Filter{Projects: []string{"nosuch"}, Sort: domain.DefaultSort})
+	_, err := b.ListIssues(ctx, &domain.Filter{Workspaces: []string{"nosuch"}, Sort: domain.DefaultSort})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 
@@ -789,45 +789,45 @@ func TestDeleteIssue(t *testing.T) {
 	assert.Empty(t, orphan.Relations)
 }
 
-func TestProjectLifecycle(t *testing.T) {
+func TestWorkspaceLifecycle(t *testing.T) {
 	b, ctx := newBackend(t)
 
-	created, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	created, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
 	require.NoError(t, err)
 	assert.Equal(t, "web", created.Name, "the name defaults to the key")
 
 	name := "Web UI"
-	updated, err := b.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &name}, "")
+	updated, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &name}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "Web UI", updated.Name)
 
 	// An empty name restores the key.
 	empty := ""
-	restored, err := b.UpdateProject(ctx, "web", backend.ProjectPatch{Name: &empty}, "")
+	restored, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &empty}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "web", restored.Name)
 
 	// A duplicate key conflicts.
-	_, err = b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	_, err = b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 }
 
-// project delete refuses while the project holds any issue at all, closed ones
+// workspace delete refuses while the workspace holds any issue at all, closed ones
 // included, so confirmation alone can never destroy closed history.
-func TestProjectDeletionAndCascade(t *testing.T) {
+func TestWorkspaceDeletionAndCascade(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")
 	_, err := b.CloseIssue(ctx, issue.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 
-	_, err = b.DeleteProject(ctx, "awb", false, "")
+	_, err = b.DeleteWorkspace(ctx, "awb", false, "")
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 
-	deleted, err := b.DeleteProject(ctx, "awb", true, "")
+	deleted, err := b.DeleteWorkspace(ctx, "awb", true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "awb", deleted.Project.Key)
+	assert.Equal(t, "awb", deleted.Workspace.Key)
 
 	// The issues went with it, closed ones included.
 	page, err := b.ListIssues(ctx, &domain.Filter{IncludeClosed: true, Sort: domain.DefaultSort})

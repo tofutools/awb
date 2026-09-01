@@ -29,6 +29,36 @@ var migrations = [][]string{
 	schemaV10,
 	schemaV11,
 	schemaV12,
+	schemaV13,
+}
+
+// schemaV13 makes Workspace the current storage vocabulary. The preceding
+// batches deliberately retain their released Project names so an existing
+// database can be upgraded without copying or discarding any rows.
+var schemaV13 = []string{
+	`ALTER TABLE projects RENAME TO workspaces`,
+	`ALTER TABLE issues RENAME COLUMN project TO workspace`,
+	`ALTER TABLE users RENAME COLUMN project_admin TO workspace_admin`,
+	`ALTER TABLE project_members RENAME TO workspace_members`,
+	`ALTER TABLE workspace_members RENAME COLUMN project TO workspace`,
+	`ALTER TABLE ignored_projects RENAME TO ignored_workspaces`,
+	`ALTER TABLE ignored_workspaces RENAME COLUMN project TO workspace`,
+	`ALTER TABLE project_activity RENAME TO workspace_activity`,
+	`ALTER TABLE workspace_activity RENAME COLUMN project TO workspace`,
+	`ALTER TABLE board_views RENAME COLUMN all_projects TO all_workspaces`,
+	`ALTER TABLE board_view_projects RENAME TO board_view_workspaces`,
+	`ALTER TABLE board_view_workspaces RENAME COLUMN project TO workspace`,
+
+	// SQLite updates index definitions when their columns or tables are renamed,
+	// but not the index names themselves. Recreate the three whose old names
+	// would otherwise remain in the current schema.
+	`DROP INDEX idx_issues_project`,
+	`CREATE INDEX idx_issues_workspace ON issues (workspace)`,
+	`DROP INDEX idx_project_members_user`,
+	`CREATE INDEX idx_workspace_members_user ON workspace_members (user)`,
+	`DROP INDEX idx_project_activity_order`,
+	`CREATE INDEX idx_workspace_activity_order
+		ON workspace_activity (workspace, created_at DESC, id DESC)`,
 }
 
 // schemaV12 adds a sparse manual position. Zero means the issue has not been

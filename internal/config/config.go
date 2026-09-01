@@ -55,13 +55,13 @@ type userFile struct {
 	User        *string `yaml:"user"`
 	Password    *string `yaml:"password"`
 	Identity    *string `yaml:"identity"`
-	Project     *string `yaml:"project"`
+	Workspace   *string `yaml:"workspace"`
 	Color       *string `yaml:"color"`
 }
 
 // localFile is the local configuration file.
 //
-// It holds only project and label on purpose. The file is meant to be
+// It holds only workspace and label on purpose. The file is meant to be
 // committed, so it may not have been written by the person running the
 // command, and it therefore may not set db, attachments, user, password,
 // identity or color: a directory can shape what you see, but cannot redirect
@@ -70,8 +70,8 @@ type userFile struct {
 // unknown keys — and ignored means unread, so their values are not type-checked
 // either.
 type localFile struct {
-	Project *string `yaml:"project"`
-	Label   *string `yaml:"label"`
+	Workspace *string `yaml:"workspace"`
+	Label     *string `yaml:"label"`
 }
 
 // Flags are the values the command line supplied, each nil when the flag was
@@ -110,14 +110,14 @@ type Config struct {
 	// one fail asking for it to be set.
 	Identity string
 
-	// DefaultProject is the default project for creation and issue listings,
+	// DefaultWorkspace is the default workspace for creation and issue listings,
 	// resolved through the full precedence chain.
-	DefaultProject string
+	DefaultWorkspace string
 
-	// ContextProject and ContextLabel are the directory's own scope. They are
+	// ContextWorkspace and ContextLabel are the directory's own scope. They are
 	// empty when --no-context was given or no local file was found.
-	ContextProject string
-	ContextLabel   string
+	ContextWorkspace string
+	ContextLabel     string
 
 	Color ColorMode
 
@@ -170,7 +170,7 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	if err := resolveContext(cfg, flags, localCfg, localPath); err != nil {
 		return nil, err
 	}
-	if err := resolveDefaultProject(cfg, userCfg, userPath); err != nil {
+	if err := resolveDefaultWorkspace(cfg, userCfg, userPath); err != nil {
 		return nil, err
 	}
 	if err := resolveColor(cfg, flags, userCfg, userPath); err != nil {
@@ -183,7 +183,7 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 // malformed or wrongly typed file, or a recognised key whose value violates
 // that setting's vocabulary, fails the command with exit code 1 and a message
 // naming the file — because silently falling back to defaults would hide the
-// reason a command wrote to the wrong database or picked the wrong project.
+// reason a command wrote to the wrong database or picked the wrong workspace.
 func configError(path string, err error) error {
 	return awberr.Runtimef("%s: %s", path, err.Error())
 }
@@ -473,18 +473,18 @@ func FoldOSUsername() string {
 }
 
 // resolveContext reads the directory's own scope. --no-context ignores the
-// project and label of the local configuration file for this invocation,
-// falling through to any user-level project default — but it does not stop the
+// workspace and label of the local configuration file for this invocation,
+// falling through to any user-level workspace default — but it does not stop the
 // file from being read, so a malformed one still fails the command.
 func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath string) error {
 	if flags.NoContext {
 		return nil
 	}
-	if localCfg.Project != nil {
-		if _, err := domain.ValidateProjectKey(*localCfg.Project); err != nil {
+	if localCfg.Workspace != nil {
+		if _, err := domain.ValidateWorkspaceKey(*localCfg.Workspace); err != nil {
 			return configError(localPath, err)
 		}
-		cfg.ContextProject = *localCfg.Project
+		cfg.ContextWorkspace = *localCfg.Workspace
 	}
 	if localCfg.Label != nil {
 		if _, err := domain.ValidateLabel(*localCfg.Label); err != nil {
@@ -495,36 +495,36 @@ func resolveContext(cfg *Config, flags Flags, localCfg *localFile, localPath str
 	return nil
 }
 
-// resolveDefaultProject applies the project precedence chain: --project, else
-// AWB_PROJECT, else project in the local configuration file, else project in
+// resolveDefaultWorkspace applies the workspace precedence chain: --workspace, else
+// AWB_WORKSPACE, else workspace in the local configuration file, else workspace in
 // the user configuration file.
 //
-// --project is a per-command flag rather than a global one, so it is applied
+// --workspace is a per-command flag rather than a global one, so it is applied
 // by the command itself; what is resolved here is everything below it.
 //
-// Note the documented consequence: an exported AWB_PROJECT outranks the
-// directory's own project, so awb create run in a directory scoped to another
-// project puts the issue where the variable says. The variable is a deliberate
+// Note the documented consequence: an exported AWB_WORKSPACE outranks the
+// directory's own workspace, so awb create run in a directory scoped to another
+// workspace puts the issue where the variable says. The variable is a deliberate
 // override and wins as one.
-func resolveDefaultProject(cfg *Config, userCfg *userFile, userPath string) error {
-	if value := os.Getenv("AWB_PROJECT"); value != "" {
-		if _, err := domain.ValidateProjectKey(value); err != nil {
-			return usageError("AWB_PROJECT", err)
+func resolveDefaultWorkspace(cfg *Config, userCfg *userFile, userPath string) error {
+	if value := os.Getenv("AWB_WORKSPACE"); value != "" {
+		if _, err := domain.ValidateWorkspaceKey(value); err != nil {
+			return usageError("AWB_WORKSPACE", err)
 		}
-		cfg.DefaultProject = value
+		cfg.DefaultWorkspace = value
 		return nil
 	}
 	// --no-context removes the local file from this chain but not the rest, which
-	// is what ContextProject already being empty expresses.
-	if cfg.ContextProject != "" {
-		cfg.DefaultProject = cfg.ContextProject
+	// is what ContextWorkspace already being empty expresses.
+	if cfg.ContextWorkspace != "" {
+		cfg.DefaultWorkspace = cfg.ContextWorkspace
 		return nil
 	}
-	if userCfg.Project != nil {
-		if _, err := domain.ValidateProjectKey(*userCfg.Project); err != nil {
+	if userCfg.Workspace != nil {
+		if _, err := domain.ValidateWorkspaceKey(*userCfg.Workspace); err != nil {
 			return configError(userPath, err)
 		}
-		cfg.DefaultProject = *userCfg.Project
+		cfg.DefaultWorkspace = *userCfg.Workspace
 	}
 	return nil
 }

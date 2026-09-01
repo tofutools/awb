@@ -27,7 +27,7 @@ export function userDeletionImpact(
   identity: string,
 ): UserDeletionImpact {
   return {
-    memberships: user.projects.length,
+    memberships: user.workspaces.length,
     self: user.name === identity,
     lastUserAdministrator: user.user_admin
       && directory.filter((candidate) => candidate.user_admin).length === 1,

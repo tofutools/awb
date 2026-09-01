@@ -38,7 +38,7 @@ import (
 // Server timeouts and the transport body cap.
 //
 // The cap is a transport limit and not a second validation rule: it sits far
-// above anything the field maxima permit for one issue or one project, so no
+// above anything the field maxima permit for one issue or one workspace, so no
 // body those rules would accept is ever refused for its size.
 //
 // Uploading an attachment is the one request whose body is not a description

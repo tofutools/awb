@@ -42,7 +42,7 @@ func newAPI(t *testing.T) *api {
 	t.Cleanup(func() { _ = db.Close() })
 
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb", Name: "Agent Work Board"})
+	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb", Name: "Agent Work Board"})
 	require.NoError(t, err)
 
 	// The same server serve builds, over the same document, so what these tests
@@ -101,7 +101,7 @@ func (a *api) createIssue(body string) domain.Issue {
 func TestCreateIssue(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodPost, "/api/issues",
-		`{"project":"awb","title":"Parser crashes","type":"bug","priority":1,"labels":["parser"]}`)
+		`{"workspace":"awb","title":"Parser crashes","type":"bug","priority":1,"labels":["parser"]}`)
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
@@ -120,59 +120,59 @@ func TestCreateIssue(t *testing.T) {
 
 func TestSearchNavigation(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Keyboard Command Palette"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Keyboard Command Palette"}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/navigation?q=command+pal&limit=2", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var results struct {
-		Issues   []domain.Issue   `json:"issues"`
-		Projects []domain.Project `json:"projects"`
-		Users    []domain.User    `json:"users"`
+		Issues     []domain.Issue     `json:"issues"`
+		Workspaces []domain.Workspace `json:"workspaces"`
+		Users      []domain.User      `json:"users"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(payload), &results))
 	require.Len(t, results.Issues, 1)
 	assert.Equal(t, issue.ID, results.Issues[0].ID)
-	assert.Empty(t, results.Projects)
+	assert.Empty(t, results.Workspaces)
 	assert.Empty(t, results.Users)
 
 	resp, payload = a.do(http.MethodGet, "/api/navigation?q=palette&limit=21", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 }
 
-func TestProjectPreferencesRecoverIgnoredProjects(t *testing.T) {
+func TestWorkspacePreferencesRecoverIgnoredWorkspaces(t *testing.T) {
 	a := newAPI(t)
 	_, err := a.be.CreateUser(t.Context(), backend.UserCreate{Name: "mikael", Password: "hunter2"})
 	require.NoError(t, err)
-	_, err = a.be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web", Name: "Web UI"})
+	_, err = a.be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "web", Name: "Web UI"})
 	require.NoError(t, err)
 
-	resp, payload := a.do(http.MethodPut, "/api/preferences/projects/web", `{"ignored":true}`)
+	resp, payload := a.do(http.MethodPut, "/api/preferences/workspaces/web", `{"ignored":true}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"ignored":true`)
 
-	resp, payload = a.do(http.MethodGet, "/api/projects/web", "")
+	resp, payload = a.do(http.MethodGet, "/api/workspaces/web", "")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode, payload)
-	resp, payload = a.do(http.MethodGet, "/api/preferences/projects", "")
+	resp, payload = a.do(http.MethodGet, "/api/preferences/workspaces", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	var preferences []domain.ProjectPreference
+	var preferences []domain.WorkspacePreference
 	require.NoError(t, json.Unmarshal([]byte(payload), &preferences))
 	require.Len(t, preferences, 2)
-	assert.Equal(t, "web", preferences[1].Project.Key)
+	assert.Equal(t, "web", preferences[1].Workspace.Key)
 	assert.True(t, preferences[1].Ignored)
 
-	resp, payload = a.do(http.MethodPut, "/api/preferences/projects/web", `{"ignored":false}`)
+	resp, payload = a.do(http.MethodPut, "/api/preferences/workspaces/web", `{"ignored":false}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	resp, payload = a.do(http.MethodGet, "/api/projects/web", "")
+	resp, payload = a.do(http.MethodGet, "/api/workspaces/web", "")
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
 
 func TestBoardViewsAndPagedBoard(t *testing.T) {
 	a := newAPI(t)
 	for _, title := range []string{"first", "second"} {
-		a.createIssue(`{"project":"awb","title":"` + title + `","labels":["release"]}`)
+		a.createIssue(`{"workspace":"awb","title":"` + title + `","labels":["release"]}`)
 	}
 	resp, payload := a.do(http.MethodPost, "/api/board-views",
-		`{"name":"Release","shared":true,"all_projects":false,"projects":["awb"],"labels":["release"],"priority_max":4}`)
+		`{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"labels":["release"],"priority_max":4}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 	var view domain.BoardView
 	require.NoError(t, json.Unmarshal([]byte(payload), &view))
@@ -210,13 +210,13 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 func TestCreateIssueRejectsUnknownFields(t *testing.T) {
 	a := newAPI(t)
 	for _, body := range []string{
-		`{"project":"awb","title":"t","id":"awb-aaaaaa"}`,
-		`{"project":"awb","title":"t","status":"closed"}`,
-		`{"project":"awb","title":"t","close_reason":"x"}`,
-		`{"project":"awb","title":"t","created_at":"2026-01-01T00:00:00.000Z"}`,
-		`{"project":"awb","title":"t","blocked":true}`,
-		`{"project":"awb","title":"t","nonsense":1}`,
-		`{"project":"awb","title":"t","relations":[{"type":"related","other":"x","direction":"out"}]}`,
+		`{"workspace":"awb","title":"t","id":"awb-aaaaaa"}`,
+		`{"workspace":"awb","title":"t","status":"closed"}`,
+		`{"workspace":"awb","title":"t","close_reason":"x"}`,
+		`{"workspace":"awb","title":"t","created_at":"2026-01-01T00:00:00.000Z"}`,
+		`{"workspace":"awb","title":"t","blocked":true}`,
+		`{"workspace":"awb","title":"t","nonsense":1}`,
+		`{"workspace":"awb","title":"t","relations":[{"type":"related","other":"x","direction":"out"}]}`,
 	} {
 		resp, payload := a.do(http.MethodPost, "/api/issues", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
@@ -228,10 +228,10 @@ func TestCreateIssueRejectsUnknownFields(t *testing.T) {
 // encode.
 func TestNullIsRejected(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	for _, req := range []struct{ method, path, body string }{
-		{http.MethodPost, "/api/issues", `{"project":"awb","title":null}`},
+		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":null}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":null}`},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":null}`},
 	} {
@@ -246,12 +246,12 @@ func TestNullIsRejected(t *testing.T) {
 func TestUnpairedSurrogateIsRejected(t *testing.T) {
 	a := newAPI(t)
 
-	resp, payload := a.do(http.MethodPost, "/api/issues", `{"project":"awb","title":"a\ud800b"}`)
+	resp, payload := a.do(http.MethodPost, "/api/issues", `{"workspace":"awb","title":"a\ud800b"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(t, payload, "surrogate")
 
 	// A properly paired surrogate is an ordinary character and is accepted.
-	resp, payload = a.do(http.MethodPost, "/api/issues", `{"project":"awb","title":"a😀b"}`)
+	resp, payload = a.do(http.MethodPost, "/api/issues", `{"workspace":"awb","title":"a😀b"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
 	var issue domain.Issue
@@ -265,7 +265,7 @@ func TestUnsupportedMediaType(t *testing.T) {
 	a := newAPI(t)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"project":"awb","title":"t"}`))
+		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"t"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 
@@ -287,7 +287,7 @@ func TestMethodNotAllowed(t *testing.T) {
 // endpoints.
 func TestPatchIssue(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t","labels":["a","b"]}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","labels":["a","b"]}`)
 
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"renamed"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -322,7 +322,7 @@ func TestPatchIssue(t *testing.T) {
 // Labels are compared as the sorted form, which is what a client read.
 func TestPatchAcceptsLabelsInAnyOrder(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t","labels":["a","b"]}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","labels":["a","b"]}`)
 
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"labels":["b","a"]}`)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -331,7 +331,7 @@ func TestPatchAcceptsLabelsInAnyOrder(t *testing.T) {
 // The ETag/If-Match handshake.
 func TestConditionalEdit(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	resp, _ := a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
 	tag := resp.Header.Get("ETag")
@@ -362,8 +362,8 @@ func TestConditionalEdit(t *testing.T) {
 // does not fail on it.
 func TestETagSurvivesARelation(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
-	other := a.createIssue(`{"project":"awb","title":"other"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
+	other := a.createIssue(`{"workspace":"awb","title":"other"}`)
 	tag := backend.ETag(issue.UpdatedAt)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/relations",
@@ -379,7 +379,7 @@ func TestETagSurvivesARelation(t *testing.T) {
 // previous version must reload before it edits the issue.
 func TestCommentInvalidatesIssueETag(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	tag := backend.ETag(issue.UpdatedAt)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
@@ -395,7 +395,7 @@ func TestCommentInvalidatesIssueETag(t *testing.T) {
 // a form based on the preceding issue version.
 func TestAttachmentChangesInvalidateIssueETag(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	beforeAdd := backend.ETag(issue.UpdatedAt)
 
 	attachment := a.attach(issue.ID, "evidence.txt", "evidence")
@@ -417,7 +417,7 @@ func TestAttachmentChangesInvalidateIssueETag(t *testing.T) {
 // A tree aggregates many issues and no one version tags it.
 func TestTreeCarriesNoETag(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID+"/tree", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -428,7 +428,7 @@ func TestTreeCarriesNoETag(t *testing.T) {
 // A delete answers with the object as it was, and carries no ETag.
 func TestDeleteCarriesNoETag(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	resp, payload := a.do(http.MethodDelete, "/api/issues/"+issue.ID, "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -442,7 +442,7 @@ func TestDeleteCarriesNoETag(t *testing.T) {
 // assignee may be omitted, in which case the request's identity is used.
 func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -454,28 +454,28 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 
 func TestMoveIssueOverHTTP(t *testing.T) {
 	a := newAPI(t)
-	epic := a.createIssue(`{"project":"awb","title":"Epic","type":"epic"}`)
-	issue := a.createIssue(`{"project":"awb","title":"move me"}`)
+	epic := a.createIssue(`{"workspace":"awb","title":"Epic","type":"epic"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"move me"}`)
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
 		`{"epic":"`+epic.ID+`","status":"in_progress"}`, "If-Match", backend.ETag(issue.UpdatedAt))
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var moved domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &moved))
 	assert.Equal(t, issue.ID, moved.ID)
-	assert.Equal(t, "awb", moved.Project)
+	assert.Equal(t, "awb", moved.Workspace)
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Positive(t, moved.Order)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic.ID, Direction: domain.DirectionOut})
 
 	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
-		`{"project":"web","status":"open"}`)
+		`{"workspace":"web","status":"open"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
-	assert.Contains(t, payload, `unexpected field \"project\"`, "workspace movement is absent from the wire contract")
+	assert.Contains(t, payload, `unexpected field \"workspace\"`, "workspace movement is absent from the wire contract")
 }
 
 func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t","assignees":["alice","bob"]}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","assignees":["alice","bob"]}`)
 	assert.Equal(t, []string{"alice", "bob"}, issue.Assignees)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
@@ -498,8 +498,8 @@ func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
 // change.
 func TestMutationsReturnTheObject(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t","labels":["x"]}`)
-	other := a.createIssue(`{"project":"awb","title":"other"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","labels":["x"]}`)
+	other := a.createIssue(`{"workspace":"awb","title":"other"}`)
 
 	cases := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/issues/" + issue.ID + "/labels", `{"label":"y"}`},
@@ -525,7 +525,7 @@ func TestMutationsReturnTheObject(t *testing.T) {
 func TestPaging(t *testing.T) {
 	a := newAPI(t)
 	for range 5 {
-		a.createIssue(`{"project":"awb","title":"t"}`)
+		a.createIssue(`{"workspace":"awb","title":"t"}`)
 	}
 
 	resp, payload := a.do(http.MethodGet, "/api/issues?limit=2&offset=1", "")
@@ -556,8 +556,8 @@ func TestPaging(t *testing.T) {
 
 func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	a := newAPI(t)
-	a.createIssue(`{"project":"awb","title":"low","priority":4}`)
-	a.createIssue(`{"project":"awb","title":"high","priority":0}`)
+	a.createIssue(`{"workspace":"awb","title":"low","priority":4}`)
+	a.createIssue(`{"workspace":"awb","title":"high","priority":0}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/issues?sort=-priority&limit=1", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -579,25 +579,25 @@ func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	assert.Equal(t, "[]", payload)
 }
 
-func TestProjectPagingAppliesAfterSorting(t *testing.T) {
+func TestWorkspacePagingAppliesAfterSorting(t *testing.T) {
 	a := newAPI(t)
-	resp, payload := a.do(http.MethodPost, "/api/projects", `{"key":"web"}`)
+	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
-	a.createIssue(`{"project":"awb","title":"active"}`)
+	a.createIssue(`{"workspace":"awb","title":"active"}`)
 
-	resp, payload = a.do(http.MethodGet, "/api/projects?sort=-active&limit=1", "")
+	resp, payload = a.do(http.MethodGet, "/api/workspaces?sort=-active&limit=1", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	var projects []domain.Project
-	require.NoError(t, json.Unmarshal([]byte(payload), &projects))
-	require.Len(t, projects, 1)
-	assert.Equal(t, "awb", projects[0].Key)
+	var workspaces []domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(payload), &workspaces))
+	require.Len(t, workspaces, 1)
+	assert.Equal(t, "awb", workspaces[0].Key)
 	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"))
 
-	resp, payload = a.do(http.MethodGet, "/api/projects?filter=web", "")
+	resp, payload = a.do(http.MethodGet, "/api/workspaces?filter=web", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	require.NoError(t, json.Unmarshal([]byte(payload), &projects))
-	require.Len(t, projects, 1)
-	assert.Equal(t, "web", projects[0].Key)
+	require.NoError(t, json.Unmarshal([]byte(payload), &workspaces))
+	require.Len(t, workspaces, 1)
+	assert.Equal(t, "web", workspaces[0].Key)
 	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
 }
 
@@ -626,8 +626,8 @@ func TestRejectedParameters(t *testing.T) {
 // Search carries its terms as repeated q, and a request with no q is a 400.
 func TestSearch(t *testing.T) {
 	a := newAPI(t)
-	a.createIssue(`{"project":"awb","title":"Parser crashes on empty input"}`)
-	a.createIssue(`{"project":"awb","title":"Unrelated"}`)
+	a.createIssue(`{"workspace":"awb","title":"Parser crashes on empty input"}`)
+	a.createIssue(`{"workspace":"awb","title":"Unrelated"}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/search?q=parser", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -658,8 +658,8 @@ func TestSearch(t *testing.T) {
 
 func TestIssueSuggestionsSearchIDsAndTitles(t *testing.T) {
 	a := newAPI(t)
-	created := a.createIssue(`{"project":"awb","title":"Parser crashes on empty input"}`)
-	a.createIssue(`{"project":"awb","title":"Unrelated"}`)
+	created := a.createIssue(`{"workspace":"awb","title":"Parser crashes on empty input"}`)
+	a.createIssue(`{"workspace":"awb","title":"Unrelated"}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/issues/suggestions?q=parser&limit=8", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -683,8 +683,8 @@ func TestIssueSuggestionsSearchIDsAndTitles(t *testing.T) {
 // included, so a UI can narrow progressively.
 func TestFacets(t *testing.T) {
 	a := newAPI(t)
-	a.createIssue(`{"project":"awb","title":"a","labels":["parser","frontend"]}`)
-	a.createIssue(`{"project":"awb","title":"b","labels":["parser"]}`)
+	a.createIssue(`{"workspace":"awb","title":"a","labels":["parser","frontend"]}`)
+	a.createIssue(`{"workspace":"awb","title":"b","labels":["parser"]}`)
 	resp, payload := a.do(http.MethodGet, "/api/labels", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.JSONEq(t, `[{"value":"frontend","count":1},{"value":"parser","count":2}]`, payload)
@@ -703,9 +703,9 @@ func TestFacets(t *testing.T) {
 	_, payload = a.do(http.MethodGet, "/api/assignees", "")
 	assert.Equal(t, "[]", payload)
 
-	ready := a.createIssue(`{"project":"awb","title":"Needle ready","labels":["ready-label"]}`)
-	blocked := a.createIssue(`{"project":"awb","title":"Needle blocked","labels":["blocked-label"]}`)
-	blocker := a.createIssue(`{"project":"awb","title":"Prerequisite"}`)
+	ready := a.createIssue(`{"workspace":"awb","title":"Needle ready","labels":["ready-label"]}`)
+	blocked := a.createIssue(`{"workspace":"awb","title":"Needle blocked","labels":["blocked-label"]}`)
+	blocker := a.createIssue(`{"workspace":"awb","title":"Prerequisite"}`)
 	resp, payload = a.do(http.MethodPost, "/api/issues/"+blocked.ID+"/relations",
 		`{"type":"blocked-by","other":"`+blocker.ID+`"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -725,49 +725,63 @@ func TestIdentity(t *testing.T) {
 	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 }
 
-func TestProjects(t *testing.T) {
+func TestWorkspaces(t *testing.T) {
 	a := newAPI(t)
 
-	resp, payload := a.do(http.MethodPost, "/api/projects", `{"key":"web"}`)
+	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
-	assert.Equal(t, "/api/projects/web", resp.Header.Get("Location"))
+	assert.Equal(t, "/api/workspaces/web", resp.Header.Get("Location"))
 
-	var project domain.Project
-	require.NoError(t, json.Unmarshal([]byte(payload), &project))
-	assert.Equal(t, "web", project.Name, "the name defaults to the key")
+	var workspace domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(payload), &workspace))
+	assert.Equal(t, "web", workspace.Name, "the name defaults to the key")
 	assert.NotEmpty(t, resp.Header.Get("ETag"))
 
 	// A key may appear in a PATCH but may not change.
-	resp, payload = a.do(http.MethodPatch, "/api/projects/web", `{"key":"web","name":"Web UI"}`)
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"key":"web","name":"Web UI"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
-	resp, _ = a.do(http.MethodPatch, "/api/projects/web", `{"key":"other"}`)
+	resp, _ = a.do(http.MethodPatch, "/api/workspaces/web", `{"key":"other"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
 	// The derived fields are ignored whatever they say.
-	resp, payload = a.do(http.MethodPatch, "/api/projects/web",
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web",
 		`{"active_issues":99,"created_at":"2000-01-01T00:00:00.000Z"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	// A duplicate is a conflict.
-	resp, _ = a.do(http.MethodPost, "/api/projects", `{"key":"web"}`)
+	resp, _ = a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
-	// Deletion refuses while the project holds issues, and cascade is a boolean
+	// Deletion refuses while the workspace holds issues, and cascade is a boolean
 	// query parameter.
-	a.createIssue(`{"project":"web","title":"t"}`)
-	resp, _ = a.do(http.MethodDelete, "/api/projects/web", "")
+	a.createIssue(`{"workspace":"web","title":"t"}`)
+	resp, _ = a.do(http.MethodDelete, "/api/workspaces/web", "")
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
-	resp, payload = a.do(http.MethodDelete, "/api/projects/web?cascade=true", "")
+	resp, payload = a.do(http.MethodDelete, "/api/workspaces/web?cascade=true", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Empty(t, resp.Header.Get("ETag"))
+}
+
+func TestProjectVocabularyIsNotAnAPICompatibilitySurface(t *testing.T) {
+	a := newAPI(t)
+
+	resp, _ := a.do(http.MethodGet, "/api/projects", "")
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp, _ = a.do(http.MethodGet, "/api/issues?project=awb", "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp, _ = a.do(http.MethodPost, "/api/issues", `{"project":"awb","title":"old client"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp, _ = a.do(http.MethodPost, "/api/board-views",
+		`{"name":"old client","all_projects":false,"projects":["awb"],"priority_max":4}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 // The status taxonomy.
 func TestErrorStatuses(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	cases := []struct {
 		name   string
@@ -777,22 +791,22 @@ func TestErrorStatuses(t *testing.T) {
 		want   int
 	}{
 		{"unknown issue", http.MethodGet, "/api/issues/awb-ffffff", "", http.StatusNotFound},
-		{"unknown project", http.MethodGet, "/api/projects/nosuch", "", http.StatusNotFound},
-		{"filter naming a missing project", http.MethodGet, "/api/issues?project=nosuch", "",
+		{"unknown workspace", http.MethodGet, "/api/workspaces/nosuch", "", http.StatusNotFound},
+		{"filter naming a missing workspace", http.MethodGet, "/api/issues?workspace=nosuch", "",
 			http.StatusNotFound},
-		{"bad enum", http.MethodPost, "/api/issues", `{"project":"awb","title":"t","type":"nonsense"}`,
+		{"bad enum", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","type":"nonsense"}`,
 			http.StatusBadRequest},
-		{"bad priority", http.MethodPost, "/api/issues", `{"project":"awb","title":"t","priority":9}`,
+		{"bad priority", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","priority":9}`,
 			http.StatusBadRequest},
-		{"bad label", http.MethodPost, "/api/issues", `{"project":"awb","title":"t","labels":["Bad"]}`,
+		{"bad label", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","labels":["Bad"]}`,
 			http.StatusBadRequest},
-		{"empty title", http.MethodPost, "/api/issues", `{"project":"awb","title":"  "}`,
+		{"empty title", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"  "}`,
 			http.StatusBadRequest},
 		{"malformed JSON", http.MethodPost, "/api/issues", `{`, http.StatusBadRequest},
 		{"self relation", http.MethodPost, "/api/issues/" + issue.ID + "/relations",
 			`{"type":"blocked-by","other":"` + issue.ID + `"}`, http.StatusConflict},
 		{"two parents", http.MethodPost, "/api/issues",
-			`{"project":"awb","title":"t","relations":[` +
+			`{"workspace":"awb","title":"t","relations":[` +
 				`{"type":"has-parent","other":"` + issue.ID + `"},` +
 				`{"type":"has-parent","other":"` + issue.ID + `"}]}`, http.StatusBadRequest},
 	}
@@ -809,7 +823,7 @@ func TestErrorStatuses(t *testing.T) {
 // CLI needs no extra round trip in remote mode.
 func TestPathAcceptsPrefixes(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	_, hash, ok := domain.SplitID(issue.ID)
 	require.True(t, ok)
 
@@ -845,7 +859,7 @@ func TestBodyWithoutContentTypeIsRejected(t *testing.T) {
 	a := newAPI(t)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"project":"awb","title":"untyped"}`))
+		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"untyped"}`))
 	require.NoError(t, err)
 	req.Header.Del("Content-Type")
 
@@ -862,7 +876,7 @@ func TestBodyWithoutContentTypeIsRejected(t *testing.T) {
 // A request that sends no body at all is never asked to describe one.
 func TestNoBodyNeedsNoContentType(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	for _, path := range []string{"/claim", "/release", "/close", "/reopen"} {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
@@ -881,7 +895,7 @@ func TestNoBodyNeedsNoContentType(t *testing.T) {
 // passed silently.
 func TestReopenRefusesABody(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	_, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close", `{}`)
 	require.NotEmpty(t, payload)
 
@@ -906,7 +920,7 @@ func TestReopenRefusesABody(t *testing.T) {
 // carried through the backend rather than checked in the adapter.
 func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t","labels":["a","b"]}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","labels":["a","b"]}`)
 
 	// Claim it, so the stored status and assignees differ from what a client
 	// that read it earlier would send back.
@@ -941,11 +955,11 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 // something it never received is told rather than quietly obeyed in part.
 func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	// Values a caller really could have read, stale or not, are ignored.
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
-		`{"title":"renamed","id":"awb-000000","project":"awb",`+
+		`{"title":"renamed","id":"awb-000000","workspace":"awb",`+
 			`"created_at":"2020-01-01T00:00:00.000Z","updated_at":"2020-01-01T00:00:00.000Z",`+
 			`"blocked":true,"blockers":["awb-000000"],`+
 			`"relations":[{"type":"related","other":"awb-000000","direction":"out"}],`+
@@ -959,7 +973,7 @@ func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
 	// Values no caller could have read are refused.
 	for _, body := range []string{
 		`{"created_at":"whenever"}`,
-		`{"project":"NOT A KEY"}`,
+		`{"workspace":"NOT A KEY"}`,
 		`{"relations":[{"type":"related","other":"x","direction":"sideways"}]}`,
 	} {
 		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
@@ -990,7 +1004,7 @@ func TestEmptyParameterValuesAreRefused(t *testing.T) {
 // an untyped one claimed an issue and a reopen with one went through.
 func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	_, _ = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close", `{}`)
 
 	// It carries no JSON value, so there is nothing to read out of it...
@@ -1034,7 +1048,7 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 // identity.
 func TestWhitespaceBodyIsRefusedWhereABodyIsOptional(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"t"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "  \n ")
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
@@ -1091,7 +1105,7 @@ func (a *api) attach(issueID, name, content string) domain.Attachment {
 
 func TestAddAttachment(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/octet-stream", "boom\n")
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
@@ -1114,7 +1128,7 @@ func TestAddAttachment(t *testing.T) {
 // The stated content type is what is recorded, exactly as it arrived.
 func TestAddAttachmentWithAStatedContentType(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID,
 		"?name=notes.md&content-type="+url.QueryEscape("text/markdown; charset=utf-8"),
@@ -1131,7 +1145,7 @@ func TestAddAttachmentWithAStatedContentType(t *testing.T) {
 // what this endpoint actually accepts rather than what most of them do.
 func TestAddAttachmentRefusesTheWrongContentType(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/json", "boom\n")
 	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode, payload)
@@ -1151,7 +1165,7 @@ func TestJSONEndpointsStillDemandJSON(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"project":"awb","title":"t"}`))
+		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"t"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 	got, err := a.server.Client().Do(req)
@@ -1167,7 +1181,7 @@ func TestJSONEndpointsStillDemandJSON(t *testing.T) {
 // name is required, and a name that is a path is refused rather than stripped.
 func TestAddAttachmentRefusesABadName(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID, "", "application/octet-stream", "boom\n")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
@@ -1181,7 +1195,7 @@ func TestAddAttachmentRefusesABadName(t *testing.T) {
 // ignored, exactly as everywhere else.
 func TestAddAttachmentRefusesAnUndeclaredParameter(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID, "?name=trace.txt&sort=priority",
 		"application/octet-stream", "boom\n")
@@ -1191,7 +1205,7 @@ func TestAddAttachmentRefusesAnUndeclaredParameter(t *testing.T) {
 
 func TestListAndGetAttachments(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
 
 	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID+"/attachments", "")
@@ -1222,7 +1236,7 @@ func TestListAndGetAttachments(t *testing.T) {
 // UI, and a browser must not be invited to render one there.
 func TestGetAttachmentContent(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	resp, payload := a.upload(issue.ID, "?name=page.html&content-type=text%2Fhtml",
 		"application/octet-stream", "<script>alert(1)</script>")
@@ -1250,7 +1264,7 @@ func TestGetAttachmentContent(t *testing.T) {
 // which is a different thing: omitted means "read until I close".
 func TestGetEmptyAttachmentContentStatesZero(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "empty.bin", "")
 
 	resp, payload := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
@@ -1264,7 +1278,7 @@ func TestGetEmptyAttachmentContentStatesZero(t *testing.T) {
 // size rather than a measured one buys.
 func TestTruncatedContentBreaksTheTransfer(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "the whole thing\n")
 
 	// Reach past awb and shorten the stored file, which nothing awb does can
@@ -1286,7 +1300,7 @@ func TestTruncatedContentBreaksTheTransfer(t *testing.T) {
 // A name outside ASCII is encoded rather than dropped or mangled.
 func TestAttachmentContentDispositionEncodesTheName(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, `Ω "notes".txt`, "boom\n")
 
 	resp, _ := a.do(http.MethodGet, attachmentPath(&attachment)+"/content", "")
@@ -1301,7 +1315,7 @@ func TestAttachmentContentDispositionEncodesTheName(t *testing.T) {
 
 func TestDeleteAttachment(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
 
 	resp, payload := a.do(http.MethodDelete, attachmentPath(&attachment), "")
@@ -1320,7 +1334,7 @@ func TestDeleteAttachment(t *testing.T) {
 // not hold is a 404, and one outside the name rules is a 400.
 func TestAttachmentReferences(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	attachment := a.attach(issue.ID, "trace.txt", "boom\n")
 
 	// The issue half takes any reference an issue takes.
@@ -1347,8 +1361,8 @@ func TestAttachmentReferences(t *testing.T) {
 // another issue may hold that name.
 func TestOneAttachmentNamePerIssue(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
-	other := a.createIssue(`{"project":"awb","title":"Tokeniser drops a newline"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
+	other := a.createIssue(`{"workspace":"awb","title":"Tokeniser drops a newline"}`)
 	a.attach(issue.ID, "trace.txt", "the first one\n")
 
 	resp, payload := a.upload(issue.ID, "?name=trace.txt", "application/octet-stream",
@@ -1364,7 +1378,7 @@ func TestOneAttachmentNamePerIssue(t *testing.T) {
 // A name that needs escaping survives the round trip through the path.
 func TestAwkwardAttachmentNames(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	for _, name := range []string{
 		"release notes.md", "100% done.txt", "what?.log", "a#b.txt", "Ωmega.txt",
@@ -1389,7 +1403,7 @@ func TestAwkwardAttachmentNames(t *testing.T) {
 // ignored, so a UI can send back the object it read.
 func TestPatchIgnoresAttachments(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 	a.attach(issue.ID, "trace.txt", "boom\n")
 
 	resp, payload := a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
@@ -1416,7 +1430,7 @@ func TestPatchIgnoresAttachments(t *testing.T) {
 // endpoint wanted nothing.
 func TestBodyOnANoBodyEndpointIsRefusedWithoutReadingIt(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"project":"awb","title":"Parser crashes"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	// A body far larger than the transport cap: it is still the endpoint taking
 	// no body that is reported, not its size, because its size was never the

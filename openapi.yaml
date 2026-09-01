@@ -10,11 +10,10 @@ info:
     UI reads and edits workspaces and issues through the same operations available
     to API and CLI clients.
 
-    The product calls its immutable top-level boundary a **workspace**. This
-    API retains the established `project` paths, operation IDs, schema names
-    and JSON fields for compatibility; they represent workspaces and are not a
-    second concept. An issue belongs to exactly one workspace and cannot be
-    transferred to another, so its workspace-prefixed ID remains stable.
+    The immutable top-level boundary is a **workspace**. Paths, operation IDs,
+    schema names and JSON fields use that vocabulary consistently. An issue
+    belongs to exactly one workspace and cannot be transferred to another, so
+    its workspace-prefixed ID remains stable.
 
     The component schemas below are the domain fields in the CLI's `--json`
     structures. In remote mode the CLI adds navigation links derived from the
@@ -40,7 +39,7 @@ info:
     in any other workspace. A database holding no user at all is a server without
     authentication, exactly as version 1 was, and applies none of this.
 
-    Two flags stand outside the workspaces: compatibility field `project_admin`
+    Two flags stand outside the workspaces: `workspace_admin`
     creates, changes and deletes workspaces and holds `admin` access in every one, and
     `user_admin` creates, changes and deletes users. Neither implies the other.
 
@@ -81,7 +80,7 @@ tags:
   - name: boards
   - name: relations
   - name: attachments
-  - name: projects
+  - name: workspaces
   - name: users
   - name: metadata
 
@@ -101,7 +100,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/assignee'
         - $ref: '#/components/parameters/unassigned'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -266,7 +265,7 @@ paths:
         epic, immediately before or after one anchor in the same ordering
         scope, or one transaction-time place earlier/later without requiring a
         visible anchor. These position choices are mutually exclusive. Omitting
-        all of them appends it to that manually ranked sequence. Project/workspace
+        all of them appends it to that manually ranked sequence. Workspace/workspace
         and issue ID are immutable. Status changes apply the same assignment
         safety rules as claim, release, close and reopen.
       requestBody:
@@ -558,7 +557,7 @@ paths:
         - $ref: '#/components/parameters/priority'
         - $ref: '#/components/parameters/priorityMax'
         - $ref: '#/components/parameters/label'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -583,7 +582,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/assignee'
         - $ref: '#/components/parameters/unassigned'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -625,7 +624,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/assignee'
         - $ref: '#/components/parameters/unassigned'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - name: sort
@@ -640,8 +639,8 @@ paths:
           schema:
             type: string
             enum:
-              [relevance, order, priority, created, updated, id, project, status, assignee, type, blockers,
-               -relevance, -order, -priority, -created, -updated, -id, -project, -status, -assignee, -type,
+              [relevance, order, priority, created, updated, id, workspace, status, assignee, type, blockers,
+               -relevance, -order, -priority, -created, -updated, -id, -workspace, -status, -assignee, -type,
                -blockers]
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -744,7 +743,7 @@ paths:
       summary: Read a bounded page of the default or a saved board
       description: |
         `default` means all active workspaces visible under the caller's normal
-        scope. The compatibility-named `project` query selects workspaces.
+        scope. The `workspace` query selects workspaces.
         A saved view is evaluated under that same viewer-specific authorization
         and ignored-workspace scope. Archived selections remain stored but are
         dormant until restored. Lane and card totals are calculated before their
@@ -766,11 +765,11 @@ paths:
         - name: card-offset
           in: query
           schema: { type: integer, minimum: 0 }
-        - name: project
+        - name: workspace
           in: query
           schema:
             type: array
-            items: { $ref: '#/components/schemas/ProjectKey' }
+            items: { $ref: '#/components/schemas/WorkspaceKey' }
           style: form
           explode: true
         - name: status
@@ -788,11 +787,11 @@ paths:
               schema: { $ref: '#/components/schemas/Board' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects:
+  /api/workspaces:
     get:
-      tags: [projects]
-      operationId: listProjects
-      summary: 'List workspaces (compatibility path: projects)'
+      tags: [workspaces]
+      operationId: listWorkspaces
+      summary: List workspaces
       parameters:
         - $ref: '#/components/parameters/listingFilter'
         - name: state
@@ -814,38 +813,38 @@ paths:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
-        '200': { $ref: '#/components/responses/ProjectList' }
+        '200': { $ref: '#/components/responses/WorkspaceList' }
         default: { $ref: '#/components/responses/Error' }
     post:
-      tags: [projects]
-      operationId: createProject
+      tags: [workspaces]
+      operationId: createWorkspace
       summary: Create a workspace
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProjectCreate' }
+            schema: { $ref: '#/components/schemas/WorkspaceCreate' }
       responses:
-        '201': { $ref: '#/components/responses/ProjectCreated' }
+        '201': { $ref: '#/components/responses/WorkspaceCreated' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}:
+  /api/workspaces/{key}:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     get:
-      tags: [projects]
-      operationId: getProject
+      tags: [workspaces]
+      operationId: getWorkspace
       summary: Read one workspace
       responses:
-        '200': { $ref: '#/components/responses/Project' }
+        '200': { $ref: '#/components/responses/Workspace' }
         default: { $ref: '#/components/responses/Error' }
 
     patch:
-      tags: [projects]
-      operationId: updateProject
+      tags: [workspaces]
+      operationId: updateWorkspace
       summary: Change a workspace's name or description
       parameters:
         - $ref: '#/components/parameters/ifMatch'
@@ -853,13 +852,13 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProjectPatch' }
+            schema: { $ref: '#/components/schemas/WorkspacePatch' }
       responses:
-        '200': { $ref: '#/components/responses/Project' }
+        '200': { $ref: '#/components/responses/Workspace' }
         default: { $ref: '#/components/responses/Error' }
     delete:
-      tags: [projects]
-      operationId: deleteProject
+      tags: [workspaces]
+      operationId: deleteWorkspace
       summary: Delete a workspace
       description: |
         Refuses while the workspace holds any issue at all, closed ones included,
@@ -879,68 +878,68 @@ paths:
             ETag: the version it describes is gone.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Project' }
+              schema: { $ref: '#/components/schemas/Workspace' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}/archive:
+  /api/workspaces/{key}/archive:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     post:
-      tags: [projects]
-      operationId: archiveProject
+      tags: [workspaces]
+      operationId: archiveWorkspace
       summary: Archive a workspace as retained read-only history
       description: |
-        Requires the project_admin flag. Idempotent when already archived.
+        Requires the workspace_admin flag. Idempotent when already archived.
         Existing records, workspace-prefixed issue IDs and stable URLs remain
         readable. Nothing transfers to another workspace; the archived
         workspace is omitted from normal discovery and rejects work mutations.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
-        '200': { $ref: '#/components/responses/Project' }
+        '200': { $ref: '#/components/responses/Workspace' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}/restore:
+  /api/workspaces/{key}/restore:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     post:
-      tags: [projects]
-      operationId: restoreProject
+      tags: [workspaces]
+      operationId: restoreWorkspace
       summary: Restore an archived workspace
-      description: Requires the project_admin compatibility flag and preserves the same workspace boundary, every child record and every preference.
+      description: Requires the workspace_admin flag and preserves the same workspace boundary, every child record and every preference.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
-        '200': { $ref: '#/components/responses/Project' }
+        '200': { $ref: '#/components/responses/Workspace' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}/activity:
+  /api/workspaces/{key}/activity:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     get:
-      tags: [projects]
-      operationId: listProjectActivity
+      tags: [workspaces]
+      operationId: listWorkspaceActivity
       summary: List archive and restore audit entries, newest first
       parameters:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
-        '200': { $ref: '#/components/responses/ProjectActivityList' }
+        '200': { $ref: '#/components/responses/WorkspaceActivityList' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/preferences/projects:
+  /api/preferences/workspaces:
     get:
       tags: [users]
-      operationId: listProjectPreferences
+      operationId: listWorkspacePreferences
       summary: List the current user's otherwise-visible workspaces and ignore state
       description: |
         This is the recovery path for ignored workspaces. It deliberately bypasses
@@ -954,18 +953,18 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/ProjectPreference' }
+                items: { $ref: '#/components/schemas/WorkspacePreference' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/preferences/projects/{key}:
+  /api/preferences/workspaces/{key}:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     put:
       tags: [users]
-      operationId: setProjectIgnored
+      operationId: setWorkspaceIgnored
       summary: Set whether the current user ignores one otherwise-visible workspace
       description: |
         Idempotent. Like the preference listing, workspace resolution applies
@@ -975,24 +974,24 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProjectPreferenceSet' }
+            schema: { $ref: '#/components/schemas/WorkspacePreferenceSet' }
       responses:
         '200':
           description: The resulting preference.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProjectPreference' }
+              schema: { $ref: '#/components/schemas/WorkspacePreference' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}/members:
+  /api/workspaces/{key}/members:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
     get:
-      tags: [projects]
-      operationId: listProjectMembers
+      tags: [workspaces]
+      operationId: listWorkspaceMembers
       summary: The users with access to a workspace, ordered by username ascending
       description: |
         Readable by any member of the workspace: knowing who else works on a
@@ -1008,16 +1007,16 @@ paths:
         '200': { $ref: '#/components/responses/MembershipList' }
         default: { $ref: '#/components/responses/Error' }
     post:
-      tags: [projects]
-      operationId: addProjectMember
-      summary: Grant a user who is not already a member access to a project
+      tags: [workspaces]
+      operationId: addWorkspaceMember
+      summary: Grant a user who is not already a member access to a workspace
       description: |
-        Requires `admin` access to the project. Unlike the member resource's
+        Requires `admin` access to the workspace. Unlike the member resource's
         `PUT`, this create operation returns `409` when the user is already a
         member. The existence check and insert share one write transaction, so
         a stale administration view cannot overwrite a concurrent access
         grant. The dedicated administration path remains available when the
-        caller has personally ignored the project.
+        caller has personally ignored the workspace.
       requestBody:
         required: true
         content:
@@ -1031,19 +1030,19 @@ paths:
               schema: { $ref: '#/components/schemas/Membership' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/projects/{key}/members/{user}:
+  /api/workspaces/{key}/members/{user}:
     parameters:
       - name: key
         in: path
         required: true
-        schema: { $ref: '#/components/schemas/ProjectKey' }
+        schema: { $ref: '#/components/schemas/WorkspaceKey' }
       - name: user
         in: path
         required: true
         schema: { $ref: '#/components/schemas/Username' }
     put:
-      tags: [projects]
-      operationId: setProjectMember
+      tags: [workspaces]
+      operationId: setWorkspaceMember
       summary: Grant a user access to a workspace
       description: |
         Replaces whatever access the user held in the workspace, so granting the
@@ -1051,7 +1050,7 @@ paths:
         `POST` because a membership is addressed by its own path and setting it
         is idempotent.
 
-        Requires `admin` access to that workspace, which the compatibility field `project_admin`
+        Requires `admin` access to that workspace, which `workspace_admin`
         also confers. Naming a user who does not exist is a `404`. The
         dedicated administration path remains available when the caller has
         personally ignored the workspace.
@@ -1067,8 +1066,8 @@ paths:
         '200': { $ref: '#/components/responses/Membership' }
         default: { $ref: '#/components/responses/Error' }
     delete:
-      tags: [projects]
-      operationId: removeProjectMember
+      tags: [workspaces]
+      operationId: removeWorkspaceMember
       summary: Withdraw a user's access to a workspace
       description: |
         Requires `admin` access to that workspace. Withdrawing access nobody
@@ -1142,7 +1141,7 @@ paths:
       summary: Change a user's password or what they may do
       description: |
         The two halves are permitted separately, because they are different
-        powers: `project_admin` and `user_admin` may be changed only by a user
+        powers: `workspace_admin` and `user_admin` may be changed only by a user
         administrator, and the password by one or by the account holder
         themselves. So a user may set their own password without being able to
         grant themselves anything.
@@ -1217,7 +1216,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/assignee'
         - $ref: '#/components/parameters/unassigned'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
@@ -1253,7 +1252,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/assignee'
         - $ref: '#/components/parameters/unassigned'
-        - $ref: '#/components/parameters/project'
+        - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
@@ -1418,16 +1417,15 @@ components:
       in: query
       description: Select the empty assignee. Mutually exclusive with `assignee`.
       schema: { type: boolean, default: false }
-    project:
-      name: project
+    workspace:
+      name: workspace
       in: query
       description: |
-        Select these workspaces. Repeat for several; values are ORed. The
-        parameter name is retained for compatibility. A key naming no workspace
-        is a 404 rather than a listing that matches nothing.
+        Select these workspaces. Repeat for several; values are ORed. A key
+        naming no workspace is a 404 rather than a listing that matches nothing.
       schema:
         type: array
-        items: { $ref: '#/components/schemas/ProjectKey' }
+        items: { $ref: '#/components/schemas/WorkspaceKey' }
       style: form
       explode: true
     parent:
@@ -1468,8 +1466,8 @@ components:
         type: string
         default: order
         enum:
-          [order, priority, created, updated, id, project, status, assignee, type, blockers,
-           -order, -priority, -created, -updated, -id, -project, -status, -assignee, -type, -blockers]
+          [order, priority, created, updated, id, workspace, status, assignee, type, blockers,
+           -order, -priority, -created, -updated, -id, -workspace, -status, -assignee, -type, -blockers]
     limit:
       name: limit
       in: query
@@ -1545,31 +1543,31 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/Activity' }
-    Project:
-      description: The workspace, represented by the compatibility-named Project schema.
+    Workspace:
+      description: The workspace.
       headers:
         Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Project' }
-    ProjectCreated:
-      description: The new workspace, represented by the compatibility-named Project schema.
+          schema: { $ref: '#/components/schemas/Workspace' }
+    WorkspaceCreated:
+      description: The new workspace.
       headers:
         Location: { $ref: '#/components/headers/Location' }
         Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Project' }
-    ProjectList:
-      description: The workspaces, represented by the compatibility-named Project schema.
+          schema: { $ref: '#/components/schemas/Workspace' }
+    WorkspaceList:
+      description: The workspaces.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
       content:
         application/json:
           schema:
             type: array
-            items: { $ref: '#/components/schemas/Project' }
-    ProjectActivityList:
+            items: { $ref: '#/components/schemas/Workspace' }
+    WorkspaceActivityList:
       description: Workspace lifecycle audit entries, newest first.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
@@ -1577,7 +1575,7 @@ components:
         application/json:
           schema:
             type: array
-            items: { $ref: '#/components/schemas/ProjectActivity' }
+            items: { $ref: '#/components/schemas/WorkspaceActivity' }
     FacetList:
       description: The distinct values in use, sorted by value ascending.
       headers:
@@ -1688,17 +1686,17 @@ components:
     BoardView:
       type: object
       additionalProperties: false
-      required: [id, name, owner, shared, all_projects, projects, labels,
+      required: [id, name, owner, shared, all_workspaces, workspaces, labels,
         assignees, priority_max, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
         name: { type: string, minLength: 1, maxLength: 100 }
         owner: { $ref: '#/components/schemas/Assignee' }
         shared: { type: boolean }
-        all_projects: { type: boolean }
-        projects:
+        all_workspaces: { type: boolean }
+        workspaces:
           type: array
-          items: { $ref: '#/components/schemas/ProjectKey' }
+          items: { $ref: '#/components/schemas/WorkspaceKey' }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1716,10 +1714,10 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
         shared: { type: boolean }
-        all_projects: { type: boolean }
-        projects:
+        all_workspaces: { type: boolean }
+        workspaces:
           type: array
-          items: { $ref: '#/components/schemas/ProjectKey' }
+          items: { $ref: '#/components/schemas/WorkspaceKey' }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1739,10 +1737,10 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
         shared: { type: boolean }
-        all_projects: { type: boolean }
-        projects:
+        all_workspaces: { type: boolean }
+        workspaces:
           type: array
-          items: { $ref: '#/components/schemas/ProjectKey' }
+          items: { $ref: '#/components/schemas/WorkspaceKey' }
         labels:
           type: array
           items: { $ref: '#/components/schemas/Label' }
@@ -1758,14 +1756,14 @@ components:
     Board:
       type: object
       additionalProperties: false
-      required: [lanes, lane_total, projects_omitted]
+      required: [lanes, lane_total, workspaces_omitted]
       properties:
         view: { $ref: '#/components/schemas/BoardView' }
         lanes:
           type: array
           items: { $ref: '#/components/schemas/BoardLane' }
         lane_total: { type: integer, minimum: 0 }
-        projects_omitted: { type: boolean }
+        workspaces_omitted: { type: boolean }
 
     BoardLane:
       type: object
@@ -1794,14 +1792,14 @@ components:
       enum: [ready, blocked]
     NavigationResults:
       type: object
-      required: [issues, projects, users]
+      required: [issues, workspaces, users]
       properties:
         issues:
           type: array
           items: { $ref: '#/components/schemas/Issue' }
-        projects:
+        workspaces:
           type: array
-          items: { $ref: '#/components/schemas/Project' }
+          items: { $ref: '#/components/schemas/Workspace' }
         users:
           type: array
           items: { $ref: '#/components/schemas/UserDirectoryEntry' }
@@ -1862,7 +1860,7 @@ components:
       minLength: 1
       maxLength: 64
 
-    ProjectKey:
+    WorkspaceKey:
       type: string
       description: |
         Lowercase ASCII letters, digits and hyphens, starting with a letter.
@@ -1897,7 +1895,7 @@ components:
         removing the workspace's other users.
 
         `admin` is not power over the workspace itself: creating, renaming and
-        deleting a workspace is the compatibility field `project_admin`'s, because a workspace's
+        deleting a workspace is `workspace_admin`'s, because a workspace's
         own existence is not something its members decide.
 
         Holding neither in a workspace means the workspace does not exist as far
@@ -2087,15 +2085,15 @@ components:
         unchanged data therefore produce byte-identical output.
       additionalProperties: false
       required:
-        [id, project, title, description, type, status, priority, order, labels,
+        [id, workspace, title, description, type, status, priority, order, labels,
          assignees, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
           type: string
-          description: '`<workspace-key>-<hash>`, assigned at creation and immutable; the compatibility field `project` names that workspace.'
+          description: '`<workspace-key>-<hash>`, assigned at creation and immutable; `workspace` names that workspace.'
           examples: [awb-5c1d84]
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         title:
           type: string
           description: Single line, trimmed, never empty.
@@ -2201,13 +2199,13 @@ components:
       pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
       examples: ['2026-08-26T09:12:03.412Z']
 
-    Project:
+    Workspace:
       description: Compatibility-named representation of one workspace.
       type: object
       additionalProperties: false
       required: [key, name, description, state, archived_at, archived_by, active_issues, created_at, updated_at]
       properties:
-        key: { $ref: '#/components/schemas/ProjectKey' }
+        key: { $ref: '#/components/schemas/WorkspaceKey' }
         name:
           type: string
           description: |
@@ -2234,30 +2232,30 @@ components:
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
-    ProjectActivity:
+    WorkspaceActivity:
       type: object
       additionalProperties: false
-      required: [id, project, action, actor, created_at]
+      required: [id, workspace, action, actor, created_at]
       properties:
         id: { type: integer, format: int64, minimum: 1 }
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         action:
           type: string
           enum: [archived, restored]
         actor: { type: string }
         created_at: { $ref: '#/components/schemas/Timestamp' }
 
-    ProjectPreference:
+    WorkspacePreference:
       type: object
       additionalProperties: false
-      required: [project, ignored]
+      required: [workspace, ignored]
       properties:
-        project: { $ref: '#/components/schemas/Project' }
+        workspace: { $ref: '#/components/schemas/Workspace' }
         ignored:
           type: boolean
           description: Whether the current user hides this workspace from normal operations.
 
-    ProjectPreferenceSet:
+    WorkspacePreferenceSet:
       type: object
       additionalProperties: false
       required: [ignored]
@@ -2271,13 +2269,13 @@ components:
         round it is read, so a workspace's member list and a user's own workspace
         list are one shape.
 
-        A membership is identified by compatibility fields `project` and `user` together and carries
+        A membership is identified by `workspace` and `user` together and carries
         no id of its own, exactly as an attachment is identified by its issue
         and its name. It has no timestamps and therefore no ETag.
       additionalProperties: false
-      required: [project, user, access]
+      required: [workspace, user, access]
       properties:
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         user: { $ref: '#/components/schemas/Username' }
         access: { $ref: '#/components/schemas/Access' }
 
@@ -2288,11 +2286,11 @@ components:
         wire: a password goes in through `password` or `password_hash` and
         never comes back out.
       additionalProperties: false
-      required: [name, full_name, project_admin, user_admin, created_at, updated_at, projects]
+      required: [name, full_name, workspace_admin, user_admin, created_at, updated_at, workspaces]
       properties:
         name: { $ref: '#/components/schemas/Username' }
         full_name: { $ref: '#/components/schemas/UserFullName' }
-        project_admin:
+        workspace_admin:
           type: boolean
           description: |
             May create, change and delete workspaces, and holds `admin` access in
@@ -2310,7 +2308,7 @@ components:
             Moves when the full name, password or either flag changes, and is strictly
             increasing per user. Granting or withdrawing access to a workspace
             does not move it, exactly as an issue's relations do not move its.
-        projects:
+        workspaces:
           type: array
           description: |
             Derived and read-only: the workspaces this user has access to, by key
@@ -2329,20 +2327,20 @@ components:
         restricted to workspace names the caller may see, except that a user
         administrator's complete directory includes every workspace.
       additionalProperties: false
-      required: [name, full_name, project_admin, user_admin, created_at, updated_at, projects, activity_projects]
+      required: [name, full_name, workspace_admin, user_admin, created_at, updated_at, workspaces, activity_workspaces]
       properties:
         name: { $ref: '#/components/schemas/Username' }
         full_name: { $ref: '#/components/schemas/UserFullName' }
-        project_admin: { type: boolean }
+        workspace_admin: { type: boolean }
         user_admin: { type: boolean }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
-        projects:
+        workspaces:
           type: array
           items: { $ref: '#/components/schemas/Membership' }
-        activity_projects:
+        activity_workspaces:
           type: array
-          items: { $ref: '#/components/schemas/ProjectKey' }
+          items: { $ref: '#/components/schemas/WorkspaceKey' }
 
     Facet:
       type: object
@@ -2393,9 +2391,9 @@ components:
         schema: written as one, it would reach `IssuePatch` too and quietly
         rewrite the type and priority of every issue patched without them.
       additionalProperties: false
-      required: [project, title]
+      required: [workspace, title]
       properties:
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         title: { type: string, minLength: 1, maxLength: 500 }
         description: { type: string }
         type: { $ref: '#/components/schemas/Type' }
@@ -2430,7 +2428,7 @@ components:
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
-        `project`, `order`, the timestamps, `blocked`, `blockers`, `relations`, `links`
+        `workspace`, `order`, the timestamps, `blocked`, `blockers`, `relations`, `links`
         and `attachments` — are accepted and their values ignored. Together those rules
         let a UI send back the object it read with only the fields it edited
         changed.
@@ -2456,7 +2454,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         id: { type: string }
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         order: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
@@ -2471,9 +2469,9 @@ components:
       additionalProperties: false
       description: |
         Atomically changes workflow status, optional direct epic membership,
-        and sparse manual position. The issue's project/workspace and ID are
+        and sparse manual position. The issue's workspace/workspace and ID are
         immutable. When `epic` is present, an empty value clears direct epic
-        membership; a non-empty value must name an epic in the same project.
+        membership; a non-empty value must name an epic in the same workspace.
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/Status' }
@@ -2549,19 +2547,19 @@ components:
           default: false
           description: Replace an existing parent, which is the only refusal it overrides.
 
-    ProjectCreate:
+    WorkspaceCreate:
       type: object
       additionalProperties: false
       required: [key]
       properties:
-        key: { $ref: '#/components/schemas/ProjectKey' }
+        key: { $ref: '#/components/schemas/WorkspaceKey' }
         name:
           type: string
           maxLength: 500
           description: Defaults to the key.
         description: { type: string }
 
-    ProjectPatch:
+    WorkspacePatch:
       type: object
       description: |
         Replaces each field it carries and leaves the others alone. `key` may
@@ -2576,7 +2574,7 @@ components:
           maxLength: 500
           description: '`""` restores the key as the name.'
         description: { type: string }
-        key: { $ref: '#/components/schemas/ProjectKey' }
+        key: { $ref: '#/components/schemas/WorkspaceKey' }
         active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
@@ -2594,7 +2592,7 @@ components:
         full_name: { $ref: '#/components/schemas/UserFullName' }
         password: { $ref: '#/components/schemas/Password' }
         password_hash: { $ref: '#/components/schemas/PasswordHash' }
-        project_admin: { type: boolean, default: false }
+        workspace_admin: { type: boolean, default: false }
         user_admin: { type: boolean, default: false }
 
     UserPatch:
@@ -2604,7 +2602,7 @@ components:
         body succeeds and changes nothing.
 
         `password` and `password_hash` may not both appear, for the reason
-        UserCreate gives. `name` may appear but may not change; `projects` and
+        UserCreate gives. `name` may appear but may not change; `workspaces` and
         the timestamps are derived and their values ignored, so a UI can send
         back the object it read. As elsewhere, ignored is not unchecked: each
         is still validated against the schema declared for it.
@@ -2613,10 +2611,10 @@ components:
         password: { $ref: '#/components/schemas/Password' }
         password_hash: { $ref: '#/components/schemas/PasswordHash' }
         full_name: { $ref: '#/components/schemas/UserFullName' }
-        project_admin: { type: boolean }
+        workspace_admin: { type: boolean }
         user_admin: { type: boolean }
         name: { $ref: '#/components/schemas/Username' }
-        projects:
+        workspaces:
           type: array
           items: { $ref: '#/components/schemas/Membership' }
         created_at: { $ref: '#/components/schemas/Timestamp' }
@@ -2624,7 +2622,7 @@ components:
 
     MembershipCreate:
       type: object
-      description: The body of `POST /api/projects/{key}/members`.
+      description: The body of `POST /api/workspaces/{key}/members`.
       additionalProperties: false
       required: [user, access]
       properties:
@@ -2634,12 +2632,12 @@ components:
     MembershipSet:
       type: object
       description: |
-        The body of `PUT /api/projects/{key}/members/{user}`. `project` and
+        The body of `PUT /api/workspaces/{key}/members/{user}`. `workspace` and
         `user` may appear but may not change: they are in the path, which is
         what identifies the membership.
       additionalProperties: false
       required: [access]
       properties:
         access: { $ref: '#/components/schemas/Access' }
-        project: { $ref: '#/components/schemas/ProjectKey' }
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         user: { $ref: '#/components/schemas/Username' }

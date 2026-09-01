@@ -28,7 +28,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"Release","shared":true,"all_projects":false,"projects":["awb"],"labels":null,"assignees":null,"priority_max":4}`, string(body))
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"labels":null,"assignees":null,"priority_max":4}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
@@ -40,7 +40,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/boards/"+id:
-			assert.Equal(t, []string{"awb", "web"}, r.URL.Query()["project"])
+			assert.Equal(t, []string{"awb", "web"}, r.URL.Query()["workspace"])
 			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
 			assert.Equal(t, "open", r.URL.Query().Get("status"))
@@ -67,7 +67,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, views, 1)
 	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{Name: "Release", Shared: true,
-		AllProjects: false, Projects: []string{"awb"}, PriorityMax: 4})
+		AllWorkspaces: false, Workspaces: []string{"awb"}, PriorityMax: 4})
 	require.NoError(t, err)
 	name := "Release"
 	_, err = client.UpdateBoardView(t.Context(), id, backend.BoardViewPatch{Name: &name}, `"etag"`)
@@ -78,7 +78,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 
 	laneLimit, cardOffset, epic := 7, 3, "awb-epic"
 	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
-		Projects: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
+		Workspaces: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
 		Status: domain.StatusOpen, Epic: &epic, Direction: "earlier",

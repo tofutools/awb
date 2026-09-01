@@ -185,7 +185,7 @@ func TestStaticAssetsAreServed(t *testing.T) {
 func TestUIProxyServesLocalUIAndForwardsAPIReads(t *testing.T) {
 	var upstreamHost string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/awb/api/projects", r.URL.Path)
+		assert.Equal(t, "/awb/api/workspaces", r.URL.Path)
 		assert.Equal(t, "page=2", r.URL.RawQuery)
 		assert.Equal(t, upstreamHost, r.Host)
 		assert.Equal(t, "Basic dGVzdDpzZWNyZXQ=", r.Header.Get("Authorization"))
@@ -202,7 +202,7 @@ func TestUIProxyServesLocalUIAndForwardsAPIReads(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "<!doctype html>")
 
-	resp, body = get(t, h, http.MethodGet, "/api/projects?page=2",
+	resp, body = get(t, h, http.MethodGet, "/api/workspaces?page=2",
 		"Authorization", "Basic dGVzdDpzZWNyZXQ=")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "7", resp.Header.Get("X-Total-Count"))
@@ -219,7 +219,7 @@ func TestUIProxyForwardsAuthenticationChallenge(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	resp, _ := get(t, newProxyServeHandler(t, upstream.URL), http.MethodGet, "/api/projects")
+	resp, _ := get(t, newProxyServeHandler(t, upstream.URL), http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	assert.Equal(t, `Basic realm="remote awb"`, resp.Header.Get("WWW-Authenticate"))
 }
@@ -268,7 +268,7 @@ func TestUIProxyCancelsAStalledUpstream(t *testing.T) {
 
 	started := time.Now()
 	resp, _ := get(t, proxyDeadlines(proxy, 20*time.Millisecond, time.Second),
-		http.MethodGet, "/api/projects")
+		http.MethodGet, "/api/workspaces")
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 	assert.Less(t, time.Since(started), time.Second)
 }
@@ -350,19 +350,19 @@ func TestSameOriginWrites(t *testing.T) {
 
 	// A request carrying neither header is allowed: that is what every
 	// non-browser client sends, and the CLI is one of them.
-	resp, _ := get(t, h, http.MethodPost, "/api/projects")
+	resp, _ := get(t, h, http.MethodPost, "/api/workspaces")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "http://127.0.0.1:7777")
+	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://127.0.0.1:7777")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode, "the server's own origin")
 
-	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "https://ui.example.com")
+	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://ui.example.com")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode, "an allowed --cors-origin")
 
-	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "https://evil.example.com")
+	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://evil.example.com")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "null")
+	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "null")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 	// A GET is never a state change and is exempt.
@@ -384,7 +384,7 @@ func TestCORS(t *testing.T) {
 	// middleware set to exactly the headers that response has.
 	assert.Contains(t, resp.Header.Get("Access-Control-Expose-Headers"), "X-Total-Count")
 
-	resp, _ = send(t, allowed, http.MethodPost, "/api/projects", `{"key":"web"}`,
+	resp, _ = send(t, allowed, http.MethodPost, "/api/workspaces", `{"key":"web"}`,
 		"Origin", "https://ui.example.com")
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	exposed := resp.Header.Get("Access-Control-Expose-Headers")
@@ -504,7 +504,7 @@ func TestProxyTargetMustBeAnHTTPBaseURL(t *testing.T) {
 		"file:///tmp/awb",
 		"https:///awb",
 		"https://user:pw@example.com/awb",
-		"https://example.com/awb?project=demo",
+		"https://example.com/awb?workspace=demo",
 		"https://example.com/awb#issues",
 		"https://example.com:65536/awb",
 	} {
@@ -567,25 +567,25 @@ func TestNoAuthServerDoesNotUseAStoredIdentityPreference(t *testing.T) {
 		addr: "127.0.0.1", port: 7777, noAuth: true,
 	}, false)
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{
-		Name: "mikael", Password: "hunter2", ProjectAdmin: true,
+		Name: "mikael", Password: "hunter2", WorkspaceAdmin: true,
 	})
 	require.NoError(t, err)
-	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web"})
+	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "web"})
 	require.NoError(t, err)
-	_, err = be.WithUser("mikael").SetProjectIgnored(t.Context(), "web", true)
+	_, err = be.WithUser("mikael").SetWorkspaceIgnored(t.Context(), "web", true)
 	require.NoError(t, err)
 
-	resp, _ := get(t, h, http.MethodGet, "/api/projects/web")
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces/web")
 	assert.Equal(t, http.StatusOK, resp.StatusCode,
 		"the fixed identity is attribution, not a stored preference owner")
-	resp, _ = get(t, h, http.MethodGet, "/api/preferences/projects")
+	resp, _ = get(t, h, http.MethodGet, "/api/preferences/workspaces")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode,
 		"an open server has no per-user preference recovery endpoint")
-	resp, _ = send(t, h, http.MethodPut, "/api/preferences/projects/web",
+	resp, _ = send(t, h, http.MethodPut, "/api/preferences/workspaces/web",
 		`{"ignored":false}`, "Content-Type", "application/json")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
-	preferences, err := be.WithUser("mikael").ListProjectPreferences(t.Context())
+	preferences, err := be.WithUser("mikael").ListWorkspacePreferences(t.Context())
 	require.NoError(t, err)
 	require.Len(t, preferences, 1)
 	assert.True(t, preferences[0].Ignored,
@@ -621,7 +621,7 @@ func TestHTTPSAndAnHTTPPublicURLContradictEachOther(t *testing.T) {
 func TestIPv6ListenerHasAnOriginABrowserSends(t *testing.T) {
 	h := newServeHandlerWith(t, serveOptions{addr: "::1", port: 7777})
 
-	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "http://[::1]:7777")
+	resp, _ := get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://[::1]:7777")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -634,10 +634,10 @@ func TestPublicURLIsTheSameOrigin(t *testing.T) {
 		publicURL: "https://example.com/awb/",
 	})
 
-	resp, _ := get(t, h, http.MethodPost, "/api/projects", "Origin", "https://example.com")
+	resp, _ := get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://example.com")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/projects", "Origin", "http://127.0.0.1:7777")
+	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://127.0.0.1:7777")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -777,10 +777,10 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 		return rec
 	}
 
-	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`)
+	rec := call(http.MethodPost, "/api/workspaces", "application/json", `{"key":"awb"}`)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	rec = call(http.MethodPost, "/api/issues", "application/json",
-		`{"project":"awb","title":"Parser crashes"}`)
+		`{"workspace":"awb","title":"Parser crashes"}`)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
 	var issue domain.Issue
@@ -805,7 +805,7 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 	// A JSON body over the general cap still is, so raising one cap did not
 	// raise the other.
 	rec = call(http.MethodPost, "/api/issues", "application/json",
-		`{"project":"awb","title":"`+strings.Repeat("x", maxRequestBody)+`"}`)
+		`{"workspace":"awb","title":"`+strings.Repeat("x", maxRequestBody)+`"}`)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
 }
 
@@ -905,10 +905,10 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 	server := httptest.NewServer(h)
 	t.Cleanup(server.Close)
 
-	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	issue, err := be.CreateIssue(t.Context(),
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+		backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
 
 	base, err := url.Parse(server.URL)
@@ -963,10 +963,10 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	}
 
 	// The fixtures ask for no compression, so their bodies can simply be read.
-	rec := call(http.MethodPost, "/api/projects", "application/json", `{"key":"awb"}`, false)
+	rec := call(http.MethodPost, "/api/workspaces", "application/json", `{"key":"awb"}`, false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	rec = call(http.MethodPost, "/api/issues", "application/json",
-		`{"project":"awb","title":"Parser crashes"}`, false)
+		`{"workspace":"awb","title":"Parser crashes"}`, false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &issue))
@@ -1025,10 +1025,10 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	server := httptest.NewServer(proxy)
 	t.Cleanup(server.Close)
 
-	_, err = be.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	issue, err := be.CreateIssue(t.Context(),
-		backend.IssueCreate{Project: "awb", Title: "Parser crashes"})
+		backend.IssueCreate{Workspace: "awb", Title: "Parser crashes"})
 	require.NoError(t, err)
 
 	base, err := url.Parse(server.URL + "/awb")
@@ -1081,16 +1081,16 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	ctx := t.Context()
 
 	_, err := be.CreateUser(ctx, backend.UserCreate{
-		Name: "mikael", Password: "hunter2", ProjectAdmin: true, UserAdmin: true})
+		Name: "mikael", Password: "hunter2", WorkspaceAdmin: true, UserAdmin: true})
 	require.NoError(t, err)
-	// Two of these share a prefix with the awb project key and with the ids of
+	// Two of these share a prefix with the awb workspace key and with the ids of
 	// the issues in it, so one navigation query reaches all three of its groups.
 	for _, name := range []string{"adam", "zoe", "awbot", "awbee"} {
 		_, err := be.CreateUser(ctx, backend.UserCreate{Name: name, Password: "hunter2"})
 		require.NoError(t, err)
 	}
 	for _, key := range []string{"awb", "web"} {
-		_, err := be.CreateProject(ctx, backend.ProjectCreate{Key: key, Name: "Agent Work Board"})
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key, Name: "Agent Work Board"})
 		require.NoError(t, err)
 		for _, user := range []string{"mikael", "adam", "zoe", "awbot", "awbee"} {
 			_, err := be.SetMember(ctx, key, user, domain.AccessRegular)
@@ -1100,20 +1100,20 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 
 	// Archived, then restored, so the workspace activity has two entries to
 	// order and the state listings are not empty.
-	_, err = be.CreateProject(ctx, backend.ProjectCreate{Key: "old", Name: "Retired"})
+	_, err = be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "old", Name: "Retired"})
 	require.NoError(t, err)
-	_, err = be.ArchiveProject(ctx, "old", "")
+	_, err = be.ArchiveWorkspace(ctx, "old", "")
 	require.NoError(t, err)
-	_, err = be.RestoreProject(ctx, "old", "")
+	_, err = be.RestoreWorkspace(ctx, "old", "")
 	require.NoError(t, err)
-	_, err = be.ArchiveProject(ctx, "old", "")
+	_, err = be.ArchiveWorkspace(ctx, "old", "")
 	require.NoError(t, err)
 
 	ids := make([]string, 0, 8)
 	for range 4 {
-		for _, project := range []string{"awb", "web"} {
+		for _, workspace := range []string{"awb", "web"} {
 			issue, err := be.CreateIssue(ctx, backend.IssueCreate{
-				Project: project, Title: "tied", Description: "tied parser text",
+				Workspace: workspace, Title: "tied", Description: "tied parser text",
 				Labels: []string{"b", "a"}})
 			require.NoError(t, err)
 			ids = append(ids, issue.ID)
@@ -1152,9 +1152,9 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		"/api/issues", "/api/ready", "/api/blocked", "/api/search?q=parser",
 		"/api/issues/suggestions?q=tied",
 		"/api/navigation?q=tied", "/api/navigation?q=awb",
-		"/api/projects", "/api/projects?state=archived", "/api/projects?state=all",
-		"/api/projects/old/activity",
-		"/api/preferences/projects", "/api/projects/awb/members",
+		"/api/workspaces", "/api/workspaces?state=archived", "/api/workspaces?state=all",
+		"/api/workspaces/old/activity",
+		"/api/preferences/workspaces", "/api/workspaces/awb/members",
 		"/api/users", "/api/labels", "/api/assignees",
 		"/api/issues/" + blocker, "/api/issues/" + blocker + "/attachments",
 		"/api/issues/" + blocker + "/activity",
@@ -1168,7 +1168,7 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		paths = append(paths, "/api/search?q=parser&sort="+key)
 	}
 	for _, key := range []string{"key", "active", "updated"} {
-		paths = append(paths, "/api/projects?sort="+key, "/api/projects?sort=-"+key)
+		paths = append(paths, "/api/workspaces?sort="+key, "/api/workspaces?sort=-"+key)
 	}
 
 	credentials := basicAuth("mikael", "hunter2")
@@ -1178,13 +1178,13 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	// response as a whole still compared equal, so check all three are populated.
 	_, navigation := get(t, h, http.MethodGet, "/api/navigation?q=awb", credentials...)
 	var groups struct {
-		Issues   []domain.Issue   `json:"issues"`
-		Projects []domain.Project `json:"projects"`
-		Users    []domain.User    `json:"users"`
+		Issues     []domain.Issue     `json:"issues"`
+		Workspaces []domain.Workspace `json:"workspaces"`
+		Users      []domain.User      `json:"users"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(navigation), &groups))
 	assert.NotEmpty(t, groups.Issues)
-	assert.NotEmpty(t, groups.Projects)
+	assert.NotEmpty(t, groups.Workspaces)
 	assert.NotEmpty(t, groups.Users)
 
 	for _, path := range paths {

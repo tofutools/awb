@@ -12,9 +12,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The demo project. It is the only project awb demo creates or deletes, but
+// The demo workspace. It is the only workspace awb demo creates or deletes, but
 // deleting it removes the relations its issues are on either end of, which can
-// unblock work in another project.
+// unblock work in another workspace.
 //
 // It creates no user, deliberately, although the data set otherwise shows
 // everything there is to show. A database holding no user is a server without
@@ -23,9 +23,9 @@ import (
 // have to guess. What users look like is shown by "awb user add" instead,
 // which is a decision somebody made.
 const (
-	demoProjectKey  = "demo"
-	demoProjectName = "DEMO"
-	demoProjectDesc = "A sample workspace for trying `awb` out.\n\n" +
+	demoWorkspaceKey  = "demo"
+	demoWorkspaceName = "DEMO"
+	demoWorkspaceDesc = "A sample workspace for trying `awb` out.\n\n" +
 		"`awb demo --force` replaces it **wholesale**, so anything written here is\n" +
 		"scratch data. See the [worked example](https://example.com/widgets/example) for\n" +
 		"what to try first.\n"
@@ -221,13 +221,13 @@ type demoParams struct {
 func newDemoCommand(e *env) *cobra.Command {
 	return boa.CmdT[demoParams]{
 		Use:   "demo",
-		Short: "Fill the " + demoProjectKey + " workspace with a data set that exercises every feature",
-		Long: "Create the " + demoProjectKey + " workspace and fill it with a small sample data set: every\n" +
+		Short: "Fill the " + demoWorkspaceKey + " workspace with a data set that exercises every feature",
+		Long: "Create the " + demoWorkspaceKey + " workspace and fill it with a small sample data set: every\n" +
 			"issue type, every priority, every status, every relation type, blocked\n" +
 			"and ready work, labels, assignees and Markdown links.\n\n" +
 			"It is for trying commands out, and for looking at the web UI with\n" +
 			"something in it.\n\n" +
-			"It refuses while the " + demoProjectKey + " workspace exists, because it replaces the workspace\n" +
+			"It refuses while the " + demoWorkspaceKey + " workspace exists, because it replaces the workspace\n" +
 			"wholesale rather than reconciling it: nothing marks an issue there as one\n" +
 			"a previous run wrote, so --force is what says that deleting whatever is\n" +
 			"under the key is meant.\n\n" +
@@ -240,61 +240,61 @@ func newDemoCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			project, err := buildDemo(cmd.Context(), be, p.Force)
+			workspace, err := buildDemo(cmd.Context(), be, p.Force)
 			if err != nil {
 				return err
 			}
 			if e.json {
-				return e.writeProjectJSON(project)
+				return e.writeWorkspaceJSON(workspace)
 			}
 			// demo is one of the exceptions to "mutating commands print nothing on
 			// success", for the reason the deleting commands are: a command that
-			// replaces a whole project should say what it left behind. The line is
+			// replaces a whole workspace should say what it left behind. The line is
 			// not a compatibility surface; a script reads --json.
 			return e.summarise("Created workspace %s with %d issue(s).\n",
-				project.Key, len(demoIssues))
+				workspace.Key, len(demoIssues))
 		},
 	}.ToCobra()
 }
 
-// buildDemo replaces the demo project with the demo data set and returns the
-// project as it stands afterwards.
+// buildDemo replaces the demo workspace with the demo data set and returns the
+// workspace as it stands afterwards.
 //
 // It is composed entirely of ordinary backend operations — the same ones a
 // script would issue — so it works against a server exactly as it works against
 // a file and adds no second code path. Each issue is therefore its own
-// transaction: a build interrupted half way leaves a partial project, which the
+// transaction: a build interrupted half way leaves a partial workspace, which the
 // next run replaces.
-func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Project, error) {
-	// An existing demo project is deleted outright, issues and relations with it,
+func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Workspace, error) {
+	// An existing demo workspace is deleted outright, issues and relations with it,
 	// rather than reconciled: what awb demo promises is that afterwards the
-	// project holds exactly this data set and nothing else. Nothing marks an
+	// workspace holds exactly this data set and nothing else. Nothing marks an
 	// issue here as one a previous run wrote, so that deletes whatever is under
 	// the key, and --force is what says it is meant.
 	//
 	// The refusal depends on what is stored rather than on the arguments alone,
 	// which is what makes it a conflict where awb delete's missing --force is a
-	// usage error. The check and the delete are two operations, so a project
+	// usage error. The check and the delete are two operations, so a workspace
 	// created between them is deleted unasked; that window is one round trip
 	// wide and is not worth an interface change to close.
-	_, err := be.GetProject(ctx, demoProjectKey)
+	_, err := be.GetWorkspace(ctx, demoWorkspaceKey)
 	switch {
 	case err != nil && awberr.KindOf(err) != awberr.NotFound:
 		return nil, err
 	case err == nil && !force:
 		return nil, awberr.Conflictf(
 			"workspace %s already exists; awb demo --force replaces it and deletes everything in it",
-			demoProjectKey)
+			demoWorkspaceKey)
 	case err == nil:
-		if _, err := be.DeleteProject(ctx, demoProjectKey, true, ""); err != nil {
+		if _, err := be.DeleteWorkspace(ctx, demoWorkspaceKey, true, ""); err != nil {
 			return nil, err
 		}
 	}
 
-	if _, err := be.CreateProject(ctx, backend.ProjectCreate{
-		Key:         demoProjectKey,
-		Name:        demoProjectName,
-		Description: demoProjectDesc,
+	if _, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{
+		Key:         demoWorkspaceKey,
+		Name:        demoWorkspaceName,
+		Description: demoWorkspaceDesc,
 	}); err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 		}
 		priority := d.priority
 		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
-			Project:     demoProjectKey,
+			Workspace:   demoWorkspaceKey,
 			Title:       d.title,
 			Description: d.description,
 			Type:        d.issueType,
@@ -341,9 +341,9 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Pro
 		}
 	}
 
-	// Re-read, so the returned project carries the count of the issues just
+	// Re-read, so the returned workspace carries the count of the issues just
 	// created rather than the zero it was born with.
-	return be.GetProject(ctx, demoProjectKey)
+	return be.GetWorkspace(ctx, demoWorkspaceKey)
 }
 
 // relations turns the table's keys into the relations of one issue, in the

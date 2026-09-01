@@ -43,21 +43,21 @@ func (c *conditions) where() string {
 //
 // It is a method on the transaction so that the visibility scope is part of
 // every selection it builds, and therefore of every listing, search and facet:
-// a caller sees the issues of the projects they are a member of, and the
+// a caller sees the issues of the workspaces they are a member of, and the
 // unpaged total counts those and no others.
 func (t *Tx) selection(f *domain.Filter) *conditions {
 	c := &conditions{}
 
-	t.visible(c, "i.project")
+	t.visible(c, "i.workspace")
 	// Archived work remains reachable through stable direct URLs, but never
 	// participates in everyday listings, search, facets, readiness or pickers.
 	if !f.IncludeArchived {
-		c.add(`EXISTS (SELECT 1 FROM projects p WHERE p.key = i.project AND p.state = 'active')`)
+		c.add(`EXISTS (SELECT 1 FROM workspaces p WHERE p.key = i.workspace AND p.state = 'active')`)
 	}
 	c.addIn("i.status", anyArgs(f.EffectiveStatuses()))
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))
-	c.addIn("i.project", anyArgs(f.Projects))
+	c.addIn("i.workspace", anyArgs(f.Workspaces))
 
 	if f.PriorityMax != nil {
 		// Inclusive, and reading as urgency rather than as a number: because 0 is
@@ -96,7 +96,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		const directEpic = `EXISTS (
 			SELECT 1 FROM relations er JOIN issues epic ON epic.id = er.other
 			 WHERE er.subject = i.id AND er.type = 'has-parent'
-			   AND epic.type = 'epic' AND epic.project = i.project`
+			   AND epic.type = 'epic' AND epic.workspace = i.workspace`
 		if *f.Epic == "" {
 			c.add("NOT " + directEpic + ")")
 		} else {
@@ -117,7 +117,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	// describe the same authorized result set.
 	for _, word := range strings.Fields(f.ListingFilter) {
 		c.add(`(
-			instr(awb_casefold(i.id || ' ' || i.project || ' ' || i.title || ' ' ||
+			instr(awb_casefold(i.id || ' ' || i.workspace || ' ' || i.title || ' ' ||
 				i.type || ' ' || i.status || ' P' || i.priority), awb_casefold(?)) > 0
 			OR EXISTS (SELECT 1 FROM issue_assignees a
 			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
@@ -207,8 +207,8 @@ func orderBy(sort domain.Sort) string {
 		return " ORDER BY i.updated_at " + direction + ", i.id ASC"
 	case domain.SortID:
 		return " ORDER BY i.id " + direction
-	case domain.SortProject:
-		return " ORDER BY i.project " + direction + ", i.id ASC"
+	case domain.SortWorkspace:
+		return " ORDER BY i.workspace " + direction + ", i.id ASC"
 	case domain.SortStatus:
 		return " ORDER BY " + statusRank + " " + direction + ", i.id ASC"
 	case domain.SortAssignee:

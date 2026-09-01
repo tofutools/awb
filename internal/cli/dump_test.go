@@ -32,21 +32,21 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	ctx := t.Context()
-	_, err := source.CreateProject(ctx, backend.ProjectCreate{
+	_, err := source.CreateWorkspace(ctx, backend.WorkspaceCreate{
 		Key: "awb", Name: "Agent Work Board", Description: "The tracker",
 	})
 	require.NoError(t, err)
-	_, err = source.CreateProject(ctx, backend.ProjectCreate{Key: "web", Name: "Web"})
+	_, err = source.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web", Name: "Web"})
 	require.NoError(t, err)
 
 	created := make([]*domain.Issue, 101)
 	for i := range created {
-		project := "awb"
+		workspace := "awb"
 		if i%2 != 0 {
-			project = "web"
+			workspace = "web"
 		}
 		created[i], err = source.CreateIssue(ctx, backend.IssueCreate{
-			Project: project, Title: fmt.Sprintf("Issue %03d", i),
+			Workspace: workspace, Title: fmt.Sprintf("Issue %03d", i),
 			Description: "See [the design](https://example.com/design).",
 			Type:        domain.TypeTask, Labels: []string{"dump"},
 		})
@@ -73,7 +73,7 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	t.Setenv("AWB_DB", server.URL)
 	t.Setenv("AWB_IDENTITY", "mikael")
-	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_CONFIG_FILE"} {
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_WORKSPACE", "AWB_CONFIG_FILE"} {
 		t.Setenv(name, "")
 	}
 	outputDB := filepath.Join(root, "copy", "awb.db")
@@ -92,11 +92,11 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	restored := local.New(db, storage.NewBlobs(outputAttachments), "local")
 
-	wantProjects, err := source.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	wantWorkspaces, err := source.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	gotProjects, err := restored.ListProjects(ctx, "", domain.DefaultProjectSort, nil, nil)
+	gotWorkspaces, err := restored.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.NoError(t, err)
-	assert.Equal(t, wantProjects, gotProjects)
+	assert.Equal(t, wantWorkspaces, gotWorkspaces)
 
 	filter := &domain.Filter{IncludeClosed: true, Sort: domain.Sort{Key: domain.SortID}}
 	wantIssues, err := source.ListIssues(ctx, filter)
@@ -134,9 +134,9 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	ctx := t.Context()
-	_, err := source.CreateProject(ctx, backend.ProjectCreate{Key: "awb"})
+	_, err := source.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
-	first, err := source.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "First"})
+	first, err := source.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "First"})
 	require.NoError(t, err)
 	_, err = source.AddAttachment(ctx, first.ID, backend.AttachmentCreate{
 		Name: "first.txt", Content: strings.NewReader("first"),
@@ -148,7 +148,7 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
 	t.Setenv("AWB_DB", server.URL)
 	t.Setenv("AWB_IDENTITY", "mikael")
-	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_PROJECT", "AWB_CONFIG_FILE"} {
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_WORKSPACE", "AWB_CONFIG_FILE"} {
 		t.Setenv(name, "")
 	}
 	outputDB := filepath.Join(root, "copy", "awb.db")
@@ -168,7 +168,7 @@ func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
 
 	errOut, code := run()
 	require.Equal(t, 0, code, errOut)
-	second, err := source.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Second"})
+	second, err := source.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Second"})
 	require.NoError(t, err)
 	secondAttachment, err := source.AddAttachment(ctx, second.ID, backend.AttachmentCreate{
 		Name: "second.txt", Content: strings.NewReader("second"),

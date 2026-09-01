@@ -11,9 +11,9 @@ import (
 
 // The user and membership operations.
 //
-// They are gated rather than scoped. Everything about an issue or a project is
+// They are gated rather than scoped. Everything about an issue or a workspace is
 // hidden from a caller who is not a member, by the visibility scope the
-// transaction carries; a user belongs to no project and so has nothing to be
+// transaction carries; a user belongs to no workspace and so has nothing to be
 // hidden behind, and who may read and change one is a rule instead. The rules
 // themselves are in the domain layer, so both surfaces reach the same answer.
 
@@ -37,7 +37,7 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 		if !caller.MayManageUsers() {
 			return awberr.Forbiddenf("only a user administrator may create a user")
 		}
-		if err := tx.InsertUser(name, fullName, *hash, req.ProjectAdmin, req.UserAdmin); err != nil {
+		if err := tx.InsertUser(name, fullName, *hash, req.WorkspaceAdmin, req.UserAdmin); err != nil {
 			return err
 		}
 		user, err = tx.GetUser(name)
@@ -101,8 +101,8 @@ func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error
 
 // ListUsers lists accounts ordered by name ascending. Account administrators
 // see every account. Other authenticated callers see the current accounts
-// that share or have participated in projects they can see. Project
-// administrators see participation across every project, but not dormant
+// that share or have participated in workspaces they can see. Workspace
+// administrators see participation across every workspace, but not dormant
 // accounts that have never touched one.
 func (b *Backend) ListUsers(ctx context.Context, filter string, limit, offset *int) (backend.UserPage, error) {
 	var page backend.UserPage
@@ -149,7 +149,7 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 		}
 		fullName = &valid
 	}
-	changesFlags := req.ProjectAdmin != nil || req.UserAdmin != nil
+	changesFlags := req.WorkspaceAdmin != nil || req.UserAdmin != nil
 
 	var user *domain.User
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
@@ -176,12 +176,12 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 		}
 
 		fields := storage.UserFields{
-			FullName:     existing.FullName,
-			ProjectAdmin: existing.ProjectAdmin,
-			UserAdmin:    existing.UserAdmin,
+			FullName:       existing.FullName,
+			WorkspaceAdmin: existing.WorkspaceAdmin,
+			UserAdmin:      existing.UserAdmin,
 		}
-		if req.ProjectAdmin != nil {
-			fields.ProjectAdmin = *req.ProjectAdmin
+		if req.WorkspaceAdmin != nil {
+			fields.WorkspaceAdmin = *req.WorkspaceAdmin
 		}
 		if req.UserAdmin != nil {
 			fields.UserAdmin = *req.UserAdmin
@@ -190,12 +190,12 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 			fields.FullName = *fullName
 		}
 
-		wasProjectAdmin := existing.ProjectAdmin
+		wasWorkspaceAdmin := existing.WorkspaceAdmin
 		if err := tx.UpdateUser(existing, fields, hash); err != nil {
 			return err
 		}
-		if wasProjectAdmin && !fields.ProjectAdmin {
-			if err := tx.ForgetUnownedIgnoredProjects(name); err != nil {
+		if wasWorkspaceAdmin && !fields.WorkspaceAdmin {
+			if err := tx.ForgetUnownedIgnoredWorkspaces(name); err != nil {
 				return err
 			}
 		}
@@ -246,27 +246,27 @@ func (b *Backend) DeleteUser(ctx context.Context, name, ifMatch string) (*backen
 	return &deleted, nil
 }
 
-// ListMembers lists a project's members, ordered by username ascending.
+// ListMembers lists a workspace's members, ordered by username ascending.
 //
-// Any member of the project may read it: knowing who else is on a board is
+// Any member of the workspace may read it: knowing who else is on a board is
 // part of working on it, and every one of those names is already visible as an
 // assignee. This dedicated administration read deliberately bypasses the
-// caller's ignored-project preference while retaining membership scope.
-func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset *int) (
+// caller's ignored-workspace preference while retaining membership scope.
+func (b *Backend) ListMembers(ctx context.Context, workspace string, limit, offset *int) (
 	backend.MemberPage, error) {
-	if _, err := domain.ValidateProjectKey(project); err != nil {
+	if _, err := domain.ValidateWorkspaceKey(workspace); err != nil {
 		return backend.MemberPage{}, err
 	}
 
 	var page backend.MemberPage
 	err := b.readIncludingIgnored(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		// Scoped, so a project the caller is not in is not found rather than
+		// Scoped, so a workspace the caller is not in is not found rather than
 		// empty.
-		if _, err := tx.GetProject(project); err != nil {
+		if _, err := tx.GetWorkspace(workspace); err != nil {
 			return err
 		}
 		var err error
-		page.Members, page.Total, err = tx.ListMembers(project, limit, offset)
+		page.Members, page.Total, err = tx.ListMembers(workspace, limit, offset)
 		return err
 	})
 	if err != nil {
@@ -281,30 +281,30 @@ func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset
 // AddMember grants access only when the user is not already a member. The
 // existence check and insert share the write transaction, preventing a stale
 // administration view from replacing a concurrent grant.
-func (b *Backend) AddMember(ctx context.Context, project, user string, access domain.Access) (
+func (b *Backend) AddMember(ctx context.Context, workspace, user string, access domain.Access) (
 	*domain.Membership, error) {
-	membership, err := validateMembership(project, user, access)
+	membership, err := validateMembership(workspace, user, access)
 	if err != nil {
 		return nil, err
 	}
 
 	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		if err := permitMembership(tx, caller, membership.Project); err != nil {
+		if err := permitMembership(tx, caller, membership.Workspace); err != nil {
 			return err
 		}
 		if _, err := tx.GetUser(membership.User); err != nil {
 			return err
 		}
-		if _, alreadyMember, err := tx.Membership(membership.Project, membership.User); err != nil {
+		if _, alreadyMember, err := tx.Membership(membership.Workspace, membership.User); err != nil {
 			return err
 		} else if alreadyMember {
-			return awberr.Conflictf("%s is already a member of project %s",
-				membership.User, membership.Project)
+			return awberr.Conflictf("%s is already a member of workspace %s",
+				membership.User, membership.Workspace)
 		}
-		if err := tx.SetMembership(membership.Project, membership.User, membership.Access); err != nil {
+		if err := tx.SetMembership(membership.Workspace, membership.User, membership.Access); err != nil {
 			return err
 		}
-		return tx.ForgetProjectIgnored(membership.User, membership.Project)
+		return tx.ForgetWorkspaceIgnored(membership.User, membership.Workspace)
 	})
 	if err != nil {
 		return nil, err
@@ -312,20 +312,20 @@ func (b *Backend) AddMember(ctx context.Context, project, user string, access do
 	return membership, nil
 }
 
-// SetMember grants a user an access level in a project, replacing whatever
+// SetMember grants a user an access level in a workspace, replacing whatever
 // they held there before. Granting the level they already hold succeeds and
 // changes nothing. Membership administration bypasses only the caller's
-// ignored-project preference so an authorized administrator cannot hide their
+// ignored-workspace preference so an authorized administrator cannot hide their
 // recovery path from themselves.
-func (b *Backend) SetMember(ctx context.Context, project, user string, access domain.Access) (
+func (b *Backend) SetMember(ctx context.Context, workspace, user string, access domain.Access) (
 	*domain.Membership, error) {
-	membership, err := validateMembership(project, user, access)
+	membership, err := validateMembership(workspace, user, access)
 	if err != nil {
 		return nil, err
 	}
 
 	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		if err := permitMembership(tx, caller, membership.Project); err != nil {
+		if err := permitMembership(tx, caller, membership.Workspace); err != nil {
 			return err
 		}
 		// A membership names a user, so the account has to exist: a row naming
@@ -335,15 +335,15 @@ func (b *Backend) SetMember(ctx context.Context, project, user string, access do
 		if _, err := tx.GetUser(membership.User); err != nil {
 			return err
 		}
-		_, alreadyMember, err := tx.Membership(membership.Project, membership.User)
+		_, alreadyMember, err := tx.Membership(membership.Workspace, membership.User)
 		if err != nil {
 			return err
 		}
-		if err := tx.SetMembership(membership.Project, membership.User, membership.Access); err != nil {
+		if err := tx.SetMembership(membership.Workspace, membership.User, membership.Access); err != nil {
 			return err
 		}
 		if !alreadyMember {
-			return tx.ForgetProjectIgnored(membership.User, membership.Project)
+			return tx.ForgetWorkspaceIgnored(membership.User, membership.Workspace)
 		}
 		return nil
 	})
@@ -353,32 +353,32 @@ func (b *Backend) SetMember(ctx context.Context, project, user string, access do
 	return membership, nil
 }
 
-// RemoveMember withdraws a user's access to a project, and returns the
+// RemoveMember withdraws a user's access to a workspace, and returns the
 // membership as it was immediately before. Withdrawing access nobody holds is
 // not found, exactly as deleting an attachment that is not there is.
-func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error) {
-	membership, err := validateMembership(project, user, domain.AccessRegular)
+func (b *Backend) RemoveMember(ctx context.Context, workspace, user string) (*domain.Membership, error) {
+	membership, err := validateMembership(workspace, user, domain.AccessRegular)
 	if err != nil {
 		return nil, err
 	}
 
 	err = b.writeIncludingIgnored(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		if err := permitMembership(tx, caller, membership.Project); err != nil {
+		if err := permitMembership(tx, caller, membership.Workspace); err != nil {
 			return err
 		}
-		access, member, err := tx.Membership(membership.Project, membership.User)
+		access, member, err := tx.Membership(membership.Workspace, membership.User)
 		if err != nil {
 			return err
 		}
 		if !member {
 			return awberr.NotFoundf("%s has no access to workspace %s",
-				membership.User, membership.Project)
+				membership.User, membership.Workspace)
 		}
 		membership.Access = access
-		if err := tx.ForgetProjectIgnored(membership.User, membership.Project); err != nil {
+		if err := tx.ForgetWorkspaceIgnored(membership.User, membership.Workspace); err != nil {
 			return err
 		}
-		return tx.DeleteMembership(membership.Project, membership.User)
+		return tx.DeleteMembership(membership.Workspace, membership.User)
 	})
 	if err != nil {
 		return nil, err
@@ -386,8 +386,8 @@ func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*doma
 	return membership, nil
 }
 
-func validateMembership(project, user string, access domain.Access) (*domain.Membership, error) {
-	key, err := domain.ValidateProjectKey(project)
+func validateMembership(workspace, user string, access domain.Access) (*domain.Membership, error) {
+	key, err := domain.ValidateWorkspaceKey(workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -399,27 +399,27 @@ func validateMembership(project, user string, access domain.Access) (*domain.Mem
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Membership{Project: key, User: name, Access: level}, nil
+	return &domain.Membership{Workspace: key, User: name, Access: level}, nil
 }
 
-// permitMembership is the gate on both membership writes: the project has to
+// permitMembership is the gate on both membership writes: the workspace has to
 // exist and be visible, and the caller has to hold admin access in it — either
-// by their own membership or by the project_admin flag, which holds admin
+// by their own membership or by the workspace_admin flag, which holds admin
 // everywhere.
 //
-// The project is read first, so one the caller cannot see is not found rather
+// The workspace is read first, so one the caller cannot see is not found rather
 // than refused.
-func permitMembership(tx *storage.Tx, caller domain.Caller, project string) error {
-	if _, err := tx.GetProject(project); err != nil {
+func permitMembership(tx *storage.Tx, caller domain.Caller, workspace string) error {
+	if _, err := tx.GetWorkspace(workspace); err != nil {
 		return err
 	}
-	access, member, err := tx.Membership(project, caller.Name)
+	access, member, err := tx.Membership(workspace, caller.Name)
 	if err != nil {
 		return err
 	}
-	if !caller.MayAdministerProject(access, member) {
+	if !caller.MayAdministerWorkspace(access, member) {
 		return awberr.Forbiddenf(
-			"only an administrator of workspace %s may change who works on it", project)
+			"only an administrator of workspace %s may change who works on it", workspace)
 	}
 	return nil
 }

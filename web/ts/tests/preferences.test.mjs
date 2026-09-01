@@ -3,11 +3,11 @@ import test from "node:test";
 
 import {
   accountMenuItems,
-  filterProjectPreferences,
+  filterWorkspacePreferences,
   preferenceStorage,
   readPaginationAutoHide,
   rememberPaginationAutoHide,
-  projectPreferenceSummary,
+  workspacePreferenceSummary,
   showPagination,
 } from "../../static/preferences.js";
 
@@ -25,16 +25,16 @@ test("pagination auto-hide is enabled by default and persists explicit choices",
   assert.equal(readPaginationAutoHide(storage), true);
 });
 
-test("project preference search and summary include ignored projects", () => {
+test("workspace preference search and summary include ignored workspaces", () => {
   const preferences = [
-    { project: { key: "awb", name: "Agent Work Board" }, ignored: false },
-    { project: { key: "archive", name: "Archive migration" }, ignored: true },
+    { workspace: { key: "awb", name: "Agent Work Board" }, ignored: false },
+    { workspace: { key: "archive", name: "Archive migration" }, ignored: true },
   ];
 
-  assert.equal(projectPreferenceSummary(preferences), "1 active · 1 ignored");
-  assert.deepEqual(filterProjectPreferences(preferences, "archive").map((row) => row.project.key), ["archive"]);
-  assert.deepEqual(filterProjectPreferences(preferences, "agent board").map((row) => row.project.key), ["awb"]);
-  assert.deepEqual(filterProjectPreferences(preferences, "missing"), []);
+  assert.equal(workspacePreferenceSummary(preferences), "1 active · 1 ignored");
+  assert.deepEqual(filterWorkspacePreferences(preferences, "archive").map((row) => row.workspace.key), ["archive"]);
+  assert.deepEqual(filterWorkspacePreferences(preferences, "agent board").map((row) => row.workspace.key), ["awb"]);
+  assert.deepEqual(filterWorkspacePreferences(preferences, "missing"), []);
 });
 
 test("blocked browser storage preserves the safe default and remains usable", () => {

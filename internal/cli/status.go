@@ -26,8 +26,8 @@ type statusConfiguration struct {
 	ConfiguredIdentity string           `json:"configured_identity"`
 	User               string           `json:"user"`
 	PasswordSet        bool             `json:"password_set"`
-	DefaultProject     string           `json:"default_project"`
-	ContextProject     string           `json:"context_project"`
+	DefaultWorkspace   string           `json:"default_workspace"`
+	ContextWorkspace   string           `json:"context_workspace"`
 	ContextLabel       string           `json:"context_label"`
 	UserFile           string           `json:"user_file"`
 	LocalFile          string           `json:"local_file"`
@@ -39,7 +39,7 @@ type statusEnvironment struct {
 	Value string `json:"value"`
 }
 
-type statusProject struct {
+type statusWorkspace struct {
 	Key        string `json:"key"`
 	Name       string `json:"name"`
 	Open       int    `json:"open"`
@@ -52,7 +52,7 @@ type statusReport struct {
 	Connection    statusConnection    `json:"connection"`
 	Configuration statusConfiguration `json:"configuration"`
 	Environment   []statusEnvironment `json:"environment"`
-	Projects      []statusProject     `json:"projects"`
+	Workspaces    []statusWorkspace   `json:"workspaces"`
 }
 
 var statusEnvironmentNames = []string{
@@ -62,7 +62,7 @@ var statusEnvironmentNames = []string{
 	"AWB_USER",
 	"AWB_PASSWORD",
 	"AWB_IDENTITY",
-	"AWB_PROJECT",
+	"AWB_WORKSPACE",
 	"AWB_COLOR",
 	"NO_COLOR",
 }
@@ -107,12 +107,12 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 		Connection: statusConnection{Mode: "local", Database: cfg.DB, Attachments: cfg.Attachments},
 		Configuration: statusConfiguration{
 			Identity: identity, ConfiguredIdentity: cfg.Identity, User: cfg.User,
-			PasswordSet: cfg.PasswordSet, DefaultProject: cfg.DefaultProject,
-			ContextProject: cfg.ContextProject, ContextLabel: cfg.ContextLabel,
+			PasswordSet: cfg.PasswordSet, DefaultWorkspace: cfg.DefaultWorkspace,
+			ContextWorkspace: cfg.ContextWorkspace, ContextLabel: cfg.ContextLabel,
 			UserFile: cfg.UserFilePath, LocalFile: cfg.LocalFilePath, Color: cfg.Color,
 		},
 		Environment: configuredEnvironment(),
-		Projects:    []statusProject{},
+		Workspaces:  []statusWorkspace{},
 	}
 	if cfg.Remote() {
 		report.Connection.Mode = "remote"
@@ -121,24 +121,24 @@ func (e *env) buildStatus(cmd *cobra.Command) (*statusReport, error) {
 		report.Connection.Database = ""
 	}
 
-	page, err := be.ListProjects(cmd.Context(), "", domain.DefaultProjectSort, nil, nil)
+	page, err := be.ListWorkspaces(cmd.Context(), "", domain.DefaultWorkspaceSort, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	zero := 0
-	for _, project := range page.Projects {
+	for _, workspace := range page.Workspaces {
 		counts := make(map[domain.Status]int, len(domain.Statuses))
 		for _, status := range domain.Statuses {
 			issues, err := be.ListIssues(cmd.Context(), &domain.Filter{
-				Projects: []string{project.Key}, Statuses: []domain.Status{status}, Limit: &zero,
+				Workspaces: []string{workspace.Key}, Statuses: []domain.Status{status}, Limit: &zero,
 			})
 			if err != nil {
 				return nil, err
 			}
 			counts[status] = issues.Total
 		}
-		report.Projects = append(report.Projects, statusProject{
-			Key: project.Key, Name: project.Name,
+		report.Workspaces = append(report.Workspaces, statusWorkspace{
+			Key: workspace.Key, Name: workspace.Name,
 			Open: counts[domain.StatusOpen], InProgress: counts[domain.StatusInProgress],
 			Closed: counts[domain.StatusClosed],
 			Total:  counts[domain.StatusOpen] + counts[domain.StatusInProgress] + counts[domain.StatusClosed],
@@ -183,7 +183,7 @@ func (e *env) printStatus(report *statusReport) error {
 	_, _ = fmt.Fprintf(w,
 		"  Default workspace:\t%s\n  Context workspace:\t%s\n  Context label:\t%s\n"+
 			"  User config:\t%s\n  Local config:\t%s\n  Color:\t%s\n",
-		valueOrNone(c.DefaultProject), valueOrNone(c.ContextProject), valueOrNone(c.ContextLabel),
+		valueOrNone(c.DefaultWorkspace), valueOrNone(c.ContextWorkspace), valueOrNone(c.ContextLabel),
 		valueOrNone(c.UserFile), valueOrNone(c.LocalFile), c.Color)
 
 	_, _ = fmt.Fprintln(w, "\nEnvironment")
@@ -196,27 +196,27 @@ func (e *env) printStatus(report *statusReport) error {
 	}
 
 	_, _ = fmt.Fprintln(w, "\nWorkspaces")
-	if len(report.Projects) == 0 {
+	if len(report.Workspaces) == 0 {
 		_, _ = fmt.Fprintln(w, "  (none)")
 		_ = w.Flush()
 		return e.stdout.Err()
 	}
 	_ = w.Flush()
 
-	keys := make([]string, len(report.Projects))
-	names := make([]string, len(report.Projects))
-	open := make([]string, len(report.Projects))
-	inProgress := make([]string, len(report.Projects))
-	closed := make([]string, len(report.Projects))
-	totals := make([]string, len(report.Projects))
-	for i, project := range report.Projects {
-		route := "/issues?" + url.Values{"project": []string{project.Key}}.Encode()
-		keys[i] = e.entityLink(t, project.Key, route)
-		names[i] = e.entityLink(t, project.Name, route)
-		open[i] = strconv.Itoa(project.Open)
-		inProgress[i] = strconv.Itoa(project.InProgress)
-		closed[i] = strconv.Itoa(project.Closed)
-		totals[i] = strconv.Itoa(project.Total)
+	keys := make([]string, len(report.Workspaces))
+	names := make([]string, len(report.Workspaces))
+	open := make([]string, len(report.Workspaces))
+	inProgress := make([]string, len(report.Workspaces))
+	closed := make([]string, len(report.Workspaces))
+	totals := make([]string, len(report.Workspaces))
+	for i, workspace := range report.Workspaces {
+		route := "/issues?" + url.Values{"workspace": []string{workspace.Key}}.Encode()
+		keys[i] = e.entityLink(t, workspace.Key, route)
+		names[i] = e.entityLink(t, workspace.Name, route)
+		open[i] = strconv.Itoa(workspace.Open)
+		inProgress[i] = strconv.Itoa(workspace.InProgress)
+		closed[i] = strconv.Itoa(workspace.Closed)
+		totals[i] = strconv.Itoa(workspace.Total)
 	}
 	e.writeListing(t, []col{
 		{header: "KEY", cells: keys, paint: always(t.id)},
@@ -238,17 +238,17 @@ func (e *env) printCompactStatus(report *statusReport) error {
 		q(report.Connection.UI), q(report.Connection.Attachments))
 	c := report.Configuration
 	_, _ = fmt.Fprintf(e.stdout,
-		"configuration identity=%s configured_identity=%s user=%s password_set=%t default_project=%s "+
-			"context_project=%s context_label=%s user_file=%s local_file=%s color=%s\n",
-		q(c.Identity), q(c.ConfiguredIdentity), q(c.User), c.PasswordSet, q(c.DefaultProject),
-		q(c.ContextProject), q(c.ContextLabel), q(c.UserFile), q(c.LocalFile), c.Color)
+		"configuration identity=%s configured_identity=%s user=%s password_set=%t default_workspace=%s "+
+			"context_workspace=%s context_label=%s user_file=%s local_file=%s color=%s\n",
+		q(c.Identity), q(c.ConfiguredIdentity), q(c.User), c.PasswordSet, q(c.DefaultWorkspace),
+		q(c.ContextWorkspace), q(c.ContextLabel), q(c.UserFile), q(c.LocalFile), c.Color)
 	for _, variable := range report.Environment {
 		_, _ = fmt.Fprintf(e.stdout, "environment name=%s value=%s\n", variable.Name, q(variable.Value))
 	}
-	for _, project := range report.Projects {
+	for _, workspace := range report.Workspaces {
 		_, _ = fmt.Fprintf(e.stdout,
-			"project key=%s name=%s open=%d in_progress=%d closed=%d total=%d\n",
-			project.Key, q(project.Name), project.Open, project.InProgress, project.Closed, project.Total)
+			"workspace key=%s name=%s open=%d in_progress=%d closed=%d total=%d\n",
+			workspace.Key, q(workspace.Name), workspace.Open, workspace.InProgress, workspace.Closed, workspace.Total)
 	}
 	return e.stdout.Err()
 }

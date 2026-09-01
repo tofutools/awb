@@ -9,12 +9,12 @@ import (
 )
 
 func toBoardView(view *domain.BoardView) api.BoardView {
-	projects := make([]api.ProjectKey, len(view.Projects))
-	for i, v := range view.Projects {
-		projects[i] = api.ProjectKey(v)
+	workspaces := make([]api.WorkspaceKey, len(view.Workspaces))
+	for i, v := range view.Workspaces {
+		workspaces[i] = api.WorkspaceKey(v)
 	}
 	return api.BoardView{ID: api.BoardViewID(view.ID), Name: view.Name, Owner: api.Assignee(view.Owner),
-		Shared: view.Shared, AllProjects: view.AllProjects, Projects: projects,
+		Shared: view.Shared, AllWorkspaces: view.AllWorkspaces, Workspaces: workspaces,
 		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees),
 		PriorityMax: api.Priority(view.PriorityMax), CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
 }
@@ -31,7 +31,7 @@ func boardViewResponse(view *domain.BoardView) *api.BoardViewHeaders {
 	return &api.BoardViewHeaders{Etag: api.NewOptString(backend.ETag(view.UpdatedAt)), Response: toBoardView(view)}
 }
 
-func stringsFromProjects(values []api.ProjectKey) []string {
+func stringsFromWorkspaces(values []api.WorkspaceKey) []string {
 	result := make([]string, len(values))
 	for i, v := range values {
 		result[i] = string(v)
@@ -52,11 +52,11 @@ func stringsFromAssignees(values []api.Assignee) []string {
 	}
 	return result
 }
-func optProjects(values []api.ProjectKey) *[]string {
+func optWorkspaces(values []api.WorkspaceKey) *[]string {
 	if values == nil {
 		return nil
 	}
-	result := stringsFromProjects(values)
+	result := stringsFromWorkspaces(values)
 	return &result
 }
 func optLabels(values []api.Label) *[]string {
@@ -84,7 +84,7 @@ func (h *Handler) ListBoardViews(ctx context.Context) ([]api.BoardView, error) {
 
 func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate) (*api.BoardViewCreatedHeaders, error) {
 	view, err := h.backendFor(ctx).CreateBoardView(ctx, backend.BoardViewCreate{Name: req.Name,
-		Shared: req.Shared.Or(false), AllProjects: req.AllProjects.Or(true), Projects: stringsFromProjects(req.Projects),
+		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
 		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees), PriorityMax: int(req.PriorityMax.Or(4))})
 	if err != nil {
 		return nil, err
@@ -103,8 +103,8 @@ func (h *Handler) GetBoardView(ctx context.Context, params api.GetBoardViewParam
 
 func (h *Handler) UpdateBoardView(ctx context.Context, req *api.BoardViewPatch, params api.UpdateBoardViewParams) (*api.BoardViewHeaders, error) {
 	view, err := h.backendFor(ctx).UpdateBoardView(ctx, string(params.ID), backend.BoardViewPatch{
-		Name: optString(req.Name), Shared: optBool(req.Shared), AllProjects: optBool(req.AllProjects),
-		Projects: optProjects(req.Projects), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
+		Name: optString(req.Name), Shared: optBool(req.Shared), AllWorkspaces: optBool(req.AllWorkspaces),
+		Workspaces: optWorkspaces(req.Workspaces), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
 		PriorityMax: optPriority(req.PriorityMax)}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
@@ -124,8 +124,8 @@ func (h *Handler) DeleteBoardView(ctx context.Context, params api.DeleteBoardVie
 func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api.Board, error) {
 	query := backend.BoardQuery{LaneLimit: optInt(params.LaneLimit), LaneOffset: optInt(params.LaneOffset),
 		CardLimit: optInt(params.CardLimit), CardOffset: optInt(params.CardOffset)}
-	for _, value := range params.Project {
-		query.Projects = append(query.Projects, string(value))
+	for _, value := range params.Workspace {
+		query.Workspaces = append(query.Workspaces, string(value))
 	}
 	if value, ok := params.Status.Get(); ok {
 		query.Status = domain.Status(value)
@@ -137,7 +137,7 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 	if err != nil {
 		return nil, err
 	}
-	result := &api.Board{Lanes: make([]api.BoardLane, len(board.Lanes)), LaneTotal: board.LaneTotal, ProjectsOmitted: board.ProjectsOmitted}
+	result := &api.Board{Lanes: make([]api.BoardLane, len(board.Lanes)), LaneTotal: board.LaneTotal, WorkspacesOmitted: board.WorkspacesOmitted}
 	if board.View != nil {
 		result.View = api.NewOptBoardView(toBoardView(board.View))
 	}

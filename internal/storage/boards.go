@@ -10,14 +10,14 @@ import (
 )
 
 // ListBoardEpics returns visible epic issues in the workspaces selected by a
-// board. A nil project set means every workspace allowed by the transaction;
+// board. A nil workspace set means every workspace allowed by the transaction;
 // a non-nil empty set means none.
-func (t *Tx) ListBoardEpics(projects []string, limit, offset *int) ([]domain.Issue, int, error) {
-	if projects != nil && len(projects) == 0 {
+func (t *Tx) ListBoardEpics(workspaces []string, limit, offset *int) ([]domain.Issue, int, error) {
+	if workspaces != nil && len(workspaces) == 0 {
 		return []domain.Issue{}, 0, nil
 	}
 	return t.ListIssues(&domain.Filter{
-		Projects: projects, Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true,
+		Workspaces: workspaces, Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true,
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
 	})
 }
@@ -25,16 +25,16 @@ func (t *Tx) ListBoardEpics(projects []string, limit, offset *int) ([]domain.Iss
 func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 	var view domain.BoardView
 	err := row.Scan(&view.ID, &view.Name, &view.Owner, &view.Shared,
-		&view.AllProjects, &view.PriorityMax, &view.CreatedAt, &view.UpdatedAt)
+		&view.AllWorkspaces, &view.PriorityMax, &view.CreatedAt, &view.UpdatedAt)
 	return &view, err
 }
 
-// GetBoardView reads view metadata independently of project scope. The local
+// GetBoardView reads view metadata independently of workspace scope. The local
 // layer checks ownership/sharing before exposing it, then separately filters
-// the selected projects through the caller's transaction scope.
+// the selected workspaces through the caller's transaction scope.
 func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 	view, err := scanBoardView(t.q.QueryRowContext(t.ctx, `
-		SELECT id, name, owner, shared, all_projects, priority_max, created_at, updated_at
+		SELECT id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at
 		  FROM board_views WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such board view: %s", id)
@@ -52,7 +52,7 @@ func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 // and are discovered by their stable URL.
 func (t *Tx) ListBoardViews(owner string) ([]domain.BoardView, error) {
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT id, name, owner, shared, all_projects, priority_max, created_at, updated_at
+		SELECT id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at
 		  FROM board_views WHERE owner = ? ORDER BY name, id`, owner)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
@@ -99,8 +99,8 @@ func (t *Tx) hydrateBoardView(view *domain.BoardView) error {
 		}
 		return rows.Err()
 	}
-	if err := load(`SELECT project FROM board_view_projects WHERE view = ? ORDER BY project`, &view.Projects); err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "read board view projects")
+	if err := load(`SELECT workspace FROM board_view_workspaces WHERE view = ? ORDER BY workspace`, &view.Workspaces); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read board view workspaces")
 	}
 	if err := load(`SELECT label FROM board_view_labels WHERE view = ? ORDER BY label`, &view.Labels); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read board view labels")
@@ -116,9 +116,9 @@ func (t *Tx) InsertBoardView(view *domain.BoardView) error {
 	now := Now()
 	view.CreatedAt, view.UpdatedAt = now, now
 	_, err := t.q.ExecContext(t.ctx, `INSERT INTO board_views
-		(id, name, owner, shared, all_projects, priority_max, created_at, updated_at)
+		(id, name, owner, shared, all_workspaces, priority_max, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, view.ID, view.Name, view.Owner, view.Shared,
-		view.AllProjects, view.PriorityMax, now, now)
+		view.AllWorkspaces, view.PriorityMax, now, now)
 	if isUniqueViolation(err) {
 		return awberr.Conflictf("board view already exists: %s", view.ID)
 	}
@@ -131,15 +131,15 @@ func (t *Tx) InsertBoardView(view *domain.BoardView) error {
 // UpdateBoardView moves its ETag only when the stored representation changes.
 func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 	if existing.Name == next.Name && existing.Shared == next.Shared &&
-		existing.AllProjects == next.AllProjects && existing.PriorityMax == next.PriorityMax &&
-		slices.Equal(existing.Projects, next.Projects) && slices.Equal(existing.Labels, next.Labels) &&
+		existing.AllWorkspaces == next.AllWorkspaces && existing.PriorityMax == next.PriorityMax &&
+		slices.Equal(existing.Workspaces, next.Workspaces) && slices.Equal(existing.Labels, next.Labels) &&
 		slices.Equal(existing.Assignees, next.Assignees) {
 		return nil
 	}
 	next.UpdatedAt = bumpedTimestamp(existing.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET name = ?, shared = ?,
-		all_projects = ?, priority_max = ?, updated_at = ? WHERE id = ?`, next.Name,
-		next.Shared, next.AllProjects, next.PriorityMax, next.UpdatedAt, existing.ID)
+		all_workspaces = ?, priority_max = ?, updated_at = ? WHERE id = ?`, next.Name,
+		next.Shared, next.AllWorkspaces, next.PriorityMax, next.UpdatedAt, existing.ID)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update board view %s", existing.ID)
 	}
@@ -147,14 +147,14 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 }
 
 func (t *Tx) replaceBoardViewFilters(view *domain.BoardView) error {
-	for _, table := range []string{"board_view_projects", "board_view_labels", "board_view_assignees"} {
+	for _, table := range []string{"board_view_workspaces", "board_view_labels", "board_view_assignees"} {
 		if _, err := t.q.ExecContext(t.ctx, `DELETE FROM `+table+` WHERE view = ?`, view.ID); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "replace board view filters")
 		}
 	}
-	for _, value := range view.Projects {
-		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_projects (view, project) VALUES (?, ?)`, view.ID, value); err != nil {
-			return awberr.Wrap(awberr.Runtime, err, "store board view project")
+	for _, value := range view.Workspaces {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_workspaces (view, workspace) VALUES (?, ?)`, view.ID, value); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "store board view workspace")
 		}
 	}
 	for _, value := range view.Labels {
@@ -185,15 +185,15 @@ func (t *Tx) DeleteBoardView(id string) error {
 	return nil
 }
 
-// bumpBoardViewsSelectingProject moves each affected view's ETag before the
-// project's foreign-key cascade removes its selected-project row.
-func (t *Tx) bumpBoardViewsSelectingProject(project string) error {
+// bumpBoardViewsSelectingWorkspace moves each affected view's ETag before the
+// workspace's foreign-key cascade removes its selected-workspace row.
+func (t *Tx) bumpBoardViewsSelectingWorkspace(workspace string) error {
 	rows, err := t.q.QueryContext(t.ctx, `SELECT selected.view, views.updated_at
-		FROM board_view_projects AS selected
+		FROM board_view_workspaces AS selected
 		JOIN board_views AS views ON views.id = selected.view
-		WHERE selected.project = ?`, project)
+		WHERE selected.workspace = ?`, workspace)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting workspace %s", workspace)
 	}
 	type selectedView struct{ id, updatedAt string }
 	views := []selectedView{}
@@ -201,22 +201,22 @@ func (t *Tx) bumpBoardViewsSelectingProject(project string) error {
 		var view selectedView
 		if err := rows.Scan(&view.id, &view.updatedAt); err != nil {
 			_ = rows.Close()
-			return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+			return awberr.Wrap(awberr.Runtime, err, "find board views selecting workspace %s", workspace)
 		}
 		views = append(views, view)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting workspace %s", workspace)
 	}
 	if err := rows.Close(); err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "find board views selecting project %s", project)
+		return awberr.Wrap(awberr.Runtime, err, "find board views selecting workspace %s", workspace)
 	}
 	now := Now()
 	for _, view := range views {
 		if _, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET updated_at = ? WHERE id = ?`,
 			bumpedTimestamp(view.updatedAt, now), view.id); err != nil {
-			return awberr.Wrap(awberr.Runtime, err, "update board view %s before deleting project", view.id)
+			return awberr.Wrap(awberr.Runtime, err, "update board view %s before deleting workspace", view.id)
 		}
 	}
 	return nil

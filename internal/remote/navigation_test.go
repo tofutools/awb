@@ -20,16 +20,16 @@ func TestSearchNavigationPreservesDirectoryUserFields(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"issues": [],
-			"projects": [],
+			"workspaces": [],
 			"users": [{
 				"name": "mikael",
 				"full_name": "Mikael Ståldal",
-				"project_admin": false,
+				"workspace_admin": false,
 				"user_admin": false,
 				"created_at": "2026-01-01T00:00:00.000Z",
 				"updated_at": "2026-01-01T00:00:00.000Z",
-				"projects": [],
-				"activity_projects": ["awb"]
+				"workspaces": [],
+				"activity_workspaces": ["awb"]
 			}]
 		}`))
 	}))
@@ -44,5 +44,5 @@ func TestSearchNavigationPreservesDirectoryUserFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results.Users, 1)
 	assert.Equal(t, "Mikael Ståldal", results.Users[0].FullName)
-	assert.Equal(t, []string{"awb"}, results.Users[0].ActivityProjects)
+	assert.Equal(t, []string{"awb"}, results.Users[0].ActivityWorkspaces)
 }

@@ -14,14 +14,14 @@ import (
 // transaction.
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	issue := &domain.Issue{
-		Project:  req.Project,
-		Type:     domain.DefaultType,
-		Status:   domain.DefaultStatus,
-		Priority: domain.DefaultPriority,
+		Workspace: req.Workspace,
+		Type:      domain.DefaultType,
+		Status:    domain.DefaultStatus,
+		Priority:  domain.DefaultPriority,
 	}
 
 	var err error
-	if issue.Project, err = domain.ValidateProjectKey(req.Project); err != nil {
+	if issue.Workspace, err = domain.ValidateWorkspaceKey(req.Workspace); err != nil {
 		return nil, err
 	}
 	if issue.Title, err = domain.ValidateTitle(req.Title); err != nil {
@@ -60,12 +60,12 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	}
 
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		project, err := tx.GetProject(issue.Project)
+		workspace, err := tx.GetWorkspace(issue.Workspace)
 		if err != nil {
 			return err
 		}
-		if project.State == domain.ProjectArchived {
-			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Project)
+		if workspace.State == domain.WorkspaceArchived {
+			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Workspace)
 		}
 
 		if err := tx.InsertIssue(issue); err != nil {
@@ -163,7 +163,7 @@ func (b *Backend) GetIssue(ctx context.Context, ref string) (*domain.Issue, erro
 func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backend.IssuePage, error) {
 	var page backend.IssuePage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		if err := checkFilterProjects(tx, filter); err != nil {
+		if err := checkFilterWorkspaces(tx, filter); err != nil {
 			return err
 		}
 		if err := resolveFilterParent(tx, filter); err != nil {
@@ -203,13 +203,13 @@ func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (
 	return page, nil
 }
 
-// checkFilterProjects reports a filter naming a project that is not there.
+// checkFilterWorkspaces reports a filter naming a workspace that is not there.
 // Addressing a single entity that does not exist exits 3 even when it appears
-// as a listing's --project, because a filter naming something that is not
+// as a listing's --workspace, because a filter naming something that is not
 // there is a mistake to report, not a listing that happens to match nothing.
-func checkFilterProjects(tx *storage.Tx, filter *domain.Filter) error {
-	for _, key := range filter.Projects {
-		exists, err := tx.ProjectExists(key)
+func checkFilterWorkspaces(tx *storage.Tx, filter *domain.Filter) error {
+	for _, key := range filter.Workspaces {
+		exists, err := tx.WorkspaceExists(key)
 		if err != nil {
 			return err
 		}
@@ -281,7 +281,7 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 }
 
 // MoveIssue is the board/list drag operation. Status, optional same-workspace
-// epic membership, and sparse position are committed together. Project and ID
+// epic membership, and sparse position are committed together. Workspace and ID
 // are immutable. Status moves preserve the named transition safety rules.
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
 	ifMatch string) (*domain.Issue, error) {
@@ -307,6 +307,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		if err != nil {
 			return err
 		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
+			return err
+		}
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
 			return err
 		}
@@ -321,8 +324,8 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				result = issue
 				return nil
 			}
-			if before.Project != issue.Project {
-				return awberr.Usagef("the order anchor must be in workspace %s", issue.Project)
+			if before.Workspace != issue.Workspace {
+				return awberr.Usagef("the order anchor must be in workspace %s", issue.Workspace)
 			}
 			beforeID = before.ID
 		}
@@ -335,8 +338,8 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				result = issue
 				return nil
 			}
-			if after.Project != issue.Project {
-				return awberr.Usagef("the order anchor must be in workspace %s", issue.Project)
+			if after.Workspace != issue.Workspace {
+				return awberr.Usagef("the order anchor must be in workspace %s", issue.Workspace)
 			}
 			afterID = after.ID
 		}
@@ -345,7 +348,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		before.Labels = slices.Clone(issue.Labels)
 		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
-		originalEpic, err := tx.DirectEpic(issue.ID, issue.Project)
+		originalEpic, err := tx.DirectEpic(issue.ID, issue.Workspace)
 		if err != nil {
 			return err
 		}
@@ -368,8 +371,8 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				if err != nil {
 					return err
 				}
-				if target.Project != issue.Project || target.Type != domain.TypeEpic {
-					return awberr.Usagef("the epic must be an epic in workspace %s", issue.Project)
+				if target.Workspace != issue.Workspace || target.Type != domain.TypeEpic {
+					return awberr.Usagef("the epic must be an epic in workspace %s", issue.Workspace)
 				}
 				existingParent, hasParent, err := tx.ParentOf(issue.ID)
 				if err != nil {
@@ -588,7 +591,7 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 	query func(*storage.Tx, *domain.Filter) ([]domain.Facet, error)) (backend.FacetPage, error) {
 	var page backend.FacetPage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		if err := checkFilterProjects(tx, filter); err != nil {
+		if err := checkFilterWorkspaces(tx, filter); err != nil {
 			return err
 		}
 		if err := resolveFilterParent(tx, filter); err != nil {

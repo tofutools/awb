@@ -99,11 +99,11 @@ func TestCompactLineTitleIsAJSONString(t *testing.T) {
 	}
 }
 
-func TestCompactProjectLine(t *testing.T) {
+func TestCompactWorkspaceLine(t *testing.T) {
 	assert.Equal(t, `awb 3 "Agent Work Board"`,
-		domain.CompactProjectLine(&domain.Project{Key: "awb", Name: "Agent Work Board", ActiveIssues: 3}))
+		domain.CompactWorkspaceLine(&domain.Workspace{Key: "awb", Name: "Agent Work Board", ActiveIssues: 3}))
 	assert.Equal(t, `web 0 "web"`,
-		domain.CompactProjectLine(&domain.Project{Key: "web", Name: "web"}))
+		domain.CompactWorkspaceLine(&domain.Workspace{Key: "web", Name: "web"}))
 }
 
 func TestCompactTreePrefix(t *testing.T) {

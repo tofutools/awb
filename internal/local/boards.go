@@ -26,15 +26,15 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if err != nil {
 		return nil, err
 	}
-	view := &domain.BoardView{Name: name, Shared: req.Shared, AllProjects: req.AllProjects, PriorityMax: priority}
+	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces, PriorityMax: priority}
 	seen := map[string]bool{}
-	for _, value := range req.Projects {
-		valid, err := domain.ValidateProjectKey(value)
+	for _, value := range req.Workspaces {
+		valid, err := domain.ValidateWorkspaceKey(value)
 		if err != nil {
 			return nil, err
 		}
 		if !seen["p:"+valid] {
-			view.Projects = append(view.Projects, valid)
+			view.Workspaces = append(view.Workspaces, valid)
 			seen["p:"+valid] = true
 		}
 	}
@@ -63,8 +63,8 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 }
 
 func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
-	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllProjects: view.AllProjects,
-		Projects: view.Projects, Labels: view.Labels, Assignees: view.Assignees, PriorityMax: view.PriorityMax}
+	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
+		Workspaces: view.Workspaces, Labels: view.Labels, Assignees: view.Assignees, PriorityMax: view.PriorityMax}
 }
 
 func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCreate) (*domain.BoardView, error) {
@@ -89,13 +89,13 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 		if view.Owner, err = domain.ValidateAssignee(view.Owner); err != nil {
 			return err
 		}
-		for _, project := range view.Projects {
-			exists, err := tx.ActiveProjectExists(project)
+		for _, workspace := range view.Workspaces {
+			exists, err := tx.ActiveWorkspaceExists(workspace)
 			if err != nil {
 				return err
 			}
 			if !exists {
-				return awberr.NotFoundf("no such workspace: %s", project)
+				return awberr.NotFoundf("no such workspace: %s", workspace)
 			}
 		}
 		if err := tx.InsertBoardView(view); err != nil {
@@ -126,7 +126,7 @@ func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error
 			return err
 		}
 		for i := range views {
-			views[i].Projects, _, err = visibleViewProjects(tx, views[i].Projects)
+			views[i].Workspaces, _, err = visibleViewWorkspaces(tx, views[i].Workspaces)
 			if err != nil {
 				return err
 			}
@@ -160,7 +160,7 @@ func (b *Backend) readBoardView(ctx context.Context, id string) (*domain.BoardVi
 		if !owner {
 			tx.Restrict(tx.Scope().HideIgnoredBy(caller.Name))
 		}
-		view.Projects, _, err = visibleViewProjects(tx, view.Projects)
+		view.Workspaces, _, err = visibleViewWorkspaces(tx, view.Workspaces)
 		if err != nil {
 			return err
 		}
@@ -175,18 +175,18 @@ func (b *Backend) GetBoardView(ctx context.Context, id string) (*domain.BoardVie
 	return b.readBoardView(ctx, id)
 }
 
-func visibleViewProjects(tx *storage.Tx, projects []string) ([]string, bool, error) {
+func visibleViewWorkspaces(tx *storage.Tx, workspaces []string) ([]string, bool, error) {
 	visible := []string{}
-	for _, project := range projects {
-		exists, err := tx.ActiveProjectExists(project)
+	for _, workspace := range workspaces {
+		exists, err := tx.ActiveWorkspaceExists(workspace)
 		if err != nil {
 			return nil, false, err
 		}
 		if exists {
-			visible = append(visible, project)
+			visible = append(visible, workspace)
 		}
 	}
-	return visible, len(visible) != len(projects), nil
+	return visible, len(visible) != len(workspaces), nil
 }
 
 func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.BoardViewPatch, ifMatch string) (*domain.BoardView, error) {
@@ -219,21 +219,21 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if req.Shared != nil {
 			next.Shared = *req.Shared
 		}
-		if req.AllProjects != nil {
-			next.AllProjects = *req.AllProjects
+		if req.AllWorkspaces != nil {
+			next.AllWorkspaces = *req.AllWorkspaces
 		}
-		if req.Projects != nil {
-			next.Projects = slices.Clone(*req.Projects)
+		if req.Workspaces != nil {
+			next.Workspaces = slices.Clone(*req.Workspaces)
 			// A scoped response cannot disclose selections the owner can no
 			// longer access. Preserve those stored keys when replacing the
 			// visible set, otherwise an editor could silently delete them.
-			for _, project := range existing.Projects {
-				exists, err := tx.ActiveProjectExists(project)
+			for _, workspace := range existing.Workspaces {
+				exists, err := tx.ActiveWorkspaceExists(workspace)
 				if err != nil {
 					return err
 				}
-				if !exists && !slices.Contains(next.Projects, project) {
-					next.Projects = append(next.Projects, project)
+				if !exists && !slices.Contains(next.Workspaces, workspace) {
+					next.Workspaces = append(next.Workspaces, workspace)
 				}
 			}
 		}
@@ -251,14 +251,14 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 			return err
 		}
 		valid.ID, valid.Owner, valid.CreatedAt, valid.UpdatedAt = existing.ID, existing.Owner, existing.CreatedAt, existing.UpdatedAt
-		if req.Projects != nil {
-			for _, project := range *req.Projects {
-				exists, err := tx.ActiveProjectExists(project)
+		if req.Workspaces != nil {
+			for _, workspace := range *req.Workspaces {
+				exists, err := tx.ActiveWorkspaceExists(workspace)
 				if err != nil {
 					return err
 				}
 				if !exists {
-					return awberr.NotFoundf("no such workspace: %s", project)
+					return awberr.NotFoundf("no such workspace: %s", workspace)
 				}
 			}
 		}
@@ -269,7 +269,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if err != nil {
 			return err
 		}
-		updated.Projects, _, err = visibleViewProjects(tx, updated.Projects)
+		updated.Workspaces, _, err = visibleViewWorkspaces(tx, updated.Workspaces)
 		if err == nil {
 			updated.Normalize()
 		}
@@ -301,7 +301,7 @@ func (b *Backend) DeleteBoardView(ctx context.Context, id, ifMatch string) (*dom
 		if err := checkIfMatch(ifMatch, deleted.UpdatedAt, "the board view"); err != nil {
 			return err
 		}
-		deleted.Projects, _, err = visibleViewProjects(tx, deleted.Projects)
+		deleted.Workspaces, _, err = visibleViewWorkspaces(tx, deleted.Workspaces)
 		if err != nil {
 			return err
 		}
@@ -317,8 +317,8 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			return nil, err
 		}
 	}
-	for _, project := range query.Projects {
-		if _, err := domain.ValidateProjectKey(project); err != nil {
+	for _, workspace := range query.Workspaces {
+		if _, err := domain.ValidateWorkspaceKey(workspace); err != nil {
 			return nil, err
 		}
 	}
@@ -355,25 +355,25 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if !caller.MayManageBoardView(view.Owner) && !view.Shared {
 				return awberr.NotFoundf("no such board view: %s", ref)
 			}
-			if !view.AllProjects {
-				selected = slices.Clone(view.Projects)
+			if !view.AllWorkspaces {
+				selected = slices.Clone(view.Workspaces)
 			}
-			visible, omitted, err := visibleViewProjects(tx, view.Projects)
+			visible, omitted, err := visibleViewWorkspaces(tx, view.Workspaces)
 			if err != nil {
 				return err
 			}
-			result.ProjectsOmitted = omitted
+			result.WorkspacesOmitted = omitted
 			shown := *view
-			shown.Projects = visible
+			shown.Workspaces = visible
 			shown.Normalize()
 			result.View = &shown
 		}
 		laneSelection := selected
-		if len(query.Projects) > 0 {
+		if len(query.Workspaces) > 0 {
 			requested := []string{}
-			for _, project := range query.Projects {
-				if laneSelection == nil || slices.Contains(laneSelection, project) {
-					requested = append(requested, project)
+			for _, workspace := range query.Workspaces {
+				if laneSelection == nil || slices.Contains(laneSelection, workspace) {
+					requested = append(requested, workspace)
 				}
 			}
 			laneSelection = requested
@@ -391,12 +391,12 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				active, err := tx.ActiveProjectExists(epic.Project)
+				active, err := tx.ActiveWorkspaceExists(epic.Workspace)
 				if err != nil {
 					return err
 				}
 				if !active || epic.Type != domain.TypeEpic ||
-					(laneSelection != nil && !slices.Contains(laneSelection, epic.Project)) {
+					(laneSelection != nil && !slices.Contains(laneSelection, epic.Workspace)) {
 					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 				}
 			}
@@ -432,13 +432,13 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		for _, epic := range laneEpics {
 			lane := domain.BoardLane{Epic: epic, Columns: []domain.BoardColumn{}}
 			epicID := ""
-			projects := laneSelection
+			workspaces := laneSelection
 			if epic != nil {
 				epicID = epic.ID
-				projects = []string{epic.Project}
+				workspaces = []string{epic.Workspace}
 			}
 			for _, status := range statuses {
-				filter := &domain.Filter{Projects: projects, Types: cardTypes, Epic: &epicID,
+				filter := &domain.Filter{Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
 					Offset: query.CardOffset, Sort: domain.DefaultSort}
 				if view != nil {
@@ -448,7 +448,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					filter.PriorityMax = &max
 				}
 				issues, total, err := []domain.Issue{}, 0, error(nil)
-				if projects == nil || len(projects) > 0 {
+				if workspaces == nil || len(workspaces) > 0 {
 					issues, total, err = tx.ListIssues(filter)
 				}
 				if err != nil {

@@ -12,7 +12,7 @@ import (
 func TestSearchNavigationMatchesNamesAndIdentifiersBySubstring(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "Keyboard Command Palette")
-	_, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "client-ui", Name: "Browser Client"})
+	_, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "client-ui", Name: "Browser Client"})
 	require.NoError(t, err)
 	_, err = b.CreateUser(ctx, backend.UserCreate{
 		Name: "palette-owner", FullName: "Palette Owner", Password: "safe password",
@@ -36,15 +36,15 @@ func TestSearchNavigationMatchesNamesAndIdentifiersBySubstring(t *testing.T) {
 	require.Len(t, closed.Issues, 1)
 	assert.Equal(t, issue.ID, closed.Issues[0].ID, "closed issues remain directly navigable")
 
-	byProjectName, err := b.SearchNavigation(ctx, "browser", 6)
+	byWorkspaceName, err := b.SearchNavigation(ctx, "browser", 6)
 	require.NoError(t, err)
-	require.Len(t, byProjectName.Projects, 1)
-	assert.Equal(t, "client-ui", byProjectName.Projects[0].Key)
+	require.Len(t, byWorkspaceName.Workspaces, 1)
+	assert.Equal(t, "client-ui", byWorkspaceName.Workspaces[0].Key)
 
-	byProjectKey, err := b.SearchNavigation(ctx, "ent-u", 6)
+	byWorkspaceKey, err := b.SearchNavigation(ctx, "ent-u", 6)
 	require.NoError(t, err)
-	require.Len(t, byProjectKey.Projects, 1)
-	assert.Equal(t, "client-ui", byProjectKey.Projects[0].Key)
+	require.Len(t, byWorkspaceKey.Workspaces, 1)
+	assert.Equal(t, "client-ui", byWorkspaceKey.Workspaces[0].Key)
 
 	byUser, err := b.SearchNavigation(ctx, "ETTE-OWN", 6)
 	require.NoError(t, err)

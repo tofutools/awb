@@ -11,7 +11,7 @@ import (
 )
 
 // HashLen is the number of hexadecimal characters in an issue ID's hash part.
-// It is fixed at six, which is about 16 million values per project — few
+// It is fixed at six, which is about 16 million values per workspace — few
 // enough that collision handling is required, which is why MintHash draws a
 // fresh salt and the insert retries.
 const HashLen = 6
@@ -20,7 +20,7 @@ const HashLen = 6
 const SaltLen = 16
 
 // BoardViewIDBytes makes view IDs long enough to be safely shared as
-// unguessable URLs without a project prefix or a collision-retry loop.
+// unguessable URLs without a workspace prefix or a collision-retry loop.
 const BoardViewIDBytes = 12
 
 // MintHash derives the hash part of an issue ID from the issue's content and a
@@ -78,12 +78,12 @@ func ValidateBoardViewID(s string) (string, error) {
 	return s, nil
 }
 
-// MakeID joins a project key and a hash into an issue ID.
-func MakeID(projectKey, hash string) string { return projectKey + "-" + hash }
+// MakeID joins a workspace key and a hash into an issue ID.
+func MakeID(workspaceKey, hash string) string { return workspaceKey + "-" + hash }
 
-// SplitID separates an issue ID into its project key and hash. Because a
-// project key may itself contain hyphens, an ID is split on its *last* hyphen.
-func SplitID(id string) (projectKey, hash string, ok bool) {
+// SplitID separates an issue ID into its workspace key and hash. Because a
+// workspace key may itself contain hyphens, an ID is split on its *last* hyphen.
+func SplitID(id string) (workspaceKey, hash string, ok bool) {
 	i := strings.LastIndex(id, "-")
 	if i <= 0 || i == len(id)-1 {
 		return "", "", false
@@ -112,9 +112,9 @@ func IsHex(s string) bool {
 // unambiguous ID prefix, or a bare hash or hash prefix. Any non-empty prefix
 // is allowed.
 type IssueRef struct {
-	// Project is the project key when the reference carried one, and "" when it
+	// Workspace is the workspace key when the reference carried one, and "" when it
 	// is a bare hash that has to be matched across the whole database.
-	Project string
+	Workspace string
 	// Hash is the hash or hash prefix to match.
 	Hash string
 	// Raw is what the caller wrote, for error messages.
@@ -133,18 +133,18 @@ func ParseIssueRef(s string) (IssueRef, error) {
 		return IssueRef{}, awberr.Usagef("issue id must not be empty")
 	}
 
-	// A bare hash or hash prefix carries no project.
+	// A bare hash or hash prefix carries no workspace.
 	if IsHex(s) {
 		return IssueRef{Hash: s, Raw: raw}, nil
 	}
 
-	project, hash, ok := SplitID(s)
+	workspace, hash, ok := SplitID(s)
 	if !ok || !IsHex(hash) {
 		return IssueRef{}, awberr.Usagef(
 			"invalid issue id %q: expected <workspace>-<hash> or a bare hash", raw)
 	}
-	if _, err := ValidateProjectKey(project); err != nil {
+	if _, err := ValidateWorkspaceKey(workspace); err != nil {
 		return IssueRef{}, awberr.Usagef("invalid issue id %q: %s", raw, err.Error())
 	}
-	return IssueRef{Project: project, Hash: hash, Raw: raw}, nil
+	return IssueRef{Workspace: workspace, Hash: hash, Raw: raw}, nil
 }

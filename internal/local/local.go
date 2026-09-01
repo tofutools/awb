@@ -36,7 +36,7 @@ type Backend struct {
 	// would be a suggestion rather than a control. It is switched on by awb
 	// serve, and only for a request it authenticated.
 	authorized bool
-	// userPreferences says the identity may own and apply ignored-project
+	// userPreferences says the identity may own and apply ignored-workspace
 	// preferences. Direct CLI backends and authenticated requests do. An open
 	// HTTP server deliberately does not: --no-auth means its fixed identity is
 	// attribution only and the users table is never consulted on its behalf.
@@ -128,19 +128,19 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 	return tx.GetIssue(id)
 }
 
-func ensureProjectActive(tx *storage.Tx, key string) error {
-	project, err := tx.GetProject(key)
+func ensureWorkspaceActive(tx *storage.Tx, key string) error {
+	workspace, err := tx.GetWorkspace(key)
 	if err != nil {
 		return err
 	}
-	if project.State == domain.ProjectArchived {
+	if workspace.State == domain.WorkspaceArchived {
 		return awberr.Conflictf("workspace %s is archived and read-only", key)
 	}
 	return nil
 }
 
 func ensureIssueWritable(tx *storage.Tx, issue *domain.Issue) error {
-	return ensureProjectActive(tx, issue.Project)
+	return ensureWorkspaceActive(tx, issue.Workspace)
 }
 
 // checkIfMatch enforces the optional conditional-edit precondition. An empty
@@ -167,9 +167,9 @@ func checkIfMatch(ifMatch, updatedAt, what string) error {
 //
 // With it, the permissions are read from the user row inside this very
 // transaction, so they are the permissions at the moment of the write rather
-// than at the moment the request arrived. A project administrator holds admin
+// than at the moment the request arrived. A workspace administrator holds admin
 // access everywhere and is therefore left unrestricted too; everybody else
-// sees the projects they are a member of.
+// sees the workspaces they are a member of.
 func (b *Backend) authorize(tx *storage.Tx, includeIgnored bool) (domain.Caller, error) {
 	if !b.authorized {
 		caller := domain.Caller{Name: b.identity, Unrestricted: true}
@@ -189,7 +189,7 @@ func (b *Backend) authorize(tx *storage.Tx, includeIgnored bool) (domain.Caller,
 	if err != nil {
 		return domain.Caller{}, err
 	}
-	if !caller.ProjectAdmin {
+	if !caller.WorkspaceAdmin {
 		tx.Restrict(storage.VisibleTo(caller.Name))
 	}
 	if !includeIgnored {
@@ -212,8 +212,8 @@ func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller)
 }
 
 // writeIncludingIgnored is for a dedicated recovery/administration path whose
-// authorization still comes from project membership but whose own preference
-// boundary must not hide the project it administers. The check and mutation
+// authorization still comes from workspace membership but whose own preference
+// boundary must not hide the workspace it administers. The check and mutation
 // remain in the same BEGIN IMMEDIATE transaction.
 func (b *Backend) writeIncludingIgnored(
 	ctx context.Context, fn func(*storage.Tx, domain.Caller) error,

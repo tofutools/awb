@@ -41,9 +41,9 @@ test("values are escaped", () => {
 });
 
 test("several filters combine", () => {
-  const query = toQuery({ project: ["awb"], label: ["parser"], filter: "needle docs", "include-closed": true });
+  const query = toQuery({ workspace: ["awb"], label: ["parser"], filter: "needle docs", "include-closed": true });
   const params = new URLSearchParams(query.slice(1));
-  assert.deepEqual(params.getAll("project"), ["awb"]);
+  assert.deepEqual(params.getAll("workspace"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
   assert.equal(params.get("filter"), "needle docs");
   assert.equal(params.get("include-closed"), "true");
@@ -103,18 +103,18 @@ test("user administration creates and version-deletes accounts", async (t) => {
   assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v1"');
 });
 
-test("project preferences use their dedicated recovery endpoints", async (t) => {
+test("workspace preferences use their dedicated recovery endpoints", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
     return new Response(calls.length === 1 ? "[]" : "{}", { status: 200 });
   });
 
-  await api.projectPreferences();
-  await api.setProjectIgnored("team/web", true);
+  await api.workspacePreferences();
+  await api.setWorkspaceIgnored("team/web", true);
 
-  assert.equal(calls[0].path, "api/preferences/projects");
-  assert.equal(calls[1].path, "api/preferences/projects/team%2Fweb");
+  assert.equal(calls[0].path, "api/preferences/workspaces");
+  assert.equal(calls[1].path, "api/preferences/workspaces/team%2Fweb");
   assert.equal(calls[1].init.method, "PUT");
   assert.deepEqual(JSON.parse(calls[1].init.body), { ignored: true });
 });
@@ -123,9 +123,9 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
-    const body = calls.length === 3 ? { lanes: [], lane_total: 0, projects_omitted: false } : {
+    const body = calls.length === 3 ? { lanes: [], lane_total: 0, workspaces_omitted: false } : {
       id: "view-aaaaaaaaaaaaaaaaaaaaaaaa", name: "Release", owner: "alex", shared: false,
-      all_projects: true, projects: [], labels: [], assignees: [], priority_max: 4,
+      all_workspaces: true, workspaces: [], labels: [], assignees: [], priority_max: 4,
       created_at: "2026-09-01T00:00:00.000Z", updated_at: "2026-09-01T00:00:00.000Z",
     };
     return new Response(JSON.stringify(body), { status: 200, headers: { ETag: '"view-v1"' } });
@@ -134,13 +134,13 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   await api.boardView("view-aaaaaaaaaaaaaaaaaaaaaaaa");
   await api.updateBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa", { name: "Next" });
   await api.board("view-aaaaaaaaaaaaaaaaaaaaaaaa", {
-    project: ["awb", "web"], status: "open", epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
+    workspace: ["awb", "web"], status: "open", epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
   });
 
   assert.equal(calls[0].path, "api/board-views/view-aaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"view-v1"');
   const boardURL = new URL(calls[2].path, "https://example.test/");
-  assert.deepEqual(boardURL.searchParams.getAll("project"), ["awb", "web"]);
+  assert.deepEqual(boardURL.searchParams.getAll("workspace"), ["awb", "web"]);
   assert.equal(boardURL.searchParams.get("status"), "open");
   assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");
@@ -163,7 +163,7 @@ test("identity exposes the backend's effective account-administration capability
 test("ready filters drop what that endpoint does not accept", () => {
   assert.deepEqual(
     readyFilters({
-      project: ["awb"],
+      workspace: ["awb"],
       label: ["parser"],
       sort: "priority",
       status: ["open"],
@@ -173,7 +173,7 @@ test("ready filters drop what that endpoint does not accept", () => {
       q: ["parser"],
       filter: "needle",
     }),
-    { project: ["awb"], label: ["parser"], filter: "needle", sort: "priority" },
+    { workspace: ["awb"], label: ["parser"], filter: "needle", sort: "priority" },
   );
 });
 
@@ -188,14 +188,14 @@ test("ready filters keep an already narrow selection whole", () => {
 test("ready label facets keep the backend text filter and fixed selection", () => {
   assert.deepEqual(readyFacetFilters({
     filter: "needle",
-    project: ["awb"],
+    workspace: ["awb"],
     assignee: ["somebody"],
     "include-closed": true,
     sort: "priority",
     limit: 10,
   }), {
     filter: "needle",
-    project: ["awb"],
+    workspace: ["awb"],
     status: ["open"],
     unassigned: true,
     readiness: "ready",
@@ -284,31 +284,31 @@ test("claim adds one assignee while forced release removes every assignee", asyn
   assert.deepEqual(JSON.parse(calls[1].init.body), { assignee: "operator", force: true });
 });
 
-test("project edits patch the project resource with its ETag", async () => {
+test("workspace edits patch the workspace resource with its ETag", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (input, init = {}) => {
     requests.push({ input, init });
     return new Response("{}", {
       status: 200,
-      headers: requests.length === 1 ? { ETag: '"project-version"' } : {},
+      headers: requests.length === 1 ? { ETag: '"workspace-version"' } : {},
     });
   };
 
   try {
-    await api.project("team/web");
-    await api.updateProject("team/web", { name: "Web", description: "Markdown" });
+    await api.workspace("team/web");
+    await api.updateWorkspace("team/web", { name: "Web", description: "Markdown" });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(requests[1].input, "api/projects/team%2Fweb");
+  assert.equal(requests[1].input, "api/workspaces/team%2Fweb");
   assert.equal(requests[1].init.method, "PATCH");
-  assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"project-version"');
+  assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"workspace-version"');
   assert.deepEqual(JSON.parse(requests[1].init.body), { name: "Web", description: "Markdown" });
 });
 
-test("project creation and lifecycle use stable paths and advance the project ETag", async (t) => {
+test("workspace creation and lifecycle use stable paths and advance the workspace ETag", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
@@ -318,44 +318,44 @@ test("project creation and lifecycle use stable paths and advance the project ET
     });
   });
 
-  await api.createProject({ key: "team/web", name: "Web" });
-  await api.updateProject("team/web", { description: "Client" });
-  await api.archiveProject("team/web");
-  await api.restoreProject("team/web");
-  await api.projectActivity("team/web");
+  await api.createWorkspace({ key: "team/web", name: "Web" });
+  await api.updateWorkspace("team/web", { description: "Client" });
+  await api.archiveWorkspace("team/web");
+  await api.restoreWorkspace("team/web");
+  await api.workspaceActivity("team/web");
 
-  assert.equal(calls[0].path, "api/projects");
+  assert.equal(calls[0].path, "api/workspaces");
   assert.equal(calls[0].init.method, "POST");
-  assert.equal(calls[1].path, "api/projects/team%2Fweb");
+  assert.equal(calls[1].path, "api/workspaces/team%2Fweb");
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"v1"');
-  assert.equal(calls[2].path, "api/projects/team%2Fweb/archive");
+  assert.equal(calls[2].path, "api/workspaces/team%2Fweb/archive");
   assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"v2"');
-  assert.equal(calls[3].path, "api/projects/team%2Fweb/restore");
+  assert.equal(calls[3].path, "api/workspaces/team%2Fweb/restore");
   assert.equal(new Headers(calls[3].init.headers).get("If-Match"), '"v3"');
-  assert.equal(calls[4].path, "api/projects/team%2Fweb/activity");
+  assert.equal(calls[4].path, "api/workspaces/team%2Fweb/activity");
 });
 
-test("project membership writes distinguish creation from the idempotent resource", async (t) => {
+test("workspace membership writes distinguish creation from the idempotent resource", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
-    return new Response(JSON.stringify({ project: "team/web", user: "a/b", access: "admin" }), {
+    return new Response(JSON.stringify({ workspace: "team/web", user: "a/b", access: "admin" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   });
 
-  await api.addProjectMember("team/web", "a/b", "admin");
-  await api.setProjectMember("team/web", "a/b", "admin");
-  await api.removeProjectMember("team/web", "a/b");
+  await api.addWorkspaceMember("team/web", "a/b", "admin");
+  await api.setWorkspaceMember("team/web", "a/b", "admin");
+  await api.removeWorkspaceMember("team/web", "a/b");
 
-  assert.equal(calls[0].path, "api/projects/team%2Fweb/members");
+  assert.equal(calls[0].path, "api/workspaces/team%2Fweb/members");
   assert.equal(calls[0].init.method, "POST");
   assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
   assert.deepEqual(JSON.parse(calls[0].init.body), { user: "a/b", access: "admin" });
-  assert.equal(calls[1].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[1].path, "api/workspaces/team%2Fweb/members/a%2Fb");
   assert.equal(calls[1].init.method, "PUT");
   assert.deepEqual(JSON.parse(calls[1].init.body), { access: "admin" });
-  assert.equal(calls[2].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[2].path, "api/workspaces/team%2Fweb/members/a%2Fb");
   assert.equal(calls[2].init.method, "DELETE");
 });

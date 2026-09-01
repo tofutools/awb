@@ -100,17 +100,17 @@ func TestValidateDescription(t *testing.T) {
 	})
 }
 
-func TestValidateProjectKey(t *testing.T) {
+func TestValidateWorkspaceKey(t *testing.T) {
 	for _, s := range []string{"awb", "a", "web-ui", "x1", "a-1-b"} {
-		got, err := domain.ValidateProjectKey(s)
+		got, err := domain.ValidateWorkspaceKey(s)
 		require.NoError(t, err, s)
 		assert.Equal(t, s, got)
 	}
 	for _, s := range []string{
 		"", "1abc", "-abc", "Awb", "a_b", "a.b", "a/b", "a b", "å",
-		strings.Repeat("a", domain.MaxProjectKeyLen+1),
+		strings.Repeat("a", domain.MaxWorkspaceKeyLen+1),
 	} {
-		_, err := domain.ValidateProjectKey(s)
+		_, err := domain.ValidateWorkspaceKey(s)
 		assertUsage(t, err, "%q", s)
 	}
 }
@@ -140,15 +140,15 @@ func TestValidateAssigneeRefusesRatherThanNormalises(t *testing.T) {
 	assertUsage(t, err)
 }
 
-func TestValidateProjectName(t *testing.T) {
-	got, err := domain.ValidateProjectName("")
+func TestValidateWorkspaceName(t *testing.T) {
+	got, err := domain.ValidateWorkspaceName("")
 	require.NoError(t, err)
 	assert.Equal(t, "", got, "empty means restore the key, so it is accepted here")
 
-	_, err = domain.ValidateProjectName("line\nbreak")
+	_, err = domain.ValidateWorkspaceName("line\nbreak")
 	assertUsage(t, err)
 
-	_, err = domain.ValidateProjectName(strings.Repeat("x", domain.MaxProjectNameLen+1))
+	_, err = domain.ValidateWorkspaceName(strings.Repeat("x", domain.MaxWorkspaceNameLen+1))
 	assertUsage(t, err)
 }
 
@@ -198,29 +198,29 @@ func TestFoldToAssignee(t *testing.T) {
 	assert.NoError(t, err, "whatever folding yields must itself be a valid assignee")
 }
 
-// A project name is not trimmed: only a title and a close reason are, and
+// A workspace name is not trimmed: only a title and a close reason are, and
 // everything else is stored byte for byte as it arrived. Regression: it used to
 // be trimmed, which silently altered a name the caller meant and turned a
 // whitespace-only name into an empty one.
-func TestValidateProjectNameIsNotTrimmed(t *testing.T) {
+func TestValidateWorkspaceNameIsNotTrimmed(t *testing.T) {
 	for _, name := range []string{"  Display name  ", " leading", "trailing ", "   "} {
-		got, err := domain.ValidateProjectName(name)
+		got, err := domain.ValidateWorkspaceName(name)
 		require.NoError(t, err, "%q", name)
 		assert.Equal(t, name, got, "%q must be stored as it arrived", name)
 	}
 
 	// Only the genuinely empty name is empty, and that is what restores the key.
-	got, err := domain.ValidateProjectName("")
+	got, err := domain.ValidateWorkspaceName("")
 	require.NoError(t, err)
 	assert.Equal(t, "", got)
 }
 
 // The maximum is counted over the value as stored, which for a name is the
 // untrimmed one.
-func TestValidateProjectNameLengthCountsUntrimmed(t *testing.T) {
-	_, err := domain.ValidateProjectName(strings.Repeat("x", domain.MaxProjectNameLen))
+func TestValidateWorkspaceNameLengthCountsUntrimmed(t *testing.T) {
+	_, err := domain.ValidateWorkspaceName(strings.Repeat("x", domain.MaxWorkspaceNameLen))
 	require.NoError(t, err)
 
-	_, err = domain.ValidateProjectName(" " + strings.Repeat("x", domain.MaxProjectNameLen))
+	_, err = domain.ValidateWorkspaceName(" " + strings.Repeat("x", domain.MaxWorkspaceNameLen))
 	assertUsage(t, err, "the leading space counts")
 }

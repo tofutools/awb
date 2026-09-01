@@ -177,7 +177,7 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 		}
 	}()
 
-	projects, err := dumpProjects(cmd, source)
+	workspaces, err := dumpWorkspaces(cmd, source)
 	if err != nil {
 		return err
 	}
@@ -193,14 +193,14 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	if err != nil {
 		return err
 	}
-	projectActivity, err := dumpProjectActivity(cmd, source, projects)
+	workspaceActivity, err := dumpWorkspaceActivity(cmd, source, workspaces)
 	if err != nil {
 		return err
 	}
 
 	if err := db.RestoreSnapshot(cmd.Context(), storage.Snapshot{
-		Projects: projects, Issues: issues, Attachments: attachments, Activity: activity,
-		ProjectActivity: projectActivity,
+		Workspaces: workspaces, Issues: issues, Attachments: attachments, Activity: activity,
+		WorkspaceActivity: workspaceActivity,
 	}); err != nil {
 		return err
 	}
@@ -212,21 +212,21 @@ func createDump(cmd *cobra.Command, source backend.Backend, outputDB,
 	return nil
 }
 
-func dumpProjectActivity(cmd *cobra.Command, source backend.Backend,
-	projects []domain.Project) ([]domain.ProjectActivity, error) {
-	entries := []domain.ProjectActivity{}
-	for _, project := range projects {
+func dumpWorkspaceActivity(cmd *cobra.Command, source backend.Backend,
+	workspaces []domain.Workspace) ([]domain.WorkspaceActivity, error) {
+	entries := []domain.WorkspaceActivity{}
+	for _, workspace := range workspaces {
 		total := -1
 		fetched := 0
 		seen := map[int64]struct{}{}
 		for total < 0 || fetched < total {
 			limit, offset := dumpPageSize, fetched
-			page, err := source.ListProjectActivity(cmd.Context(), project.Key, &limit, &offset)
+			page, err := source.ListWorkspaceActivity(cmd.Context(), workspace.Key, &limit, &offset)
 			if err != nil {
 				return nil, err
 			}
 			if total >= 0 && page.Total != total {
-				return nil, awberr.Runtimef("lifecycle of workspace %s changed while the dump was being read", project.Key)
+				return nil, awberr.Runtimef("lifecycle of workspace %s changed while the dump was being read", workspace.Key)
 			}
 			total = page.Total
 			for _, entry := range page.Activity {
@@ -238,7 +238,7 @@ func dumpProjectActivity(cmd *cobra.Command, source backend.Backend,
 			}
 			fetched += len(page.Activity)
 			if len(page.Activity) == 0 && fetched < total {
-				return nil, awberr.Runtimef("workspace activity pagination ended early for %s", project.Key)
+				return nil, awberr.Runtimef("workspace activity pagination ended early for %s", workspace.Key)
 			}
 		}
 	}
@@ -443,14 +443,14 @@ func localSourceOutputConflict(sourceDB, sourceAttachments, outputDB,
 	return false, nil
 }
 
-func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project, error) {
-	projects := []domain.Project{}
+func dumpWorkspaces(cmd *cobra.Command, source backend.Backend) ([]domain.Workspace, error) {
+	workspaces := []domain.Workspace{}
 	seen := make(map[string]struct{})
 	total := -1
-	for offset := 0; total < 0 || offset < total; offset = len(projects) {
+	for offset := 0; total < 0 || offset < total; offset = len(workspaces) {
 		limit, pageOffset := dumpPageSize, offset
-		page, err := source.ListProjectsByState(cmd.Context(), "", domain.ProjectsAll,
-			domain.DefaultProjectSort, &limit, &pageOffset)
+		page, err := source.ListWorkspacesByState(cmd.Context(), "", domain.WorkspacesAll,
+			domain.DefaultWorkspaceSort, &limit, &pageOffset)
 		if err != nil {
 			return nil, err
 		}
@@ -458,21 +458,21 @@ func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project,
 			return nil, awberr.Runtimef("workspaces changed while the dump was being read")
 		}
 		total = page.Total
-		if len(page.Projects) == 0 && offset < total {
+		if len(page.Workspaces) == 0 && offset < total {
 			return nil, awberr.Runtimef("workspace pagination ended after %d of %d workspaces", offset, total)
 		}
-		for _, project := range page.Projects {
-			if _, duplicate := seen[project.Key]; duplicate {
-				return nil, awberr.Runtimef("workspace %s appeared in more than one dump page", project.Key)
+		for _, workspace := range page.Workspaces {
+			if _, duplicate := seen[workspace.Key]; duplicate {
+				return nil, awberr.Runtimef("workspace %s appeared in more than one dump page", workspace.Key)
 			}
-			seen[project.Key] = struct{}{}
-			projects = append(projects, project)
+			seen[workspace.Key] = struct{}{}
+			workspaces = append(workspaces, workspace)
 		}
 	}
-	if len(projects) != total {
-		return nil, awberr.Runtimef("workspace pagination returned %d of %d workspaces", len(projects), total)
+	if len(workspaces) != total {
+		return nil, awberr.Runtimef("workspace pagination returned %d of %d workspaces", len(workspaces), total)
 	}
-	return projects, nil
+	return workspaces, nil
 }
 
 func dumpIssues(cmd *cobra.Command, source backend.Backend) ([]domain.Issue, error) {

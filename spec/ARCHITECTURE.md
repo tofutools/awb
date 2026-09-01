@@ -28,7 +28,7 @@ those enumerations into configuration.
 workspaces, reachable over HTTP by things other than the CLI. No server required,
 no configuration required, no version control involved.
 
-It targets individuals, small teams and open source projects. It deliberately
+It targets individuals, small teams and open source workspaces. It deliberately
 does not target enterprises: there is no permission model, no configurable
 workflow engine, no custom fields and no reporting suite.
 
@@ -42,13 +42,11 @@ there is no operation for transferring an issue between workspaces. An
 **issue** carries a title, an optional Markdown description, a type, a status,
 a priority, a set of labels and an ordered set of assignees.
 
-Workspace is the product vocabulary. Persistence, OpenAPI paths and schemas,
-JSON fields, configuration keys and compact output retain the existing
-`project` names so this correction does not force a data or integration
-migration. The CLI presents `awb workspace` and keeps `awb project` as an
-alias. Browser links use `#/workspaces` and continue accepting the legacy
-`#/projects` hashes. Internal Go and TypeScript identifiers likewise remain
-project-shaped where they mirror those compatibility surfaces.
+Workspace is the vocabulary at every live layer: persistence, OpenAPI paths
+and schemas, JSON fields, configuration keys, compact output, CLI commands,
+browser routes, and internal identifiers. The database migration sequence is
+the one compatibility boundary: it renames the released Project-shaped schema
+and retains all existing rows before current code reads the database.
 
 A workspace is active or archived. Archiving is reversible retention, not
 deletion: the stable key, children, graph, blobs, membership and preferences do
@@ -409,7 +407,7 @@ metadata.
 
 In remote mode, issue and workspace identifiers in the human output link to the
 bundled web UI. The stable JSON form carries the same destinations as explicit
-`issue_link` and `project_link` fields; they are empty in direct mode, where a
+`issue_link` and `workspace_link` fields; they are empty in direct mode, where a
 database file has no associated web address. These are CLI presentation
 metadata rather than stored fields.
 
@@ -508,7 +506,7 @@ Its frontend is compiled ahead of time and embedded, so the shipped artifact
 stays one file. Third-party browser code is committed pre-built; no package
 manager runs at build time.
 
-Issue and project descriptions use the same CodeMirror 6 Markdown editor. Its
+Issue and workspace descriptions use the same CodeMirror 6 Markdown editor. Its
 browser bundle is vendored alongside the rendering libraries and loaded only
 when an edit form opens. A hidden textarea mirrors the current document for the
 surrounding form code.
@@ -570,13 +568,13 @@ A stored per-user ignore set narrows that same transaction scope after
 authorization. It is a preference rather than a permission, but applying it at
 the same boundary keeps listings, searches, suggestions, facets and their
 counts consistent, and makes direct and remote backends agree when their
-identity names the same stored user. The compatibility-named project-preferences operations are the
+identity names the same stored user. The workspace-preferences operations are the
 single recovery exception: they omit only the ignore condition while retaining
 ordinary authorization, so an ignored workspace is always available to re-enable
 and an inaccessible workspace is never disclosed by the editor.
 
 Named board views are stored beside that preference boundary but do not alter
-it. A view owns only reusable selection — compatibility-named project keys for
+it. A view owns only reusable selection — workspace keys for
 active workspaces, labels, assignees and a
 maximum priority — while each board read resolves status columns and swimlanes
 for visible epic issues inside the viewer's normally scoped transaction. The
@@ -603,7 +601,7 @@ presentation state is keyed by board reference and is not part of the shared
 view. One atomic move operation changes direct same-workspace epic membership,
 status column and manual position while applying the same assignment rules as
 claim, release, close and reopen. It can clear membership into No epic but can
-never change the issue's project-prefixed ID or workspace. Sparse integer ranks
+never change the issue's workspace-prefixed ID or workspace. Sparse integer ranks
 normally change only the dragged issue; placing
 relative to an automatic anchor ranks that explicit pair. Other automatic
 issues keep falling back to priority and recency, and ranked rows are
@@ -633,7 +631,7 @@ change. Two flags stand outside the workspaces — one over workspaces, one over
 Lifecycle state is a second, orthogonal boundary on work rather than on
 visibility. Ordinary listings add active-workspace selection after authorization;
 direct historical reads do not. Archive and restore require the global workspace
-administrator capability (the compatibility field is `project_admin`) and check
+administrator capability (`workspace_admin`) and check
 the workspace's ETag inside the same writer turn as the state and audit insert.
 A workspace administrator's known-key lifecycle
 operation bypasses only their personal ignore preference, which cannot become a

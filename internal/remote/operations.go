@@ -18,7 +18,7 @@ import (
 // is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
-	Project     string         `json:"project"`
+	Workspace   string         `json:"workspace"`
 	Title       string         `json:"title"`
 	Description string         `json:"description,omitempty"`
 	Type        domain.Type    `json:"type,omitempty"`
@@ -74,13 +74,13 @@ type labelBody struct {
 	Label string `json:"label"`
 }
 
-type projectCreateBody struct {
+type workspaceCreateBody struct {
 	Key         string `json:"key"`
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 }
 
-type projectPatchBody struct {
+type workspacePatchBody struct {
 	Name        *string `json:"name,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
@@ -96,7 +96,7 @@ type commentBody struct {
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	body := issueCreateBody{
-		Project:     req.Project,
+		Workspace:   req.Workspace,
 		Title:       req.Title,
 		Description: req.Description,
 		Type:        req.Type,
@@ -210,8 +210,8 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 			query.Set("unassigned", "true")
 		}
 	}
-	for _, project := range filter.Projects {
-		query.Add("project", project)
+	for _, workspace := range filter.Workspaces {
+		query.Add("workspace", workspace)
 	}
 	if filter.Parent != "" {
 		query.Set("parent", filter.Parent)
@@ -367,24 +367,24 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 	return backend.ActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
 }
 
-func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) (*domain.Project, error) {
-	body := projectCreateBody{Key: req.Key, Name: req.Name, Description: req.Description}
-	var project domain.Project
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/projects", nil), body, "", &project)
+func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCreate) (*domain.Workspace, error) {
+	body := workspaceCreateBody{Key: req.Key, Name: req.Name, Description: req.Description}
+	var workspace domain.Workspace
+	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/workspaces", nil), body, "", &workspace)
 	if err != nil {
 		return nil, err
 	}
-	return &project, nil
+	return &workspace, nil
 }
 
-func (b *Backend) GetProject(ctx context.Context, key string) (*domain.Project, error) {
-	var project domain.Project
-	_, err := b.call(ctx, http.MethodGet, b.endpoint("/api/projects/"+url.PathEscape(key), nil),
-		nil, "", &project)
+func (b *Backend) GetWorkspace(ctx context.Context, key string) (*domain.Workspace, error) {
+	var workspace domain.Workspace
+	_, err := b.call(ctx, http.MethodGet, b.endpoint("/api/workspaces/"+url.PathEscape(key), nil),
+		nil, "", &workspace)
 	if err != nil {
 		return nil, err
 	}
-	return &project, nil
+	return &workspace, nil
 }
 
 // pageQuery renders the two paging parameters, omitting each that was not
@@ -400,19 +400,19 @@ func pageQuery(limit, offset *int) url.Values {
 	return query
 }
 
-func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.ProjectSort,
-	limit, offset *int) (backend.ProjectPage, error) {
-	return b.ListProjectsByState(ctx, filter, domain.ProjectsActive, sort, limit, offset)
+func (b *Backend) ListWorkspaces(ctx context.Context, filter string, sort domain.WorkspaceSort,
+	limit, offset *int) (backend.WorkspacePage, error) {
+	return b.ListWorkspacesByState(ctx, filter, domain.WorkspacesActive, sort, limit, offset)
 }
 
-func (b *Backend) ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter,
-	sort domain.ProjectSort, limit, offset *int) (backend.ProjectPage, error) {
-	projects := []domain.Project{}
+func (b *Backend) ListWorkspacesByState(ctx context.Context, filter string, state domain.WorkspaceStateFilter,
+	sort domain.WorkspaceSort, limit, offset *int) (backend.WorkspacePage, error) {
+	workspaces := []domain.Workspace{}
 	query := pageQuery(limit, offset)
 	if filter != "" {
 		query.Set("filter", filter)
 	}
-	if state != domain.ProjectsActive {
+	if state != domain.WorkspacesActive {
 		query.Set("state", string(state))
 	}
 	if sort.Key != "" {
@@ -423,71 +423,71 @@ func (b *Backend) ListProjectsByState(ctx context.Context, filter string, state 
 		query.Set("sort", value)
 	}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/projects", query), nil, "", &projects)
+		b.endpoint("/api/workspaces", query), nil, "", &workspaces)
 	if err != nil {
-		return backend.ProjectPage{}, err
+		return backend.WorkspacePage{}, err
 	}
-	return backend.ProjectPage{Projects: projects, Total: totalCount(header, len(projects))}, nil
+	return backend.WorkspacePage{Workspaces: workspaces, Total: totalCount(header, len(workspaces))}, nil
 }
 
-func (b *Backend) projectLifecycle(ctx context.Context, key, action, ifMatch string) (*domain.Project, error) {
-	var project domain.Project
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/projects/"+url.PathEscape(key)+"/"+action, nil),
-		nil, ifMatch, &project)
+func (b *Backend) workspaceLifecycle(ctx context.Context, key, action, ifMatch string) (*domain.Workspace, error) {
+	var workspace domain.Workspace
+	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/workspaces/"+url.PathEscape(key)+"/"+action, nil),
+		nil, ifMatch, &workspace)
 	if err != nil {
 		return nil, err
 	}
-	return &project, nil
+	return &workspace, nil
 }
 
-func (b *Backend) ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
-	return b.projectLifecycle(ctx, key, "archive", ifMatch)
+func (b *Backend) ArchiveWorkspace(ctx context.Context, key, ifMatch string) (*domain.Workspace, error) {
+	return b.workspaceLifecycle(ctx, key, "archive", ifMatch)
 }
 
-func (b *Backend) RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
-	return b.projectLifecycle(ctx, key, "restore", ifMatch)
+func (b *Backend) RestoreWorkspace(ctx context.Context, key, ifMatch string) (*domain.Workspace, error) {
+	return b.workspaceLifecycle(ctx, key, "restore", ifMatch)
 }
 
-func (b *Backend) ListProjectActivity(ctx context.Context, key string, limit, offset *int) (backend.ProjectActivityPage, error) {
-	entries := []domain.ProjectActivity{}
+func (b *Backend) ListWorkspaceActivity(ctx context.Context, key string, limit, offset *int) (backend.WorkspaceActivityPage, error) {
+	entries := []domain.WorkspaceActivity{}
 	header, err := b.call(ctx, http.MethodGet,
-		b.endpoint("/api/projects/"+url.PathEscape(key)+"/activity", pageQuery(limit, offset)),
+		b.endpoint("/api/workspaces/"+url.PathEscape(key)+"/activity", pageQuery(limit, offset)),
 		nil, "", &entries)
 	if err != nil {
-		return backend.ProjectActivityPage{}, err
+		return backend.WorkspaceActivityPage{}, err
 	}
-	return backend.ProjectActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
+	return backend.WorkspaceActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
 }
 
-func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.ProjectPatch,
-	ifMatch string) (*domain.Project, error) {
-	body := projectPatchBody{Name: req.Name, Description: req.Description}
-	var project domain.Project
-	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/projects/"+url.PathEscape(key), nil),
-		body, ifMatch, &project)
+func (b *Backend) UpdateWorkspace(ctx context.Context, key string, req backend.WorkspacePatch,
+	ifMatch string) (*domain.Workspace, error) {
+	body := workspacePatchBody{Name: req.Name, Description: req.Description}
+	var workspace domain.Workspace
+	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/workspaces/"+url.PathEscape(key), nil),
+		body, ifMatch, &workspace)
 	if err != nil {
 		return nil, err
 	}
-	return &project, nil
+	return &workspace, nil
 }
 
-// DeleteProject sends --cascade as a boolean query parameter. There is no
+// DeleteWorkspace sends --cascade as a boolean query parameter. There is no
 // force parameter anywhere: the HTTP method is the confirmation that --force
 // supplies on the command line.
-func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
-	ifMatch string) (*backend.DeletedProject, error) {
+func (b *Backend) DeleteWorkspace(ctx context.Context, key string, cascade bool,
+	ifMatch string) (*backend.DeletedWorkspace, error) {
 	query := url.Values{}
 	if cascade {
 		query.Set("cascade", "true")
 	}
 
-	var project domain.Project
+	var workspace domain.Workspace
 	_, err := b.call(ctx, http.MethodDelete,
-		b.endpoint("/api/projects/"+url.PathEscape(key), query), nil, ifMatch, &project)
+		b.endpoint("/api/workspaces/"+url.PathEscape(key), query), nil, ifMatch, &workspace)
 	if err != nil {
 		return nil, err
 	}
-	return &backend.DeletedProject{Project: project}, nil
+	return &backend.DeletedWorkspace{Workspace: workspace}, nil
 }
 
 func (b *Backend) LabelFacets(ctx context.Context, filter *domain.Filter) (backend.FacetPage, error) {

@@ -32,7 +32,7 @@ func newBackendWithBlobs(t *testing.T) (*local.Backend, context.Context, string)
 
 	blobs := filepath.Join(dir, "attachments")
 	b := local.New(db, storage.NewBlobs(blobs), "mikael")
-	_, err = b.CreateProject(t.Context(), backend.ProjectCreate{Key: "awb"})
+	_, err = b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context(), blobs
 }
@@ -238,13 +238,13 @@ func TestDeletingAnIssueRemovesItsAttachments(t *testing.T) {
 	assert.Equal(t, 3, exitOf(err), "the issue is gone, so nothing holds the attachment")
 }
 
-// A cascading project delete does the same for every issue it takes.
-func TestCascadingProjectDeleteRemovesAttachments(t *testing.T) {
+// A cascading workspace delete does the same for every issue it takes.
+func TestCascadingWorkspaceDeleteRemovesAttachments(t *testing.T) {
 	b, ctx, dir := newBackendWithBlobs(t)
 	issue := create(t, b, ctx, "Parser crashes")
 	attach(t, b, ctx, issue.ID, "trace.txt", "boom\n")
 
-	_, err := b.DeleteProject(ctx, "awb", true, "")
+	_, err := b.DeleteWorkspace(ctx, "awb", true, "")
 	require.NoError(t, err)
 	assert.Empty(t, blobFiles(t, dir))
 }

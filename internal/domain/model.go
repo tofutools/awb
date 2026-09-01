@@ -43,7 +43,7 @@ type Relation struct {
 // added and removed by its own operations, exactly as a relation is.
 type Issue struct {
 	ID          string       `json:"id"`
-	Project     string       `json:"project"`
+	Workspace   string       `json:"workspace"`
 	Title       string       `json:"title"`
 	Description string       `json:"description"`
 	Type        Type         `json:"type"`
@@ -69,64 +69,64 @@ type IssueTree struct {
 	Children []IssueTree `json:"children"`
 }
 
-// Project is the top-level organising unit. ActiveIssues counts the issues
+// Workspace is the top-level organising unit. ActiveIssues counts the issues
 // that are not closed; it is derived and read-only, as are the two timestamps.
-type Project struct {
-	Key          string       `json:"key"`
-	Name         string       `json:"name"`
-	Description  string       `json:"description"`
-	State        ProjectState `json:"state"`
-	ArchivedAt   string       `json:"archived_at"`
-	ArchivedBy   string       `json:"archived_by"`
-	ActiveIssues int          `json:"active_issues"`
-	CreatedAt    string       `json:"created_at"`
-	UpdatedAt    string       `json:"updated_at"`
+type Workspace struct {
+	Key          string         `json:"key"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	State        WorkspaceState `json:"state"`
+	ArchivedAt   string         `json:"archived_at"`
+	ArchivedBy   string         `json:"archived_by"`
+	ActiveIssues int            `json:"active_issues"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
 }
 
-// ProjectActivity is the append-only audit trail of lifecycle transitions.
-// Metadata edits remain represented by the project's ETag/version; archive
+// WorkspaceActivity is the append-only audit trail of lifecycle transitions.
+// Metadata edits remain represented by the workspace's ETag/version; archive
 // and restore are retained because they change whether new work is permitted.
-type ProjectActivity struct {
+type WorkspaceActivity struct {
 	ID        int64  `json:"id"`
-	Project   string `json:"project"`
+	Workspace string `json:"workspace"`
 	Action    string `json:"action"`
 	Actor     string `json:"actor"`
 	CreatedAt string `json:"created_at"`
 }
 
-// ProjectPreference is one otherwise-visible project together with whether the
+// WorkspacePreference is one otherwise-visible workspace together with whether the
 // current user has chosen to hide it from normal work. It is returned only by
 // the preference editor's recovery path, which deliberately bypasses that
 // choice while retaining ordinary authorization.
-type ProjectPreference struct {
-	Project Project `json:"project"`
-	Ignored bool    `json:"ignored"`
+type WorkspacePreference struct {
+	Workspace Workspace `json:"workspace"`
+	Ignored   bool      `json:"ignored"`
 }
 
 // BoardView is a named, owner-scoped set of filters for the status board.
-// Empty filter slices mean no constraint. AllProjects distinguishes that from
-// an explicitly selected project set which currently has no visible members.
+// Empty filter slices mean no constraint. AllWorkspaces distinguishes that from
+// an explicitly selected workspace set which currently has no visible members.
 type BoardView struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Owner       string   `json:"owner"`
-	Shared      bool     `json:"shared"`
-	AllProjects bool     `json:"all_projects"`
-	Projects    []string `json:"projects"`
-	Labels      []string `json:"labels"`
-	Assignees   []string `json:"assignees"`
-	PriorityMax int      `json:"priority_max"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Owner         string   `json:"owner"`
+	Shared        bool     `json:"shared"`
+	AllWorkspaces bool     `json:"all_workspaces"`
+	Workspaces    []string `json:"workspaces"`
+	Labels        []string `json:"labels"`
+	Assignees     []string `json:"assignees"`
+	PriorityMax   int      `json:"priority_max"`
+	CreatedAt     string   `json:"created_at"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 // Normalize makes every collection deterministic and non-null on the wire.
 func (v *BoardView) Normalize() {
-	slices.Sort(v.Projects)
+	slices.Sort(v.Workspaces)
 	slices.Sort(v.Labels)
 	slices.Sort(v.Assignees)
-	if v.Projects == nil {
-		v.Projects = []string{}
+	if v.Workspaces == nil {
+		v.Workspaces = []string{}
 	}
 	if v.Labels == nil {
 		v.Labels = []string{}
@@ -139,10 +139,10 @@ func (v *BoardView) Normalize() {
 // Board is one bounded board page. LaneTotal is before lane pagination;
 // column totals are before card pagination.
 type Board struct {
-	View            *BoardView  `json:"view,omitempty"`
-	Lanes           []BoardLane `json:"lanes"`
-	LaneTotal       int         `json:"lane_total"`
-	ProjectsOmitted bool        `json:"projects_omitted"`
+	View              *BoardView  `json:"view,omitempty"`
+	Lanes             []BoardLane `json:"lanes"`
+	LaneTotal         int         `json:"lane_total"`
+	WorkspacesOmitted bool        `json:"workspaces_omitted"`
 }
 
 type BoardLane struct {

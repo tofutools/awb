@@ -295,7 +295,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func toIssue(issue *domain.Issue) api.Issue {
 	return api.Issue{
 		ID:          issue.ID,
-		Project:     api.ProjectKey(issue.Project),
+		Workspace:   api.WorkspaceKey(issue.Workspace),
 		Title:       issue.Title,
 		Description: issue.Description,
 		Type:        api.Type(issue.Type),
@@ -330,7 +330,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 	}
 	return api.IssueTree{
 		ID:          issue.ID,
-		Project:     issue.Project,
+		Workspace:   issue.Workspace,
 		Title:       issue.Title,
 		Description: issue.Description,
 		Type:        issue.Type,
@@ -349,24 +349,24 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 	}
 }
 
-func toProject(project *domain.Project) api.Project {
-	return api.Project{
-		Key:          api.ProjectKey(project.Key),
-		Name:         project.Name,
-		Description:  project.Description,
-		State:        api.ProjectState(project.State),
-		ArchivedAt:   project.ArchivedAt,
-		ArchivedBy:   project.ArchivedBy,
-		ActiveIssues: project.ActiveIssues,
-		CreatedAt:    api.Timestamp(project.CreatedAt),
-		UpdatedAt:    api.Timestamp(project.UpdatedAt),
+func toWorkspace(workspace *domain.Workspace) api.Workspace {
+	return api.Workspace{
+		Key:          api.WorkspaceKey(workspace.Key),
+		Name:         workspace.Name,
+		Description:  workspace.Description,
+		State:        api.WorkspaceState(workspace.State),
+		ArchivedAt:   workspace.ArchivedAt,
+		ArchivedBy:   workspace.ArchivedBy,
+		ActiveIssues: workspace.ActiveIssues,
+		CreatedAt:    api.Timestamp(workspace.CreatedAt),
+		UpdatedAt:    api.Timestamp(workspace.UpdatedAt),
 	}
 }
 
-func toProjects(projects []domain.Project) []api.Project {
-	out := make([]api.Project, len(projects))
-	for i := range projects {
-		out[i] = toProject(&projects[i])
+func toWorkspaces(workspaces []domain.Workspace) []api.Workspace {
+	out := make([]api.Workspace, len(workspaces))
+	for i := range workspaces {
+		out[i] = toWorkspace(&workspaces[i])
 	}
 	return out
 }

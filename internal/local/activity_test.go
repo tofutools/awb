@@ -169,7 +169,7 @@ func TestCreateAndDeleteRecordRelationActivityOnSurvivingEndpoints(t *testing.T)
 	parent := create(t, b, ctx, "parent")
 
 	child, err := b.CreateIssue(ctx, backend.IssueCreate{
-		Project: "awb", Title: "child",
+		Workspace: "awb", Title: "child",
 		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
 	})
 	require.NoError(t, err)

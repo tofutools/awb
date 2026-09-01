@@ -4,16 +4,16 @@ import type { Suggestion } from "./autocomplete.js";
 /** Workspace administrators hold admin access everywhere without a membership
  * row; otherwise the caller needs an admin membership in this workspace. An
  * empty identity is the server's unrestricted bootstrap/direct-style mode. */
-export function mayManageProjectMembership(
+export function mayManageWorkspaceMembership(
   identity: string,
   user: User | null,
-  project: string,
+  workspace: string,
   members: Membership[] = [],
 ): boolean {
   if (identity === "") return true;
-  if (user?.project_admin === true) return true;
-  return user?.projects.some((membership) =>
-    membership.project === project && membership.access === "admin") === true
+  if (user?.workspace_admin === true) return true;
+  return user?.workspaces.some((membership) =>
+    membership.workspace === workspace && membership.access === "admin") === true
     || members.some((membership) => membership.user === identity && membership.access === "admin");
 }
 

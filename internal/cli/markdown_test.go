@@ -167,10 +167,10 @@ func TestMarkdownDrawsTables(t *testing.T) {
 // still says which column it is in.
 func TestNarrowTableIsCutRatherThanOverflowed(t *testing.T) {
 	source := "| Key | What it holds |\n| --- | --- |\n" +
-		"| demo | A sample project for trying awb out, replaced wholesale each run |\n"
+		"| demo | A sample workspace for trying awb out, replaced wholesale each run |\n"
 
 	wide := strings.Split(drawn(config.ColorNever, 100, source), "\n")
-	assert.Equal(t, "demo  A sample project for trying awb out, replaced wholesale each run",
+	assert.Equal(t, "demo  A sample workspace for trying awb out, replaced wholesale each run",
 		wide[1], "with room to spare nothing is cut")
 
 	for _, width := range []int{20, 40, 60} {
@@ -231,15 +231,15 @@ func TestHyperlinkDestinationsCannotDriveTheTerminal(t *testing.T) {
 	assert.Contains(t, out, "\x1b]8;;https://x/%1B]0;pwned%07\x07")
 }
 
-// A project's description is drawn the same way an issue's is, which is the
+// A workspace's description is drawn the same way an issue's is, which is the
 // point of the two going through one renderer.
-func TestProjectDetailDrawsItsDescription(t *testing.T) {
-	project := &domain.Project{Key: "demo", Name: "DEMO", ActiveIssues: 7,
-		Description: "A sample project for trying **awb** out.\n"}
+func TestWorkspaceDetailDrawsItsDescription(t *testing.T) {
+	workspace := &domain.Workspace{Key: "demo", Name: "DEMO", ActiveIssues: 7,
+		Description: "A sample workspace for trying **awb** out.\n"}
 
-	out := render(60, func(e *env) { e.printProjectDetail(project) })
+	out := render(60, func(e *env) { e.printWorkspaceDetail(workspace) })
 	assert.Contains(t, out, "demo  DEMO")
 	assert.Contains(t, out, "Open:")
-	assert.Contains(t, out, "A sample project for trying awb out.")
+	assert.Contains(t, out, "A sample workspace for trying awb out.")
 	assert.NotContains(t, out, "**")
 }

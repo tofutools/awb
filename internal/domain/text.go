@@ -15,12 +15,12 @@ import (
 const (
 	MaxTitleLen         = 500
 	MaxCloseReasonLen   = 500
-	MaxProjectNameLen   = 500
+	MaxWorkspaceNameLen = 500
 	MaxUserFullNameLen  = 500
 	MaxSearchTermLen    = 500
 	MaxLabelLen         = 64
 	MaxAssigneeLen      = 64
-	MaxProjectKeyLen    = 16
+	MaxWorkspaceKeyLen  = 16
 	MaxBoardViewNameLen = 100
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
@@ -163,10 +163,10 @@ func ValidateComment(s string) (string, error) {
 	return s, nil
 }
 
-// ValidateProjectName applies the input rules to a project name. An empty name
+// ValidateWorkspaceName applies the input rules to a workspace name. An empty name
 // is accepted here and means "restore the key as the name", which is what
 // --name "" and a PATCH carrying "" do; the caller substitutes the key.
-func ValidateProjectName(s string) (string, error) {
+func ValidateWorkspaceName(s string) (string, error) {
 	if err := checkUTF8("workspace name", s); err != nil {
 		return "", err
 	}
@@ -176,7 +176,7 @@ func ValidateProjectName(s string) (string, error) {
 	if err := checkNoControls("workspace name", s); err != nil {
 		return "", err
 	}
-	if err := checkMaxRunes("workspace name", s, MaxProjectNameLen); err != nil {
+	if err := checkMaxRunes("workspace name", s, MaxWorkspaceNameLen); err != nil {
 		return "", err
 	}
 	return s, nil
@@ -184,7 +184,7 @@ func ValidateProjectName(s string) (string, error) {
 
 // ValidateUserFullName applies the input rules to a user's descriptive name.
 // It is optional, so empty clears it, and is otherwise stored byte for byte as
-// it arrived, like a project name.
+// it arrived, like a workspace name.
 func ValidateUserFullName(s string) (string, error) {
 	if err := checkUTF8("full name", s); err != nil {
 		return "", err
@@ -198,18 +198,18 @@ func ValidateUserFullName(s string) (string, error) {
 	return s, nil
 }
 
-// ValidateProjectKey applies the key vocabulary: lowercase ASCII letters,
+// ValidateWorkspaceKey applies the key vocabulary: lowercase ASCII letters,
 // digits and hyphens, starting with a letter, at most 16 characters. The key
 // is refused rather than normalised.
-func ValidateProjectKey(s string) (string, error) {
+func ValidateWorkspaceKey(s string) (string, error) {
 	if err := checkUTF8("workspace key", s); err != nil {
 		return "", err
 	}
 	if s == "" {
 		return "", awberr.Usagef("workspace key must not be empty")
 	}
-	if len(s) > MaxProjectKeyLen {
-		return "", awberr.Usagef("invalid workspace key %q: at most %d characters", s, MaxProjectKeyLen)
+	if len(s) > MaxWorkspaceKeyLen {
+		return "", awberr.Usagef("invalid workspace key %q: at most %d characters", s, MaxWorkspaceKeyLen)
 	}
 	for i, r := range s {
 		switch {

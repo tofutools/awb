@@ -60,16 +60,16 @@ func CompactLine(issue *Issue, withBlockers bool) string {
 	return b.String()
 }
 
-// CompactProjectLine renders a project as "<key> <active_issues> <name>",
+// CompactWorkspaceLine renders a workspace as "<key> <active_issues> <name>",
 // where the name is a JSON string.
-func CompactProjectLine(p *Project) string {
+func CompactWorkspaceLine(p *Workspace) string {
 	return p.Key + " " + strconv.Itoa(p.ActiveIssues) + " " + jsonString(p.Name)
 }
 
-// CompactProjectActivityLine renders one project lifecycle event as a stable
-// single line. The project key and action vocabularies contain no whitespace.
-func CompactProjectActivityLine(a *ProjectActivity) string {
-	line := strconv.FormatInt(a.ID, 10) + " " + a.CreatedAt + " " + a.Project + " " + a.Action
+// CompactWorkspaceActivityLine renders one workspace lifecycle event as a stable
+// single line. The workspace key and action vocabularies contain no whitespace.
+func CompactWorkspaceActivityLine(a *WorkspaceActivity) string {
+	line := strconv.FormatInt(a.ID, 10) + " " + a.CreatedAt + " " + a.Workspace + " " + a.Action
 	if a.Actor != "" {
 		line += " @" + a.Actor
 	}
@@ -111,15 +111,15 @@ func CompactActivityLine(a *Activity) string {
 
 // CompactUserLine renders a user as the compact one-line form:
 //
-//	alice +project-admin awb:admin web:regular
+//	alice +workspace-admin awb:admin web:regular
 //
 // The line begins with the one mandatory field, the username. The descriptive
 // full name is deliberately absent: adding free text would make existing
 // compact consumers parse a new token shape. Any further
 // field is optional and identified by its shape rather than its position, and
-// they appear in this fixed order when present: "+project-admin",
-// "+user-admin", and one "<project>:<access>" per membership, in project
-// order. A project key cannot contain a colon and neither can an access level,
+// they appear in this fixed order when present: "+workspace-admin",
+// "+user-admin", and one "<workspace>:<access>" per membership, in workspace
+// order. A workspace key cannot contain a colon and neither can an access level,
 // so a membership token splits on its only one.
 //
 // A password is not in it, and there is no field it could go in: nothing that
@@ -128,15 +128,15 @@ func CompactUserLine(u *User) string {
 	var b strings.Builder
 
 	b.WriteString(u.Name)
-	if u.ProjectAdmin {
-		b.WriteString(" +project-admin")
+	if u.WorkspaceAdmin {
+		b.WriteString(" +workspace-admin")
 	}
 	if u.UserAdmin {
 		b.WriteString(" +user-admin")
 	}
-	for _, m := range u.Projects {
+	for _, m := range u.Workspaces {
 		b.WriteByte(' ')
-		b.WriteString(m.Project)
+		b.WriteString(m.Workspace)
 		b.WriteByte(':')
 		b.WriteString(string(m.Access))
 	}
@@ -144,10 +144,10 @@ func CompactUserLine(u *User) string {
 	return b.String()
 }
 
-// CompactMembershipLine renders one membership as "<project> <user> <access>",
+// CompactMembershipLine renders one membership as "<workspace> <user> <access>",
 // all three of which are drawn from character sets with no spaces in them.
 func CompactMembershipLine(m *Membership) string {
-	return m.Project + " " + m.User + " " + string(m.Access)
+	return m.Workspace + " " + m.User + " " + string(m.Access)
 }
 
 // CompactTreePrefix is the indentation dep tree --compact puts before a node's

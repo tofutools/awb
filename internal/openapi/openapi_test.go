@@ -148,7 +148,7 @@ func TestLengthMaximaMatch(t *testing.T) {
 	cases := map[string]int{
 		"Label":        domain.MaxLabelLen,
 		"Assignee":     domain.MaxAssigneeLen,
-		"ProjectKey":   domain.MaxProjectKeyLen,
+		"WorkspaceKey": domain.MaxWorkspaceKeyLen,
 		"UserFullName": domain.MaxUserFullNameLen,
 	}
 	for name, want := range cases {
@@ -186,7 +186,7 @@ func TestIssueSchemaCoversEveryField(t *testing.T) {
 	}
 
 	for _, field := range []string{
-		"id", "project", "title", "description", "type", "status", "priority",
+		"id", "workspace", "title", "description", "type", "status", "priority",
 		"labels", "assignees", "created_at", "updated_at",
 		"blocked", "blockers", "relations", "links",
 	} {
@@ -198,9 +198,9 @@ func TestIssueSchemaCoversEveryField(t *testing.T) {
 		"there is one Issue shape and nothing else belongs in it")
 }
 
-func TestProjectSchemaCoversEveryField(t *testing.T) {
-	project := schema(t, document(t), "Project")
-	properties, ok := project["properties"].(map[string]any)
+func TestWorkspaceSchemaCoversEveryField(t *testing.T) {
+	workspace := schema(t, document(t), "Workspace")
+	properties, ok := workspace["properties"].(map[string]any)
 	require.True(t, ok)
 
 	for _, field := range []string{
@@ -245,8 +245,8 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 		"/api/issues/{id}/labels", "/api/issues/{id}/relations",
 		"/api/issues/{id}/relations/{type}/{other}", "/api/issues/{id}/tree",
 		"/api/ready", "/api/blocked", "/api/search",
-		"/api/projects", "/api/projects/{key}", "/api/projects/{key}/archive",
-		"/api/projects/{key}/restore", "/api/projects/{key}/activity",
+		"/api/workspaces", "/api/workspaces/{key}", "/api/workspaces/{key}/archive",
+		"/api/workspaces/{key}/restore", "/api/workspaces/{key}/activity",
 		"/api/users", "/api/users/{name}",
 		"/api/labels", "/api/assignees", "/api/identity",
 	} {
@@ -318,42 +318,42 @@ func TestOperations(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{
 		"status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "project", "parent", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "filter", "sort", "limit", "offset",
 	}, names("listIssues"))
 	assert.ElementsMatch(t, []string{
-		"type", "priority", "priority-max", "label", "project", "parent", "filter", "sort",
+		"type", "priority", "priority-max", "label", "workspace", "parent", "filter", "sort",
 		"limit", "offset",
 	}, names("listReady"))
 	assert.ElementsMatch(t, []string{
 		"type", "priority", "priority-max", "label", "assignee", "unassigned",
-		"project", "parent", "filter", "sort", "limit", "offset",
+		"workspace", "parent", "filter", "sort", "limit", "offset",
 	}, names("listBlocked"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "project", "parent", "filter", "readiness", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "filter", "readiness", "limit", "offset",
 	}, names("listLabels"))
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "project", "parent", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "filter", "sort", "limit", "offset",
 	}, names("searchIssues"))
-	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listProjects"))
+	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listWorkspaces"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))
 	assert.ElementsMatch(t, []string{
-		"lane-limit", "lane-offset", "card-limit", "card-offset", "project", "status", "epic",
+		"lane-limit", "lane-offset", "card-limit", "card-offset", "workspace", "status", "epic",
 	}, names("getBoard"))
 	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
-	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))
+	assert.ElementsMatch(t, []string{"cascade"}, names("deleteWorkspace"))
 	assert.ElementsMatch(t, []string{"name", "content-type"}, names("addAttachment"))
 	assert.ElementsMatch(t, []string{"limit", "offset"}, names("listAttachments"))
 	assert.ElementsMatch(t, []string{"kind", "limit", "offset"}, names("listIssueActivity"))
 	assert.ElementsMatch(t, []string{"q", "limit"}, names("searchNavigation"))
-	assert.Empty(t, names("listProjectPreferences"))
-	assert.Empty(t, names("setProjectIgnored"))
+	assert.Empty(t, names("listWorkspacePreferences"))
+	assert.Empty(t, names("setWorkspaceIgnored"))
 	assert.Empty(t, names("getIssue"))
 
 	assert.True(t, operations["createIssue"].TakesBody)
-	assert.True(t, operations["addProjectMember"].DeclaresJSONBody())
+	assert.True(t, operations["addWorkspaceMember"].DeclaresJSONBody())
 	assert.True(t, operations["addComment"].DeclaresJSONBody())
 	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
 	assert.False(t, operations["reopenIssue"].TakesBody)

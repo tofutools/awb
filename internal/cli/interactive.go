@@ -115,22 +115,22 @@ func (e *env) pickIssue(ctx context.Context, be backend.Backend, out term.File,
 	return e.printIssue(issue)
 }
 
-// pickProject scrolls a project listing and prints the project chosen.
-func (e *env) pickProject(ctx context.Context, be backend.Backend, out term.File,
-	projects []domain.Project) error {
-	if len(projects) == 0 {
+// pickWorkspace scrolls a workspace listing and prints the workspace chosen.
+func (e *env) pickWorkspace(ctx context.Context, be backend.Backend, out term.File,
+	workspaces []domain.Workspace) error {
+	if len(workspaces) == 0 {
 		return nil
 	}
 	t := e.theme()
-	row, err := e.pick(ctx, out, t, e.projectCols(t, projects), len(projects))
+	row, err := e.pick(ctx, out, t, e.workspaceCols(t, workspaces), len(workspaces))
 	if err != nil || row == noSelection {
 		return err
 	}
-	project, err := be.GetProject(ctx, projects[row].Key)
+	workspace, err := be.GetWorkspace(ctx, workspaces[row].Key)
 	if err != nil {
 		return err
 	}
-	return e.printProject(project)
+	return e.printWorkspace(workspace)
 }
 
 // pickUser scrolls a user listing and prints the user chosen.

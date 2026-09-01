@@ -26,10 +26,10 @@ export type Link = components["schemas"]["Link"];
 export type Attachment = components["schemas"]["Attachment"];
 export type Activity = components["schemas"]["Activity"];
 export type IssueTree = components["schemas"]["IssueTree"];
-export type Project = components["schemas"]["Project"];
-export type ProjectCreate = components["schemas"]["ProjectCreate"];
-export type ProjectActivity = components["schemas"]["ProjectActivity"];
-export type ProjectPreference = components["schemas"]["ProjectPreference"];
+export type Workspace = components["schemas"]["Workspace"];
+export type WorkspaceCreate = components["schemas"]["WorkspaceCreate"];
+export type WorkspaceActivity = components["schemas"]["WorkspaceActivity"];
+export type WorkspacePreference = components["schemas"]["WorkspacePreference"];
 export type Facet = components["schemas"]["Facet"];
 export type User = components["schemas"]["User"];
 export type DirectoryUser = components["schemas"]["UserDirectoryEntry"];
@@ -44,7 +44,7 @@ export type ClaimRequest = components["schemas"]["ClaimRequest"];
 export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
 export type CloseRequest = components["schemas"]["CloseRequest"];
 export type RelationRequest = components["schemas"]["RelationRequest"];
-export type ProjectPatch = components["schemas"]["ProjectPatch"];
+export type WorkspacePatch = components["schemas"]["WorkspacePatch"];
 export type Board = components["schemas"]["Board"];
 export type BoardView = components["schemas"]["BoardView"];
 export type BoardViewCreate = components["schemas"]["BoardViewCreate"];
@@ -62,7 +62,7 @@ export type IssueFilters = Query<"listIssues">;
 export type ReadyFilters = Query<"listReady">;
 export type BlockedFilters = Query<"listBlocked">;
 export type SearchFilters = Query<"searchIssues">;
-export type ProjectFilters = Query<"listProjects">;
+export type WorkspaceFilters = Query<"listWorkspaces">;
 export type UserFilters = Query<"listUsers">;
 export type FacetFilters = Query<"listLabels">;
 export type ActivityFilters = Query<"listIssueActivity">;
@@ -207,10 +207,10 @@ async function patchOne<T>(path: string, body: unknown): Promise<T> {
   return entityResponse<T>(path, resp);
 }
 
-async function projectLifecycle(key: string, action: "archive" | "restore"): Promise<Project> {
-  const path = `api/projects/${encodeURIComponent(key)}`;
+async function workspaceLifecycle(key: string, action: "archive" | "restore"): Promise<Workspace> {
+  const path = `api/workspaces/${encodeURIComponent(key)}`;
   const resp = await request(`${path}/${action}`, { method: "POST", headers: entityHeaders(path) });
-  return entityResponse<Project>(path, resp);
+  return entityResponse<Workspace>(path, resp);
 }
 
 async function deleteEntity<T>(path: string): Promise<T> {
@@ -257,10 +257,10 @@ export const api = {
     getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   navigation: async (query: string, signal?: AbortSignal) =>
     getResponse<NavigationResults>(await request(`api/navigation${toQuery({ q: query, limit: 6 })}`, { signal })),
-  projectPreferences: async () =>
-    getResponse<ProjectPreference[]>(await request("api/preferences/projects")),
-  setProjectIgnored: async (key: string, ignored: boolean) =>
-    getResponse<ProjectPreference>(await request(`api/preferences/projects/${encodeURIComponent(key)}`, {
+  workspacePreferences: async () =>
+    getResponse<WorkspacePreference[]>(await request("api/preferences/workspaces")),
+  setWorkspaceIgnored: async (key: string, ignored: boolean) =>
+    getResponse<WorkspacePreference>(await request(`api/preferences/workspaces/${encodeURIComponent(key)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ignored }),
@@ -306,42 +306,42 @@ export const api = {
   addComment: (id: string, body: string) =>
     postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
-  projects: (filters: ProjectFilters = {}, signal?: AbortSignal) =>
-    getPage<Project>(`api/projects${toQuery(filters)}`, { signal }),
-  createProject: async (body: ProjectCreate) => {
-    const resp = await request("api/projects", {
+  workspaces: (filters: WorkspaceFilters = {}, signal?: AbortSignal) =>
+    getPage<Workspace>(`api/workspaces${toQuery(filters)}`, { signal }),
+  createWorkspace: async (body: WorkspaceCreate) => {
+    const resp = await request("api/workspaces", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    return entityResponse<Project>(`api/projects/${encodeURIComponent(body.key)}`, resp);
+    return entityResponse<Workspace>(`api/workspaces/${encodeURIComponent(body.key)}`, resp);
   },
-  projectMembers: (key: string, signal?: AbortSignal) =>
-    getPage<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { signal }),
-  addProjectMember: (key: string, user: string, access: MembershipAccess) =>
-    postOne<Membership>(`api/projects/${encodeURIComponent(key)}/members`, { user, access }),
-  setProjectMember: async (key: string, user: string, access: MembershipAccess) =>
+  workspaceMembers: (key: string, signal?: AbortSignal) =>
+    getPage<Membership>(`api/workspaces/${encodeURIComponent(key)}/members`, { signal }),
+  addWorkspaceMember: (key: string, user: string, access: MembershipAccess) =>
+    postOne<Membership>(`api/workspaces/${encodeURIComponent(key)}/members`, { user, access }),
+  setWorkspaceMember: async (key: string, user: string, access: MembershipAccess) =>
     getResponse<Membership>(await request(
-      `api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
+      `api/workspaces/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ access }),
       },
     )),
-  removeProjectMember: (key: string, user: string) =>
+  removeWorkspaceMember: (key: string, user: string) =>
     deleteOne<Membership>(
-      `api/projects/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
+      `api/workspaces/${encodeURIComponent(key)}/members/${encodeURIComponent(user)}`,
     ),
   users: (filters: UserFilters = {}, signal?: AbortSignal) =>
     getPage<DirectoryUser>(`api/users${toQuery(filters)}`, { signal }),
-  project: (key: string) => getOne<Project>(`api/projects/${encodeURIComponent(key)}`),
-  updateProject: (key: string, patch: ProjectPatch) =>
-    patchOne<Project>(`api/projects/${encodeURIComponent(key)}`, patch),
-  archiveProject: (key: string) => projectLifecycle(key, "archive"),
-  restoreProject: (key: string) => projectLifecycle(key, "restore"),
-  projectActivity: (key: string) =>
-    getPage<ProjectActivity>(`api/projects/${encodeURIComponent(key)}/activity`),
+  workspace: (key: string) => getOne<Workspace>(`api/workspaces/${encodeURIComponent(key)}`),
+  updateWorkspace: (key: string, patch: WorkspacePatch) =>
+    patchOne<Workspace>(`api/workspaces/${encodeURIComponent(key)}`, patch),
+  archiveWorkspace: (key: string) => workspaceLifecycle(key, "archive"),
+  restoreWorkspace: (key: string) => workspaceLifecycle(key, "restore"),
+  workspaceActivity: (key: string) =>
+    getPage<WorkspaceActivity>(`api/workspaces/${encodeURIComponent(key)}/activity`),
   labels: (filters: FacetFilters = {}, signal?: AbortSignal) =>
     getPage<Facet>(`api/labels${toQuery(filters)}`, { signal }),
   assignees: (filters: FacetFilters = {}, signal?: AbortSignal) =>
