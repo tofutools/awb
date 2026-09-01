@@ -1921,7 +1921,11 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     } else {
       operation = api.createBoardView(body);
     }
-    void operation.then((view) => { dialog.close(); location.hash = `#/boards/${view.id}`; }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
+    void operation.then((view) => {
+      dialog.close();
+      const destination = `#/boards/${view.id}`;
+      if (location.hash === destination) void render(); else location.hash = destination;
+    }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
   });
   dialog.showModal(); name.focus();
 }
