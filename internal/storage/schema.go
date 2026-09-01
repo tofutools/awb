@@ -27,6 +27,14 @@ var migrations = [][]string{
 	schemaV8,
 	schemaV9,
 	schemaV10,
+	schemaV11,
+}
+
+// schemaV11 adds a sparse manual position. Zero means the issue has not been
+// positioned and therefore follows the ordinary priority/recency fallback.
+var schemaV11 = []string{
+	`ALTER TABLE issues ADD COLUMN board_order INTEGER NOT NULL DEFAULT 0 CHECK (board_order >= 0)`,
+	`CREATE INDEX idx_issues_board_order ON issues (board_order, priority, updated_at, id)`,
 }
 
 // schemaV10 stores owner-scoped board filters. The owner is deliberately not

@@ -54,9 +54,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				return err
 			}
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issues (`+issueColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-				issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt); err != nil {
+				issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt); err != nil {
 				return restoreError(err, "issue %s", issue.ID)
 			}
 			issueIDs[issue.ID] = struct{}{}

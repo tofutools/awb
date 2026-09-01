@@ -10,7 +10,7 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, project, title, description, type, status, priority,
+const issueColumns = `id, project, title, description, type, status, priority, board_order,
 	created_at, updated_at`
 
 type rowScanner interface {
@@ -20,7 +20,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Project, &i.Title, &i.Description, &i.Type, &i.Status,
-		&i.Priority, &i.CreatedAt, &i.UpdatedAt)
+		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +58,21 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
+// IssueProject returns the current project of an issue for internal policy
+// checks which already hold an issue ID. It deliberately does not apply the
+// transaction scope; callers must never return the value directly.
+func (t *Tx) IssueProject(id string) (string, error) {
+	var project string
+	err := t.q.QueryRowContext(t.ctx, `SELECT project FROM issues WHERE id = ?`, id).Scan(&project)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "read issue project")
+	}
+	return project, nil
+}
+
 // ResolveIssueRef turns a reference — a full ID, an ID prefix, or a bare hash
 // or hash prefix — into exactly one issue ID.
 //
@@ -81,13 +96,13 @@ func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
 		// A bare hash matches on the hash part of any ID, in any project.
 		rows, err = t.q.QueryContext(t.ctx,
 			`SELECT id FROM issues
-			  WHERE substr(id, length(project) + 2) LIKE ? || '%' AND `+visible+`
+			  WHERE substr(id, -6) LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`, append([]any{ref.Hash}, scopeArgs...)...)
 	} else {
 		rows, err = t.q.QueryContext(t.ctx,
-			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%' AND `+visible+`
+			`SELECT id FROM issues WHERE id LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`,
-			append([]any{ref.Project, ref.Project + "-" + ref.Hash}, scopeArgs...)...)
+			append([]any{ref.Project + "-" + ref.Hash}, scopeArgs...)...)
 	}
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "resolve issue %s", ref.Raw)
@@ -292,9 +307,9 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Project, issue.Title, issue.Description, issue.Type,
-			issue.Status, issue.Priority, issue.CreatedAt, issue.UpdatedAt)
+			issue.Status, issue.Priority, issue.Order, issue.CreatedAt, issue.UpdatedAt)
 		if err == nil {
 			for position, assignee := range assignees {
 				if _, err := t.q.ExecContext(t.ctx,
@@ -320,19 +335,21 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 // IssueFields are the stored fields an update may change.
 type IssueFields struct {
+	Project     string
 	Title       string
 	Description string
 	Type        domain.Type
 	Status      domain.Status
 	Priority    int
+	Order       int
 	Assignees   []string
 }
 
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
-		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Assignees: slices.Clone(i.Assignees),
+		Project: i.Project, Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
+		Priority: i.Priority, Order: i.Order, Assignees: slices.Clone(i.Assignees),
 	}
 }
 
@@ -344,9 +361,9 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		return err
 	}
 	before := Fields(issue)
-	if before.Title == fields.Title && before.Description == fields.Description &&
+	if before.Project == fields.Project && before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
-		before.Priority == fields.Priority &&
+		before.Priority == fields.Priority && before.Order == fields.Order &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
@@ -354,10 +371,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET title = ?, description = ?, type = ?, status = ?, priority = ?,
+		   SET project = ?, title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
 		       updated_at = ?
 		 WHERE id = ?`,
-		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority,
+		fields.Project, fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
 		updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
@@ -376,13 +393,127 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		}
 	}
 
+	issue.Project = fields.Project
 	issue.Title = fields.Title
 	issue.Description = fields.Description
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
+	issue.Order = fields.Order
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
+	return nil
+}
+
+// ReorderIssue places issue before beforeID in the visible issue order, or at
+// the end when beforeID is empty. A board sees the same relative order after
+// filtering this sequence to one project/status cell. Sparse ranks make the
+// ordinary move a one-row update. Unpositioned predecessors are materialized
+// only when a move must preserve their relative place, and ranked rows are rebalanced
+// only in the rare case that a gap is exhausted.
+func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID string) error {
+	visible, args := t.visibleClause("project")
+	rows, err := t.q.QueryContext(t.ctx, `SELECT id, board_order, updated_at FROM issues
+		WHERE `+visible+
+		` ORDER BY (board_order = 0) ASC, board_order ASC, priority ASC, updated_at DESC, id ASC`,
+		args...)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read issue order")
+	}
+	type ordered struct {
+		id      string
+		order   int
+		updated string
+	}
+	var current []ordered
+	for rows.Next() {
+		var row ordered
+		if err := rows.Scan(&row.id, &row.order, &row.updated); err != nil {
+			rows.Close()
+			return err
+		}
+		if row.id != issue.ID {
+			current = append(current, row)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return awberr.Wrap(awberr.Runtime, err, "read issue order")
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	insert := len(current)
+	if beforeID != "" {
+		insert = -1
+		for i := range current {
+			if current[i].id == beforeID {
+				insert = i
+				break
+			}
+		}
+		if insert < 0 {
+			return awberr.Usagef("the issue to place before is not visible")
+		}
+	}
+	current = append(current, ordered{})
+	copy(current[insert+1:], current[insert:])
+	current[insert] = ordered{id: issue.ID, order: issue.Order, updated: issue.UpdatedAt}
+	write := func(row *ordered, want int) error {
+		if row.order == want {
+			return nil
+		}
+		updated := bumpedTimestamp(row.updated, Now())
+		if _, err := t.q.ExecContext(t.ctx, `UPDATE issues SET board_order = ?, updated_at = ? WHERE id = ?`,
+			want, updated, row.id); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "reorder issue %s", row.id)
+		}
+		row.order, row.updated = want, updated
+		if row.id == issue.ID {
+			issue.Order, issue.UpdatedAt = want, updated
+		}
+		return nil
+	}
+
+	// Preserve any automatic rows which appear before the insertion point by
+	// assigning just that prefix sparse ranks after the existing ranked group.
+	last := 0
+	for i := 0; i < insert; i++ {
+		if current[i].order > 0 {
+			last = current[i].order
+			continue
+		}
+		last += 1024
+		if err := write(&current[i], last); err != nil {
+			return err
+		}
+	}
+	next := 0
+	if insert+1 < len(current) {
+		next = current[insert+1].order
+	}
+	want := last + 1024
+	if next > last+1 {
+		want = last + (next-last)/2
+	}
+	if next > 0 && next <= last+1 {
+		// No integer remains between adjacent ranks. Rebalance ranked rows only;
+		// automatic rows keep their zero and fallback ordering.
+		position := 1024
+		for i := range current {
+			if current[i].order == 0 && i != insert {
+				continue
+			}
+			if err := write(&current[i], position); err != nil {
+				return err
+			}
+			position += 1024
+		}
+		return nil
+	}
+	if err := write(&current[insert], want); err != nil {
+		return err
+	}
 	return nil
 }
 

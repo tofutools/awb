@@ -280,6 +280,102 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 	})
 }
 
+// MoveIssue is the board/list drag operation. Project, status and position are
+// committed together, so clients never observe the issue in an intermediate
+// cell. Status moves preserve the same assignment rules as the named
+// transition operations.
+func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
+	ifMatch string) (*domain.Issue, error) {
+	project, err := domain.ValidateProjectKey(req.Project)
+	if err != nil {
+		return nil, err
+	}
+	status, err := domain.ParseStatus(string(req.Status))
+	if err != nil {
+		return nil, err
+	}
+	var result *domain.Issue
+	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		issue, err := load(tx, ref)
+		if err != nil {
+			return err
+		}
+		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
+			return err
+		}
+		exists, err := tx.ProjectExists(project)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return awberr.NotFoundf("no such project: %s", project)
+		}
+		beforeID := ""
+		if req.Before != "" {
+			before, err := load(tx, req.Before)
+			if err != nil {
+				return err
+			}
+			if before.ID == issue.ID && issue.Project == project && issue.Status == status {
+				result = issue
+				return nil
+			}
+			beforeID = before.ID
+		}
+
+		before := *issue
+		before.Labels = slices.Clone(issue.Labels)
+		before.Assignees = slices.Clone(issue.Assignees)
+		before.Relations = slices.Clone(issue.Relations)
+		fields := storage.Fields(issue)
+		fields.Project = project
+		switch {
+		case status == issue.Status:
+		case issue.Status == domain.StatusOpen && status == domain.StatusInProgress:
+			if issue.Blocked {
+				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
+			}
+			assignee, err := domain.ValidateAssignee(caller.Name)
+			if err != nil {
+				return err
+			}
+			fields.Assignees = []string{assignee}
+		case issue.Status == domain.StatusInProgress && status == domain.StatusOpen:
+			if len(issue.Assignees) != 1 || issue.Assignees[0] != caller.Name {
+				return awberr.Conflictf("%s is held by %v, not solely by you", issue.ID, issue.Assignees)
+			}
+			fields.Assignees = nil
+		case issue.Status == domain.StatusClosed && status == domain.StatusOpen:
+			fields.Assignees = nil
+		case status == domain.StatusClosed:
+		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
+			return awberr.Conflictf("%s is closed; reopen it before claiming it", issue.ID)
+		default:
+			return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
+		}
+		fields.Status = status
+		if err := tx.UpdateIssue(issue, fields); err != nil {
+			return err
+		}
+		if err := tx.ReorderIssue(issue, beforeID); err != nil {
+			return err
+		}
+		result, err = tx.GetIssue(issue.ID)
+		if err != nil {
+			return err
+		}
+		changes := activityChanges(&before, result)
+		if len(changes) == 0 {
+			return nil
+		}
+		return recordChange(tx, caller, issue.ID, "moved", changes)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // checkUnchanged enforces the "may appear but may not change" rule: a patch
 // that genuinely tries to close an issue or rewrite its labels is refused
 // rather than silently dropped.

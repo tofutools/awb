@@ -246,6 +246,28 @@ paths:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/issues/{id}/move:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: moveIssue
+      summary: Atomically move and manually position an issue
+      description: |
+        Places the issue in a project/status cell and immediately before an
+        optional neighboring issue; omitting `before` appends it. The issue ID
+        stays stable when its project changes. Status changes apply the same
+        assignment safety rules as claim, release, close and reopen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueMove' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/issues/{id}/labels:
     parameters:
       - $ref: '#/components/parameters/issueId'
@@ -604,8 +626,8 @@ paths:
           schema:
             type: string
             enum:
-              [relevance, priority, created, updated, id, project, status, assignee, type, blockers,
-               -relevance, -priority, -created, -updated, -id, -project, -status, -assignee, -type,
+              [relevance, order, priority, created, updated, id, project, status, assignee, type, blockers,
+               -relevance, -order, -priority, -created, -updated, -id, -project, -status, -assignee, -type,
                -blockers]
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
@@ -1322,10 +1344,10 @@ components:
         with `id` ascending as a final tiebreak, so the order is total.
       schema:
         type: string
-        default: priority
+        default: order
         enum:
-          [priority, created, updated, id, project, status, assignee, type, blockers,
-           -priority, -created, -updated, -id, -project, -status, -assignee, -type, -blockers]
+          [order, priority, created, updated, id, project, status, assignee, type, blockers,
+           -order, -priority, -created, -updated, -id, -project, -status, -assignee, -type, -blockers]
     limit:
       name: limit
       in: query
@@ -1924,13 +1946,13 @@ components:
         unchanged data therefore produce byte-identical output.
       additionalProperties: false
       required:
-        [id, project, title, description, type, status, priority, labels,
+        [id, project, title, description, type, status, priority, order, labels,
          assignees, created_at, updated_at, blocked, blockers,
          relations, links, attachments]
       properties:
         id:
           type: string
-          description: '`<project-key>-<hash>`, assigned at creation and immutable.'
+          description: '`<origin-project-key>-<hash>`, assigned at creation and immutable.'
           examples: [awb-5c1d84]
         project: { $ref: '#/components/schemas/ProjectKey' }
         title:
@@ -1947,6 +1969,10 @@ components:
         type: { $ref: '#/components/schemas/Type' }
         status: { $ref: '#/components/schemas/Status' }
         priority: { $ref: '#/components/schemas/Priority' }
+        order:
+          type: integer
+          minimum: 0
+          description: Sparse manual rank; zero means priority/recency fallback.
         labels:
           type: array
           description: Sorted.
@@ -2233,7 +2259,7 @@ components:
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
-        `project`, the timestamps, `blocked`, `blockers`, `relations`, `links`
+        `project`, `order`, the timestamps, `blocked`, `blockers`, `relations`, `links`
         and `attachments` — are accepted and their values ignored. Together those rules
         let a UI send back the object it read with only the fields it edited
         changed.
@@ -2260,6 +2286,7 @@ components:
           items: { $ref: '#/components/schemas/Assignee' }
         id: { type: string }
         project: { $ref: '#/components/schemas/ProjectKey' }
+        order: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
         blocked: { type: boolean }
@@ -2267,6 +2294,17 @@ components:
         relations: { type: array, items: { $ref: '#/components/schemas/Relation' } }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
         attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
+
+    IssueMove:
+      type: object
+      additionalProperties: false
+      required: [project, status]
+      properties:
+        project: { $ref: '#/components/schemas/ProjectKey' }
+        status: { $ref: '#/components/schemas/Status' }
+        before:
+          type: string
+          description: A visible issue in the target project/status cell; omitted to append.
 
     ClaimRequest:
       type: object

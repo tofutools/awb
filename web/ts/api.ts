@@ -35,6 +35,7 @@ export type Membership = components["schemas"]["Membership"];
 export type NavigationResults = components["schemas"]["NavigationResults"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
+export type IssueMove = components["schemas"]["IssueMove"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
 export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
 export type CloseRequest = components["schemas"]["CloseRequest"];
@@ -257,6 +258,8 @@ export const api = {
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
+  moveIssue: (id: string, body: IssueMove) =>
+    issueMutation<Issue>(id, "/move", "POST", body),
   claimIssue: (id: string, body: ClaimRequest = { force: false }) =>
     issueMutation<Issue>(id, "/claim", "POST", body),
   releaseIssue: (id: string, body: ReleaseRequest = { force: false }) =>

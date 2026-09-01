@@ -37,7 +37,8 @@ workflow engine, no custom fields and no reporting suite.
 ### Projects and issues
 
 A **project** is the top-level organising unit; every issue belongs to exactly
-one, and its key is the issue ID prefix and is immutable. An **issue** carries a
+one. An issue's creation project is its immutable ID prefix, while its current
+project may change without breaking that identifier. An **issue** carries a
 title, an optional Markdown description, a type, a status, a priority, a set of
 labels and an ordered set of assignees.
 
@@ -135,7 +136,7 @@ real server and fails if either direction allocates anything approaching it.
 
 ### Identifiers
 
-An issue ID is `<project-key>-<hash>`, where the hash is derived from the
+An issue ID is `<origin-project-key>-<hash>`, where the hash is derived from the
 issue's own content and a random salt. That derivation matters architecturally
 for one reason: **IDs are independently mintable**. No counter, no coordination,
 no central allocator — which is what would let two databases be merged, or a
@@ -567,8 +568,12 @@ limit above fifty; direct backend callers receive the same bounds. Deleting a
 selected project advances each affected view version before the foreign-key
 cascade changes its filter. A browser may fold project swimlanes locally; that
 presentation state is keyed by board reference and is not part of the shared
-view. Moves use claim, release, close and reopen rather than a second
-status-update path, preserving the status/assignment invariant.
+view. One atomic move operation changes swimlane, status column and manual
+position while applying the same assignment rules as claim, release, close and
+reopen. Sparse integer ranks normally change only the dragged issue; automatic
+issues fall back to priority and recency, and ranked rows are rebalanced only
+when an insertion gap is exhausted. The regular list uses and edits this same
+order rather than maintaining a second board-only sequence.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
@@ -655,7 +660,7 @@ Some of these are as important as anything above, because they are what the
 design is holding *out*.
 
 **Deliberately absent:** full entity versioning, compliance audit logs, merge
-and offline replication; sprints, boards, burndowns and time tracking;
+and offline replication; sprints, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; custom fields
 and workflows; bulk import.
 

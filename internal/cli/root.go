@@ -220,6 +220,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			newBlockedCommand(e),
 			newSearchCommand(e),
 			newUpdateCommand(e),
+			newMoveCommand(e),
 			newLabelCommand(e),
 			newClaimCommand(e),
 			newReleaseCommand(e),

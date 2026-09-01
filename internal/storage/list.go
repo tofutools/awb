@@ -144,9 +144,12 @@ func orderBy(sort domain.Sort) string {
 	), '')`
 
 	switch sort.Key {
+	case domain.SortOrder:
+		return " ORDER BY (i.board_order = 0) ASC, i.board_order " + direction +
+			", i.priority ASC, i.updated_at DESC, i.id ASC"
 	case domain.SortPriority:
-		// priority inserts created_at ascending before the tiebreak — oldest first
-		// within a priority — so --sort priority is the default order.
+		// Explicit priority keeps the historical oldest-first tiebreak; the natural
+		// order is the separate sparse-order case above.
 		return " ORDER BY i.priority " + direction + ", i.created_at ASC, i.id ASC"
 	case domain.SortCreated:
 		return " ORDER BY i.created_at " + direction + ", i.id ASC"
@@ -178,7 +181,7 @@ func orderBy(sort domain.Sort) string {
 		}
 		return " ORDER BY relevance ASC, i.id ASC"
 	default:
-		return " ORDER BY i.priority ASC, i.created_at ASC, i.id ASC"
+		return " ORDER BY (i.board_order = 0) ASC, i.board_order ASC, i.priority ASC, i.updated_at DESC, i.id ASC"
 	}
 }
 

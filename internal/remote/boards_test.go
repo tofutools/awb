@@ -1,6 +1,7 @@
 package remote_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,6 +39,12 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
 			assert.Equal(t, "open", r.URL.Query().Get("status"))
 			_, _ = w.Write([]byte(`{"lanes":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/issues/awb-123/move":
+			assert.Equal(t, `"issue-etag"`, r.Header.Get("If-Match"))
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"project":"web","status":"open","before":"web-456"}`, string(body))
+			_, _ = w.Write([]byte(`{"id":"awb-123"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -65,5 +72,9 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	laneLimit, cardOffset := 7, 3
 	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
 		Projects: []string{"awb", "web"}, Status: domain.StatusOpen})
+	require.NoError(t, err)
+	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
+		Project: "web", Status: domain.StatusOpen, Before: "web-456",
+	}, `"issue-etag"`)
 	require.NoError(t, err)
 }

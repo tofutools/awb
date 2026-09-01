@@ -50,8 +50,60 @@ func TestCreateIssueDefaults(t *testing.T) {
 	assert.Equal(t, domain.TypeTask, issue.Type)
 	assert.Equal(t, domain.StatusOpen, issue.Status)
 	assert.Equal(t, 2, issue.Priority)
+	assert.Zero(t, issue.Order)
 	assert.Empty(t, issue.Assignees)
 	assert.True(t, issue.Ready())
+}
+
+func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
+	b, ctx := newBackend(t)
+	_, err := b.CreateProject(ctx, backend.ProjectCreate{Key: "web"})
+	require.NoError(t, err)
+	create(t, b, ctx, "first")
+	create(t, b, ctx, "second")
+	create(t, b, ctx, "third")
+	page, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort})
+	require.NoError(t, err)
+	first, second, third := &page.Issues[0], &page.Issues[1], &page.Issues[2]
+
+	// The first manual move ranks the dragged issue without touching unrelated
+	// automatic rows.
+	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, Before: first.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Positive(t, third.Order)
+	secondAfter, err := b.GetIssue(ctx, second.ID)
+	require.NoError(t, err)
+	assert.Zero(t, secondAfter.Order)
+
+	// A move between ranked neighbors chooses the sparse gap and leaves its
+	// neighbor's representation/ETag unchanged.
+	thirdTag := third.UpdatedAt
+	first, err = b.MoveIssue(ctx, first.ID, backend.IssueMove{
+		Project: "awb", Status: domain.StatusOpen, Before: third.ID,
+	}, "")
+	require.NoError(t, err)
+	assert.Less(t, first.Order, third.Order)
+	thirdAgain, err := b.GetIssue(ctx, third.ID)
+	require.NoError(t, err)
+	assert.Equal(t, thirdTag, thirdAgain.UpdatedAt)
+
+	// A swimlane/column move keeps the immutable origin ID and applies claim
+	// semantics atomically.
+	moved, err := b.MoveIssue(ctx, first.ID, backend.IssueMove{
+		Project: "web", Status: domain.StatusInProgress,
+	}, backend.ETag(first.UpdatedAt))
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, moved.ID)
+	assert.Equal(t, "web", moved.Project)
+	assert.Equal(t, domain.StatusInProgress, moved.Status)
+	assert.Equal(t, []string{"mikael"}, moved.Assignees)
+	_, hash, ok := domain.SplitID(first.ID)
+	require.True(t, ok)
+	byHash, err := b.GetIssue(ctx, hash)
+	require.NoError(t, err)
+	assert.Equal(t, moved.ID, byHash.ID)
 }
 
 // Creating with an assignee is an atomic create-and-claim, so a new issue is

@@ -10,6 +10,7 @@ import (
 type SortKey string
 
 const (
+	SortOrder     SortKey = "order"
 	SortPriority  SortKey = "priority"
 	SortCreated   SortKey = "created"
 	SortUpdated   SortKey = "updated"
@@ -25,25 +26,25 @@ const (
 // SortKeys lists the keys every listing accepts. relevance is deliberately not
 // among them: it is search's alone.
 var SortKeys = []SortKey{
-	SortPriority, SortCreated, SortUpdated, SortID, SortProject, SortStatus,
+	SortOrder, SortPriority, SortCreated, SortUpdated, SortID, SortProject, SortStatus,
 	SortAssignee, SortType, SortBlockers,
 }
 
 // Sort is one parsed --sort value.
 //
 // Every sort ends with id ascending as a final tiebreak, so the order is total
-// and two invocations against unchanged data agree. priority inserts
-// created_at ascending before that tiebreak — oldest first within a priority —
-// so --sort priority is exactly the default order; the other keys use the
-// tiebreak alone. The Desc prefix reverses the named key only: the created_at
-// and id tiebreaks stay ascending whatever it says.
+// and two invocations against unchanged data agree. order places sparse manual
+// ranks first and falls back to priority then updated_at; priority retains its
+// created_at ascending tiebreak. The Desc prefix reverses the named key only;
+// the remaining tiebreaks keep their documented direction.
 type Sort struct {
 	Key  SortKey
 	Desc bool
 }
 
-// DefaultSort is the order every listing but search uses.
-var DefaultSort = Sort{Key: SortPriority}
+// DefaultSort puts manually ordered issues first, then falls back to priority
+// and recency for issues which have not been positioned by a person.
+var DefaultSort = Sort{Key: SortOrder}
 
 // DefaultSearchSort is search's, relevance being the one key whose bare form
 // is descending, because best match first is what it means.

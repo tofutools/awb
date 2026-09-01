@@ -408,8 +408,10 @@ interface IssueColumn extends SortChoice {
 }
 
 const issueSortKeys = [
-  "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers",
+  "order", "id", "project", "priority", "status", "assignee", "created", "updated", "type", "blockers",
 ] as const;
+
+let draggedListIssue: Issue | null = null;
 
 function textCell(className: string, text: string): HTMLElement {
   return element("span", className, text);
@@ -609,13 +611,56 @@ function issueTable(
   table.append(head);
 
   const body = document.createElement("tbody");
-  for (const issue of issues) {
+  const orderingEnabled = state.key === "order" && state.direction === "asc";
+  for (const [rowIndex, issue] of issues.entries()) {
     const row = document.createElement("tr");
+    row.dataset.issue = issue.id;
     for (const column of columns) {
       const td = document.createElement("td");
       td.dataset.label = column.label;
+      if (column === columns[0] && orderingEnabled) {
+        const drag = element("span", "list-row-drag", "⠿");
+        drag.draggable = matchMedia("(min-width: 721px)").matches;
+        drag.setAttribute("aria-label", `Drag ${issue.id} to reorder`);
+        drag.title = "Drag to reorder";
+        drag.addEventListener("dragstart", (event) => {
+          draggedListIssue = issue;
+          event.dataTransfer?.setData("text/plain", issue.id);
+          if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+        });
+        drag.addEventListener("dragend", () => { draggedListIssue = null; });
+        td.append(drag);
+      }
       td.append(column.render(issue));
       row.append(td);
+    }
+    if (orderingEnabled) {
+      let before = issue.id;
+      row.addEventListener("dragover", (event) => {
+        if (draggedListIssue === null || draggedListIssue.id === issue.id) return;
+        event.preventDefault();
+        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+        before = below ? (issues[rowIndex + 1]?.id ?? "") : issue.id;
+        row.classList.toggle("drop-after", below);
+        row.classList.toggle("drop-before", !below);
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+      row.addEventListener("drop", (event) => {
+        const moving = draggedListIssue;
+        row.classList.remove("drop-before", "drop-after");
+        if (moving === null || moving.id === issue.id) return;
+        event.preventDefault();
+        draggedListIssue = null;
+        row.classList.add("moving");
+        void api.moveIssue(moving.id, {
+          project: moving.project,
+          status: moving.status,
+          ...(before === "" ? {} : { before }),
+        }).then(() => render()).catch((error) => {
+          row.classList.remove("moving");
+          mutationError(row, error);
+        });
+      });
     }
     body.append(row);
   }
@@ -776,7 +821,7 @@ function issueList(
 ): HTMLElement {
   const section = element("div", "listing");
   const tableHost = element("div", "listing-host");
-  const defaultKey = "priority";
+  const defaultKey = "order";
   const defaultDirection: SortDirection = "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
@@ -988,19 +1033,26 @@ function saveCollapsedBoardLanes(ref: string, projects: Set<string>): void {
   try { localStorage.setItem(boardLaneCollapseKey(ref), JSON.stringify([...projects].sort())); } catch { /* presentation state is best-effort */ }
 }
 
-async function moveBoardIssue(host: HTMLElement, issue: Issue, target: BoardStatus): Promise<void> {
-  if (target === issue.status) return;
+async function moveBoardIssue(
+  host: HTMLElement,
+  issue: Issue,
+  project: string,
+  target: BoardStatus,
+  before = "",
+): Promise<void> {
+  if (project === issue.project && target === issue.status && before === issue.id) return;
   if (!legalBoardTargets(issue, identity).includes(target)) {
     mutationError(host, new Error("This move would release somebody else's assignment."));
     return;
   }
-  if (target === "closed" && !confirm(`Close ${issue.id}?`)) return;
+  if (target === "closed" && issue.status !== "closed" && !confirm(`Close ${issue.id}?`)) return;
   host.classList.add("moving");
   try {
-    if (issue.status === "closed" && target === "open") await api.reopenIssue(issue.id);
-    else if (target === "in_progress") await api.claimIssue(issue.id);
-    else if (target === "open") await api.releaseIssue(issue.id);
-    else await api.closeIssue(issue.id);
+    await api.moveIssue(issue.id, {
+      project,
+      status: target,
+      ...(before === "" ? {} : { before }),
+    });
     await render();
   } catch (error) {
     host.classList.remove("moving");
@@ -1010,13 +1062,13 @@ async function moveBoardIssue(host: HTMLElement, issue: Issue, target: BoardStat
   }
 }
 
-function boardCard(issue: Issue): HTMLElement {
+function boardCard(issue: Issue, project: string, status: BoardStatus): HTMLElement {
   const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
   card.dataset.issue = issue.id;
   const drag = element("span", "board-card-drag", "⠿");
   drag.draggable = matchMedia("(min-width: 721px)").matches;
   drag.setAttribute("aria-label", `Drag ${issue.id}`);
-  drag.title = "Drag to another status";
+  drag.title = "Drag to reorder or move";
   drag.addEventListener("dragstart", (event) => {
     draggedBoardIssue = issue;
     event.dataTransfer?.setData("text/plain", issue.id);
@@ -1038,9 +1090,27 @@ function boardCard(issue: Issue): HTMLElement {
     option.selected = status === issue.status;
     select.append(option);
   }
-  select.addEventListener("change", () => void moveBoardIssue(card, issue, select.value as BoardStatus));
+  select.addEventListener("change", () => void moveBoardIssue(card, issue, project, select.value as BoardStatus));
   move.append(select);
   card.append(move);
+  card.addEventListener("dragover", (event) => {
+    const moving = draggedBoardIssue;
+    if (moving !== null && moving.id !== issue.id && legalBoardTargets(moving, identity).includes(status)) {
+      event.preventDefault();
+      event.stopPropagation();
+      card.classList.add("drop-before");
+    }
+  });
+  card.addEventListener("dragleave", () => card.classList.remove("drop-before"));
+  card.addEventListener("drop", (event) => {
+    const moving = draggedBoardIssue;
+    card.classList.remove("drop-before");
+    if (moving === null || moving.id === issue.id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    draggedBoardIssue = null;
+    void moveBoardIssue(card, moving, project, status, issue.id);
+  });
   return card;
 }
 
@@ -1067,7 +1137,7 @@ function boardColumn(
       if (loadedIDs.has(issue.id)) continue;
       loadedIDs.add(issue.id);
       issuesByID.set(issue.id, issue);
-      cards.append(boardCard(issue));
+      cards.append(boardCard(issue, project, column.status));
     }
   };
   append(column.issues);
@@ -1115,7 +1185,7 @@ function boardColumn(
     draggedBoardIssue = null;
     if (issue === undefined || issue === null) return;
     event.preventDefault();
-    void moveBoardIssue(host, issue, column.status);
+    void moveBoardIssue(host, issue, project, column.status);
   });
   return host;
 }

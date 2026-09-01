@@ -449,6 +449,22 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 	assert.Equal(t, []string{"mikael"}, claimed.Assignees)
 }
 
+func TestMoveIssueOverHTTP(t *testing.T) {
+	a := newAPI(t)
+	_, err := a.be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web"})
+	require.NoError(t, err)
+	issue := a.createIssue(`{"project":"awb","title":"move me"}`)
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
+		`{"project":"web","status":"in_progress"}`, "If-Match", backend.ETag(issue.UpdatedAt))
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var moved domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &moved))
+	assert.Equal(t, issue.ID, moved.ID)
+	assert.Equal(t, "web", moved.Project)
+	assert.Equal(t, domain.StatusInProgress, moved.Status)
+	assert.Positive(t, moved.Order)
+}
+
 func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"project":"awb","title":"t","assignees":["alice","bob"]}`)

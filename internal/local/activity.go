@@ -95,10 +95,20 @@ func redactIgnoredRelationActivity(tx *storage.Tx, user string, entries []domain
 					return awberr.Wrap(awberr.Runtime, err,
 						"decode relation activity %d", entries[i].ID)
 				}
-				relations = slices.DeleteFunc(relations, func(relation domain.Relation) bool {
-					project, _, ok := domain.SplitID(relation.Other)
-					return ok && ignored[project]
-				})
+				kept := relations[:0]
+				for _, relation := range relations {
+					project, err := tx.IssueProject(relation.Other)
+					if err != nil {
+						return err
+					}
+					if project == "" {
+						project, _, _ = domain.SplitID(relation.Other)
+					}
+					if !ignored[project] {
+						kept = append(kept, relation)
+					}
+				}
+				relations = kept
 				*value = activityJSON(relations)
 			}
 		}
@@ -122,8 +132,10 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("title", before.Title, after.Title)
 	add("description", before.Description, after.Description)
 	add("type", before.Type, after.Type)
+	add("project", before.Project, after.Project)
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)
+	add("order", before.Order, after.Order)
 	if !slices.Equal(before.Assignees, after.Assignees) {
 		add("assignees", before.Assignees, after.Assignees)
 	}

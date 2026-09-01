@@ -201,6 +201,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
     await api.addLabel("awb-a/b", "team/web");
     await api.removeRelation("awb-a/b", "blocked-by", "awb-c d");
     await api.releaseIssue("awb-a/b", { assignee: "operator", force: true });
+    await api.moveIssue("awb-a/b", { project: "web", status: "open", before: "web-123" });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -223,6 +224,11 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(requests[4].init.method, "POST");
   assert.deepEqual(JSON.parse(requests[4].init.body), { assignee: "operator", force: true });
   assert.equal(new Headers(requests[4].init.headers).get("If-Match"), '"issue-version"');
+
+  assert.equal(requests[5].input, "api/issues/awb-a%2Fb/move");
+  assert.equal(requests[5].init.method, "POST");
+  assert.deepEqual(JSON.parse(requests[5].init.body), { project: "web", status: "open", before: "web-123" });
+  assert.equal(new Headers(requests[5].init.headers).get("If-Match"), '"issue-version"');
 });
 
 test("claim adds one assignee while forced release removes every assignee", async (t) => {

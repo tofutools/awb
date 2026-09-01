@@ -55,6 +55,7 @@ type Backend interface {
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
 	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
+	MoveIssue(ctx context.Context, ref string, req IssueMove, ifMatch string) (*domain.Issue, error)
 	DeleteIssue(ctx context.Context, ref string, ifMatch string) (*DeletedIssue, error)
 
 	Claim(ctx context.Context, ref string, req ClaimRequest, ifMatch string) (*domain.Issue, error)
@@ -311,6 +312,15 @@ type IssuePatch struct {
 	ExpectLabels    *[]string
 	ExpectStatus    *domain.Status
 	ExpectAssignees *[]string
+}
+
+// IssueMove atomically places an issue in a project/status cell and before an
+// optional neighboring issue. An empty Before appends it. The issue ID remains
+// stable when Project changes so links and graph edges do not break.
+type IssueMove struct {
+	Project string
+	Status  domain.Status
+	Before  string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.

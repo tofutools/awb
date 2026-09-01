@@ -394,6 +394,36 @@ func newUpdateCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
+type moveParams struct {
+	ID      string `positional:"true" required:"true"`
+	Project string `long:"project" required:"true" help:"target project"`
+	Status  string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
+	Before  string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
+}
+
+func newMoveCommand(e *env) *cobra.Command {
+	return boa.CmdT[moveParams]{
+		Use: "move", Short: "Move and manually position an issue atomically",
+		Long: "Move an issue to a project/status cell and optionally place it before another issue.\n\n" +
+			"Its ID stays stable when the project changes. Status moves preserve the same\n" +
+			"assignment safety rules as claim, release, close and reopen.",
+		ParamEnrich: boaParams,
+		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			issue, err := be.MoveIssue(cmd.Context(), p.ID, backend.IssueMove{
+				Project: p.Project, Status: domain.Status(p.Status), Before: p.Before,
+			}, "")
+			if err != nil {
+				return err
+			}
+			return e.mutated(issue)
+		},
+	}.ToCobra()
+}
+
 func newLabelCommand(e *env) *cobra.Command {
 	run := func(add bool) func(*cobra.Command, string, string) error {
 		return func(cmd *cobra.Command, id, label string) error {

@@ -2,6 +2,24 @@ const { expect, test } = await import(process.env.PLAYWRIGHT_TEST_MODULE ?? "pla
 
 const baseURL = process.env.AWB_BROWSER_BASE_URL;
 
+async function pointerDrag(page, handle, target, below = false) {
+  await handle.scrollIntoViewIfNeeded();
+  const dragBox = await handle.boundingBox();
+  expect(dragBox).not.toBeNull();
+  await page.mouse.move(dragBox.x + dragBox.width / 2, dragBox.y + dragBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragBox.x + dragBox.width / 2 + 4, dragBox.y + dragBox.height / 2 + 4);
+  await target.scrollIntoViewIfNeeded();
+  const targetBox = await target.boundingBox();
+  expect(targetBox).not.toBeNull();
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + (below ? targetBox.height * 0.8 : targetBox.height * 0.2),
+    { steps: 12 },
+  );
+  await page.mouse.up();
+}
+
 test("save, share and work from a responsive board", async ({ page }) => {
   test.skip(baseURL === undefined, "set AWB_BROWSER_BASE_URL to a disposable awb serve instance");
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -18,7 +36,6 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const persistedDemoLane = page.locator(".board-lane", { hasText: "DEMO" });
   await expect(persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" })).toBeVisible();
   await expect(persistedDemoLane.locator(".board-columns")).toBeHidden();
-  await page.screenshot({ path: "screenshots/board-views-collapsed.png", fullPage: true });
   await persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" }).click();
   await expect(persistedDemoLane.locator(".board-columns")).toBeVisible();
 
@@ -38,19 +55,30 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const openCard = page.locator(".board-card", { hasText: "Build the full text search index" });
   const drag = openCard.getByLabel(/Drag demo-/);
   const target = page.locator(".board-lane", { hasText: "DEMO" }).locator(".board-column[data-status='in_progress']");
-  const dragBox = await drag.boundingBox();
-  const targetBox = await target.boundingBox();
-  expect(dragBox).not.toBeNull();
-  expect(targetBox).not.toBeNull();
-  await page.mouse.move(dragBox.x + dragBox.width / 2, dragBox.y + dragBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(dragBox.x + dragBox.width / 2 + 4, dragBox.y + dragBox.height / 2 + 4);
-  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
-  await page.mouse.up();
+  await pointerDrag(page, drag, target);
   await expect(page.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
 
-  await page.screenshot({ path: "screenshots/board-views-desktop.png", fullPage: true });
+  // The same gesture moves between project swimlanes and places the card
+  // immediately before its target within the destination cell.
+  const movedCard = page.locator(".board-card", { hasText: "Build the full text search index" });
+  const destinationCard = page.locator(".board-card", { hasText: "Polish narrow board layout" });
+  await pointerDrag(page, movedCard.getByLabel(/Drag demo-/), destinationCard);
+  const webLane = page.locator(".board-lane", { hasText: "WEB" });
+  await expect(webLane.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
+  const webTitles = await webLane.locator(".board-column[data-status='in_progress'] .board-card .name .title").allTextContents();
+  expect(webTitles.indexOf("Build the full text search index")).toBeLessThan(webTitles.indexOf("Polish narrow board layout"));
+
+  // Natural issue lists expose the same sparse manual order as row drag/drop.
+  await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
+  const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Polish narrow board layout" });
+  const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
+  await pointerDrag(page, sourceRow.getByLabel(/Drag web-.* to reorder/), targetRow);
+  await expect.poll(async () => {
+    const rowTitles = await page.locator(".issue-table tbody tr .name .title").allTextContents();
+    return rowTitles.indexOf("Polish narrow board layout") < rowTitles.indexOf("Build the full text search index");
+  }).toBe(true);
+
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseURL}/#/boards`);
   await expect(page.locator(".board-columns").first()).toHaveCSS("overflow-x", "auto");
-  await page.screenshot({ path: "screenshots/board-views-narrow.png", fullPage: true });
 });

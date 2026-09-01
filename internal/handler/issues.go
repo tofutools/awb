@@ -104,6 +104,17 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 	return issueResponse(issue), nil
 }
 
+func (h *Handler) MoveIssue(ctx context.Context, req *api.IssueMove,
+	params api.MoveIssueParams) (*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).MoveIssue(ctx, params.ID, backend.IssueMove{
+		Project: string(req.Project), Status: domain.Status(req.Status), Before: req.Before.Or(""),
+	}, params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return issueResponse(issue), nil
+}
+
 // DeleteIssue answers with the object as it was immediately before deletion,
 // and carries no ETag: the version it describes is gone.
 func (h *Handler) DeleteIssue(ctx context.Context, params api.DeleteIssueParams) (

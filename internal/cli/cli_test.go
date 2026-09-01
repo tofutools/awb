@@ -285,6 +285,7 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 		{"close", id},
 		{"reopen", id},
 		{"update", id, "--priority", "0"},
+		{"move", id, "--project", "awb", "--status", "open"},
 		{"label", "add", id, "x"},
 		{"label", "rm", id, "x"},
 	} {
@@ -297,6 +298,19 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 	stdout, _, code := h.run("delete", id, "--force")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Deleted "+id)
+}
+
+func TestMoveKeepsIDWhileChangingProjectAndPosition(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "create", "web")
+	first := h.create("first", "--project", "web")
+	id := h.create("move me", "--project", "awb")
+	var moved domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("move", id,
+		"--project", "web", "--status", "open", "--before", first, "--json")), &moved))
+	assert.Equal(t, id, moved.ID)
+	assert.Equal(t, "web", moved.Project)
+	assert.Positive(t, moved.Order)
 }
 
 // Under --json every mutating command prints the resulting object.

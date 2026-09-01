@@ -301,6 +301,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Type:        api.Type(issue.Type),
 		Status:      api.Status(issue.Status),
 		Priority:    api.Priority(issue.Priority),
+		Order:       issue.Order,
 		Labels:      toLabels(issue.Labels),
 		Assignees:   toAssignees(issue.Assignees),
 		CreatedAt:   api.Timestamp(issue.CreatedAt),

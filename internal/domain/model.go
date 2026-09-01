@@ -49,6 +49,7 @@ type Issue struct {
 	Type        Type         `json:"type"`
 	Status      Status       `json:"status"`
 	Priority    int          `json:"priority"`
+	Order       int          `json:"order"`
 	Labels      []string     `json:"labels"`
 	Assignees   []string     `json:"assignees"`
 	CreatedAt   string       `json:"created_at"`
