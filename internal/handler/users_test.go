@@ -197,20 +197,26 @@ func TestDeleteUser(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-// A membership is addressed by its own path and setting it is idempotent,
-// which is why it is a PUT and why it takes no If-Match.
+// Collection POST creates only, while the addressed resource's PUT remains an
+// idempotent replacement.
 func TestProjectMembership(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"alice","password":"hunter2"}`)
 
-	resp, payload := a.do(http.MethodPut, "/api/projects/awb/members/alice", `{"access":"admin"}`)
-	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	resp, payload := a.do(http.MethodPost, "/api/projects/awb/members",
+		`{"user":"alice","access":"admin"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
 	var membership domain.Membership
 	require.NoError(t, json.Unmarshal([]byte(payload), &membership))
 	assert.Equal(t, domain.Membership{
 		Project: "awb", User: "alice", Access: domain.AccessAdmin}, membership)
 	assert.Empty(t, resp.Header.Get("ETag"))
+
+	// A stale create cannot replace the access granted by somebody else.
+	resp, _ = a.do(http.MethodPost, "/api/projects/awb/members",
+		`{"user":"alice","access":"regular"}`)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
 	// Setting the same access again succeeds and changes nothing.
 	resp, _ = a.do(http.MethodPut, "/api/projects/awb/members/alice", `{"access":"admin"}`)
@@ -236,6 +242,21 @@ func TestProjectMembership(t *testing.T) {
 func TestProjectMembershipRefusals(t *testing.T) {
 	a := newAPI(t)
 	a.createUser(`{"name":"alice","password":"hunter2"}`)
+
+	for _, body := range []string{
+		`{"user":"nobody","access":"regular"}`,
+		`{"access":"regular"}`,
+		`{"user":"alice","access":"owner"}`,
+		`{"user":"alice","access":"regular","nonsense":1}`,
+	} {
+		resp, payload := a.do(http.MethodPost, "/api/projects/awb/members", body)
+		if body == `{"user":"nobody","access":"regular"}` {
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode, body)
+		} else {
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+		}
+		assert.Contains(t, payload, `"error"`, body)
+	}
 
 	for _, tc := range []struct {
 		path, body string
@@ -311,13 +332,13 @@ func TestUserListingPages(t *testing.T) {
 	assert.NotNil(t, users[1].Projects, "an empty membership list is [] and never null")
 }
 
-// The identity endpoint still says only who is calling; what they may do is
-// their own user object, which they may always read.
-func TestIdentityStillOnlySaysWho(t *testing.T) {
+// The identity endpoint reports effective account-administration capability,
+// which is not necessarily a stored flag in unrestricted direct/no-auth mode.
+func TestIdentityReportsEffectiveUserAdministration(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodGet, "/api/identity", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	assert.JSONEq(t, `{"identity":"mikael"}`, payload)
+	assert.JSONEq(t, `{"identity":"mikael","may_manage_users":true}`, payload)
 
 	_, err := a.be.CreateUser(a.t.Context(),
 		backend.UserCreate{Name: "mikael", Password: "hunter2", ProjectAdmin: true})

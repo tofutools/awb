@@ -25,7 +25,7 @@ teachable in a paragraph, and it is why no amount of demand should turn any of
 those enumerations into configuration.
 
 **One database, no ceremony.** One SQLite file per user, shared by all their
-projects, reachable over HTTP by things other than the CLI. No server required,
+workspaces, reachable over HTTP by things other than the CLI. No server required,
 no configuration required, no version control involved.
 
 It targets individuals, small teams and open source projects. It deliberately
@@ -34,12 +34,30 @@ workflow engine, no custom fields and no reporting suite.
 
 ## 2. The domain
 
-### Projects and issues
+### Workspaces and issues
 
-A **project** is the top-level organising unit; every issue belongs to exactly
-one, and its key is the issue ID prefix and is immutable. An **issue** carries a
-title, an optional Markdown description, a type, a status, a priority, a set of
-labels and an ordered set of assignees.
+A **workspace** is the top-level organising unit; every issue belongs immutably
+to exactly one. Its workspace key is the issue ID prefix and cannot change, and
+there is no operation for transferring an issue between workspaces. An
+**issue** carries a title, an optional Markdown description, a type, a status,
+a priority, a set of labels and an ordered set of assignees.
+
+Workspace is the product vocabulary. Persistence, OpenAPI paths and schemas,
+JSON fields, configuration keys and compact output retain the existing
+`project` names so this correction does not force a data or integration
+migration. The CLI presents `awb workspace` and keeps `awb project` as an
+alias. Browser links use `#/workspaces` and continue accepting the legacy
+`#/projects` hashes. Internal Go and TypeScript identifiers likewise remain
+project-shaped where they mirror those compatibility surfaces.
+
+A workspace is active or archived. Archiving is reversible retention, not
+deletion: the stable key, children, graph, blobs, membership and preferences do
+not move or transfer elsewhere. Archived work remains readable through its stable URLs and an
+explicit history listing, while normal discovery and target pickers omit it and
+every work mutation touching it is refused. Membership remains administrable
+so access to history can still be corrected. One state intentionally covers
+both a temporary freeze and long-term retirement; two read-only states would
+duplicate the write rule without adding a useful invariant.
 
 The description is the issue's editable free text. References to pull requests,
 CI runs, logs and design documents are ordinary Markdown links inside it, so
@@ -59,6 +77,11 @@ their before and after JSON values, while actions such as attaching a
 file are named explicitly. Entries are ordered newest first by creation time
 and then by their monotonically assigned id, so the order is total even when
 several writes share one millisecond.
+
+Workspaces have a smaller append-only lifecycle stream. Each actual archive or
+restore appends its actor and time inside the transition's transaction; an
+idempotent repeat appends nothing. It is deliberately not a general workspace
+version history.
 
 A non-empty close reason is represented by one comment entry whose stable
 action is `closed` and whose field changes include the status transition. It is
@@ -135,7 +158,7 @@ real server and fails if either direction allocates anything approaching it.
 
 ### Identifiers
 
-An issue ID is `<project-key>-<hash>`, where the hash is derived from the
+An issue ID is `<workspace-key>-<hash>`, where the hash is derived from the
 issue's own content and a random salt. That derivation matters architecturally
 for one reason: **IDs are independently mintable**. No counter, no coordination,
 no central allocator — which is what would let two databases be merged, or a
@@ -150,7 +173,7 @@ ambiguous reference is reported rather than resolved by guessing.
 ### Relations
 
 A relation is a directed link between two issues, which may be in different
-projects. There are four, and each is named from the point of view of its
+workspaces. There are four, and each is named from the point of view of its
 subject and reads *subject — relation — other*. That single convention holds
 everywhere a relation is named: in the model, on the command line and in the
 API, so there is never a question of which way round an argument goes.
@@ -176,7 +199,7 @@ never blocked whatever its relations still say.
 
 This is the design's most load-bearing choice: it makes it *impossible* for the
 recorded state to disagree with the dependency graph. The same instinct appears
-throughout — `active_issues` on a project is counted, not maintained; the links
+throughout — `active_issues` on a workspace is counted, not maintained; the links
 in a description are parsed, not stored.
 
 **Status and assignees cannot drift apart either.** Four transitions — claim,
@@ -375,7 +398,7 @@ both standard input and standard output, and refuses alongside `--json` and
 `--compact`, because a caller who asked for a screen to scroll asked for
 something those cannot give.
 
-The normal CLI editing workflow fetches an issue or project description to a
+The normal CLI editing workflow fetches an issue or workspace description to a
 file and writes a receipt beside it. The receipt binds that working file to the
 data source, canonical entity and entity ETag; updating from the file sends the
 saved tag as `If-Match` in remote mode and enforces the same precondition in
@@ -384,7 +407,7 @@ direct mode. It therefore refuses an edit made against an older entity version.
 Neither ordinary display nor the Markdown itself carries or refreshes this
 metadata.
 
-In remote mode, issue and project identifiers in the human output link to the
+In remote mode, issue and workspace identifiers in the human output link to the
 bundled web UI. The stable JSON form carries the same destinations as explicit
 `issue_link` and `project_link` fields; they are empty in direct mode, where a
 database file has no associated web address. These are CLI presentation
@@ -399,7 +422,7 @@ surface — a script reads `--json`, which returns the object.
 
 Destructive commands take a confirmation flag rather than prompting, because
 prompting would make them unscriptable. That includes `awb demo`, which refuses
-while its sample project exists: nothing marks that project's contents as the
+while its sample workspace exists: nothing marks that workspace's contents as the
 command's own, so replacing it destroys whatever is stored under the key, and
 the flag is what says so.
 
@@ -465,7 +488,7 @@ for changing issue state.
 
 Keyboard navigation uses one bounded autocomplete endpoint. It applies the
 same visibility scope as ordinary listings and substring-matches the fields a
-person uses to address an issue, project or user (including a user's descriptive
+person uses to address an issue, workspace or user (including a user's descriptive
 full name), returning a small independent
 cap for each kind rather than making the browser load whole directories.
 
@@ -536,9 +559,9 @@ An open server is still not *anonymous*: it resolves one identity at startup and
 attributes every request to it, so the layer below never has to handle the
 absence of an identity.
 
-**Membership of a project is the whole of the read model.** A user works in the
-projects they have access to and sees nothing else. That is expressed as one
-condition on a project key, carried by the transaction rather than passed to
+**Membership of a workspace is the whole of the read model.** A user works in the
+workspaces they have access to and sees nothing else. That is expressed as one
+condition on a workspace key, carried by the transaction rather than passed to
 each query, because a read that forgets it does not fail — it leaks. There is
 one place a transaction is restricted, one place the caller's permissions are
 read, and every query consults the transaction it is running in.
@@ -547,24 +570,33 @@ A stored per-user ignore set narrows that same transaction scope after
 authorization. It is a preference rather than a permission, but applying it at
 the same boundary keeps listings, searches, suggestions, facets and their
 counts consistent, and makes direct and remote backends agree when their
-identity names the same stored user. The project-preferences operations are the
+identity names the same stored user. The compatibility-named project-preferences operations are the
 single recovery exception: they omit only the ignore condition while retaining
-ordinary authorization, so an ignored project is always available to re-enable
-and an inaccessible project is never disclosed by the editor.
+ordinary authorization, so an ignored workspace is always available to re-enable
+and an inaccessible workspace is never disclosed by the editor.
 
 The user directory follows the same boundary without pretending that a person
-belongs to only one project. A member sees current accounts that participated
-in any visible project, including its retained assignments and activity, while
-memberships in other projects stay hidden. User administrators see the whole
-directory. Its response keeps current memberships separate from the projects
+belongs to only one workspace. A member sees current accounts that participated
+in any visible workspace, including its retained assignments and activity, while
+memberships in other workspaces stay hidden. User administrators see the whole
+directory. Its response keeps current memberships separate from the workspaces
 found in assignment and activity history; the latter has no status filter, so
 closing an issue does not erase the association.
 
-An invisible project is answered *not found* rather than *forbidden*, and so is
+An invisible workspace is answered *not found* rather than *forbidden*, and so is
 every issue in it, and so is every spelling of an issue reference that would
 resolve to one. Forbidden is reserved for what a caller can see and may not
-change. Two flags stand outside the projects — one over projects, one over users
+change. Two flags stand outside the workspaces — one over workspaces, one over users
 — and neither implies the other.
+
+Lifecycle state is a second, orthogonal boundary on work rather than on
+visibility. Ordinary listings add active-workspace selection after authorization;
+direct historical reads do not. Archive and restore require the global workspace
+administrator capability (the compatibility field is `project_admin`) and check
+the workspace's ETag inside the same writer turn as the state and audit insert.
+A workspace administrator's known-key lifecycle
+operation bypasses only their personal ignore preference, which cannot become a
+lockout mechanism for restoring retained work.
 
 **The graph is not scoped, and must not be.** A visible issue's relations and
 blockers may name issues the caller cannot fetch; an ignored counterpart is
@@ -614,7 +646,7 @@ changed.
 
 `awb` knows nothing about Git, or about any version control system. What a
 directory means is written down in that directory, in a small configuration
-file, and everything follows from that: a project to scope to, a label to carry.
+file, and everything follows from that: a workspace to scope to, a label to carry.
 The file is found by searching upward, so putting it at the top of a checkout
 gives that checkout its own scope from every subdirectory.
 
@@ -641,7 +673,10 @@ and offline replication; sprints, boards, burndowns and time tracking;
 notifications; continuous synchronisation with external trackers; custom fields
 and workflows; bulk import.
 
-**Nothing is ever archived or purged.** Closed issues stay queryable forever.
+**Nothing is purged by lifecycle management.** Closed issues and archived
+workspaces stay queryable through explicit history paths. The legacy hard-delete
+operations remain separate, deliberately destructive compatibility surfaces;
+the browser does not expose them.
 
 **Two invocations against unchanged data produce byte-identical output.** Every
 ordering is total, every derived array has a specified order, and this is

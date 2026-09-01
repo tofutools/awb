@@ -93,6 +93,19 @@ func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
 	return b.Identity(ctx)
 }
 
+// MayManageUsers reports the effective capability resolved by the same caller
+// path every account operation uses. In particular, an unrestricted no-auth
+// server remains unrestricted even when its fixed identity matches a stored
+// non-administrator account.
+func (b *Backend) MayManageUsers(ctx context.Context) (bool, error) {
+	var allowed bool
+	err := b.read(ctx, func(_ *storage.Tx, caller domain.Caller) error {
+		allowed = caller.MayManageUsers()
+		return nil
+	})
+	return allowed, err
+}
+
 // Close releases the database.
 func (b *Backend) Close() error { return b.db.Close() }
 
@@ -113,6 +126,21 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 		return nil, err
 	}
 	return tx.GetIssue(id)
+}
+
+func ensureProjectActive(tx *storage.Tx, key string) error {
+	project, err := tx.GetProject(key)
+	if err != nil {
+		return err
+	}
+	if project.State == domain.ProjectArchived {
+		return awberr.Conflictf("workspace %s is archived and read-only", key)
+	}
+	return nil
+}
+
+func ensureIssueWritable(tx *storage.Tx, issue *domain.Issue) error {
+	return ensureProjectActive(tx, issue.Project)
 }
 
 // checkIfMatch enforces the optional conditional-edit precondition. An empty
@@ -183,10 +211,40 @@ func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller)
 	})
 }
 
+// writeIncludingIgnored is for a dedicated recovery/administration path whose
+// authorization still comes from project membership but whose own preference
+// boundary must not hide the project it administers. The check and mutation
+// remain in the same BEGIN IMMEDIATE transaction.
+func (b *Backend) writeIncludingIgnored(
+	ctx context.Context, fn func(*storage.Tx, domain.Caller) error,
+) error {
+	return b.db.Write(ctx, func(tx *storage.Tx) error {
+		caller, err := b.authorize(tx, true)
+		if err != nil {
+			return err
+		}
+		return fn(tx, caller)
+	})
+}
+
 // read runs one read-only operation as the caller and with their scope.
 func (b *Backend) read(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
 	return b.db.Read(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, false)
+		if err != nil {
+			return err
+		}
+		return fn(tx, caller)
+	})
+}
+
+// readIncludingIgnored is the read half of the same dedicated administration
+// path. It omits only the caller's preference boundary, never authorization.
+func (b *Backend) readIncludingIgnored(
+	ctx context.Context, fn func(*storage.Tx, domain.Caller) error,
+) error {
+	return b.db.Read(ctx, func(tx *storage.Tx) error {
+		caller, err := b.authorize(tx, true)
 		if err != nil {
 			return err
 		}

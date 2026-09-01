@@ -130,7 +130,7 @@ func newDepRemoveCommand(e *env) *cobra.Command {
 func newDepTreeCommand(e *env) *cobra.Command {
 	return idCommand("tree", "Print the subtree of children rooted at an issue",
 		"Print the decomposition below an issue, to its full depth, following\n"+
-			"children across project boundaries. It does not show ancestors.\n\n"+
+			"children across workspace boundaries. It does not show ancestors.\n\n"+
 			"It shows the whole subtree, closed children included and marked as such,\n"+
 			"and accepts none of the listing filters — a tree with holes in it would\n"+
 			"misrepresent the decomposition. Directory context does not apply either,\n"+

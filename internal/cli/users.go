@@ -142,7 +142,7 @@ type userAddParams struct {
 	PasswordFlags
 	Name         string `positional:"true" required:"true"`
 	FullName     string `long:"full-name" optional:"true" help:"the user's descriptive name"`
-	ProjectAdmin bool   `long:"project-admin" optional:"true" help:"may create, change and delete projects, and works in every one of them"`
+	ProjectAdmin bool   `long:"project-admin" optional:"true" help:"may create, change and delete workspaces, and works in every one of them"`
 	UserAdmin    bool   `long:"user-admin" optional:"true" help:"may create, change and delete users"`
 }
 
@@ -160,7 +160,7 @@ func newUserAddCommand(e *env) *cobra.Command {
 			"plaintext never reaches awb at all. It is what \"htpasswd -Bn <name>\"\n" +
 			"writes, and either that whole line or the hash alone is accepted.\n\n" +
 			"The name is the assignee the user's issues will record, and is immutable.\n" +
-			"A new user has access to no project: grant it with awb project grant.",
+			"A new user has access to no workspace: grant it with awb workspace grant.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *userAddParams, cmd *cobra.Command) error {
 			return alwaysReadsAPassword()(ctx, &p.PasswordFlags, cmd)
@@ -197,7 +197,7 @@ type userUpdateParams struct {
 	FullName *string `long:"full-name" help:"replace the user's descriptive name; empty clears it"`
 	// The two flags are pointers because each has three states and not two:
 	// granted, withdrawn, and left exactly as it was.
-	ProjectAdmin *bool `long:"project-admin" help:"may create, change and delete projects, and works in every one of them"`
+	ProjectAdmin *bool `long:"project-admin" help:"may create, change and delete workspaces, and works in every one of them"`
 	UserAdmin    *bool `long:"user-admin" help:"may create, change and delete users"`
 }
 
@@ -212,7 +212,7 @@ func newUserUpdateCommand(e *env) *cobra.Command {
 			"user administrator's, and the full name and password are theirs or the account\n" +
 			"holder's own, so anybody may change their own profile without being able to grant\n" +
 			"themselves anything.\n\n" +
-			"Access to a project is not changed here; that is awb project grant.",
+			"Access to a workspace is not changed here; that is awb workspace grant.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userUpdateParams, cmd *cobra.Command, _ []string) error {
 			password, hash, err := p.value(e, p.Name, false)
@@ -253,8 +253,8 @@ type userShowParams struct {
 func newUserShowCommand(e *env) *cobra.Command {
 	return boa.CmdT[userShowParams]{
 		Use:   "show",
-		Short: "Print one user, with the projects they have access to",
-		Long: "Print a user with their two flags and every project they have access to.\n\n" +
+		Short: "Print one user, with the workspaces they have access to",
+		Long: "Print a user with their two flags and every workspace they have access to.\n\n" +
 			"Without a name it prints your own account, which is how you find out what\n" +
 			"you are permitted to do: through a server a user may always read their\n" +
 			"own, whatever else they may not.",
@@ -286,7 +286,7 @@ func newUserShowCommand(e *env) *cobra.Command {
 func newUserListCommand(e *env) *cobra.Command {
 	return boa.CmdT[InteractiveFlags]{
 		Use:         "list",
-		Short:       "List users, with their flags and the projects they have access to",
+		Short:       "List users, with their flags and the workspaces they have access to",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *InteractiveFlags, cmd *cobra.Command, _ []string) error {
 			out, err := e.interactively(p.Interactive)
@@ -319,7 +319,7 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 	return boa.CmdT[userDeleteParams]{
 		Use:   "delete",
 		Short: "Delete a user",
-		Long: "Delete a user. Every access they had to a project goes with them.\n\n" +
+		Long: "Delete a user. Every access they had to a workspace goes with them.\n\n" +
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
@@ -352,20 +352,20 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 type projectGrantParams struct {
 	Key    string `positional:"true" required:"true"`
 	User   string `positional:"true" required:"true"`
-	Access string `long:"access" default:"regular" optional:"true" alts:"regular,admin" help:"regular to work with the project's issues, admin to also grant and revoke its users"`
+	Access string `long:"access" default:"regular" optional:"true" alts:"regular,admin" help:"regular to work with the workspace's issues, admin to also grant and revoke its users"`
 }
 
 func newProjectGrantCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectGrantParams]{
 		Use:   "grant",
-		Short: "Give a user access to a project",
-		Long: "Give a user access to a project, replacing whatever they had there before,\n" +
+		Short: "Give a user access to a workspace",
+		Long: "Give a user access to a workspace, replacing whatever they had there before,\n" +
 			"so granting the access they already hold changes nothing.\n\n" +
-			"regular is working with the project's issues: reading them, creating them,\n" +
+			"regular is working with the workspace's issues: reading them, creating them,\n" +
 			"editing them, claiming them, everything awb does to an issue. admin is that\n" +
-			"and, in addition, granting and revoking the project's other users.\n\n" +
-			"admin is not power over the project itself. Creating, renaming and deleting\n" +
-			"a project is what awb user's --project-admin confers, because a project's\n" +
+			"and, in addition, granting and revoking the workspace's other users.\n\n" +
+			"admin is not power over the workspace itself. Creating, renaming and deleting\n" +
+			"a workspace is what awb user's --project-admin compatibility flag confers, because a workspace's\n" +
 			"own existence is not something its members decide.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *projectGrantParams, cmd *cobra.Command, _ []string) error {
@@ -395,8 +395,8 @@ type projectRevokeParams struct {
 func newProjectRevokeCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectRevokeParams]{
 		Use:   "revoke",
-		Short: "Take away a user's access to a project",
-		Long: "Take away a user's access to a project, which makes the project and every\n" +
+		Short: "Take away a user's access to a workspace",
+		Long: "Take away a user's access to a workspace, which makes the workspace and every\n" +
 			"issue in it invisible to them.\n\n" +
 			"Their issues are left exactly as they are, assignee included: the record of\n" +
 			"who did the work outlives the access that let them do it.",
@@ -413,7 +413,7 @@ func newProjectRevokeCommand(e *env) *cobra.Command {
 			if e.json {
 				return e.writeJSON(membership)
 			}
-			return e.summarise("Revoked %s access of %s to project %s.\n",
+			return e.summarise("Revoked %s access of %s to workspace %s.\n",
 				membership.Access, membership.User, membership.Project)
 		},
 	}.ToCobra()
@@ -426,7 +426,7 @@ type projectMembersParams struct {
 func newProjectMembersCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectMembersParams]{
 		Use:         "members",
-		Short:       "List the users with access to a project",
+		Short:       "List the users with access to a workspace",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *projectMembersParams, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())

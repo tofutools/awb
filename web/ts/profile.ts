@@ -5,7 +5,7 @@ import { ApiError, type User, type UserPatch } from "./api.js";
 export function accountRoles(user: Pick<User, "project_admin" | "user_admin">): string[] {
   const roles: string[] = [];
   if (user.user_admin) roles.push("User administrator");
-  if (user.project_admin) roles.push("Project administrator");
+  if (user.project_admin) roles.push("Workspace administrator");
   if (roles.length === 0) roles.push("Regular user");
   return roles;
 }

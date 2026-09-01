@@ -78,7 +78,8 @@ type projectPatchBody struct {
 }
 
 type identityBody struct {
-	Identity string `json:"identity"`
+	Identity       string `json:"identity"`
+	MayManageUsers bool   `json:"may_manage_users"`
 }
 
 type commentBody struct {
@@ -175,6 +176,9 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 		}
 		if filter.IncludeClosed {
 			query.Set("include-closed", "true")
+		}
+		if filter.IncludeArchived {
+			query.Set("include-archived", "true")
 		}
 	}
 	for _, t := range filter.Types {
@@ -383,10 +387,18 @@ func pageQuery(limit, offset *int) url.Values {
 
 func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.ProjectSort,
 	limit, offset *int) (backend.ProjectPage, error) {
+	return b.ListProjectsByState(ctx, filter, domain.ProjectsActive, sort, limit, offset)
+}
+
+func (b *Backend) ListProjectsByState(ctx context.Context, filter string, state domain.ProjectStateFilter,
+	sort domain.ProjectSort, limit, offset *int) (backend.ProjectPage, error) {
 	projects := []domain.Project{}
 	query := pageQuery(limit, offset)
 	if filter != "" {
 		query.Set("filter", filter)
+	}
+	if state != domain.ProjectsActive {
+		query.Set("state", string(state))
 	}
 	if sort.Key != "" {
 		value := string(sort.Key)
@@ -401,6 +413,35 @@ func (b *Backend) ListProjects(ctx context.Context, filter string, sort domain.P
 		return backend.ProjectPage{}, err
 	}
 	return backend.ProjectPage{Projects: projects, Total: totalCount(header, len(projects))}, nil
+}
+
+func (b *Backend) projectLifecycle(ctx context.Context, key, action, ifMatch string) (*domain.Project, error) {
+	var project domain.Project
+	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/projects/"+url.PathEscape(key)+"/"+action, nil),
+		nil, ifMatch, &project)
+	if err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (b *Backend) ArchiveProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.projectLifecycle(ctx, key, "archive", ifMatch)
+}
+
+func (b *Backend) RestoreProject(ctx context.Context, key, ifMatch string) (*domain.Project, error) {
+	return b.projectLifecycle(ctx, key, "restore", ifMatch)
+}
+
+func (b *Backend) ListProjectActivity(ctx context.Context, key string, limit, offset *int) (backend.ProjectActivityPage, error) {
+	entries := []domain.ProjectActivity{}
+	header, err := b.call(ctx, http.MethodGet,
+		b.endpoint("/api/projects/"+url.PathEscape(key)+"/activity", pageQuery(limit, offset)),
+		nil, "", &entries)
+	if err != nil {
+		return backend.ProjectActivityPage{}, err
+	}
+	return backend.ProjectActivityPage{Activity: entries, Total: totalCount(header, len(entries))}, nil
 }
 
 func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.ProjectPatch,
@@ -465,6 +506,16 @@ func (b *Backend) AuthenticatedIdentity(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return body.Identity, nil
+}
+
+// MayManageUsers asks for the server-side effective capability rather than
+// interpreting the client's configured identity as an account row.
+func (b *Backend) MayManageUsers(ctx context.Context) (bool, error) {
+	var body identityBody
+	if _, err := b.call(ctx, http.MethodGet, b.endpoint("/api/identity", nil), nil, "", &body); err != nil {
+		return false, err
+	}
+	return body.MayManageUsers, nil
 }
 
 func (b *Backend) issueCall(ctx context.Context, method, path string, body any,

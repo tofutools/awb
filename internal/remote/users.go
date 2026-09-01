@@ -37,6 +37,11 @@ type membershipSetBody struct {
 	Access domain.Access `json:"access"`
 }
 
+type membershipCreateBody struct {
+	User   string        `json:"user"`
+	Access domain.Access `json:"access"`
+}
+
 type directoryUser struct {
 	domain.User
 	ActivityProjects []string `json:"activity_projects"`
@@ -112,6 +117,17 @@ func (b *Backend) ListMembers(ctx context.Context, project string, limit, offset
 func (b *Backend) SetMember(ctx context.Context, project, user string, access domain.Access) (
 	*domain.Membership, error) {
 	return b.memberCall(ctx, http.MethodPut, project, user, membershipSetBody{Access: access})
+}
+
+func (b *Backend) AddMember(ctx context.Context, project, user string, access domain.Access) (
+	*domain.Membership, error) {
+	path := "/api/projects/" + url.PathEscape(project) + "/members"
+	var membership domain.Membership
+	if _, err := b.call(ctx, http.MethodPost, b.endpoint(path, nil),
+		membershipCreateBody{User: user, Access: access}, "", &membership); err != nil {
+		return nil, err
+	}
+	return &membership, nil
 }
 
 func (b *Backend) RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error) {
