@@ -635,7 +635,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	t := e.theme()
 
 	e.writeHeading(t, e.issueLink(t, issue.ID), issue.Title)
-	e.field(t, "Project", e.projectLink(t, issue.Project))
+	e.field(t, "Workspace", e.projectLink(t, issue.Project))
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))

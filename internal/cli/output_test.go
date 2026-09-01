@@ -171,6 +171,7 @@ func TestRemoteDetailIdentifiersAreClickable(t *testing.T) {
 		Relations: []domain.Relation{{Type: domain.RelRelated, Other: "demo-bbd9d3"}},
 	}
 	out := renderRemote(config.ColorAlways, true, func(e *env) { e.printIssueDetail(&issue) })
+	assert.Contains(t, out, "Workspace", "human output uses the product vocabulary")
 	for _, destination := range []string{
 		"#/issues/demo-eeec94", "#/issues?project=demo", "#/issues/demo-bff7dc", "#/issues/demo-bbd9d3",
 	} {

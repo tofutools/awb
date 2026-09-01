@@ -226,19 +226,19 @@ func dumpProjectActivity(cmd *cobra.Command, source backend.Backend,
 				return nil, err
 			}
 			if total >= 0 && page.Total != total {
-				return nil, awberr.Runtimef("lifecycle of project %s changed while the dump was being read", project.Key)
+				return nil, awberr.Runtimef("lifecycle of workspace %s changed while the dump was being read", project.Key)
 			}
 			total = page.Total
 			for _, entry := range page.Activity {
 				if _, duplicate := seen[entry.ID]; duplicate {
-					return nil, awberr.Runtimef("project activity %d appeared in more than one dump page", entry.ID)
+					return nil, awberr.Runtimef("workspace activity %d appeared in more than one dump page", entry.ID)
 				}
 				seen[entry.ID] = struct{}{}
 				entries = append(entries, entry)
 			}
 			fetched += len(page.Activity)
 			if len(page.Activity) == 0 && fetched < total {
-				return nil, awberr.Runtimef("project activity pagination ended early for %s", project.Key)
+				return nil, awberr.Runtimef("workspace activity pagination ended early for %s", project.Key)
 			}
 		}
 	}
@@ -455,22 +455,22 @@ func dumpProjects(cmd *cobra.Command, source backend.Backend) ([]domain.Project,
 			return nil, err
 		}
 		if total >= 0 && page.Total != total {
-			return nil, awberr.Runtimef("projects changed while the dump was being read")
+			return nil, awberr.Runtimef("workspaces changed while the dump was being read")
 		}
 		total = page.Total
 		if len(page.Projects) == 0 && offset < total {
-			return nil, awberr.Runtimef("project pagination ended after %d of %d projects", offset, total)
+			return nil, awberr.Runtimef("workspace pagination ended after %d of %d workspaces", offset, total)
 		}
 		for _, project := range page.Projects {
 			if _, duplicate := seen[project.Key]; duplicate {
-				return nil, awberr.Runtimef("project %s appeared in more than one dump page", project.Key)
+				return nil, awberr.Runtimef("workspace %s appeared in more than one dump page", project.Key)
 			}
 			seen[project.Key] = struct{}{}
 			projects = append(projects, project)
 		}
 	}
 	if len(projects) != total {
-		return nil, awberr.Runtimef("project pagination returned %d of %d projects", len(projects), total)
+		return nil, awberr.Runtimef("workspace pagination returned %d of %d workspaces", len(projects), total)
 	}
 	return projects, nil
 }

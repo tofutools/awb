@@ -52,10 +52,10 @@ func (t *Tx) GetProject(key string) (*domain.Project, error) {
 	).Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 		&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, awberr.NotFoundf("no such project: %s", key)
+		return nil, awberr.NotFoundf("no such workspace: %s", key)
 	}
 	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "read project %s", key)
+		return nil, awberr.Wrap(awberr.Runtime, err, "read workspace %s", key)
 	}
 	return &p, nil
 }
@@ -72,7 +72,7 @@ func (t *Tx) ProjectExists(key string) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
-		return false, awberr.Wrap(awberr.Runtime, err, "read project %s", key)
+		return false, awberr.Wrap(awberr.Runtime, err, "read workspace %s", key)
 	}
 	return true, nil
 }
@@ -101,7 +101,7 @@ func (t *Tx) ListProjectsByState(filter string, state domain.ProjectStateFilter,
 	}
 	if err := t.q.QueryRowContext(t.ctx,
 		`SELECT count(*) FROM projects p WHERE `+where, args...).Scan(&total); err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count projects")
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count workspaces")
 	}
 
 	direction := "ASC"
@@ -131,7 +131,7 @@ func (t *Tx) ListProjectsByState(filter string, state domain.ProjectStateFilter,
 
 	rows, err := t.q.QueryContext(t.ctx, query, args...)
 	if err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list projects")
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list workspaces")
 	}
 	defer rows.Close()
 
@@ -140,12 +140,12 @@ func (t *Tx) ListProjectsByState(filter string, state domain.ProjectStateFilter,
 		var p domain.Project
 		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
-			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list projects")
+			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list workspaces")
 		}
 		projects = append(projects, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list projects")
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list workspaces")
 	}
 	return projects, total, nil
 }
@@ -164,7 +164,7 @@ func (t *Tx) SearchProjectsForNavigation(query string, limit int) ([]domain.Proj
 		   AND (instr(lower(p.key), lower(?)) > 0 OR instr(lower(p.name), lower(?)) > 0)
 		 ORDER BY p.key ASC LIMIT ?`, args...)
 	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "search projects for navigation")
+		return nil, awberr.Wrap(awberr.Runtime, err, "search workspaces for navigation")
 	}
 	defer rows.Close()
 	projects := []domain.Project{}
@@ -172,11 +172,11 @@ func (t *Tx) SearchProjectsForNavigation(query string, limit int) ([]domain.Proj
 		var p domain.Project
 		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
-			return nil, awberr.Wrap(awberr.Runtime, err, "search projects for navigation")
+			return nil, awberr.Wrap(awberr.Runtime, err, "search workspaces for navigation")
 		}
 		projects = append(projects, p)
 	}
-	return projects, awberr.Wrap(awberr.Runtime, rows.Err(), "search projects for navigation")
+	return projects, awberr.Wrap(awberr.Runtime, rows.Err(), "search workspaces for navigation")
 }
 
 // InsertProject stores a new project.
@@ -187,9 +187,9 @@ func (t *Tx) InsertProject(key, name, description string) error {
 		VALUES (?, ?, ?, ?, ?)`, key, name, description, now, now)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return awberr.Conflictf("project %s already exists", key)
+			return awberr.Conflictf("workspace %s already exists", key)
 		}
-		return awberr.Wrap(awberr.Runtime, err, "create project %s", key)
+		return awberr.Wrap(awberr.Runtime, err, "create workspace %s", key)
 	}
 	return nil
 }
@@ -207,7 +207,7 @@ func (t *Tx) UpdateProject(p *domain.Project, name, description string) error {
 		UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE key = ?`,
 		name, description, updated, p.Key)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "update project %s", p.Key)
+		return awberr.Wrap(awberr.Runtime, err, "update workspace %s", p.Key)
 	}
 	p.Name = name
 	p.Description = description
@@ -231,11 +231,11 @@ func (t *Tx) SetProjectState(p *domain.Project, state domain.ProjectState, actor
 	if _, err := t.q.ExecContext(t.ctx, `UPDATE projects
 		SET state = ?, archived_at = ?, archived_by = ?, updated_at = ? WHERE key = ?`,
 		state, archivedAt, archivedBy, updated, p.Key); err != nil {
-		return false, awberr.Wrap(awberr.Runtime, err, "change lifecycle of project %s", p.Key)
+		return false, awberr.Wrap(awberr.Runtime, err, "change lifecycle of workspace %s", p.Key)
 	}
 	if _, err := t.q.ExecContext(t.ctx, `INSERT INTO project_activity
 		(project, action, actor, created_at) VALUES (?, ?, ?, ?)`, p.Key, action, actor, now); err != nil {
-		return false, awberr.Wrap(awberr.Runtime, err, "record lifecycle of project %s", p.Key)
+		return false, awberr.Wrap(awberr.Runtime, err, "record lifecycle of workspace %s", p.Key)
 	}
 	p.State, p.ArchivedAt, p.ArchivedBy, p.UpdatedAt = state, archivedAt, archivedBy, updated
 	return true, nil
@@ -244,24 +244,24 @@ func (t *Tx) SetProjectState(p *domain.Project, state domain.ProjectState, actor
 func (t *Tx) ListProjectActivity(key string, limit, offset *int) ([]domain.ProjectActivity, int, error) {
 	var total int
 	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM project_activity WHERE project = ?`, key).Scan(&total); err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count lifecycle of project %s", key)
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count lifecycle of workspace %s", key)
 	}
 	rows, err := t.q.QueryContext(t.ctx, `SELECT id, project, action, actor, created_at
 		FROM project_activity WHERE project = ? ORDER BY created_at DESC, id DESC`+
 		limitOffsetClause(limit, offset), key)
 	if err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list lifecycle of project %s", key)
+		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list lifecycle of workspace %s", key)
 	}
 	defer rows.Close()
 	entries := []domain.ProjectActivity{}
 	for rows.Next() {
 		var entry domain.ProjectActivity
 		if err := rows.Scan(&entry.ID, &entry.Project, &entry.Action, &entry.Actor, &entry.CreatedAt); err != nil {
-			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list lifecycle of project %s", key)
+			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list lifecycle of workspace %s", key)
 		}
 		entries = append(entries, entry)
 	}
-	return entries, total, awberr.Wrap(awberr.Runtime, rows.Err(), "list lifecycle of project %s", key)
+	return entries, total, awberr.Wrap(awberr.Runtime, rows.Err(), "list lifecycle of workspace %s", key)
 }
 
 // CountIssuesInProject counts every issue the project holds, closed ones
@@ -272,7 +272,7 @@ func (t *Tx) CountIssuesInProject(key string) (int, error) {
 	var n int
 	err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM issues WHERE project = ?`, key).Scan(&n)
 	if err != nil {
-		return 0, awberr.Wrap(awberr.Runtime, err, "count issues in project %s", key)
+		return 0, awberr.Wrap(awberr.Runtime, err, "count issues in workspace %s", key)
 	}
 	return n, nil
 }
@@ -290,7 +290,7 @@ func (t *Tx) ProjectRelationsTouchArchived(key string) (bool, error) {
 		WHERE (subject.project = ? OR other.project = ?)
 		  AND (subject_project.state = 'archived' OR other_project.state = 'archived')
 	)`, key, key).Scan(&found)
-	return found, awberr.Wrap(awberr.Runtime, err, "inspect archived relations of project %s", key)
+	return found, awberr.Wrap(awberr.Runtime, err, "inspect archived relations of workspace %s", key)
 }
 
 // DeleteProjectIssues removes every issue the project holds, and with them
@@ -300,11 +300,11 @@ func (t *Tx) ProjectRelationsTouchArchived(key string) (bool, error) {
 func (t *Tx) DeleteProjectIssues(key string) (int, error) {
 	result, err := t.q.ExecContext(t.ctx, `DELETE FROM issues WHERE project = ?`, key)
 	if err != nil {
-		return 0, awberr.Wrap(awberr.Runtime, err, "delete issues in project %s", key)
+		return 0, awberr.Wrap(awberr.Runtime, err, "delete issues in workspace %s", key)
 	}
 	n, err := result.RowsAffected()
 	if err != nil {
-		return 0, awberr.Wrap(awberr.Runtime, err, "delete issues in project %s", key)
+		return 0, awberr.Wrap(awberr.Runtime, err, "delete issues in workspace %s", key)
 	}
 	return int(n), nil
 }
@@ -313,7 +313,7 @@ func (t *Tx) DeleteProjectIssues(key string) (int, error) {
 func (t *Tx) DeleteProject(key string) error {
 	_, err := t.q.ExecContext(t.ctx, `DELETE FROM projects WHERE key = ?`, key)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "delete project %s", key)
+		return awberr.Wrap(awberr.Runtime, err, "delete workspace %s", key)
 	}
 	return nil
 }

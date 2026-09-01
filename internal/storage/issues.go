@@ -50,7 +50,7 @@ func (t *Tx) IssueProjectState(id string) (domain.ProjectState, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", awberr.NotFoundf("no such issue: %s", id)
 	}
-	return state, awberr.Wrap(awberr.Runtime, err, "read project state of issue %s", id)
+	return state, awberr.Wrap(awberr.Runtime, err, "read workspace state of issue %s", id)
 }
 
 // getIssueRow reads the stored half of one issue by its exact ID.
@@ -328,7 +328,7 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		}
 		return awberr.Wrap(awberr.Runtime, err, "create issue")
 	}
-	return awberr.Runtimef("could not mint a free issue id in project %s after %d attempts",
+	return awberr.Runtimef("could not mint a free issue id in workspace %s after %d attempts",
 		issue.Project, maxAttempts)
 }
 

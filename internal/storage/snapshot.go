@@ -48,7 +48,7 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				INSERT INTO projects (key, name, description, state, archived_at, archived_by, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 				p.Key, p.Name, p.Description, state, p.ArchivedAt, p.ArchivedBy, p.CreatedAt, p.UpdatedAt); err != nil {
-				return restoreError(err, "project %s", p.Key)
+				return restoreError(err, "workspace %s", p.Key)
 			}
 		}
 
@@ -140,7 +140,7 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO project_activity
 				(id, project, action, actor, created_at) VALUES (?, ?, ?, ?, ?)`,
 				a.ID, a.Project, a.Action, a.Actor, a.CreatedAt); err != nil {
-				return restoreError(err, "project activity %d of %s", a.ID, a.Project)
+				return restoreError(err, "workspace activity %d of %s", a.ID, a.Project)
 			}
 		}
 

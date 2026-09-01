@@ -214,7 +214,7 @@ func checkFilterProjects(tx *storage.Tx, filter *domain.Filter) error {
 			return err
 		}
 		if !exists {
-			return awberr.NotFoundf("no such project: %s", key)
+			return awberr.NotFoundf("no such workspace: %s", key)
 		}
 	}
 	return nil

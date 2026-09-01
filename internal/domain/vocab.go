@@ -27,7 +27,7 @@ func ParseProjectState(s string) (ProjectState, error) {
 	if slices.Contains(ProjectStates, ProjectState(s)) {
 		return ProjectState(s), nil
 	}
-	return "", awberr.Usagef("invalid project state %q: must be one of %s", s, join(ProjectStates))
+	return "", awberr.Usagef("invalid workspace state %q: must be one of %s", s, join(ProjectStates))
 }
 
 type ProjectStateFilter string
@@ -43,7 +43,7 @@ func ParseProjectStateFilter(s string) (ProjectStateFilter, error) {
 	if filter == ProjectsActive || filter == ProjectsArchived || filter == ProjectsAll {
 		return filter, nil
 	}
-	return "", awberr.Usagef("invalid project state filter %q: must be active, archived or all", s)
+	return "", awberr.Usagef("invalid workspace state filter %q: must be active, archived or all", s)
 }
 
 // Type is an issue's kind. Nothing in awb treats any of them specially; an

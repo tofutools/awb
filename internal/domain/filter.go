@@ -122,7 +122,7 @@ func ParseProjectSort(s string) (ProjectSort, error) {
 		return ProjectSort{Key: key, Desc: desc}, nil
 	default:
 		return ProjectSort{}, awberr.Usagef(
-			"invalid project sort %q: must be one of key, active, updated, optionally prefixed with \"-\"", s)
+			"invalid workspace sort %q: must be one of key, active, updated, optionally prefixed with \"-\"", s)
 	}
 }
 

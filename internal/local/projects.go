@@ -112,7 +112,7 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 		if existing.State == domain.ProjectArchived {
 			return awberr.Conflictf("workspace %s is archived; restore it before changing it", key)
 		}
-		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
+		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the workspace"); err != nil {
 			return err
 		}
 
@@ -158,7 +158,7 @@ func (b *Backend) setProjectState(ctx context.Context, key string, state domain.
 		if !caller.MayManageProjects() {
 			return awberr.Forbiddenf("only a workspace administrator may change workspace %s lifecycle", key)
 		}
-		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
+		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the workspace"); err != nil {
 			return err
 		}
 		if _, err := tx.SetProjectState(existing, state, caller.Name); err != nil {
@@ -222,7 +222,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		if project.State == domain.ProjectArchived {
 			return awberr.Conflictf("workspace %s is archived and read-only; restore it before deleting it", key)
 		}
-		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the project"); err != nil {
+		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the workspace"); err != nil {
 			return err
 		}
 
