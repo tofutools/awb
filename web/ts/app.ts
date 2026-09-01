@@ -1407,12 +1407,19 @@ function clearDragFeedback(): void {
   for (const target of document.querySelectorAll(".drop-target, .drop-before, .drop-after, .drop-empty")) {
     target.classList.remove("drop-target", "drop-before", "drop-after", "drop-empty");
   }
+  for (const indicator of document.querySelectorAll(".board-drop-indicator")) indicator.remove();
 }
 
 function clearDropPositions(): void {
   for (const target of document.querySelectorAll(".drop-before, .drop-after")) {
     target.classList.remove("drop-before", "drop-after");
   }
+}
+
+function boardDropIndicator(): HTMLElement {
+  const indicator = element("div", "board-drop-indicator");
+  indicator.setAttribute("aria-hidden", "true");
+  return indicator;
 }
 
 document.addEventListener("pointerup", restoreDragSurface);
@@ -1587,13 +1594,14 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
       dropAfter = below;
       card.classList.toggle("drop-after", below);
       card.classList.toggle("drop-before", !below);
+      card.insertAdjacentElement(below ? "afterend" : "beforebegin", boardDropIndicator());
     }
   });
   card.addEventListener("drop", (event) => {
     const moving = draggedBoardIssue;
     const after = dropAfter;
     dropAfter = false;
-    card.classList.remove("drop-before", "drop-after");
+    clearDragFeedback();
     if (moving === null || moving.id === issue.id) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1669,18 +1677,23 @@ function boardColumn(
     const candidates = [...cards.querySelectorAll<HTMLElement>(".board-card")]
       .filter((card) => card.dataset.issue !== movingID);
     host.classList.toggle("drop-empty", candidates.length === 0);
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) {
+      cards.prepend(boardDropIndicator());
+      return;
+    }
     const next = candidates.find((card) => {
       const bounds = card.getBoundingClientRect();
       return clientY < bounds.top + bounds.height / 2;
     });
     if (next !== undefined) {
       next.classList.add("drop-before");
+      next.insertAdjacentElement("beforebegin", boardDropIndicator());
       columnBefore = next.dataset.issue ?? "";
       return;
     }
     const previous = candidates[candidates.length - 1];
     previous.classList.add("drop-after");
+    previous.insertAdjacentElement("afterend", boardDropIndicator());
     columnAfter = previous.dataset.issue ?? "";
   };
   const append = (issues: Issue[]): void => {

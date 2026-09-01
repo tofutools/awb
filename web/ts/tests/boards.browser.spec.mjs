@@ -67,6 +67,11 @@ async function pointerDrag(page, source, target, below = false) {
   await expect(source).toHaveClass(/dragging/);
   if (positionalTarget) {
     await expect(target).toHaveClass(below ? /drop-after/ : /drop-before/);
+    if (await target.evaluate((element) => element.classList.contains("board-card"))) {
+      expect(await target.evaluate((element, after) =>
+        (after ? element.nextElementSibling : element.previousElementSibling)?.classList.contains("board-drop-indicator") === true,
+      below)).toBe(true);
+    }
   }
   await page.mouse.up();
 }
@@ -79,6 +84,8 @@ async function columnBackgroundDrag(page, source, column, target) {
   await source.dispatchEvent("dragstart", { dataTransfer: transfer });
   await cards.dispatchEvent("dragover", { clientY: targetBox.y + 1, dataTransfer: transfer });
   await expect(target).toHaveClass(/drop-before/);
+  await expect(column.locator(".board-drop-indicator")).toHaveCount(1);
+  expect(await target.evaluate((element) => element.previousElementSibling?.classList.contains("board-drop-indicator") === true)).toBe(true);
   await expect(column.locator(".drop-after")).toHaveCount(0);
   await cards.dispatchEvent("drop", { clientY: targetBox.y + 1, dataTransfer: transfer });
   await source.dispatchEvent("dragend", { dataTransfer: transfer });
@@ -299,7 +306,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await openCard.dispatchEvent("dragstart", { dataTransfer: emptyTransfer });
   await emptyPlatformColumn.dispatchEvent("dragover", { dataTransfer: emptyTransfer });
   await expect(emptyPlatformColumn).toHaveClass(/drop-empty/);
-  await expect.poll(() => emptyPlatformColumn.locator(".board-cards").evaluate((cards) => getComputedStyle(cards, "::before").height)).toBe("3px");
+  await expect(emptyPlatformColumn.locator(".board-drop-indicator")).toHaveCSS("height", "4px");
   await openCard.dispatchEvent("dragend", { dataTransfer: emptyTransfer });
   await pointerDrag(page, openCard, emptyPlatformColumn);
   await expect(platformLane.locator(".board-column[data-status='open']", { hasText: "Build the full text search index" })).toBeVisible();
