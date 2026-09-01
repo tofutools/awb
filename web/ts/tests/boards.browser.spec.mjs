@@ -35,6 +35,10 @@ async function bareDropPoint(target, below) {
 }
 
 async function pointerDrag(page, source, target, below = false) {
+  const boardTarget = await target.evaluate((element) => element.classList.contains("board-card"));
+  const idleTargetBackground = boardTarget
+    ? await target.evaluate((element) => getComputedStyle(element).backgroundColor)
+    : "";
   for (let attempt = 0; ; attempt++) {
     try {
       await source.scrollIntoViewIfNeeded();
@@ -71,6 +75,7 @@ async function pointerDrag(page, source, target, below = false) {
       expect(await target.evaluate((element, after) =>
         (after ? element.nextElementSibling : element.previousElementSibling)?.classList.contains("board-drop-indicator") === true,
       below)).toBe(true);
+      await expect.poll(() => target.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(idleTargetBackground);
     }
   }
   await page.mouse.up();
