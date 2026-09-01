@@ -285,7 +285,7 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 		{"close", id},
 		{"reopen", id},
 		{"update", id, "--priority", "0"},
-		{"move", id, "--project", "awb", "--status", "open"},
+		{"move", id, "--status", "open"},
 		{"label", "add", id, "x"},
 		{"label", "rm", id, "x"},
 	} {
@@ -300,17 +300,21 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 	assert.Contains(t, stdout, "Deleted "+id)
 }
 
-func TestMoveKeepsIDWhileChangingProjectAndPosition(t *testing.T) {
+func TestMoveKeepsWorkspaceAndIDWhileChangingEpicAndPosition(t *testing.T) {
 	h := newHarness(t)
-	h.mustRun("project", "create", "web")
-	first := h.create("first", "--project", "web")
+	epic := h.create("Epic", "--project", "awb", "--type", "epic")
+	first := h.create("first", "--project", "awb", "--has-parent", epic)
 	id := h.create("move me", "--project", "awb")
 	var moved domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("move", id,
-		"--project", "web", "--status", "open", "--before", first, "--json")), &moved))
+		"--epic", epic, "--status", "open", "--before", first, "--json")), &moved))
 	assert.Equal(t, id, moved.ID)
-	assert.Equal(t, "web", moved.Project)
+	assert.Equal(t, "awb", moved.Project)
 	assert.Positive(t, moved.Order)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic, Direction: domain.DirectionOut})
+	_, stderr, code := h.run("move", id, "--project", "web", "--status", "open")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "unknown flag: --project", "the CLI exposes no workspace transfer")
 }
 
 // Under --json every mutating command prints the resulting object.

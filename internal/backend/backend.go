@@ -162,6 +162,7 @@ type BoardQuery struct {
 	CardOffset *int
 	Projects   []string
 	Status     domain.Status
+	Epic       *string
 }
 
 // ProjectPage is a project listing with its unpaged total.
@@ -314,15 +315,14 @@ type IssuePatch struct {
 	ExpectAssignees *[]string
 }
 
-// IssueMove atomically places an issue in a project/status cell and before or
-// after an optional global-order anchor. The anchors are mutually exclusive;
-// omitting both appends to the ranked sequence. The issue ID remains stable
-// when Project changes so links and graph edges do not break.
+// IssueMove atomically changes workflow status, optional direct epic
+// membership, and sparse position. Project/workspace and issue ID are
+// immutable. A nil Epic preserves membership; a pointer to empty clears it.
 type IssueMove struct {
-	Project string
-	Status  domain.Status
-	Before  string
-	After   string
+	Status domain.Status
+	Epic   *string
+	Before string
+	After  string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.

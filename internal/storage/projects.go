@@ -135,42 +135,6 @@ func (t *Tx) ListProjects(filter string, sort domain.ProjectSort,
 	return projects, total, nil
 }
 
-// ListBoardProjects applies an optional exact selected-project set before
-// lane ordering and pagination. The transaction's authorization and ignore
-// scope remains the first boundary.
-func (t *Tx) ListBoardProjects(projects []string, limit, offset *int) ([]domain.Project, int, error) {
-	visible, args := t.visibleClause("p.key")
-	where := visible
-	if projects != nil {
-		if len(projects) == 0 {
-			where += " AND 0 = 1"
-		} else {
-			where += ` AND p.key IN (` + placeholders(len(projects)) + `)`
-			args = append(args, anyArgs(projects)...)
-		}
-	}
-	var total int
-	if err := t.q.QueryRowContext(t.ctx, `SELECT count(*) FROM projects p WHERE `+where, args...).Scan(&total); err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "count board projects")
-	}
-	rows, err := t.q.QueryContext(t.ctx, `SELECT p.key, p.name, p.description, p.created_at, p.updated_at,
-		(SELECT count(*) FROM issues i WHERE i.project = p.key AND i.status <> 'closed')
-		FROM projects p WHERE `+where+` ORDER BY p.key`+limitOffsetClause(limit, offset), args...)
-	if err != nil {
-		return nil, 0, awberr.Wrap(awberr.Runtime, err, "list board projects")
-	}
-	defer rows.Close()
-	result := []domain.Project{}
-	for rows.Next() {
-		var p domain.Project
-		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
-			return nil, 0, err
-		}
-		result = append(result, p)
-	}
-	return result, total, awberr.Wrap(awberr.Runtime, rows.Err(), "list board projects")
-}
-
 // SearchProjectsForNavigation performs a bounded substring search over the
 // immutable key and display name, within the transaction's visible projects.
 func (t *Tx) SearchProjectsForNavigation(query string, limit int) ([]domain.Project, error) {

@@ -328,7 +328,7 @@ func TestOperations(t *testing.T) {
 	assert.ElementsMatch(t, []string{"filter", "sort", "limit", "offset"}, names("listProjects"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))
 	assert.ElementsMatch(t, []string{
-		"lane-limit", "lane-offset", "card-limit", "card-offset", "project", "status",
+		"lane-limit", "lane-offset", "card-limit", "card-offset", "project", "status", "epic",
 	}, names("getBoard"))
 	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
 	assert.ElementsMatch(t, []string{"cascade"}, names("deleteProject"))

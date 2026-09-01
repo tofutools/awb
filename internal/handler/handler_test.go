@@ -451,18 +451,23 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 
 func TestMoveIssueOverHTTP(t *testing.T) {
 	a := newAPI(t)
-	_, err := a.be.CreateProject(t.Context(), backend.ProjectCreate{Key: "web"})
-	require.NoError(t, err)
+	epic := a.createIssue(`{"project":"awb","title":"Epic","type":"epic"}`)
 	issue := a.createIssue(`{"project":"awb","title":"move me"}`)
 	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
-		`{"project":"web","status":"in_progress"}`, "If-Match", backend.ETag(issue.UpdatedAt))
+		`{"epic":"`+epic.ID+`","status":"in_progress"}`, "If-Match", backend.ETag(issue.UpdatedAt))
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var moved domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &moved))
 	assert.Equal(t, issue.ID, moved.ID)
-	assert.Equal(t, "web", moved.Project)
+	assert.Equal(t, "awb", moved.Project)
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Positive(t, moved.Order)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic.ID, Direction: domain.DirectionOut})
+
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
+		`{"project":"web","status":"open"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	assert.Contains(t, payload, `unexpected field \"project\"`, "workspace movement is absent from the wire contract")
 }
 
 func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {

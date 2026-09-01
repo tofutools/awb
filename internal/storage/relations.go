@@ -39,6 +39,23 @@ func (t *Tx) ParentOf(id string) (string, bool, error) {
 	return parent, true, nil
 }
 
+// DirectEpic returns the issue's direct same-project epic parent. Other
+// decomposition parents do not constitute board membership.
+func (t *Tx) DirectEpic(id, project string) (string, error) {
+	var epic string
+	err := t.q.QueryRowContext(t.ctx, `SELECT parent.id
+		FROM relations r JOIN issues parent ON parent.id = r.other
+		WHERE r.subject = ? AND r.type = 'has-parent'
+		  AND parent.type = 'epic' AND parent.project = ?`, id, project).Scan(&epic)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "read direct epic of %s", id)
+	}
+	return epic, nil
+}
+
 // IssueRelations returns every relation visible from one endpoint. It is
 // deliberately unscoped, like the graph-rule queries below: relation writes
 // change both endpoints, and their activity rows must be recorded together

@@ -280,16 +280,11 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 	})
 }
 
-// MoveIssue is the board/list drag operation. Project, status and position are
-// committed together, so clients never observe the issue in an intermediate
-// cell. Status moves preserve the same assignment rules as the named
-// transition operations.
+// MoveIssue is the board/list drag operation. Status, optional same-workspace
+// epic membership, and sparse position are committed together. Project and ID
+// are immutable. Status moves preserve the named transition safety rules.
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
 	ifMatch string) (*domain.Issue, error) {
-	project, err := domain.ValidateProjectKey(req.Project)
-	if err != nil {
-		return nil, err
-	}
 	status, err := domain.ParseStatus(string(req.Status))
 	if err != nil {
 		return nil, err
@@ -306,13 +301,6 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
 			return err
 		}
-		exists, err := tx.ProjectExists(project)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return awberr.NotFoundf("no such project: %s", project)
-		}
 		beforeID := ""
 		afterID := ""
 		if req.Before != "" {
@@ -320,9 +308,12 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			if err != nil {
 				return err
 			}
-			if before.ID == issue.ID && issue.Project == project && issue.Status == status {
+			if before.ID == issue.ID && issue.Status == status && req.Epic == nil {
 				result = issue
 				return nil
+			}
+			if before.Project != issue.Project {
+				return awberr.Usagef("the order anchor must be in workspace %s", issue.Project)
 			}
 			beforeID = before.ID
 		}
@@ -331,9 +322,12 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			if err != nil {
 				return err
 			}
-			if after.ID == issue.ID && issue.Project == project && issue.Status == status {
+			if after.ID == issue.ID && issue.Status == status && req.Epic == nil {
 				result = issue
 				return nil
+			}
+			if after.Project != issue.Project {
+				return awberr.Usagef("the order anchor must be in workspace %s", issue.Project)
 			}
 			afterID = after.ID
 		}
@@ -342,8 +336,54 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		before.Labels = slices.Clone(issue.Labels)
 		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
+		originalEpic, err := tx.DirectEpic(issue.ID, issue.Project)
+		if err != nil {
+			return err
+		}
+		destinationEpic := originalEpic
+		parentSnapshots := relationSnapshots{}
+		captureParent := parentSnapshots.capture(tx)
+		if req.Epic != nil {
+			if *req.Epic == "" {
+				if originalEpic != "" {
+					if err := captureParent(originalEpic); err != nil {
+						return err
+					}
+					if err := tx.DeleteRelation(issue.ID, domain.RelHasParent, originalEpic); err != nil {
+						return err
+					}
+				}
+				destinationEpic = ""
+			} else {
+				target, err := load(tx, *req.Epic)
+				if err != nil {
+					return err
+				}
+				if target.Project != issue.Project || target.Type != domain.TypeEpic {
+					return awberr.Usagef("the epic must be an epic in workspace %s", issue.Project)
+				}
+				existingParent, hasParent, err := tx.ParentOf(issue.ID)
+				if err != nil {
+					return err
+				}
+				if hasParent && existingParent != target.ID && originalEpic == "" {
+					return awberr.Conflictf("the issue has a non-epic parent; change that relation first")
+				}
+				if hasParent && existingParent != target.ID {
+					if err := captureParent(existingParent); err != nil {
+						return err
+					}
+				}
+				if err := captureParent(target.ID); err != nil {
+					return err
+				}
+				if err := addParent(tx, issue.ID, target.ID, true); err != nil {
+					return err
+				}
+				destinationEpic = target.ID
+			}
+		}
 		fields := storage.Fields(issue)
-		fields.Project = project
 		switch {
 		case status == issue.Status:
 		case issue.Status == domain.StatusOpen && status == domain.StatusInProgress:
@@ -372,7 +412,12 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		if err := tx.UpdateIssue(issue, fields); err != nil {
 			return err
 		}
-		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID)
+		var scopeStatus *domain.Status
+		var scopeEpic *string
+		if req.Epic != nil || status != before.Status {
+			scopeStatus, scopeEpic = &status, &destinationEpic
+		}
+		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID, scopeStatus, scopeEpic)
 		if err != nil {
 			return err
 		}
@@ -381,6 +426,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			return err
 		}
 		changes := activityChanges(&before, result)
+		if err := parentSnapshots.record(tx, caller, "moved"); err != nil {
+			return err
+		}
 		for _, change := range orderChanges {
 			if change.Issue == issue.ID {
 				continue

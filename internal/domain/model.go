@@ -132,7 +132,10 @@ type Board struct {
 }
 
 type BoardLane struct {
-	Project Project       `json:"project"`
+	// Epic is nil for the single No epic lane. An epic is returned as the
+	// complete issue shape so its immutable workspace and title need no second
+	// representation.
+	Epic    *Issue        `json:"epic,omitempty"`
 	Columns []BoardColumn `json:"columns"`
 }
 

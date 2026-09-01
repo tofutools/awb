@@ -73,6 +73,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	if query.Status != "" {
 		values.Set("status", string(query.Status))
 	}
+	if query.Epic != nil {
+		values.Set("epic", *query.Epic)
+	}
 	var board domain.Board
 	_, err := b.call(ctx, http.MethodGet, b.endpoint("/api/boards/"+url.PathEscape(ref), values), nil, "", &board)
 	return &board, err

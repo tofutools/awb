@@ -639,7 +639,7 @@ function issueTable(
       let before = issue.id;
       let after = "";
       row.addEventListener("dragover", (event) => {
-        if (draggedListIssue === null || draggedListIssue.id === issue.id) return;
+        if (draggedListIssue === null || draggedListIssue.id === issue.id || draggedListIssue.project !== issue.project) return;
         event.preventDefault();
         const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
         before = below ? "" : issue.id;
@@ -654,9 +654,12 @@ function issueTable(
         if (moving === null || moving.id === issue.id) return;
         event.preventDefault();
         draggedListIssue = null;
+        if (moving.project !== issue.project) {
+          mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.project} → ${issue.project}).`));
+          return;
+        }
         row.classList.add("moving");
         void api.moveIssue(moving.id, {
-          project: moving.project,
           status: moving.status,
           ...(before === "" ? {} : { before }),
           ...(after === "" ? {} : { after }),
@@ -1033,11 +1036,11 @@ function saveCollapsedBoardLanes(ref: string, projects: Set<string>): void {
 async function moveBoardIssue(
   host: HTMLElement,
   issue: Issue,
-  project: string,
+  epic: string,
   target: BoardStatus,
   before = "",
 ): Promise<void> {
-  if (project === issue.project && target === issue.status && before === issue.id) return;
+  if (target === issue.status && before === issue.id) return;
   if (!legalBoardTargets(issue, identity).includes(target)) {
     mutationError(host, new Error("This move would release somebody else's assignment."));
     return;
@@ -1046,8 +1049,8 @@ async function moveBoardIssue(
   host.classList.add("moving");
   try {
     await api.moveIssue(issue.id, {
-      project,
       status: target,
+      epic,
       ...(before === "" ? {} : { before }),
     });
     await render();
@@ -1059,7 +1062,7 @@ async function moveBoardIssue(
   }
 }
 
-function boardCard(issue: Issue, project: string, status: BoardStatus): HTMLElement {
+function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement {
   const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
   card.dataset.issue = issue.id;
   const drag = element("span", "board-card-drag", "⠿");
@@ -1087,12 +1090,12 @@ function boardCard(issue: Issue, project: string, status: BoardStatus): HTMLElem
     option.selected = status === issue.status;
     select.append(option);
   }
-  select.addEventListener("change", () => void moveBoardIssue(card, issue, project, select.value as BoardStatus));
+  select.addEventListener("change", () => void moveBoardIssue(card, issue, epic, select.value as BoardStatus));
   move.append(select);
   card.append(move);
   card.addEventListener("dragover", (event) => {
     const moving = draggedBoardIssue;
-    if (moving !== null && moving.id !== issue.id && legalBoardTargets(moving, identity).includes(status)) {
+    if (moving !== null && moving.id !== issue.id && moving.project === issue.project && legalBoardTargets(moving, identity).includes(status)) {
       event.preventDefault();
       event.stopPropagation();
       card.classList.add("drop-before");
@@ -1106,20 +1109,23 @@ function boardCard(issue: Issue, project: string, status: BoardStatus): HTMLElem
     event.preventDefault();
     event.stopPropagation();
     draggedBoardIssue = null;
-    void moveBoardIssue(card, moving, project, status, issue.id);
+    void moveBoardIssue(card, moving, epic, status, issue.id);
   });
   return card;
 }
 
 function boardColumn(
   ref: string,
-  project: string,
+  epic: Issue | null,
+  selectedWorkspaces: string[],
   column: Board["lanes"][number]["columns"][number],
   issuesByID: Map<string, Issue>,
 ): HTMLElement {
   const host = element("section", "board-column");
   host.dataset.status = column.status;
-  const headingID = `board-column-${project}-${column.status}`;
+  const laneKey = epic?.id ?? "no-epic";
+  const epicID = epic?.id ?? "";
+  const headingID = `board-column-${laneKey}-${column.status}`;
   host.setAttribute("aria-labelledby", headingID);
   const heading = element("header");
   const title = element("h3", "", boardStatusLabel(column.status));
@@ -1134,7 +1140,7 @@ function boardColumn(
       if (loadedIDs.has(issue.id)) continue;
       loadedIDs.add(issue.id);
       issuesByID.set(issue.id, issue);
-      cards.append(boardCard(issue, project, column.status));
+      cards.append(boardCard(issue, epicID, column.status));
     }
   };
   append(column.issues);
@@ -1152,7 +1158,8 @@ function boardColumn(
     more.addEventListener("click", () => {
       more.disabled = true;
       void api.board(ref, {
-        project: [project], status: column.status, "lane-limit": 1,
+        ...(epic === null && selectedWorkspaces.length > 0 ? { project: selectedWorkspaces } : {}),
+        epic: epic?.id ?? "none", status: column.status, "lane-limit": 1,
         "card-limit": boardCardPageSize, "card-offset": cursor,
       }).then((page) => {
         const nextColumn = page.lanes[0]?.columns[0];
@@ -1171,7 +1178,7 @@ function boardColumn(
   }
   host.addEventListener("dragover", (event) => {
     const issue = draggedBoardIssue;
-    if (issue !== null && legalBoardTargets(issue, identity).includes(column.status)) {
+    if (issue !== null && (epic === null || issue.project === epic.project) && legalBoardTargets(issue, identity).includes(column.status)) {
       event.preventDefault();
       return;
     }
@@ -1182,41 +1189,48 @@ function boardColumn(
     draggedBoardIssue = null;
     if (issue === undefined || issue === null) return;
     event.preventDefault();
-    void moveBoardIssue(host, issue, project, column.status);
+    if (epic !== null && issue.project !== epic.project) {
+      mutationError(host, new Error(`Issues cannot move out of workspace ${issue.project}.`));
+      return;
+    }
+    void moveBoardIssue(host, issue, epicID, column.status);
   });
   return host;
 }
 
-function boardLane(ref: string, lane: Board["lanes"][number], issuesByID: Map<string, Issue>): HTMLElement {
+function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>): HTMLElement {
   const host = element("section", "board-lane");
-  const headingID = `board-lane-${lane.project.key}`;
+  const laneKey = lane.epic?.id ?? "no-epic";
+  const laneLabel = lane.epic?.title ?? "No epic";
+  const headingID = `board-lane-${laneKey}`;
   host.setAttribute("aria-labelledby", headingID);
   const heading = element("header", "board-lane-heading");
   const name = element("div", "board-lane-name");
   const title = element("h2");
   title.id = headingID;
-  title.append(element("code", "", lane.project.key), document.createTextNode(` ${lane.project.name}`));
+  if (lane.epic === undefined) title.append(document.createTextNode("No epic"));
+  else title.append(element("code", "", lane.epic.project), document.createTextNode(` ${lane.epic.title}`));
   name.append(title);
   const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
   const meta = element("div", "board-lane-meta");
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
   const columns = element("div", "board-columns");
-  columns.id = `board-lane-columns-${lane.project.key}`;
-  for (const column of lane.columns) columns.append(boardColumn(ref, lane.project.key, column, issuesByID));
+  columns.id = `board-lane-columns-${laneKey}`;
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID));
   const collapsed = collapsedBoardLanes(ref);
-  let isCollapsed = collapsed.has(lane.project.key);
+  let isCollapsed = collapsed.has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
   toggle.setAttribute("aria-controls", columns.id);
   const sync = (): void => {
     columns.hidden = isCollapsed;
     host.classList.toggle("collapsed", isCollapsed);
     toggle.setAttribute("aria-expanded", String(!isCollapsed));
-    toggle.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${lane.project.name} swimlane`);
+    toggle.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${laneLabel} swimlane`);
     toggle.textContent = isCollapsed ? "▸ Expand" : "▾ Collapse";
   };
   toggle.addEventListener("click", () => {
     isCollapsed = !isCollapsed;
-    if (isCollapsed) collapsed.add(lane.project.key); else collapsed.delete(lane.project.key);
+    if (isCollapsed) collapsed.add(laneKey); else collapsed.delete(laneKey);
     saveCollapsedBoardLanes(ref, collapsed);
     sync();
   });
@@ -1247,9 +1261,9 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const sharedLabel = element("label", "board-view-check"); sharedLabel.append(shared, document.createTextNode("Anyone with the link can open this view"));
   form.append(sharedLabel);
   const all = document.createElement("input"); all.type = "checkbox"; all.checked = source?.all_projects ?? route.query.getAll("project").length === 0;
-  const allLabel = element("label", "board-view-check"); allLabel.append(all, document.createTextNode("All visible projects")); form.append(allLabel);
+  const allLabel = element("label", "board-view-check"); allLabel.append(all, document.createTextNode("All visible workspaces")); form.append(allLabel);
   const selected = new Set(source?.projects ?? route.query.getAll("project"));
-  const projects = element("fieldset", "board-view-projects"); projects.append(element("legend", "", "Selected projects"));
+  const projects = element("fieldset", "board-view-projects"); projects.append(element("legend", "", "Selected workspaces"));
   for (const preference of preferences) {
     const row = element("label"); const input = document.createElement("input"); input.type = "checkbox"; input.value = preference.project.key; input.checked = selected.has(preference.project.key);
     row.append(input, document.createTextNode(`${preference.project.key} — ${preference.project.name}${preference.ignored ? " (ignored)" : ""}`)); projects.append(row);
@@ -1319,22 +1333,23 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   heading.append(title, actions); view.append(heading);
   if (saved !== undefined) {
     const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
-    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_projects ? "All projects" : `${saved.projects.length} projects`));
+    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_projects ? "All workspaces" : `${saved.projects.length} workspaces`));
     for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.projects_omitted ? "board-scope-note warning" : "board-scope-note", board.projects_omitted
-    ? "Some lanes are hidden by your access or ignored-project settings."
-    : "Project access and your ignored-project settings always apply to this view."));
+    ? "Some workspaces are hidden by your access or ignored-workspace settings."
+    : "Workspace access and your ignored-workspace settings always apply to this view."));
   const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
-  const loadedProjects = new Set<string>();
-  for (const lane of board.lanes) { loadedProjects.add(lane.project.key); lanes.append(boardLane(ref, lane, issuesByID)); }
-  if (board.lane_total === 0) lanes.append(element("p", "empty", saved === undefined ? "No visible projects." : "No projects match this view."));
+  const selectedWorkspaces = filters.project ?? [];
+  const loadedLanes = new Set<string>();
+  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID)); }
+  if (board.lane_total === 0) lanes.append(element("p", "empty", "No epic lanes match this view."));
   view.append(lanes);
   if (board.lanes.length < board.lane_total) {
     let total = board.lane_total;
     let cursor = board.lanes.length;
     const more = button("", "secondary-button board-lanes-more");
-    const labelMore = (): void => { more.textContent = `Load up to ${boardLanePageSize} more projects · ${loadedProjects.size} of ${total}`; };
+    const labelMore = (): void => { more.textContent = `Load up to ${boardLanePageSize} more epics · ${loadedLanes.size} of ${total}`; };
     labelMore();
     more.addEventListener("click", () => {
       more.disabled = true; const nextFilters = { ...filters, "lane-offset": cursor };
@@ -1342,12 +1357,13 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
         cursor += page.lanes.length;
         total = page.lane_total;
         for (const lane of page.lanes) {
-          if (loadedProjects.has(lane.project.key)) continue;
-          loadedProjects.add(lane.project.key);
-          lanes.append(boardLane(ref, lane, issuesByID));
+          const key = lane.epic?.id ?? "no-epic";
+          if (loadedLanes.has(key)) continue;
+          loadedLanes.add(key);
+          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID));
         }
-        if (loadedProjects.size > total || (cursor >= total && loadedProjects.size < total)) { void render(); return; }
-        if (loadedProjects.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
+        if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }
+        if (loadedLanes.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
       }).catch((error) => { more.disabled = false; mutationError(view, error); });
     }); view.append(more);
   }

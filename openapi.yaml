@@ -255,12 +255,12 @@ paths:
       operationId: moveIssue
       summary: Atomically move and manually position an issue
       description: |
-        Places the issue in a project/status cell and immediately before or
-        after an optional visible global-order anchor; the two anchors are
-        mutually exclusive. Omitting both appends it to the manually ranked
-        sequence. The issue ID
-        stays stable when its project changes. Status changes apply the same
-        assignment safety rules as claim, release, close and reopen.
+        Places the issue in a workflow status and optional direct same-project
+        epic, immediately before or after one anchor in the same ordering
+        scope; the two anchors are mutually exclusive. Omitting both appends it
+        to that manually ranked sequence. Project/workspace and issue ID are
+        immutable. Status changes apply the same assignment safety rules as
+        claim, release, close and reopen.
       requestBody:
         required: true
         content:
@@ -762,6 +762,10 @@ paths:
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/Status' }
+        - name: epic
+          in: query
+          description: Return only this epic lane, or the literal `none` for No epic.
+          schema: { type: string, minLength: 1 }
       responses:
         '200':
           description: The board page.
@@ -1632,9 +1636,10 @@ components:
     BoardLane:
       type: object
       additionalProperties: false
-      required: [project, columns]
+      description: An epic swimlane. An absent epic is the single No epic lane.
+      required: [columns]
       properties:
-        project: { $ref: '#/components/schemas/Project' }
+        epic: { $ref: '#/components/schemas/Issue' }
         columns:
           type: array
           items: { $ref: '#/components/schemas/BoardColumn' }
@@ -2300,16 +2305,23 @@ components:
     IssueMove:
       type: object
       additionalProperties: false
-      required: [project, status]
+      description: |
+        Atomically changes workflow status, optional direct epic membership,
+        and sparse manual position. The issue's project/workspace and ID are
+        immutable. When `epic` is present, an empty value clears direct epic
+        membership; a non-empty value must name an epic in the same project.
+      required: [status]
       properties:
-        project: { $ref: '#/components/schemas/ProjectKey' }
         status: { $ref: '#/components/schemas/Status' }
+        epic:
+          type: string
+          description: Omit to preserve epic membership; send empty to select No epic.
         before:
           type: string
-          description: A visible global-order anchor to place the issue immediately before.
+          description: A visible anchor in the destination ordering scope.
         after:
           type: string
-          description: A visible global-order anchor to place the issue immediately after.
+          description: A visible anchor in the destination ordering scope.
 
     ClaimRequest:
       type: object

@@ -138,7 +138,7 @@ func TestStatusAssigneeInvariantIsEnforcedByStorage(t *testing.T) {
 
 func fields(status domain.Status, assignees ...string) storage.IssueFields {
 	return storage.IssueFields{
-		Project: "awb", Title: "t", Type: domain.TypeTask, Priority: 2,
+		Title: "t", Type: domain.TypeTask, Priority: 2,
 		Status: status, Assignees: assignees,
 	}
 }

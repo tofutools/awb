@@ -9,6 +9,19 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
+// ListBoardEpics returns visible epic issues in the workspaces selected by a
+// board. A nil project set means every workspace allowed by the transaction;
+// a non-nil empty set means none.
+func (t *Tx) ListBoardEpics(projects []string, limit, offset *int) ([]domain.Issue, int, error) {
+	if projects != nil && len(projects) == 0 {
+		return []domain.Issue{}, 0, nil
+	}
+	return t.ListIssues(&domain.Filter{
+		Projects: projects, Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true,
+		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
+	})
+}
+
 func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 	var view domain.BoardView
 	err := row.Scan(&view.ID, &view.Name, &view.Owner, &view.Shared,

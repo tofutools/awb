@@ -107,7 +107,7 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   await api.boardView("view-aaaaaaaaaaaaaaaaaaaaaaaa");
   await api.updateBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa", { name: "Next" });
   await api.board("view-aaaaaaaaaaaaaaaaaaaaaaaa", {
-    project: ["awb", "web"], status: "open", "lane-limit": 10, "card-offset": 8,
+    project: ["awb", "web"], status: "open", epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
   });
 
   assert.equal(calls[0].path, "api/board-views/view-aaaaaaaaaaaaaaaaaaaaaaaa");
@@ -115,6 +115,7 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   const boardURL = new URL(calls[2].path, "https://example.test/");
   assert.deepEqual(boardURL.searchParams.getAll("project"), ["awb", "web"]);
   assert.equal(boardURL.searchParams.get("status"), "open");
+  assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");
   assert.equal(boardURL.searchParams.get("card-offset"), "8");
 });
@@ -201,7 +202,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
     await api.addLabel("awb-a/b", "team/web");
     await api.removeRelation("awb-a/b", "blocked-by", "awb-c d");
     await api.releaseIssue("awb-a/b", { assignee: "operator", force: true });
-    await api.moveIssue("awb-a/b", { project: "web", status: "open", after: "web-123" });
+    await api.moveIssue("awb-a/b", { epic: "awb-epic", status: "open", after: "awb-123" });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -227,7 +228,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
 
   assert.equal(requests[5].input, "api/issues/awb-a%2Fb/move");
   assert.equal(requests[5].init.method, "POST");
-  assert.deepEqual(JSON.parse(requests[5].init.body), { project: "web", status: "open", after: "web-123" });
+  assert.deepEqual(JSON.parse(requests[5].init.body), { epic: "awb-epic", status: "open", after: "awb-123" });
   assert.equal(new Headers(requests[5].init.headers).get("If-Match"), '"issue-version"');
 });
 

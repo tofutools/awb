@@ -550,31 +550,37 @@ and an inaccessible project is never disclosed by the editor.
 
 Named board views are stored beside that preference boundary but do not alter
 it. A view owns only reusable selection — projects, labels, assignees and a
-maximum priority — while each board read resolves its project swimlanes and
-status columns inside the viewer's normally scoped transaction. A shared URL
-can therefore render fewer lanes for a viewer with less access or a broader
+maximum priority — while each board read resolves status columns and swimlanes
+for visible epic issues inside the viewer's normally scoped transaction. The
+one **No epic** lane contains non-epic issues without a direct, same-project
+`has-parent` edge to an epic. Other decomposition parents do not silently
+become epic membership, and epic issues are lane headers rather than cards. A
+shared URL can therefore render fewer lanes for a viewer with less access or a broader
 ignore set, and returns only those visible project keys in its response. A
-boolean can say that some configured lanes were omitted without naming one or
+boolean can say that some configured workspaces were omitted without naming one or
 distinguishing authorization from preference.
 
 Views are personal resources rather than project resources. Their owner alone
 may change or delete them; administrative flags do not imply ownership. A
 shared view is unlisted and readable by stable URL, while listing returns only
 the current identity's views. The virtual default board is not stored. Board
-reads page project lanes and cards independently and report unpaged totals at
+reads page epic lanes and cards independently and report unpaged totals at
 both levels, so the browser never has to fetch the whole issue collection. The
 HTTP boundary defaults to ten lanes and fifty cards per column and refuses a
 limit above fifty; direct backend callers receive the same bounds. Deleting a
 selected project advances each affected view version before the foreign-key
-cascade changes its filter. A browser may fold project swimlanes locally; that
+cascade changes its filter. A browser may fold epic swimlanes locally; that
 presentation state is keyed by board reference and is not part of the shared
-view. One atomic move operation changes swimlane, status column and manual
-position while applying the same assignment rules as claim, release, close and
-reopen. Sparse integer ranks normally change only the dragged issue; placing
+view. One atomic move operation changes direct same-project epic membership,
+status column and manual position while applying the same assignment rules as
+claim, release, close and reopen. It can clear membership into No epic but can
+never change the issue's project-prefixed ID or workspace. Sparse integer ranks
+normally change only the dragged issue; placing
 relative to an automatic anchor ranks that explicit pair. Other automatic
 issues keep falling back to priority and recency, and ranked rows are
-rebalanced only when an insertion gap is exhausted. The regular list uses and edits this same
-order rather than maintaining a second board-only sequence.
+rebalanced only when an insertion gap is exhausted. A board rank is resolved
+inside its workspace, epic lane and status; regular lists edit the same rank
+inside one immutable workspace and reject a cross-workspace anchor.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated

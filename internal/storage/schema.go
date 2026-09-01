@@ -35,19 +35,6 @@ var migrations = [][]string{
 var schemaV11 = []string{
 	`ALTER TABLE issues ADD COLUMN board_order INTEGER NOT NULL DEFAULT 0 CHECK (board_order >= 0)`,
 	`CREATE INDEX idx_issues_board_order ON issues (board_order, priority, updated_at, id)`,
-	`CREATE TABLE issue_last_projects (
-		issue   TEXT PRIMARY KEY,
-		project TEXT NOT NULL
-	) STRICT`,
-	`INSERT INTO issue_last_projects (issue, project) SELECT id, project FROM issues`,
-	`CREATE TRIGGER issues_last_project_ai AFTER INSERT ON issues BEGIN
-		INSERT INTO issue_last_projects (issue, project) VALUES (new.id, new.project)
-		ON CONFLICT(issue) DO UPDATE SET project = excluded.project;
-	END`,
-	`CREATE TRIGGER issues_last_project_au AFTER UPDATE OF project ON issues BEGIN
-		INSERT INTO issue_last_projects (issue, project) VALUES (new.id, new.project)
-		ON CONFLICT(issue) DO UPDATE SET project = excluded.project;
-	END`,
 }
 
 // schemaV10 stores owner-scoped board filters. The owner is deliberately not

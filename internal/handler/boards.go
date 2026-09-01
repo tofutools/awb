@@ -130,6 +130,9 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 	if value, ok := params.Status.Get(); ok {
 		query.Status = domain.Status(value)
 	}
+	if value, ok := params.Epic.Get(); ok {
+		query.Epic = &value
+	}
 	board, err := h.backendFor(ctx).GetBoard(ctx, params.Ref, query)
 	if err != nil {
 		return nil, err
@@ -143,7 +146,10 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 		for j, column := range lane.Columns {
 			columns[j] = api.BoardColumn{Status: api.Status(column.Status), Issues: toIssues(column.Issues), Total: column.Total}
 		}
-		result.Lanes[i] = api.BoardLane{Project: toProject(&lane.Project), Columns: columns}
+		result.Lanes[i] = api.BoardLane{Columns: columns}
+		if lane.Epic != nil {
+			result.Lanes[i].Epic = api.NewOptIssue(toIssue(lane.Epic))
+		}
 	}
 	return result, nil
 }

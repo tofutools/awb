@@ -86,6 +86,17 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		c.add(`i.id IN (SELECT subject FROM relations
 		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)
 	}
+	if f.Epic != nil {
+		const directEpic = `EXISTS (
+			SELECT 1 FROM relations er JOIN issues epic ON epic.id = er.other
+			 WHERE er.subject = i.id AND er.type = 'has-parent'
+			   AND epic.type = 'epic' AND epic.project = i.project`
+		if *f.Epic == "" {
+			c.add("NOT " + directEpic + ")")
+		} else {
+			c.add(directEpic+" AND epic.id = ?)", *f.Epic)
+		}
+	}
 	if len(f.Labels) > 0 {
 		// Repeated --label is ORed, like every other repeated filter, so all of the
 		// values go into one IN clause rather than one EXISTS each.

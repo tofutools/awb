@@ -395,30 +395,41 @@ func newUpdateCommand(e *env) *cobra.Command {
 }
 
 type moveParams struct {
-	ID      string `positional:"true" required:"true"`
-	Project string `long:"project" required:"true" help:"target project"`
-	Status  string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
-	Before  string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
-	After   string `long:"after" optional:"true" help:"place immediately after this issue"`
+	ID     string `positional:"true" required:"true"`
+	Status string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
+	Epic   string `long:"epic" optional:"true" help:"set direct membership in this same-workspace epic"`
+	NoEpic bool   `long:"no-epic" optional:"true" help:"clear direct epic membership"`
+	Before string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
+	After  string `long:"after" optional:"true" help:"place immediately after this issue"`
 }
 
 func newMoveCommand(e *env) *cobra.Command {
 	return boa.CmdT[moveParams]{
 		Use: "move", Short: "Move and manually position an issue atomically",
-		Long: "Move an issue to a project/status cell and optionally place it before another issue.\n\n" +
-			"Its ID stays stable when the project changes. Status moves preserve the same\n" +
-			"assignment safety rules as claim, release, close and reopen.",
+		Long: "Move an issue to a workflow status and optionally a same-workspace epic.\n\n" +
+			"The workspace and ID never change. Status moves preserve the same assignment\n" +
+			"safety rules as claim, release, close and reopen.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
 			if p.Before != "" && p.After != "" {
 				return awberr.Usagef("--before and --after are mutually exclusive")
+			}
+			if p.Epic != "" && p.NoEpic {
+				return awberr.Usagef("--epic and --no-epic are mutually exclusive")
+			}
+			var epic *string
+			if p.Epic != "" {
+				epic = &p.Epic
+			} else if p.NoEpic {
+				empty := ""
+				epic = &empty
 			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
 				return err
 			}
 			issue, err := be.MoveIssue(cmd.Context(), p.ID, backend.IssueMove{
-				Project: p.Project, Status: domain.Status(p.Status), Before: p.Before, After: p.After,
+				Status: domain.Status(p.Status), Epic: epic, Before: p.Before, After: p.After,
 			}, "")
 			if err != nil {
 				return err

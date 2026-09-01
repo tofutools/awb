@@ -366,27 +366,76 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 			laneSelection = requested
 		}
-		projects, total, err := tx.ListBoardProjects(laneSelection, query.LaneLimit, query.LaneOffset)
-		if err != nil {
-			return err
+		laneLimit, laneOffset := *query.LaneLimit, 0
+		if query.LaneOffset != nil {
+			laneOffset = *query.LaneOffset
 		}
-		result.LaneTotal = total
+		laneEpics := []*domain.Issue{}
+		if query.Epic != nil {
+			result.LaneTotal = 1
+			if laneOffset == 0 && laneLimit > 0 {
+				if *query.Epic == "none" {
+					laneEpics = append(laneEpics, nil)
+				} else {
+					epic, err := load(tx, *query.Epic)
+					if err != nil {
+						return err
+					}
+					if epic.Type != domain.TypeEpic ||
+						(laneSelection != nil && !slices.Contains(laneSelection, epic.Project)) {
+						return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+					}
+					laneEpics = append(laneEpics, epic)
+				}
+			}
+		} else {
+			epicLimit, epicOffset := laneLimit, 0
+			if laneOffset > 0 {
+				epicOffset = laneOffset - 1
+			}
+			includeNoEpic := laneOffset == 0 && laneLimit > 0
+			if includeNoEpic {
+				epicLimit--
+			}
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, &epicLimit, &epicOffset)
+			if err != nil {
+				return err
+			}
+			result.LaneTotal = epicTotal + 1
+			if includeNoEpic {
+				laneEpics = append(laneEpics, nil)
+			}
+			for i := range epics {
+				laneEpics = append(laneEpics, &epics[i])
+			}
+		}
 		statuses := domain.Statuses
 		if query.Status != "" {
 			statuses = []domain.Status{query.Status}
 		}
-		for _, project := range projects {
-			lane := domain.BoardLane{Project: project, Columns: []domain.BoardColumn{}}
+		cardTypes := []domain.Type{domain.TypeFeature, domain.TypeBug, domain.TypeTask, domain.TypeChore}
+		for _, epic := range laneEpics {
+			lane := domain.BoardLane{Epic: epic, Columns: []domain.BoardColumn{}}
+			epicID := ""
+			projects := laneSelection
+			if epic != nil {
+				epicID = epic.ID
+				projects = []string{epic.Project}
+			}
 			for _, status := range statuses {
-				filter := &domain.Filter{Projects: []string{project.Key}, Statuses: []domain.Status{status},
-					Limit: query.CardLimit, Offset: query.CardOffset, Sort: domain.DefaultSort}
+				filter := &domain.Filter{Projects: projects, Types: cardTypes, Epic: &epicID,
+					Statuses: []domain.Status{status}, Limit: query.CardLimit,
+					Offset: query.CardOffset, Sort: domain.DefaultSort}
 				if view != nil {
 					filter.Labels = view.Labels
 					filter.Assignees = view.Assignees
 					max := view.PriorityMax
 					filter.PriorityMax = &max
 				}
-				issues, total, err := tx.ListIssues(filter)
+				issues, total, err := []domain.Issue{}, 0, error(nil)
+				if projects == nil || len(projects) > 0 {
+					issues, total, err = tx.ListIssues(filter)
+				}
 				if err != nil {
 					return err
 				}

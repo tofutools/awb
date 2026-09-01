@@ -146,28 +146,6 @@ func TestV11AddsAutomaticOrderWithoutChangingExistingIssues(t *testing.T) {
 		issue, readErr := tx.GetIssue("awb-123456")
 		require.NoError(t, readErr)
 		assert.Zero(t, issue.Order)
-		project, readErr := tx.IssueProject(issue.ID)
-		require.NoError(t, readErr)
-		assert.Equal(t, "awb", project)
-		return nil
-	}))
-	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
-		issue, readErr := tx.GetIssue("awb-123456")
-		if readErr != nil {
-			return readErr
-		}
-		fields := Fields(issue)
-		fields.Project = "web"
-		if updateErr := tx.UpdateIssue(issue, fields); updateErr != nil {
-			return updateErr
-		}
-		_, deleteErr := tx.DeleteIssue("awb-123456")
-		return deleteErr
-	}))
-	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
-		project, readErr := tx.IssueProject("awb-123456")
-		require.NoError(t, readErr)
-		assert.Equal(t, "web", project, "the moved-to project survives issue deletion for history privacy")
 		return nil
 	}))
 }

@@ -156,18 +156,6 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 		Type: domain.RelBlockedBy, Other: hidden.ID,
 	}, "")
 	require.NoError(t, err)
-	movedThenDeleted, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Moved secret"})
-	require.NoError(t, err)
-	_, err = root.AddRelation(ctx, visible.ID, backend.RelationRequest{
-		Type: domain.RelRelated, Other: movedThenDeleted.ID,
-	}, "")
-	require.NoError(t, err)
-	_, err = root.MoveIssue(ctx, movedThenDeleted.ID, backend.IssueMove{
-		Project: "web", Status: domain.StatusOpen,
-	}, "")
-	require.NoError(t, err)
-	_, err = root.DeleteIssue(ctx, movedThenDeleted.ID, "")
-	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
 	preference, err := bob.SetProjectIgnored(ctx, "web", true)
@@ -201,8 +189,6 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(encodedActivity), hidden.ID,
 		"historical relation snapshots must obey the current ignore boundary")
-	assert.NotContains(t, string(encodedActivity), movedThenDeleted.ID,
-		"a deleted issue is redacted by its retained moved-to project, not its origin ID")
 
 	labels, err := bob.LabelFacets(ctx, &domain.Filter{})
 	require.NoError(t, err)
@@ -231,6 +217,26 @@ func TestIgnoredProjectsAreScopedAndRecoverable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(encodedActivity), hidden.ID,
 		"re-enabling restores the historical relation snapshot")
+}
+
+func TestBoardMoveCannotSeeOrSelectAnInaccessibleEpic(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+	issue, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Visible work"})
+	require.NoError(t, err)
+	secret, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Secret epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+
+	secretID := secret.ID
+	_, err = root.WithUser("bob").MoveIssue(ctx, issue.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &secretID,
+	}, "")
+	notFound(t, err)
+	unchanged, err := root.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Empty(t, unchanged.Relations)
+	assert.Zero(t, unchanged.Order)
 }
 
 func TestDirectModeUsesAStoredIdentityPreference(t *testing.T) {

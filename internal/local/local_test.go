@@ -69,7 +69,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	// The first manual move ranks the dragged issue without touching unrelated
 	// automatic rows.
 	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen,
+		Status: domain.StatusOpen,
 	}, "")
 	require.NoError(t, err)
 	assert.Positive(t, third.Order)
@@ -84,7 +84,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	// neighbor's representation/ETag unchanged.
 	thirdTag := third.UpdatedAt
 	first, err = b.MoveIssue(ctx, first.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, Before: third.ID,
+		Status: domain.StatusOpen, Before: third.ID,
 	}, "")
 	require.NoError(t, err)
 	assert.Less(t, first.Order, third.Order)
@@ -93,7 +93,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	assert.Equal(t, thirdTag, thirdAgain.UpdatedAt)
 
 	second, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, After: first.ID,
+		Status: domain.StatusOpen, After: first.ID,
 	}, "")
 	require.NoError(t, err)
 	assert.Greater(t, second.Order, first.Order)
@@ -101,7 +101,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 
 	automatic := create(t, b, ctx, "automatic anchor")
 	third, err = b.MoveIssue(ctx, third.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, Before: automatic.ID,
+		Status: domain.StatusOpen, Before: automatic.ID,
 	}, "")
 	require.NoError(t, err)
 	automatic, err = b.GetIssue(ctx, automatic.ID)
@@ -113,39 +113,51 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 		"ranking an explicit automatic anchor records its stored-field mutation")
 
 	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, Before: first.ID, After: third.ID,
+		Status: domain.StatusOpen, Before: first.ID, After: third.ID,
 	}, "")
 	assert.Equal(t, 2, exitOf(err), "the two relative anchors are mutually exclusive")
 
-	// A swimlane/column move keeps the immutable origin ID and applies claim
-	// semantics atomically.
+	// Epic swimlane and status change together without changing workspace or ID.
+	epicOne := create(t, b, ctx, "Epic one", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwo := create(t, b, ctx, "Epic two", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwoID := epicTwo.ID
 	moved, err := b.MoveIssue(ctx, first.ID, backend.IssueMove{
-		Project: "web", Status: domain.StatusInProgress,
+		Status: domain.StatusInProgress, Epic: &epicTwoID,
 	}, backend.ETag(first.UpdatedAt))
 	require.NoError(t, err)
 	assert.Equal(t, first.ID, moved.ID)
-	assert.Equal(t, "web", moved.Project)
+	assert.Equal(t, "awb", moved.Project)
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Equal(t, []string{"mikael"}, moved.Assignees)
-	_, hash, ok := domain.SplitID(first.ID)
-	require.True(t, ok)
-	byHash, err := b.GetIssue(ctx, hash)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	noEpic := ""
+	moved, err = b.MoveIssue(ctx, moved.ID, backend.IssueMove{Status: domain.StatusInProgress, Epic: &noEpic}, "")
 	require.NoError(t, err)
-	assert.Equal(t, moved.ID, byHash.ID)
+	assert.NotContains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+	epicOneID := epicOne.ID
+	moved, err = b.MoveIssue(ctx, moved.ID, backend.IssueMove{Status: domain.StatusInProgress, Epic: &epicOneID}, "")
+	require.NoError(t, err)
+	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicOne.ID, Direction: domain.DirectionOut})
+
+	webIssue, err := b.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "other workspace"})
+	require.NoError(t, err)
+	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{Status: domain.StatusOpen, Before: webIssue.ID}, "")
+	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
 }
 
 func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.T) {
 	b, ctx := newBackend(t)
 	dragged := create(t, b, ctx, "ranked")
 	dragged, err := b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen,
+		Status: domain.StatusOpen,
 	}, "")
 	require.NoError(t, err)
 	draggedOrder := dragged.Order
 	automatic := create(t, b, ctx, "automatic anchor")
 
 	dragged, err = b.MoveIssue(ctx, dragged.ID, backend.IssueMove{
-		Project: "awb", Status: domain.StatusOpen, Before: automatic.ID,
+		Status: domain.StatusOpen, Before: automatic.ID,
 	}, "")
 	require.NoError(t, err)
 	assert.Equal(t, draggedOrder, dragged.Order,
@@ -159,6 +171,48 @@ func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.
 	require.NotEmpty(t, activity.Activity)
 	assert.Equal(t, "reordered", activity.Activity[0].Action,
 		"the anchor mutation is recorded even when the dragged issue is unchanged")
+}
+
+func TestMoveIssueGuardsEpicMembershipAndCellOrderingAtomically(t *testing.T) {
+	b, ctx := newBackend(t)
+	epicOne := create(t, b, ctx, "Epic one", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	epicTwo := create(t, b, ctx, "Epic two", func(req *backend.IssueCreate) { req.Type = domain.TypeEpic })
+	child := create(t, b, ctx, "Child", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: epicTwo.ID}}
+	})
+	peer := create(t, b, ctx, "Peer", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: epicTwo.ID}}
+	})
+
+	stale := backend.ETag(child.UpdatedAt)
+	changed := "Changed child"
+	child, err := b.UpdateIssue(ctx, child.ID, backend.IssuePatch{Title: &changed}, "")
+	require.NoError(t, err)
+	epicOneID := epicOne.ID
+	_, err = b.MoveIssue(ctx, child.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &epicOneID,
+	}, stale)
+	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+	child, err = b.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Contains(t, child.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	// The target anchor belongs to the old epic cell. Changing membership and
+	// ordering fails as one transaction, leaving the old relation intact.
+	_, err = b.MoveIssue(ctx, child.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Epic: &epicOneID, Before: peer.ID,
+	}, backend.ETag(child.UpdatedAt))
+	assert.Equal(t, 2, exitOf(err))
+	child, err = b.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Contains(t, child.Relations, domain.Relation{Type: domain.RelHasParent, Other: epicTwo.ID, Direction: domain.DirectionOut})
+
+	feature := create(t, b, ctx, "Feature parent", func(req *backend.IssueCreate) { req.Type = domain.TypeFeature })
+	nested := create(t, b, ctx, "Nested", func(req *backend.IssueCreate) {
+		req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: feature.ID}}
+	})
+	_, err = b.MoveIssue(ctx, nested.ID, backend.IssueMove{Status: domain.StatusOpen, Epic: &epicOneID}, "")
+	assert.Equal(t, 4, exitOf(err), "a board move never silently replaces a non-epic decomposition parent")
 }
 
 // Creating with an assignee is an atomic create-and-claim, so a new issue is

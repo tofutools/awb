@@ -55,7 +55,8 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	board, err := bob.GetBoard(ctx, shared.ID, backend.BoardQuery{})
 	require.NoError(t, err)
 	require.Len(t, board.Lanes, 1)
-	assert.Equal(t, "awb", board.Lanes[0].Project.Key)
+	assert.Nil(t, board.Lanes[0].Epic)
+	assert.Equal(t, "awb", board.Lanes[0].Columns[0].Issues[0].Project)
 	assert.True(t, board.ProjectsOmitted)
 	_, err = bob.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{}, "")
 	forbidden(t, err)
@@ -118,6 +119,52 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	assert.Len(t, second.Lanes[0].Columns[0].Issues, 1)
 }
 
+func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "alice", false, false)
+	grant(t, root, ctx, "awb", "alice", domain.AccessRegular)
+	visibleEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	child, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Parser child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: visibleEpic.ID}}})
+	require.NoError(t, err)
+	loose, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "awb", Title: "Loose work"})
+	require.NoError(t, err)
+	hiddenEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Secret epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Project: "web", Title: "Secret child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: hiddenEpic.ID}}})
+	require.NoError(t, err)
+
+	board, err := root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, board.LaneTotal, "No epic plus the one authorized epic")
+	require.Len(t, board.Lanes, 2)
+	assert.Nil(t, board.Lanes[0].Epic)
+	assert.Equal(t, loose.ID, board.Lanes[0].Columns[0].Issues[0].ID)
+	require.NotNil(t, board.Lanes[1].Epic)
+	assert.Equal(t, visibleEpic.ID, board.Lanes[1].Epic.ID)
+	assert.Equal(t, child.ID, board.Lanes[1].Columns[0].Issues[0].ID)
+	for _, lane := range board.Lanes {
+		for _, column := range lane.Columns {
+			for _, issue := range column.Issues {
+				assert.Equal(t, "awb", issue.Project)
+				assert.NotEqual(t, domain.TypeEpic, issue.Type, "epics are lane headers, not cards")
+			}
+		}
+	}
+
+	one := 1
+	specific, err := root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{
+		Epic: &visibleEpic.ID, LaneLimit: &one,
+	})
+	require.NoError(t, err)
+	require.Len(t, specific.Lanes, 1)
+	assert.Equal(t, visibleEpic.ID, specific.Lanes[0].Epic.ID)
+	_, err = root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{Epic: &hiddenEpic.ID})
+	notFound(t, err, "a lane-specific read must not disclose an inaccessible epic")
+}
+
 func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	root, ctx := newInstance(t)
 	for i := range 51 {
@@ -128,7 +175,7 @@ func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {
 	require.NoError(t, err)
 	var open domain.BoardColumn
 	for _, lane := range board.Lanes {
-		if lane.Project.Key == "awb" {
+		if lane.Epic == nil {
 			open = lane.Columns[0]
 		}
 	}

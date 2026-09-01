@@ -38,12 +38,13 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
 			assert.Equal(t, "open", r.URL.Query().Get("status"))
+			assert.Equal(t, "awb-epic", r.URL.Query().Get("epic"))
 			_, _ = w.Write([]byte(`{"lanes":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/issues/awb-123/move":
 			assert.Equal(t, `"issue-etag"`, r.Header.Get("If-Match"))
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"project":"web","status":"open","after":"web-456"}`, string(body))
+			assert.JSONEq(t, `{"status":"open","epic":"awb-epic","after":"awb-456"}`, string(body))
 			_, _ = w.Write([]byte(`{"id":"awb-123"}`))
 		default:
 			http.NotFound(w, r)
@@ -69,12 +70,12 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, id, created.ID)
 
-	laneLimit, cardOffset := 7, 3
+	laneLimit, cardOffset, epic := 7, 3, "awb-epic"
 	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
-		Projects: []string{"awb", "web"}, Status: domain.StatusOpen})
+		Projects: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
-		Project: "web", Status: domain.StatusOpen, After: "web-456",
+		Status: domain.StatusOpen, Epic: &epic, After: "awb-456",
 	}, `"issue-etag"`)
 	require.NoError(t, err)
 }

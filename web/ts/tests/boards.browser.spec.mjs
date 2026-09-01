@@ -26,18 +26,32 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.goto(`${baseURL}/#/boards`);
   await expect(page.getByRole("heading", { name: "Boards" })).toBeVisible();
   await expect(page.locator(".board-lane")).toHaveCount(2);
-  await expect(page.getByRole("heading", { name: "demo DEMO" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No epic" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /demo Ship the 1.0 release/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Open" }).first()).toBeVisible();
 
-  const demoLane = page.locator(".board-lane", { hasText: "DEMO" });
-  await demoLane.getByRole("button", { name: "Collapse DEMO swimlane" }).click();
-  await expect(demoLane.locator(".board-columns")).toBeHidden();
+  const releaseLane = page.locator(".board-lane", { hasText: "Ship the 1.0 release" });
+  await releaseLane.getByRole("button", { name: /Collapse Ship the 1.0 release.*swimlane/ }).click();
+  await expect(releaseLane.locator(".board-columns")).toBeHidden();
   await page.reload();
-  const persistedDemoLane = page.locator(".board-lane", { hasText: "DEMO" });
-  await expect(persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" })).toBeVisible();
-  await expect(persistedDemoLane.locator(".board-columns")).toBeHidden();
-  await persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" }).click();
-  await expect(persistedDemoLane.locator(".board-columns")).toBeVisible();
+  const persistedReleaseLane = page.locator(".board-lane", { hasText: "Ship the 1.0 release" });
+  await expect(persistedReleaseLane.getByRole("button", { name: /Expand Ship the 1.0 release.*swimlane/ })).toBeVisible();
+  await expect(persistedReleaseLane.locator(".board-columns")).toBeHidden();
+  await persistedReleaseLane.getByRole("button", { name: /Expand Ship the 1.0 release.*swimlane/ }).click();
+  await expect(persistedReleaseLane.locator(".board-columns")).toBeVisible();
+
+  const secondEpic = await page.evaluate(async () => {
+    const response = await fetch("api/issues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: "demo", title: "Platform epic", type: "epic" }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  });
+  expect(secondEpic.project).toBe("demo");
+  await page.reload();
+  await expect(page.locator(".board-lane")).toHaveCount(3);
 
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
@@ -48,34 +62,42 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.locator(".board-summary")).toContainText("Release train");
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
 
-  const webCard = page.locator(".board-card", { hasText: "Polish narrow board layout" });
-  await webCard.getByLabel(/Move web-/).selectOption("in_progress");
-  await expect(page.locator(".board-column[data-status='in_progress']", { hasText: "Polish narrow board layout" })).toBeVisible();
-
+  // Epic-to-epic, epic-to-No-epic, and No-epic-to-epic all preserve the
+  // immutable demo workspace while status and sparse position move atomically.
   const openCard = page.locator(".board-card", { hasText: "Build the full text search index" });
   const drag = openCard.getByLabel(/Drag demo-/);
-  const target = page.locator(".board-lane", { hasText: "DEMO" }).locator(".board-column[data-status='in_progress']");
-  await pointerDrag(page, drag, target);
-  await expect(page.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
+  const platformLane = page.locator(".board-lane", { hasText: "Platform epic" });
+  await pointerDrag(page, drag, platformLane.locator(".board-column[data-status='open']"));
+  await expect(platformLane.locator(".board-column[data-status='open']", { hasText: "Build the full text search index" })).toBeVisible();
 
-  // The same gesture moves between project swimlanes and places the card
-  // immediately before its target within the destination cell.
+  const noEpicLane = page.locator(".board-lane", { hasText: "No epic" });
+  await pointerDrag(page, platformLane.locator(".board-card", { hasText: "Build the full text search index" }).getByLabel(/Drag demo-/),
+    noEpicLane.locator(".board-column[data-status='in_progress']"));
+  await expect(noEpicLane.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
+
+  const currentReleaseLane = page.locator(".board-lane", { hasText: "Ship the 1.0 release" });
+  await pointerDrag(page, noEpicLane.locator(".board-card", { hasText: "Build the full text search index" }).getByLabel(/Drag demo-/),
+    currentReleaseLane.locator(".board-column[data-status='in_progress']"));
+  await expect(currentReleaseLane.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
+
+  // The same gesture reorders within one epic/status cell.
   const movedCard = page.locator(".board-card", { hasText: "Build the full text search index" });
-  const destinationCard = page.locator(".board-card", { hasText: "Polish narrow board layout" });
+  const destinationCard = page.locator(".board-card", { hasText: "Browse the widget catalogue" });
   await pointerDrag(page, movedCard.getByLabel(/Drag demo-/), destinationCard);
-  const webLane = page.locator(".board-lane", { hasText: "WEB" });
-  await expect(webLane.locator(".board-column[data-status='in_progress']", { hasText: "Build the full text search index" })).toBeVisible();
-  const webTitles = await webLane.locator(".board-column[data-status='in_progress'] .board-card .name .title").allTextContents();
-  expect(webTitles.indexOf("Build the full text search index")).toBeLessThan(webTitles.indexOf("Polish narrow board layout"));
+  const releaseTitles = await currentReleaseLane.locator(".board-column[data-status='in_progress'] .board-card .name .title").allTextContents();
+  expect(releaseTitles.indexOf("Build the full text search index")).toBeLessThan(releaseTitles.indexOf("Browse the widget catalogue"));
 
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
-  const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Polish narrow board layout" });
+  const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Browse the widget catalogue" });
   const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
-  await pointerDrag(page, sourceRow.getByLabel(/Drag web-.* to reorder/), targetRow);
+  const sourceHandle = sourceRow.getByLabel(/Drag demo-.* to reorder/);
+  await expect(sourceHandle).toBeVisible();
+  await expect(targetRow).toBeVisible();
+  await pointerDrag(page, sourceHandle, targetRow);
   await expect.poll(async () => {
     const rowTitles = await page.locator(".issue-table tbody tr .name .title").allTextContents();
-    return rowTitles.indexOf("Polish narrow board layout") < rowTitles.indexOf("Build the full text search index");
+    return rowTitles.indexOf("Browse the widget catalogue") < rowTitles.indexOf("Build the full text search index");
   }).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });

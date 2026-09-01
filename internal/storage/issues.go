@@ -58,22 +58,6 @@ func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
 	return issue, nil
 }
 
-// IssueProject returns the current, or last retained, project of an issue for
-// internal policy checks which already hold an issue ID. It deliberately does
-// not apply the transaction scope; callers must never return the value directly.
-func (t *Tx) IssueProject(id string) (string, error) {
-	var project string
-	err := t.q.QueryRowContext(t.ctx,
-		`SELECT project FROM issue_last_projects WHERE issue = ?`, id).Scan(&project)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", awberr.Wrap(awberr.Runtime, err, "read issue project")
-	}
-	return project, nil
-}
-
 // ResolveIssueRef turns a reference — a full ID, an ID prefix, or a bare hash
 // or hash prefix — into exactly one issue ID.
 //
@@ -97,13 +81,13 @@ func (t *Tx) ResolveIssueRef(ref domain.IssueRef) (string, error) {
 		// A bare hash matches on the hash part of any ID, in any project.
 		rows, err = t.q.QueryContext(t.ctx,
 			`SELECT id FROM issues
-			  WHERE substr(id, -6) LIKE ? || '%' AND `+visible+`
+			  WHERE substr(id, length(project) + 2) LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`, append([]any{ref.Hash}, scopeArgs...)...)
 	} else {
 		rows, err = t.q.QueryContext(t.ctx,
-			`SELECT id FROM issues WHERE id LIKE ? || '%' AND `+visible+`
+			`SELECT id FROM issues WHERE project = ? AND id LIKE ? || '%' AND `+visible+`
 			  ORDER BY id LIMIT 2`,
-			append([]any{ref.Project + "-" + ref.Hash}, scopeArgs...)...)
+			append([]any{ref.Project, ref.Project + "-" + ref.Hash}, scopeArgs...)...)
 	}
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "resolve issue %s", ref.Raw)
@@ -336,7 +320,6 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 // IssueFields are the stored fields an update may change.
 type IssueFields struct {
-	Project     string
 	Title       string
 	Description string
 	Type        domain.Type
@@ -349,7 +332,7 @@ type IssueFields struct {
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
-		Project: i.Project, Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
+		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
 		Priority: i.Priority, Order: i.Order, Assignees: slices.Clone(i.Assignees),
 	}
 }
@@ -362,7 +345,7 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		return err
 	}
 	before := Fields(issue)
-	if before.Project == fields.Project && before.Title == fields.Title && before.Description == fields.Description &&
+	if before.Title == fields.Title && before.Description == fields.Description &&
 		before.Type == fields.Type && before.Status == fields.Status &&
 		before.Priority == fields.Priority && before.Order == fields.Order &&
 		slices.Equal(before.Assignees, fields.Assignees) {
@@ -372,10 +355,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET project = ?, title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
+		   SET title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
 		       updated_at = ?
 		 WHERE id = ?`,
-		fields.Project, fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
+		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
 		updated, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
@@ -394,7 +377,6 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		}
 	}
 
-	issue.Project = fields.Project
 	issue.Title = fields.Title
 	issue.Description = fields.Description
 	issue.Type = fields.Type
@@ -414,16 +396,31 @@ type OrderChange struct {
 	From, To int
 }
 
-// ReorderIssue places issue relative to one visible global-order anchor, or at
-// the end of the manually ranked sequence when neither anchor is given. A
-// board sees the same relative order after filtering that sequence to one
-// project/status cell. Automatic rows are never mass-materialized: an
-// automatic anchor and the dragged issue join the end of the ranked sequence
-// as an adjacent pair. Ranked rows are re-spaced only when a gap is exhausted.
-func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string) ([]OrderChange, error) {
+// ReorderIssue places issue relative to an anchor in its immutable workspace.
+// A board additionally supplies destination status and epic so ranks cannot
+// cross cells; a regular list leaves both nil and orders within the workspace.
+func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string,
+	status *domain.Status, epic *string) ([]OrderChange, error) {
 	visible, args := t.visibleClause("project")
+	where := "project = ? AND " + visible
+	args = append([]any{issue.Project}, args...)
+	if status != nil {
+		where += " AND status = ?"
+		args = append(args, *status)
+	}
+	if epic != nil {
+		const directEpic = `EXISTS (SELECT 1 FROM relations er JOIN issues parent ON parent.id = er.other
+			WHERE er.subject = issues.id AND er.type = 'has-parent'
+			  AND parent.type = 'epic' AND parent.project = issues.project`
+		if *epic == "" {
+			where += " AND NOT " + directEpic + ")"
+		} else {
+			where += " AND " + directEpic + " AND parent.id = ?)"
+			args = append(args, *epic)
+		}
+	}
 	rows, err := t.q.QueryContext(t.ctx, `SELECT id, board_order, updated_at FROM issues
-		WHERE `+visible+
+		WHERE `+where+
 		` ORDER BY (board_order = 0) ASC, board_order ASC, priority ASC, updated_at DESC, id ASC`,
 		args...)
 	if err != nil {

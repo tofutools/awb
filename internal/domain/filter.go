@@ -171,6 +171,10 @@ type Filter struct {
 	// Parent selects the direct children of that issue — the issues whose
 	// has-parent relation names it — not the whole subtree.
 	Parent string
+	// Epic selects direct same-project membership in one epic. A non-nil empty
+	// value selects issues without such a membership. It is board-internal and
+	// is not exposed as a general listing filter.
+	Epic *string
 
 	// Terms are search's literal terms. Each is wrapped in double quotes before
 	// it reaches FTS5, so no operator, wildcard or column prefix is passed
