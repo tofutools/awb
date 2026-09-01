@@ -1,0 +1,45 @@
+import type { DirectoryUser, User } from "./api.js";
+
+/** An authenticated account needs user_admin to administer accounts. A null
+ * account is the documented open/no-auth bootstrap mode, where the backend is
+ * unrestricted and the first account can still be created from the UI. */
+export function mayAdministerUsers(account: User | null): boolean {
+  return account === null || account.user_admin;
+}
+
+export function userEditorHref(name: string): string {
+  return `#/users/${encodeURIComponent(name)}`;
+}
+
+export interface UserDeletionImpact {
+  memberships: number;
+  self: boolean;
+  lastUserAdministrator: boolean;
+}
+
+/** Deletion deliberately follows the backend's existing lifecycle semantics:
+ * it may remove the caller or the last user administrator. The typed-confirm
+ * UI uses these facts to make those recovery consequences explicit. */
+export function userDeletionImpact(
+  user: User,
+  directory: DirectoryUser[],
+  identity: string,
+): UserDeletionImpact {
+  return {
+    memberships: user.projects.length,
+    self: user.name === identity,
+    lastUserAdministrator: user.user_admin
+      && directory.filter((candidate) => candidate.user_admin).length === 1,
+  };
+}
+
+export function userDeletionWarning(user: User, impact: UserDeletionImpact): string {
+  const membership = impact.memberships === 1 ? "1 project membership" : `${impact.memberships} project memberships`;
+  const warnings = [`Deletes @${user.name} and ${membership}. Assigned issue history remains.`];
+  if (impact.self) warnings.push("You are deleting your own account and will be signed out.");
+  if (impact.lastUserAdministrator) {
+    warnings.push("This is the last user administrator; only direct database access can restore account administration.");
+  }
+  warnings.push("This cannot be undone.");
+  return warnings.join(" ");
+}

@@ -237,6 +237,7 @@ func TestPathsCoverTheWholeAPI(t *testing.T) {
 		"/api/ready", "/api/blocked", "/api/search",
 		"/api/projects", "/api/projects/{key}", "/api/projects/{key}/archive",
 		"/api/projects/{key}/restore", "/api/projects/{key}/activity",
+		"/api/users", "/api/users/{name}",
 		"/api/labels", "/api/assignees", "/api/identity",
 	} {
 		assert.Contains(t, paths, path)
