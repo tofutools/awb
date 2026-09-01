@@ -18,6 +18,7 @@ import {
   type Filters,
   type DirectoryUser,
   type Issue,
+  type IssueCreate,
   type IssueTree,
   type Membership,
   type Workspace,
@@ -154,6 +155,28 @@ function listingPageSize(query: URLSearchParams): number {
 interface IssueEditDraft {
   title: string;
   description: string;
+}
+
+interface IssueForm {
+  form: HTMLFormElement;
+  title: HTMLInputElement;
+  description: MarkdownEditor;
+  submit: HTMLButtonElement;
+  actions: HTMLElement;
+}
+
+interface IssueCreateDefaults {
+  workspace?: string;
+  epic?: Issue;
+  assignToMe?: boolean;
+}
+
+type NewIssueRelation = NonNullable<IssueCreate["relations"]>[number];
+
+interface StagedIssueResources {
+  element: HTMLElement;
+  relations: NewIssueRelation[];
+  attachments: Map<string, File>;
 }
 
 // Sidebar and resource edits save immediately and therefore rerender the
@@ -459,6 +482,266 @@ function select(values: readonly string[], current = ""): HTMLSelectElement {
     option.selected = value === current;
     control.append(option);
   }
+  return control;
+}
+
+/** Build the title and Markdown fields shared by issue creation and editing.
+ * Each caller owns its mutation behavior and any creation-only metadata. */
+function issueForm(
+  heading: string,
+  submitLabel: string,
+  titleValue: string,
+  descriptionValue: string,
+  className = "edit-panel",
+): IssueForm {
+  const form = element("form", className) as HTMLFormElement;
+  form.append(element("h2", "", heading));
+  const title = document.createElement("input");
+  title.name = "title";
+  title.value = titleValue;
+  title.required = true;
+  title.maxLength = 500;
+  const description = createMarkdownEditor(descriptionValue, "description", "Issue description (Markdown)");
+  const submit = element("button", "primary-button", submitLabel) as HTMLButtonElement;
+  submit.type = "submit";
+  const actions = element("div", "edit-actions");
+  form.append(field("Title", title), markdownField("Description (Markdown)", description), actions);
+  return { form, title, description, submit, actions };
+}
+
+function stagedIssueResources(epic?: Issue): StagedIssueResources {
+  const resources = element("div", "issue-create-resources");
+  const relations: NewIssueRelation[] = epic === undefined
+    ? []
+    : [{ type: "has-parent", other: epic.id }];
+  const attachments = new Map<string, File>();
+
+  const relationSection = element("section", "issue-create-resource");
+  relationSection.append(element("h3", "", "Relations"));
+  const relationList = element("ul", "relations resource-list issue-create-resource-list");
+  const renderRelations = (): void => {
+    relationList.replaceChildren();
+    for (const relation of relations) {
+      const row = element("li");
+      row.append(
+        element("span", "id", "New issue"),
+        element("span", "relation-type", relation.type),
+        element("span", "id", relation.other),
+      );
+      if (relation.other !== epic?.id || relation.type !== "has-parent") {
+        const remove = button("Remove", "inline-button danger-button");
+        remove.addEventListener("click", () => {
+          relations.splice(relations.indexOf(relation), 1);
+          renderRelations();
+        });
+        row.append(remove);
+      }
+      relationList.append(row);
+    }
+    relationList.hidden = relations.length === 0;
+  };
+  const disclosureRow = element("div", "relation-disclosure-row");
+  const disclose = button("", "relation-disclosure");
+  disclose.append(svgIcon("relation"), document.createTextNode("+ Add relation"));
+  disclosureRow.append(disclose, element("span", "relation-hint", "Create a dependency or association"));
+  const relationFields = element("div", "relation-fields");
+  relationFields.hidden = true;
+  const relationType = select(["blocked-by", "has-parent", "discovered-from", "related"]);
+  relationType.setAttribute("aria-label", "Relation type");
+  const other = document.createElement("input");
+  other.placeholder = "Other issue ID";
+  other.setAttribute("aria-label", "Other issue ID");
+  const otherAutocomplete = attachAutocomplete(other, async (query, signal) => {
+    const page = await api.issueSuggestions(query, signal);
+    return page.rows.map((candidate) => ({ value: candidate.id, label: candidate.id, detail: candidate.title }));
+  });
+  const addRelation = button("Add relation", "quiet-action");
+  relationFields.append(relationType, otherAutocomplete, addRelation);
+  disclose.addEventListener("click", () => {
+    disclosureRow.hidden = true;
+    relationFields.hidden = false;
+    other.focus();
+  });
+  addRelation.addEventListener("click", () => {
+    relationSection.querySelector(".edit-error")?.remove();
+    const target = other.value.trim();
+    if (target === "") {
+      mutationError(relationSection, new Error("Choose another issue."));
+      return;
+    }
+    const type = relationType.value as NewIssueRelation["type"];
+    if (relations.some((relation) => relation.type === type && relation.other === target)) {
+      mutationError(relationSection, new Error("That relation is already staged."));
+      return;
+    }
+    if (type === "has-parent" && relations.some((relation) => relation.type === "has-parent")) {
+      mutationError(relationSection, new Error("An issue can have only one parent."));
+      return;
+    }
+    relations.push({ type, other: target });
+    other.value = "";
+    relationFields.hidden = true;
+    disclosureRow.hidden = false;
+    renderRelations();
+  });
+  other.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.key !== "Enter") return;
+    event.preventDefault();
+    addRelation.click();
+  });
+  renderRelations();
+  relationSection.append(relationList, disclosureRow, relationFields);
+
+  const attachmentSection = element("section", "issue-create-resource");
+  attachmentSection.append(element("h3", "", "Attachments"));
+  const attachmentList = element("ul", "attachments resource-list issue-create-resource-list");
+  const renderAttachments = (): void => {
+    attachmentList.replaceChildren();
+    for (const selected of attachments.values()) {
+      const row = element("li");
+      row.append(
+        element("span", "name", selected.name),
+        element("span", "size", formatSize(selected.size)),
+        element("span", "content-type", selected.type || "application/octet-stream"),
+      );
+      const remove = button("Remove", "inline-button danger-button");
+      remove.addEventListener("click", () => {
+        attachments.delete(selected.name);
+        renderAttachments();
+      });
+      row.append(remove);
+      attachmentList.append(row);
+    }
+    attachmentList.hidden = attachments.size === 0;
+  };
+  const attachmentEditor = element("div", "compact-editor attachment-editor");
+  const file = document.createElement("input");
+  file.type = "file";
+  file.multiple = true;
+  file.className = "attachment-file-input";
+  file.setAttribute("aria-label", "Attachment files");
+  const picker = element("label", "attachment-picker") as HTMLLabelElement;
+  picker.append(svgIcon("attachment"), document.createTextNode("Drop files here or "), element("span", "attachment-browse", "browse"), file);
+  attachmentEditor.append(picker);
+  const stageFiles = (selected: FileList | File[]): void => {
+    for (const item of selected) attachments.set(item.name, item);
+    file.value = "";
+    renderAttachments();
+  };
+  file.addEventListener("change", () => { if (file.files !== null) stageFiles(file.files); });
+  attachmentEditor.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    attachmentEditor.classList.add("drag-active");
+  });
+  attachmentEditor.addEventListener("dragleave", () => attachmentEditor.classList.remove("drag-active"));
+  attachmentEditor.addEventListener("drop", (event) => {
+    event.preventDefault();
+    attachmentEditor.classList.remove("drag-active");
+    if (event.dataTransfer?.files !== undefined) stageFiles(event.dataTransfer.files);
+  });
+  renderAttachments();
+  attachmentSection.append(attachmentList, attachmentEditor);
+  resources.append(relationSection, attachmentSection);
+  return { element: resources, relations, attachments };
+}
+
+async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promise<void> {
+  const page = await api.workspaces();
+  const workspaces = page.rows.filter((workspace) => workspace.state !== "archived");
+  if (workspaces.length === 0) throw new Error("Create a workspace before creating an issue.");
+
+  const dialog = element("dialog", "issue-create-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "issue-create-heading");
+  const editor = issueForm("New issue", "Create issue", "", "", "issue-create-form");
+  editor.form.querySelector("h2")!.id = "issue-create-heading";
+
+  const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? defaults.epic?.workspace ?? workspaces[0].key);
+  workspace.name = "workspace";
+  const type = select(["task", "feature", "bug", "epic", "chore"], "task");
+  type.name = "type";
+  const priority = select(["0", "1", "2", "3", "4"], "2");
+  priority.name = "priority";
+  for (const option of priority.options) option.textContent = `P${option.value}`;
+  const metadata = element("div", "edit-field-row");
+  metadata.append(field("Workspace", workspace), field("Type", type), field("Priority", priority));
+  editor.form.insertBefore(metadata, editor.form.children[1]);
+  const staged = stagedIssueResources(defaults.epic);
+  editor.form.insertBefore(staged.element, editor.actions);
+
+  if (defaults.epic !== undefined) {
+    workspace.value = defaults.epic.workspace;
+    workspace.disabled = true;
+    editor.form.insertBefore(
+      element("p", "issue-create-context", `Epic: ${defaults.epic.id} · ${defaults.epic.title}`),
+      editor.form.children[1],
+    );
+  }
+
+  const assignLabel = element("label", "issue-create-assign");
+  const assign = document.createElement("input");
+  assign.type = "checkbox";
+  assign.checked = defaults.assignToMe === true;
+  assignLabel.append(assign, document.createTextNode(`Assign to me${identity === "" ? "" : ` (@${identity})`}`));
+  const cancel = button("Cancel");
+  editor.actions.append(assignLabel, cancel, editor.submit);
+  dialog.append(editor.form);
+  document.body.append(dialog);
+
+  cancel.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+  dialog.addEventListener("close", () => {
+    destroyMarkdownEditors(dialog);
+    dialog.remove();
+  }, { once: true });
+  editor.form.addEventListener("keydown", (event) => {
+    if (issueEditorShortcut(event) !== "save") return;
+    event.preventDefault();
+    editor.form.requestSubmit();
+  });
+  editor.form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    editor.submit.disabled = true;
+    const body: IssueCreate = {
+      workspace: workspace.value,
+      title: editor.title.value,
+      description: editor.description.textarea.value,
+      type: type.value as IssueCreate["type"],
+      priority: Number(priority.value) as IssueCreate["priority"],
+      ...(assign.checked && identity !== "" ? { assignees: [identity] } : {}),
+      ...(staged.relations.length === 0 ? {} : { relations: staged.relations }),
+    };
+    void api.createIssue(body).then(async (created) => {
+      const files = [...staged.attachments.values()];
+      const uploads = await Promise.allSettled(files.map((file) => api.addAttachment(created.id, file)));
+      const failed = uploads.flatMap((upload, index) => upload.status === "rejected"
+        ? [{ file: files[index], reason: upload.reason as unknown }]
+        : []);
+      if (failed.length > 0) {
+        pendingNotice = {
+          message: `Issue ${created.id} was created, but ${failed.length === 1 ? "an attachment" : `${failed.length} attachments`} could not be uploaded: ${failed.map(({ file, reason }) => `${file.name} (${reason instanceof Error ? reason.message : String(reason)})`).join(", ")}`,
+          error: true,
+        };
+      }
+      dialog.close();
+      location.hash = `#/issues/${created.id}`;
+    }).catch((error) => {
+      editor.submit.disabled = false;
+      mutationError(editor.form, error);
+    });
+  });
+  dialog.showModal();
+  activateMarkdownEditors(dialog);
+  editor.title.focus();
+}
+
+function issueCreateButton(label: string, defaults: IssueCreateDefaults = {}, className = "primary-button"): HTMLButtonElement {
+  const control = button(label, className);
+  control.addEventListener("click", () => {
+    control.disabled = true;
+    void openIssueCreateDialog(defaults).catch((error) => mutationError(app.querySelector("main") ?? app, error)).finally(() => {
+      control.disabled = false;
+    });
+  });
   return control;
 }
 
@@ -927,6 +1210,9 @@ function issueList(
   if (columns.some((column) => column.key === "updated")) {
     listingActions.append(mobileUpdatedDisplayControl());
   }
+  listingActions.append(issueCreateButton("New issue", {
+    workspace: route.query.getAll("workspace").length === 1 ? route.query.get("workspace") ?? undefined : undefined,
+  }));
   if (issues.length === 0) {
     tableHost.append(element("p", "empty", route.query.get("filter") === null
       ? emptyMessage : "No issues match this filter."));
@@ -1351,7 +1637,23 @@ function boardColumn(
   const title = element("h3", "", boardStatusLabel(column.status));
   title.id = headingID;
   const count = element("span", "board-column-count", String(column.total));
-  heading.append(title, count);
+  const columnActions = element("div", "board-column-actions");
+  columnActions.append(count);
+  if (column.status !== "closed") {
+    const quickCreate = issueCreateButton(
+      "+",
+      {
+        workspace: epic?.workspace ?? (selectedWorkspaces.length === 1 ? selectedWorkspaces[0] : undefined),
+        epic: epic ?? undefined,
+        assignToMe: column.status === "in_progress",
+      },
+      "board-column-create",
+    );
+    quickCreate.setAttribute("aria-label", `Create ${boardStatusLabel(column.status).toLowerCase()} issue in ${epic?.title ?? "No epic"}`);
+    quickCreate.title = column.status === "in_progress" ? "Create and assign to me" : "Create issue";
+    columnActions.append(quickCreate);
+  }
+  heading.append(title, columnActions);
   host.append(heading);
   const cards = element("div", "board-cards");
   const loadedIDs = new Set<string>();
@@ -1560,6 +1862,9 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   const heading = element("div", "board-heading");
   const title = element("div"); title.append(element("h1", "", "Boards"), element("p", "lede", "Move work through the existing awb workflow."));
   const actions = element("div", "board-view-actions");
+  actions.append(issueCreateButton("New issue", {
+    workspace: filters.workspace?.length === 1 ? filters.workspace[0] : undefined,
+  }));
   const pickerLabel = element("label"); pickerLabel.append(element("span", "", "View"));
   const picker = document.createElement("select"); picker.setAttribute("aria-label", "Board view");
   const option = (id: string, label: string): void => { const item = document.createElement("option"); item.value = id; item.textContent = label; item.selected = id === ref; picker.append(item); };
@@ -2797,46 +3102,34 @@ function issueRelationSection(issue: Issue): IssueResourceSection {
 }
 
 function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
-  const form = element("form", "edit-panel issue-edit-form") as HTMLFormElement;
-  form.append(element("h2", "", "Edit issue"));
-
-  const title = document.createElement("input");
-  title.name = "title";
-  title.value = draft?.title ?? issue.title;
-  title.required = true;
-  title.maxLength = 500;
-
-  const description = createMarkdownEditor(
+  const editor = issueForm(
+    "Edit issue",
+    "Save changes",
+    draft?.title ?? issue.title,
     draft?.description ?? issue.description,
-    "description",
-    "Issue description (Markdown)",
+    "edit-panel issue-edit-form",
   );
-
-  const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
-  save.type = "submit";
-  const actions = element("div", "edit-actions");
-  actions.append(
+  editor.actions.append(
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
-    save,
+    editor.submit,
   );
-  form.append(field("Title", title), markdownField("Description (Markdown)", description), actions);
   const rememberDraft = (): void => {
-    issueEditDrafts.set(issue.id, { title: title.value, description: description.textarea.value });
+    issueEditDrafts.set(issue.id, { title: editor.title.value, description: editor.description.textarea.value });
   };
-  title.addEventListener("input", rememberDraft);
-  description.textarea.addEventListener("input", rememberDraft);
-  form.addEventListener("submit", (event) => {
+  editor.title.addEventListener("input", rememberDraft);
+  editor.description.textarea.addEventListener("input", rememberDraft);
+  editor.form.addEventListener("submit", (event) => {
     event.preventDefault();
-    void mutate(form, [save], async () => {
+    void mutate(editor.form, [editor.submit], async () => {
       const updated = await api.updateIssue(issue.id, {
-        title: title.value,
-        description: description.textarea.value,
+        title: editor.title.value,
+        description: editor.description.textarea.value,
       });
       issueEditDrafts.delete(issue.id);
       return updated;
     });
   });
-  return form;
+  return editor.form;
 }
 
 function relationEditor(issueID: string): HTMLFormElement {

@@ -86,6 +86,70 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
+  const inProgressColumn = releaseLane.locator(".board-column[data-status='in_progress']");
+  const relatedID = await page.locator(".board-card").first().getAttribute("data-issue");
+  expect(relatedID).toBeTruthy();
+  await inProgressColumn.getByRole("button", { name: /Create in progress issue/ }).click();
+  const createDialog = page.getByRole("dialog", { name: "New issue" });
+  await expect(createDialog.getByLabel("Workspace")).toHaveValue("demo");
+  await expect(createDialog.getByLabel("Workspace")).toBeDisabled();
+  await expect(createDialog).toContainText("Epic:");
+  await expect(createDialog.getByText(/Assign to me/).locator("input")).toBeChecked();
+  await createDialog.getByLabel("Title").fill("Created from the board");
+  await createDialog.locator("select[name='type']").selectOption("feature");
+  await createDialog.getByLabel("Priority").selectOption("1");
+  await createDialog.getByRole("button", { name: /Add relation/ }).click();
+  await createDialog.getByLabel("Relation type").selectOption("related");
+  await createDialog.getByLabel("Other issue ID").fill(relatedID);
+  await createDialog.getByRole("button", { name: "Add relation", exact: true }).click();
+  await expect(createDialog.locator(".issue-create-resource-list.relations")).toContainText(relatedID);
+  await createDialog.getByLabel("Attachment files").setInputFiles({
+    name: "release-notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Ready to publish.\n"),
+  });
+  await expect(createDialog.locator(".issue-create-resource-list.attachments")).toContainText("release-notes.txt");
+  await createDialog.getByRole("button", { name: "Create issue" }).click();
+  await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
+  const createdID = page.url().split("/").at(-1);
+  const created = await page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()), createdID);
+  const caller = await page.evaluate(async () => (await (await fetch("api/identity")).json()).identity);
+  expect(created.type).toBe("feature");
+  expect(created.priority).toBe(1);
+  expect(created.relations.some((relation) => relation.type === "has-parent")).toBe(true);
+  expect(created.relations.some((relation) => relation.type === "related" && relation.other === relatedID)).toBe(true);
+  expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");
+  if (caller !== "") expect(created.assignees).toContain(caller);
+
+  // Creation waits for every staged upload before rendering the issue. A fast
+  // failure must not race navigation ahead of a slower successful upload.
+  await page.goto(`${baseURL}/#/issues`);
+  await page.getByRole("button", { name: "New issue" }).click();
+  const partialDialog = page.getByRole("dialog", { name: "New issue" });
+  await partialDialog.getByLabel("Title").fill("Partially uploaded issue");
+  await partialDialog.getByLabel("Attachment files").setInputFiles([
+    { name: "fails.txt", mimeType: "text/plain", buffer: Buffer.from("reject me\n") },
+    { name: "slow.txt", mimeType: "text/plain", buffer: Buffer.from("upload me\n") },
+  ]);
+  await page.route("**/api/issues/*/attachments?*", async (route) => {
+    const name = new URL(route.request().url()).searchParams.get("name");
+    if (name === "fails.txt") {
+      await route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"simulated upload failure"}' });
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await route.continue();
+  });
+  await partialDialog.getByRole("button", { name: "Create issue" }).click();
+  await expect(partialDialog.getByRole("button", { name: "Create issue" })).toBeDisabled();
+  await page.waitForTimeout(100);
+  await expect(page).toHaveURL(/#\/issues$/);
+  await expect(page).toHaveURL(/#\/issues\/demo-[0-9a-f]+$/);
+  await expect(page.locator(".app-notice-error")).toContainText("fails.txt (simulated upload failure)");
+  await expect(page.locator(".attachment-section")).toContainText("slow.txt");
+  await page.unroute("**/api/issues/*/attachments?*");
+  await page.goto(`${baseURL}/#/boards`);
+
   await releaseLane.getByRole("button", { name: /Collapse Ship the 1.0 release.*swimlane/ }).click();
   await expect(releaseLane.locator(".board-columns")).toBeHidden();
 	const initialNoEpicLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) });
@@ -247,6 +311,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
+  await expect(page.getByRole("button", { name: "New issue" })).toBeVisible();
   const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Browse the widget catalogue" });
   const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
   await expect(sourceRow).toBeVisible();

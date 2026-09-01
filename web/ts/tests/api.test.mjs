@@ -103,6 +103,33 @@ test("user administration creates and version-deletes accounts", async (t) => {
   assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v1"');
 });
 
+test("issue creation posts the complete atomic create body", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ id: "awb-created" }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  const body = {
+    workspace: "awb",
+    title: "Create tickets in the UI",
+    description: "Use the shared editor.",
+    type: "feature",
+    priority: 1,
+    assignees: ["alex"],
+    relations: [{ type: "has-parent", other: "awb-epic" }],
+  };
+  await api.createIssue(body);
+
+  assert.equal(calls[0].path, "api/issues");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
+  assert.deepEqual(JSON.parse(calls[0].init.body), body);
+});
+
 test("workspace preferences use their dedicated recovery endpoints", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {

@@ -39,6 +39,7 @@ export type MembershipAccess = Membership["access"];
 export type NavigationResults = components["schemas"]["NavigationResults"];
 export type UserPatch = components["schemas"]["UserPatch"];
 export type IssuePatch = components["schemas"]["IssuePatch"];
+export type IssueCreate = components["schemas"]["IssueCreate"];
 export type IssueMove = components["schemas"]["IssueMove"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
 export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
@@ -266,6 +267,7 @@ export const api = {
       body: JSON.stringify({ ignored }),
     })),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
+  createIssue: (body: IssueCreate) => postOne<Issue>("api/issues", body),
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
   moveIssue: (id: string, body: IssueMove) =>
