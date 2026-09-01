@@ -319,10 +319,11 @@ type IssuePatch struct {
 // membership, and sparse position. Project/workspace and issue ID are
 // immutable. A nil Epic preserves membership; a pointer to empty clears it.
 type IssueMove struct {
-	Status domain.Status
-	Epic   *string
-	Before string
-	After  string
+	Status    domain.Status
+	Epic      *string
+	Before    string
+	After     string
+	Direction string
 }
 
 // ProjectCreate is the body of awb project create and of POST /api/projects.

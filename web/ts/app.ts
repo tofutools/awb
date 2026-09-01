@@ -617,11 +617,9 @@ function issueTable(
   for (const issue of issues) {
     const row = document.createElement("tr");
     row.dataset.issue = issue.id;
-    const workspaceIssues = orderingEnabled ? issues.filter((candidate) => candidate.project === issue.project) : [];
-    const workspacePosition = workspaceIssues.findIndex((candidate) => candidate.id === issue.id);
-    const reorder = (anchor: { before?: string; after?: string }): void => {
+    const reorder = (direction: "earlier" | "later"): void => {
       row.classList.add("moving");
-      void api.moveIssue(issue.id, { status: issue.status, ...anchor }).then(() => render()).catch((error) => {
+      void api.moveIssue(issue.id, { status: issue.status, direction }).then(() => render()).catch((error) => {
         row.classList.remove("moving");
         mutationError(row, error);
       });
@@ -645,19 +643,11 @@ function issueTable(
         const earlier = button("↑", "secondary-button list-row-order-button");
         earlier.setAttribute("aria-label", `Move ${issue.id} earlier in workspace ${issue.project}`);
         earlier.title = "Move earlier in this workspace";
-        earlier.disabled = workspacePosition <= 0;
-        earlier.addEventListener("click", () => {
-          const previous = workspaceIssues[workspacePosition - 1];
-          if (previous !== undefined) reorder({ before: previous.id });
-        });
+        earlier.addEventListener("click", () => reorder("earlier"));
         const later = button("↓", "secondary-button list-row-order-button");
         later.setAttribute("aria-label", `Move ${issue.id} later in workspace ${issue.project}`);
         later.title = "Move later in this workspace";
-        later.disabled = workspacePosition < 0 || workspacePosition >= workspaceIssues.length - 1;
-        later.addEventListener("click", () => {
-          const next = workspaceIssues[workspacePosition + 1];
-          if (next !== undefined) reorder({ after: next.id });
-        });
+        later.addEventListener("click", () => reorder("later"));
         order.append(earlier, later);
         td.append(order);
       }
@@ -1069,6 +1059,7 @@ async function moveBoardIssue(
   target: BoardStatus,
   before = "",
   after = "",
+  direction: "" | "earlier" | "later" = "",
 ): Promise<void> {
   if (target === issue.status && (before === issue.id || after === issue.id)) return;
   if (!legalBoardTargets(issue, identity).includes(target)) {
@@ -1083,6 +1074,7 @@ async function moveBoardIssue(
       epic,
       ...(before === "" ? {} : { before }),
       ...(after === "" ? {} : { after }),
+      ...(direction === "" ? {} : { direction }),
     });
     await render();
   } catch (error) {
@@ -1151,18 +1143,12 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
   earlier.dataset.direction = "earlier";
   earlier.setAttribute("aria-label", `Move ${issue.id} earlier in this board cell`);
   earlier.title = "Move earlier in this board cell";
-  earlier.addEventListener("click", () => {
-    const previous = card.previousElementSibling as HTMLElement | null;
-    if (previous?.dataset.issue !== undefined) void moveBoardIssue(card, issue, epic, status, previous.dataset.issue);
-  });
+  earlier.addEventListener("click", () => void moveBoardIssue(card, issue, epic, status, "", "", "earlier"));
   const later = button("↓", "secondary-button board-card-order-button");
   later.dataset.direction = "later";
   later.setAttribute("aria-label", `Move ${issue.id} later in this board cell`);
   later.title = "Move later in this board cell";
-  later.addEventListener("click", () => {
-    const next = card.nextElementSibling as HTMLElement | null;
-    if (next?.dataset.issue !== undefined) void moveBoardIssue(card, issue, epic, status, "", next.dataset.issue);
-  });
+  later.addEventListener("click", () => void moveBoardIssue(card, issue, epic, status, "", "", "later"));
   order.append(earlier, later);
   move.append(epicLabel, statusLabel, order);
   card.append(move);
@@ -1187,13 +1173,19 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: Board
   return card;
 }
 
-function syncBoardCardOrder(cards: HTMLElement): void {
-  const rows = [...cards.querySelectorAll<HTMLElement>(":scope > .board-card")];
-  for (const [index, row] of rows.entries()) {
-    const earlier = row.querySelector<HTMLButtonElement>('[data-direction="earlier"]');
-    const later = row.querySelector<HTMLButtonElement>('[data-direction="later"]');
-    if (earlier !== null) earlier.disabled = index === 0;
-    if (later !== null) later.disabled = index === rows.length - 1;
+function syncBoardEpicChoices(root: HTMLElement, epics: BoardEpicChoice[], issuesByID: Map<string, Issue>): void {
+  for (const card of root.querySelectorAll<HTMLElement>(".board-card")) {
+    const issue = issuesByID.get(card.dataset.issue ?? "");
+    const select = card.querySelector<HTMLSelectElement>(".board-epic-select");
+    if (issue === undefined || select === null) continue;
+    const existing = new Set([...select.options].map((option) => option.value));
+    for (const choice of epics) {
+      if (choice.project !== issue.project || existing.has(choice.id)) continue;
+      const option = document.createElement("option");
+      option.value = choice.id;
+      option.textContent = choice.title;
+      select.append(option);
+    }
   }
 }
 
@@ -1226,7 +1218,6 @@ function boardColumn(
       issuesByID.set(issue.id, issue);
       cards.append(boardCard(issue, epicID, column.status, epics));
     }
-    syncBoardCardOrder(cards);
   };
   append(column.issues);
   if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
@@ -1462,6 +1453,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
           if (lane.epic !== undefined) epics.push({ id: lane.epic.id, project: lane.epic.project, title: lane.epic.title });
           lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics));
         }
+        syncBoardEpicChoices(lanes, epics, issuesByID);
         if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }
         if (loadedLanes.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
       }).catch((error) => { more.disabled = false; mutationError(view, error); });

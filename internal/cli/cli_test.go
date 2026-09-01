@@ -312,6 +312,8 @@ func TestMoveKeepsWorkspaceAndIDWhileChangingEpicAndPosition(t *testing.T) {
 	assert.Equal(t, "awb", moved.Project)
 	assert.Positive(t, moved.Order)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic, Direction: domain.DirectionOut})
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("move", id,
+		"--epic", epic, "--status", "open", "--direction", "later", "--json")), &moved))
 	_, stderr, code := h.run("move", id, "--project", "web", "--status", "open")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "unknown flag: --project", "the CLI exposes no workspace transfer")

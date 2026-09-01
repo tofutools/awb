@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -171,6 +172,37 @@ func TestMoveIssueRecordsAnAutomaticAnchorWhenDraggedRankIsUnchanged(t *testing.
 	require.NotEmpty(t, activity.Activity)
 	assert.Equal(t, "reordered", activity.Activity[0].Action,
 		"the anchor mutation is recorded even when the dragged issue is unchanged")
+}
+
+func TestMoveDirectionUsesTheTransactionTimeWorkspaceOrder(t *testing.T) {
+	b, ctx := newBackend(t)
+	for i := range 26 {
+		create(t, b, ctx, fmt.Sprintf("paged %02d", i))
+	}
+	limit, firstOffset, secondOffset := 25, 0, 25
+	firstPage, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &limit, Offset: &firstOffset})
+	require.NoError(t, err)
+	secondPage, err := b.ListIssues(ctx, &domain.Filter{Sort: domain.DefaultSort, Limit: &limit, Offset: &secondOffset})
+	require.NoError(t, err)
+	require.Len(t, firstPage.Issues, 25)
+	require.Len(t, secondPage.Issues, 1)
+	anchor := firstPage.Issues[24]
+	moving := secondPage.Issues[0]
+
+	moved, err := b.MoveIssue(ctx, moving.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Direction: "earlier",
+	}, "")
+	require.NoError(t, err)
+	assert.Positive(t, moved.Order)
+	anchorAfter, err := b.GetIssue(ctx, anchor.ID)
+	require.NoError(t, err)
+	assert.Less(t, moved.Order, anchorAfter.Order,
+		"direction resolves the neighbor outside the caller's visible offset page")
+
+	_, err = b.MoveIssue(ctx, moving.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Direction: "earlier", Before: anchor.ID,
+	}, "")
+	assert.Equal(t, 2, exitOf(err))
 }
 
 func TestMoveIssueGuardsEpicMembershipAndCellOrderingAtomically(t *testing.T) {

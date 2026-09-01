@@ -257,10 +257,11 @@ paths:
       description: |
         Places the issue in a workflow status and optional direct same-project
         epic, immediately before or after one anchor in the same ordering
-        scope; the two anchors are mutually exclusive. Omitting both appends it
-        to that manually ranked sequence. Project/workspace and issue ID are
-        immutable. Status changes apply the same assignment safety rules as
-        claim, release, close and reopen.
+        scope, or one transaction-time place earlier/later without requiring a
+        visible anchor. These position choices are mutually exclusive. Omitting
+        all of them appends it to that manually ranked sequence. Project/workspace
+        and issue ID are immutable. Status changes apply the same assignment
+        safety rules as claim, release, close and reopen.
       requestBody:
         required: true
         content:
@@ -2322,6 +2323,10 @@ components:
         after:
           type: string
           description: A visible anchor in the destination ordering scope.
+        direction:
+          type: string
+          enum: [earlier, later]
+          description: Move one place in the transaction-time destination scope.
 
     ClaimRequest:
       type: object

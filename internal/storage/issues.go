@@ -399,7 +399,7 @@ type OrderChange struct {
 // ReorderIssue places issue relative to an anchor in its immutable workspace.
 // A board additionally supplies destination status and epic so ranks cannot
 // cross cells; a regular list leaves both nil and orders within the workspace.
-func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string,
+func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction string,
 	status *domain.Status, epic *string) ([]OrderChange, error) {
 	visible, args := t.visibleClause("project")
 	where := "project = ? AND " + visible
@@ -431,16 +431,14 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string,
 		order   int
 		updated string
 	}
-	var current []ordered
+	var orderedRows []ordered
 	for rows.Next() {
 		var row ordered
 		if err := rows.Scan(&row.id, &row.order, &row.updated); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if row.id != issue.ID {
-			current = append(current, row)
-		}
+		orderedRows = append(orderedRows, row)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -448,6 +446,38 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID string,
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
+	}
+	if direction != "" {
+		position := -1
+		for i := range orderedRows {
+			if orderedRows[i].id == issue.ID {
+				position = i
+				break
+			}
+		}
+		if position < 0 {
+			return nil, awberr.Usagef("the issue is not visible in its ordering scope")
+		}
+		switch direction {
+		case "earlier":
+			if position == 0 {
+				return nil, nil
+			}
+			beforeID = orderedRows[position-1].id
+		case "later":
+			if position == len(orderedRows)-1 {
+				return nil, nil
+			}
+			afterID = orderedRows[position+1].id
+		default:
+			return nil, awberr.Usagef("direction must be earlier or later")
+		}
+	}
+	var current []ordered
+	for _, row := range orderedRows {
+		if row.id != issue.ID {
+			current = append(current, row)
+		}
 	}
 	var changes []OrderChange
 	write := func(row *ordered, want int) error {

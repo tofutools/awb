@@ -395,12 +395,13 @@ func newUpdateCommand(e *env) *cobra.Command {
 }
 
 type moveParams struct {
-	ID     string `positional:"true" required:"true"`
-	Status string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
-	Epic   string `long:"epic" optional:"true" help:"set direct membership in this same-workspace epic"`
-	NoEpic bool   `long:"no-epic" optional:"true" help:"clear direct epic membership"`
-	Before string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
-	After  string `long:"after" optional:"true" help:"place immediately after this issue"`
+	ID        string `positional:"true" required:"true"`
+	Status    string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
+	Epic      string `long:"epic" optional:"true" help:"set direct membership in this same-workspace epic"`
+	NoEpic    bool   `long:"no-epic" optional:"true" help:"clear direct epic membership"`
+	Before    string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`
+	After     string `long:"after" optional:"true" help:"place immediately after this issue"`
+	Direction string `long:"direction" optional:"true" alts:"earlier,later" help:"move one place in the transaction-time ordering scope"`
 }
 
 func newMoveCommand(e *env) *cobra.Command {
@@ -411,8 +412,14 @@ func newMoveCommand(e *env) *cobra.Command {
 			"safety rules as claim, release, close and reopen.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *moveParams, cmd *cobra.Command, _ []string) error {
-			if p.Before != "" && p.After != "" {
-				return awberr.Usagef("--before and --after are mutually exclusive")
+			anchors := 0
+			for _, set := range []bool{p.Before != "", p.After != "", p.Direction != ""} {
+				if set {
+					anchors++
+				}
+			}
+			if anchors > 1 {
+				return awberr.Usagef("--before, --after and --direction are mutually exclusive")
 			}
 			if p.Epic != "" && p.NoEpic {
 				return awberr.Usagef("--epic and --no-epic are mutually exclusive")
@@ -430,6 +437,7 @@ func newMoveCommand(e *env) *cobra.Command {
 			}
 			issue, err := be.MoveIssue(cmd.Context(), p.ID, backend.IssueMove{
 				Status: domain.Status(p.Status), Epic: epic, Before: p.Before, After: p.After,
+				Direction: p.Direction,
 			}, "")
 			if err != nil {
 				return err

@@ -49,10 +49,11 @@ type issuePatchBody struct {
 }
 
 type issueMoveBody struct {
-	Status domain.Status `json:"status"`
-	Epic   *string       `json:"epic,omitempty"`
-	Before string        `json:"before,omitempty"`
-	After  string        `json:"after,omitempty"`
+	Status    domain.Status `json:"status"`
+	Epic      *string       `json:"epic,omitempty"`
+	Before    string        `json:"before,omitempty"`
+	After     string        `json:"after,omitempty"`
+	Direction string        `json:"direction,omitempty"`
 }
 
 type claimBody struct {
@@ -260,7 +261,8 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
 	ifMatch string) (*domain.Issue, error) {
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/move",
-		issueMoveBody{Status: req.Status, Epic: req.Epic, Before: req.Before, After: req.After}, ifMatch)
+		issueMoveBody{Status: req.Status, Epic: req.Epic, Before: req.Before, After: req.After,
+			Direction: req.Direction}, ifMatch)
 }
 
 func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backend.DeletedIssue, error) {

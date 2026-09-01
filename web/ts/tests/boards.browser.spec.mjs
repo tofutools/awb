@@ -110,6 +110,17 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/#/boards`);
   await expect(page.locator(".board-columns").first()).toHaveCSS("overflow-x", "auto");
+  await page.evaluate(async () => {
+    for (let index = 0; index < 10; index++) {
+      const response = await fetch("api/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: "demo", title: `Overflow epic ${index}`, type: "epic" }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+    }
+  });
+  await page.reload();
   const responsiveCard = page.locator(".board-card", { hasText: "Build the full text search index" });
   await expect(responsiveCard.getByLabel(/Drag demo-/)).toBeHidden();
   const keyboardBoardOrder = responsiveCard.locator(".board-card-order-button:not([disabled])").first();
@@ -119,14 +130,36 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.keyboard.press("Enter");
   await boardOrderResponse;
   const reorderedCard = page.locator(".board-card", { hasText: "Build the full text search index" });
-  await reorderedCard.getByLabel(/Epic for demo-/).selectOption(secondEpic.id);
-  await expect(platformLane.locator(".board-card", { hasText: "Build the full text search index" })).toBeVisible();
+  const epicControl = reorderedCard.getByLabel(/Epic for demo-/);
+  const initialEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
+  await page.getByRole("button", { name: /Load up to .* more epics/ }).click();
+  await expect.poll(async () => epicControl.locator("option").count()).toBeGreaterThan(initialEpicValues.length);
+  const loadedEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
+  const pagedEpic = loadedEpicValues.find((value) => !initialEpicValues.includes(value));
+  expect(pagedEpic).toBeTruthy();
+  const movedID = await reorderedCard.getAttribute("data-issue");
+  await reorderedCard.getByLabel(/Epic for demo-/).selectOption(pagedEpic);
+  await expect.poll(async () => page.evaluate(async ({ id, epic }) => {
+    const issue = await (await fetch(`api/issues/${id}`)).json();
+    return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
+  }, { id: movedID, epic: pagedEpic })).toBe(true);
 
-  await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
-  const keyboardOrder = page.locator('button[aria-label^="Move demo-"][aria-label$="earlier in workspace demo"]:not([disabled])').first();
+  await page.evaluate(async () => {
+    for (let index = 0; index < 5; index++) {
+      const response = await fetch("api/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: "demo", title: `Pagination task ${index}`, type: "task" }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+    }
+  });
+  await page.goto(`${baseURL}/#/issues?include-closed=true&size=25&page=2`);
+  const keyboardOrder = page.locator('.issue-table tbody tr').first().getByRole("button", { name: /earlier in workspace demo/ });
   await expect(keyboardOrder).toBeEnabled();
   const listOrderResponse = page.waitForResponse((response) => response.url().includes("/move") && response.request().method() === "POST");
   await keyboardOrder.focus();
   await page.keyboard.press("Enter");
-  await listOrderResponse;
+  const listMove = await listOrderResponse;
+  expect(listMove.request().postDataJSON().direction).toBe("earlier");
 });

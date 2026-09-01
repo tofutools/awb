@@ -581,7 +581,10 @@ relative to an automatic anchor ranks that explicit pair. Other automatic
 issues keep falling back to priority and recency, and ranked rows are
 rebalanced only when an insertion gap is exhausted. A board rank is resolved
 inside its workspace, epic lane and status; regular lists edit the same rank
-inside one immutable workspace and reject a cross-workspace anchor.
+inside one immutable workspace and reject a cross-workspace anchor. Accessible
+earlier/later actions resolve their neighbor from that whole scope inside the
+write transaction, so filtering and offset pagination do not turn the visible
+page boundary into an ordering boundary.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated

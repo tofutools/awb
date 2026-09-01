@@ -108,7 +108,7 @@ func (h *Handler) MoveIssue(ctx context.Context, req *api.IssueMove,
 	params api.MoveIssueParams) (*api.IssueHeaders, error) {
 	issue, err := h.backendFor(ctx).MoveIssue(ctx, params.ID, backend.IssueMove{
 		Status: domain.Status(req.Status), Epic: optString(req.Epic),
-		Before: req.Before.Or(""), After: req.After.Or(""),
+		Before: req.Before.Or(""), After: req.After.Or(""), Direction: string(req.Direction.Or("")),
 	}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err

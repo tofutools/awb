@@ -289,8 +289,17 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 	if err != nil {
 		return nil, err
 	}
-	if req.Before != "" && req.After != "" {
-		return nil, awberr.Usagef("before and after are mutually exclusive")
+	positions := 0
+	for _, set := range []bool{req.Before != "", req.After != "", req.Direction != ""} {
+		if set {
+			positions++
+		}
+	}
+	if positions > 1 {
+		return nil, awberr.Usagef("before, after and direction are mutually exclusive")
+	}
+	if req.Direction != "" && req.Direction != "earlier" && req.Direction != "later" {
+		return nil, awberr.Usagef("direction must be earlier or later")
 	}
 	var result *domain.Issue
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
@@ -417,7 +426,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		if req.Epic != nil || status != before.Status {
 			scopeStatus, scopeEpic = &status, &destinationEpic
 		}
-		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID, scopeStatus, scopeEpic)
+		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID, req.Direction, scopeStatus, scopeEpic)
 		if err != nil {
 			return err
 		}
