@@ -11,6 +11,17 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "demo DEMO" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Open" }).first()).toBeVisible();
 
+  const demoLane = page.locator(".board-lane", { hasText: "DEMO" });
+  await demoLane.getByRole("button", { name: "Collapse DEMO swimlane" }).click();
+  await expect(demoLane.locator(".board-columns")).toBeHidden();
+  await page.reload();
+  const persistedDemoLane = page.locator(".board-lane", { hasText: "DEMO" });
+  await expect(persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" })).toBeVisible();
+  await expect(persistedDemoLane.locator(".board-columns")).toBeHidden();
+  await page.screenshot({ path: "screenshots/board-views-collapsed.png", fullPage: true });
+  await persistedDemoLane.getByRole("button", { name: "Expand DEMO swimlane" }).click();
+  await expect(persistedDemoLane.locator(".board-columns")).toBeVisible();
+
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
   await dialog.getByLabel("Name").fill("Release train");

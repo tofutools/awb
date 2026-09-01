@@ -971,6 +971,23 @@ function boardStatusLabel(status: BoardStatus): string {
   return status[0].toUpperCase() + status.slice(1);
 }
 
+function boardLaneCollapseKey(ref: string): string {
+  return `awb.board.${ref}.collapsed-lanes`;
+}
+
+function collapsedBoardLanes(ref: string): Set<string> {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(boardLaneCollapseKey(ref)) ?? "[]");
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedBoardLanes(ref: string, projects: Set<string>): void {
+  try { localStorage.setItem(boardLaneCollapseKey(ref), JSON.stringify([...projects].sort())); } catch { /* presentation state is best-effort */ }
+}
+
 async function moveBoardIssue(host: HTMLElement, issue: Issue, target: BoardStatus): Promise<void> {
   if (target === issue.status) return;
   if (!legalBoardTargets(issue, identity).includes(target)) {
@@ -1108,15 +1125,37 @@ function boardLane(ref: string, lane: Board["lanes"][number], issuesByID: Map<st
   const headingID = `board-lane-${lane.project.key}`;
   host.setAttribute("aria-labelledby", headingID);
   const heading = element("header", "board-lane-heading");
-  const name = element("div");
+  const name = element("div", "board-lane-name");
   const title = element("h2");
   title.id = headingID;
   title.append(element("code", "", lane.project.key), document.createTextNode(` ${lane.project.name}`));
   name.append(title);
   const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
-  heading.append(name, element("span", "", `${total} issue${total === 1 ? "" : "s"}`));
+  const meta = element("div", "board-lane-meta");
+  meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
   const columns = element("div", "board-columns");
+  columns.id = `board-lane-columns-${lane.project.key}`;
   for (const column of lane.columns) columns.append(boardColumn(ref, lane.project.key, column, issuesByID));
+  const collapsed = collapsedBoardLanes(ref);
+  let isCollapsed = collapsed.has(lane.project.key);
+  const toggle = button("", "secondary-button board-lane-toggle");
+  toggle.setAttribute("aria-controls", columns.id);
+  const sync = (): void => {
+    columns.hidden = isCollapsed;
+    host.classList.toggle("collapsed", isCollapsed);
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    toggle.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${lane.project.name} swimlane`);
+    toggle.textContent = isCollapsed ? "▸ Expand" : "▾ Collapse";
+  };
+  toggle.addEventListener("click", () => {
+    isCollapsed = !isCollapsed;
+    if (isCollapsed) collapsed.add(lane.project.key); else collapsed.delete(lane.project.key);
+    saveCollapsedBoardLanes(ref, collapsed);
+    sync();
+  });
+  meta.append(toggle);
+  heading.append(name, meta);
+  sync();
   host.append(heading, columns);
   return host;
 }

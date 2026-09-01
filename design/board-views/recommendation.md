@@ -149,6 +149,12 @@ roughly the viewport width. The column heading and count remain visible, cards
 use the explicit Move control, and project lanes stay vertically stacked.
 There is no miniature three-column layout with unreadable cards.
 
+Each swimlane is also a disclosure region. Its header keeps the project and
+issue count visible while its status columns are folded, and the browser
+remembers that presentation choice separately for each board. Folding is not
+part of the saved or shared view, so one viewer's workspace does not change
+another's.
+
 The view/configuration controls wrap into full-width rows. Shared-state and
 hidden-lane notices remain text, not icon-only affordances. Empty states exist
 at three levels: no authorized projects, no projects matching the saved view,

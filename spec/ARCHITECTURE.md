@@ -565,8 +565,10 @@ both levels, so the browser never has to fetch the whole issue collection. The
 HTTP boundary defaults to ten lanes and fifty cards per column and refuses a
 limit above fifty; direct backend callers receive the same bounds. Deleting a
 selected project advances each affected view version before the foreign-key
-cascade changes its filter. Moves use claim, release, close and reopen rather
-than a second status-update path, preserving the status/assignment invariant.
+cascade changes its filter. A browser may fold project swimlanes locally; that
+presentation state is keyed by board reference and is not part of the shared
+view. Moves use claim, release, close and reopen rather than a second
+status-update path, preserving the status/assignment invariant.
 
 The user directory follows the same boundary without pretending that a person
 belongs to only one project. A member sees current accounts that participated
