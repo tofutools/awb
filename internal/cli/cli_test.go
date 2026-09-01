@@ -349,7 +349,6 @@ func TestPersistentFlagsWorkBeforeAndAfterSubcommands(t *testing.T) {
 	)
 }
 
-// Two invocations against unchanged data produce byte-identical output.
 // The CLI offers exactly the orderings the API declares. The two surfaces are
 // meant to be one vocabulary, and they were not: --sort accepted four of the
 // nine issue keys and awb project list accepted none at all, because the flag
@@ -403,6 +402,7 @@ func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
 		"the project listing")
 }
 
+// Two invocations against unchanged data produce byte-identical output.
 func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
 	for i := range 5 {
