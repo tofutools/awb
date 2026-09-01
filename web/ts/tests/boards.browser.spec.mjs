@@ -129,7 +129,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
     }
   });
   await page.reload();
-  const responsiveCard = page.locator(".board-card", { hasText: "Build the full text search index" });
+  const responsiveCard = page.locator(".board-card").first();
   await expect(responsiveCard.getByLabel(/Drag demo-/)).toBeHidden();
   const keyboardBoardOrder = responsiveCard.locator(".board-card-order-button:not([disabled])").first();
   await expect(keyboardBoardOrder).toBeEnabled();

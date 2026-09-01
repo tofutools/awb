@@ -161,15 +161,21 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 		}
 	}
 
-	one := 1
+	zero, one := 0, 1
 	specific, err := root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{
 		Epic: &visibleEpic.ID, LaneLimit: &one,
 	})
 	require.NoError(t, err)
 	require.Len(t, specific.Lanes, 1)
 	assert.Equal(t, visibleEpic.ID, specific.Lanes[0].Epic.ID)
-	_, err = root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{Epic: &hiddenEpic.ID})
-	notFound(t, err, "a lane-specific read must not disclose an inaccessible epic")
+	for _, query := range []backend.BoardQuery{
+		{Epic: &hiddenEpic.ID},
+		{Epic: &hiddenEpic.ID, LaneLimit: &zero},
+		{Epic: &hiddenEpic.ID, LaneOffset: &one},
+	} {
+		_, err = root.WithUser("alice").GetBoard(ctx, "default", query)
+		notFound(t, err, "pagination must not bypass explicit epic validation")
+	}
 }
 
 func TestBoardAppliesServerSidePageBoundsWhenLimitsAreOmitted(t *testing.T) {

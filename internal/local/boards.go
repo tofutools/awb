@@ -385,24 +385,23 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		laneEpics := []*domain.Issue{}
 		if query.Epic != nil {
 			result.LaneTotal = 1
-			if laneOffset == 0 && laneLimit > 0 {
-				if *query.Epic == "none" {
-					laneEpics = append(laneEpics, nil)
-				} else {
-					epic, err := load(tx, *query.Epic)
-					if err != nil {
-						return err
-					}
-					active, err := tx.ActiveProjectExists(epic.Project)
-					if err != nil {
-						return err
-					}
-					if !active || epic.Type != domain.TypeEpic ||
-						(laneSelection != nil && !slices.Contains(laneSelection, epic.Project)) {
-						return awberr.NotFoundf("no such board epic: %s", *query.Epic)
-					}
-					laneEpics = append(laneEpics, epic)
+			var epic *domain.Issue
+			if *query.Epic != "none" {
+				epic, err = load(tx, *query.Epic)
+				if err != nil {
+					return err
 				}
+				active, err := tx.ActiveProjectExists(epic.Project)
+				if err != nil {
+					return err
+				}
+				if !active || epic.Type != domain.TypeEpic ||
+					(laneSelection != nil && !slices.Contains(laneSelection, epic.Project)) {
+					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+				}
+			}
+			if laneOffset == 0 && laneLimit > 0 {
+				laneEpics = append(laneEpics, epic)
 			}
 		} else {
 			epicLimit, epicOffset := laneLimit, 0
