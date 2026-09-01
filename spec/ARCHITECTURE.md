@@ -486,9 +486,9 @@ stays one file. Third-party browser code is committed pre-built; no package
 manager runs at build time.
 
 Issue and project descriptions use the same CodeMirror 6 Markdown editor. Its
-browser bundle is vendored alongside the rendering libraries, and a hidden
-textarea mirrors the document so the surrounding forms retain ordinary form
-semantics.
+browser bundle is vendored alongside the rendering libraries and loaded only
+when an edit form opens. A hidden textarea mirrors the current document for the
+surrounding form code.
 
 The command palette is an extensible registry of named destinations and
 backend-provided record results. The browser debounces its requests and aborts

@@ -51,7 +51,12 @@ import {
   type PaletteCommand,
 } from "./command-palette.js";
 import { renderMarkdown } from "./markdown.js";
-import { createMarkdownEditor } from "./markdown-editor.js";
+import {
+  activateMarkdownEditors,
+  createMarkdownEditor,
+  destroyMarkdownEditors,
+  type MarkdownEditor,
+} from "./markdown-editor.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import {
@@ -306,6 +311,7 @@ function mobileUpdatedDisplayControl(): HTMLElement {
 }
 
 function clear(node: HTMLElement): void {
+  destroyMarkdownEditors(node);
   node.replaceChildren();
 }
 
@@ -340,6 +346,12 @@ function field(labelText: string, control: HTMLElement): HTMLLabelElement {
   const label = element("label", "edit-field") as HTMLLabelElement;
   label.append(element("span", "edit-field-label", labelText), control);
   return label;
+}
+
+function markdownField(labelText: string, editor: MarkdownEditor): HTMLElement {
+  const wrapper = element("div", "edit-field");
+  wrapper.append(element("span", "edit-field-label", labelText), editor.element);
+  return wrapper;
 }
 
 function select(values: readonly string[], current = ""): HTMLSelectElement {
@@ -1217,7 +1229,10 @@ async function viewProject(key: string): Promise<HTMLElement> {
   edit.addEventListener("click", () => {
     form.hidden = !form.hidden;
     edit.textContent = form.hidden ? "Edit project" : "Hide editor";
-    if (!form.hidden) form.querySelector<HTMLInputElement>("input")?.focus();
+    if (!form.hidden) {
+      activateMarkdownEditors(form);
+      form.querySelector<HTMLInputElement>("input")?.focus();
+    }
   });
   view.append(form);
 
@@ -1252,7 +1267,7 @@ function projectEditForm(project: Project): HTMLFormElement {
   const description = createMarkdownEditor(project.description, undefined, "Project description (Markdown)");
   const save = element("button", "primary-button", "Save changes") as HTMLButtonElement;
   save.type = "submit";
-  form.append(field("Name", name), field("Description (Markdown)", description.element), save);
+  form.append(field("Name", name), markdownField("Description (Markdown)", description), save);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(form, [save], () => api.updateProject(project.key, {
@@ -1301,6 +1316,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     relationSection.editor.hidden = !show;
     relationSection.section.hidden = !show && issue.relations.length === 0;
     editButton.textContent = show ? "Hide editor" : "Edit issue";
+    if (show) activateMarkdownEditors(editForm);
   };
   editButton.addEventListener("click", () => {
     showEditor(editForm.hidden === true);
@@ -1438,7 +1454,7 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
     save,
   );
-  form.append(field("Title", title), field("Description (Markdown)", description.element), actions);
+  form.append(field("Title", title), markdownField("Description (Markdown)", description), actions);
   const rememberDraft = (): void => {
     issueEditDrafts.set(issue.id, { title: title.value, description: description.textarea.value });
   };

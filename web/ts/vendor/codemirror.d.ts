@@ -16,9 +16,11 @@ declare module "codemirror" {
 
   class EditorView {
     static readonly lineWrapping: unknown;
+    static readonly contentAttributes: { of(attributes: Readonly<Record<string, string>>): unknown };
     static readonly updateListener: { of(listener: (update: ViewUpdate) => void): unknown };
     readonly contentDOM: HTMLElement;
     constructor(config: EditorViewConfig);
+    destroy(): void;
   }
 
   const keymap: { of(bindings: readonly unknown[]): unknown };
