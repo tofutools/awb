@@ -1,7 +1,9 @@
 package storage_test
 
 import (
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -792,6 +794,212 @@ func TestBlockerSortingPagesByTheVisibleBlockers(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Equal(t, open, issues[0].ID,
 		"a closed subject's historical blocker is not part of its visible sort value")
+}
+
+// The assignee sort key joins the assignee list in assignment order, not in
+// alphabetical order, so an issue's place in the listing follows the list the
+// listing shows. The two issues below are chosen so that joining their
+// assignees by value rather than by position would swap them.
+func TestAssigneeSortingJoinsInAssignmentOrder(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	inProgress := func(assignees ...string) func(*domain.Issue) {
+		return func(i *domain.Issue) {
+			i.Status = domain.StatusInProgress
+			i.Assignees = assignees
+		}
+	}
+	// "b z" sorts before "c a"; joined by value instead, "a c" would sort before
+	// "b z" and the two would come back the other way round.
+	bz := add("bz", inProgress("b", "z"))
+	ca := add("ca", inProgress("c", "a"))
+
+	issues, _, err := listWith(t, db, &domain.Filter{Sort: domain.Sort{Key: domain.SortAssignee}})
+	require.NoError(t, err)
+	require.Len(t, issues, 2)
+	assert.Equal(t, []string{bz, ca}, []string{issues[0].ID, issues[1].ID})
+	assert.Equal(t, []string{"b", "z"}, issues[0].Assignees, "and the visible list is the joined one")
+}
+
+// The blocker sort key joins the blocker ids ascending, whatever order the
+// relations were written in, so it agrees with the ascending list the listing
+// shows.
+func TestBlockerSortingJoinsAscending(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	blockers := []string{add("blocker one"), add("blocker two"), add("blocker three")}
+	slices.Sort(blockers)
+	low, middle, high := blockers[0], blockers[1], blockers[2]
+
+	two := add("blocked by two")
+	one := add("blocked by one")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		// Written high first, so a join that followed insertion order would put
+		// the high id at the front.
+		if err := tx.InsertRelation(two, domain.RelBlockedBy, high); err != nil {
+			return err
+		}
+		if err := tx.InsertRelation(two, domain.RelBlockedBy, low); err != nil {
+			return err
+		}
+		return tx.InsertRelation(one, domain.RelBlockedBy, middle)
+	}))
+
+	issues, _, err := listWith(t, db, &domain.Filter{Sort: domain.Sort{Key: domain.SortBlockers}})
+	require.NoError(t, err)
+	require.Len(t, issues, 5)
+	// Joined ascending, the two-blocker issue's key starts at the low id and it
+	// comes first; joined in insertion order it would start at the high id and
+	// come second.
+	assert.Equal(t, []string{two, one}, []string{issues[0].ID, issues[1].ID})
+	assert.Equal(t, []string{low, high}, issues[0].Blockers, "and the visible list is the joined one")
+}
+
+// Each of the three project orderings, in both directions. The descending form
+// reverses the named key only: after a derived key the p.key tiebreak stays
+// ascending, exactly as the issue listings' id tiebreak does.
+func TestProjectListOrderings(t *testing.T) {
+	db := newDB(t)
+	// Keys, active counts and update times are each deliberately in a different
+	// order, so no two orderings agree by accident.
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		for _, key := range []string{"beta", "alpha", "gamma"} {
+			if err := tx.InsertProject(key, key, ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	// gamma two open issues, alpha one, beta none.
+	for _, key := range []string{"gamma", "gamma", "alpha"} {
+		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+			return tx.InsertIssue(&domain.Issue{
+				Project: key, Title: "t", Type: domain.DefaultType,
+				Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
+			})
+		}))
+	}
+	// Updated once, twice and three times, so updated_at runs beta, gamma, alpha
+	// whether or not the writes land in one millisecond: an update that does not
+	// advance the clock still forces the row's timestamp a millisecond upward.
+	updates := map[string]int{"beta": 1, "gamma": 2, "alpha": 3}
+	for _, key := range []string{"beta", "gamma", "alpha"} {
+		for i := range updates[key] {
+			require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+				project, err := tx.GetProject(key)
+				if err != nil {
+					return err
+				}
+				// A rename that changes nothing is a no-op, so each one differs.
+				return tx.UpdateProject(project, fmt.Sprintf("%s %d", key, i), "")
+			}))
+		}
+	}
+
+	keys := func(sort domain.ProjectSort) []string {
+		t.Helper()
+		projects := read(t, db, func(tx *storage.Tx) ([]domain.Project, error) {
+			projects, _, err := tx.ListProjects("", sort, nil, nil)
+			return projects, err
+		})
+		found := make([]string, len(projects))
+		for i, project := range projects {
+			found[i] = project.Key
+		}
+		return found
+	}
+
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, keys(domain.DefaultProjectSort),
+		"the default, which an absent key also gives")
+	assert.Equal(t, []string{"alpha", "beta", "gamma"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortByKey}))
+	assert.Equal(t, []string{"gamma", "beta", "alpha"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortByKey, Desc: true}),
+		"-key is descending, not the ascending default")
+
+	assert.Equal(t, []string{"beta", "alpha", "gamma"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortActive}), "0, 1, 2 open issues")
+	assert.Equal(t, []string{"gamma", "alpha", "beta"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortActive, Desc: true}))
+
+	assert.Equal(t, []string{"beta", "gamma", "alpha"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated}), "least recently touched first")
+	assert.Equal(t, []string{"alpha", "gamma", "beta"},
+		keys(domain.ProjectSort{Key: domain.ProjectSortUpdated, Desc: true}))
+}
+
+// status and type order by what their values mean, not by how they are spelled.
+// Sorting the stored text would put closed first and bug before epic.
+func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+
+	// Created in an order that is neither the vocabulary's nor the alphabet's,
+	// so passing means the ordering did the work.
+	for _, issueType := range []domain.Type{
+		domain.TypeChore, domain.TypeBug, domain.TypeEpic,
+		domain.TypeTask, domain.TypeFeature,
+	} {
+		add(string(issueType), func(i *domain.Issue) { i.Type = issueType })
+	}
+	types := func(sort domain.Sort) []domain.Type {
+		t.Helper()
+		issues, _, err := listWith(t, db, &domain.Filter{IncludeClosed: true, Sort: sort})
+		require.NoError(t, err)
+		found := make([]domain.Type, len(issues))
+		for i := range issues {
+			found[i] = issues[i].Type
+		}
+		return found
+	}
+	assert.Equal(t, domain.Types, types(domain.Sort{Key: domain.SortType}),
+		"epic, feature, bug, task, chore — not the alphabet's bug, chore, epic, feature, task")
+	reversed := slices.Clone(domain.Types)
+	slices.Reverse(reversed)
+	assert.Equal(t, reversed, types(domain.Sort{Key: domain.SortType, Desc: true}))
+
+	// One issue per status, on a second project so the type set above is not in
+	// the way. Every status is reachable only through its own transition.
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		return tx.InsertProject("st", "statuses", "")
+	}))
+	statusIssue := func(title string, mutate func(*domain.Issue)) {
+		t.Helper()
+		issue := &domain.Issue{
+			Project: "st", Title: title, Type: domain.DefaultType,
+			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
+		}
+		mutate(issue)
+		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+			return tx.InsertIssue(issue)
+		}))
+		if issue.Status == domain.StatusClosed {
+			closeIssue(t, db, issue.ID)
+		}
+	}
+	statusIssue("closed", func(i *domain.Issue) { i.Status = domain.StatusClosed })
+	statusIssue("open", func(*domain.Issue) {})
+	statusIssue("in progress", func(i *domain.Issue) {
+		i.Status = domain.StatusInProgress
+		i.Assignees = []string{"mikael"}
+	})
+
+	statuses := func(sort domain.Sort) []domain.Status {
+		t.Helper()
+		issues, _, err := listWith(t, db, &domain.Filter{
+			IncludeClosed: true, Projects: []string{"st"}, Sort: sort})
+		require.NoError(t, err)
+		found := make([]domain.Status, len(issues))
+		for i := range issues {
+			found[i] = issues[i].Status
+		}
+		return found
+	}
+	assert.Equal(t, domain.Statuses, statuses(domain.Sort{Key: domain.SortStatus}),
+		"open, in_progress, closed — not the alphabet's closed, in_progress, open")
+	reversedStatuses := slices.Clone(domain.Statuses)
+	slices.Reverse(reversedStatuses)
+	assert.Equal(t, reversedStatuses, statuses(domain.Sort{Key: domain.SortStatus, Desc: true}))
 }
 
 // Two invocations against unchanged data must agree, so every order is total.

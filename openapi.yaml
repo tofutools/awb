@@ -634,6 +634,9 @@ paths:
             Ordering, optionally prefixed with `-` for descending. Defaults to
             `relevance`, whose bare form is descending because best match first
             is what it means.
+
+            `status` and `type` order by the vocabulary rather than by the
+            stored text, as on every other listing.
           schema:
             type: string
             enum:
@@ -1457,6 +1460,10 @@ components:
       description: |
         Ordering, optionally prefixed with `-` for descending. Every sort ends
         with `id` ascending as a final tiebreak, so the order is total.
+
+        `status` and `type` order by the vocabulary rather than by the stored
+        text: `status` runs open, in_progress, closed, and `type` runs epic,
+        feature, bug, task, chore. `-` reverses those sequences.
       schema:
         type: string
         default: order

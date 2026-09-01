@@ -49,11 +49,8 @@ func newProjectActivityCommand(e *env) *cobra.Command {
 	return boa.CmdT[params]{
 		Use: "activity", Short: "List a workspace's archive and restore history", ParamEnrich: boaParams,
 		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
-			if p.Limit != nil && *p.Limit < 0 {
-				return awberr.Usagef("--limit must not be negative")
-			}
-			if p.Offset != nil && *p.Offset < 0 {
-				return awberr.Usagef("--offset must not be negative")
+			if err := checkPaging(p.Limit, p.Offset); err != nil {
+				return err
 			}
 			be, err := e.backend(cmd.Context())
 			if err != nil {
@@ -190,22 +187,47 @@ func newProjectShowCommand(e *env) *cobra.Command {
 	}.ToCobra()
 }
 
+// projectListParams is the picker flag, the state selection, the ordering and
+// the window. Workspace ordering is its own vocabulary because "active" is a
+// derived count, not a stored column.
+type projectListParams struct {
+	InteractiveFlags
+	Archived bool   `long:"archived" optional:"true" help:"list archived workspaces instead of active workspaces"`
+	All      bool   `long:"all" optional:"true" help:"list active and archived workspaces"`
+	Sort     string `long:"sort" optional:"true"`
+	Limit    *int   `long:"limit" optional:"true" help:"cap the number of results; zero returns none"`
+	Offset   *int   `long:"offset" optional:"true" help:"skip this many results"`
+}
+
 func newProjectListCommand(e *env) *cobra.Command {
-	type params struct {
-		InteractiveFlags
-		Archived bool `long:"archived" optional:"true" help:"list archived workspaces instead of active workspaces"`
-		All      bool `long:"all" optional:"true" help:"list active and archived workspaces"`
-	}
-	return boa.CmdT[params]{
+	return boa.CmdT[projectListParams]{
 		Use:         "list",
 		Short:       "List workspaces with counts of issues that are not closed",
 		ParamEnrich: boaParams,
-		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
+		InitFuncCtx: func(ctx *boa.HookContext, p *projectListParams, _ *cobra.Command) error {
+			// Offered and validated from the parser's own vocabulary, as --sort on
+			// the issue listings is.
+			sortParam := boa.GetParamT(ctx, &p.Sort)
+			sortParam.SetAlternatives(domain.ProjectSortAlternatives())
+			sortParam.SetDescription(domain.ProjectSortHelp())
+			return nil
+		},
+		RunFuncE: func(p *projectListParams, cmd *cobra.Command, _ []string) error {
 			if p.Archived && p.All {
 				return awberr.Usagef("--archived and --all are mutually exclusive")
 			}
 			out, err := e.interactively(p.Interactive)
 			if err != nil {
+				return err
+			}
+
+			sort := domain.DefaultProjectSort
+			if p.Sort != "" {
+				if sort, err = domain.ParseProjectSort(p.Sort); err != nil {
+					return err
+				}
+			}
+			if err := checkPaging(p.Limit, p.Offset); err != nil {
 				return err
 			}
 
@@ -219,7 +241,7 @@ func newProjectListCommand(e *env) *cobra.Command {
 			} else if p.All {
 				state = domain.ProjectsAll
 			}
-			page, err := be.ListProjectsByState(cmd.Context(), "", state, domain.DefaultProjectSort, nil, nil)
+			page, err := be.ListProjectsByState(cmd.Context(), "", state, sort, p.Limit, p.Offset)
 			if err != nil {
 				return err
 			}

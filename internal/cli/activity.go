@@ -116,11 +116,8 @@ func activityListingCommand(e *env, use, short string, fixed domain.ActivityKind
 
 func runActivityListing(e *env, cmd *cobra.Command, id string, kind domain.ActivityKind,
 	limit, offset *int) error {
-	if limit != nil && *limit < 0 {
-		return awberr.Usagef("--limit must not be negative")
-	}
-	if offset != nil && *offset < 0 {
-		return awberr.Usagef("--offset must not be negative")
+	if err := checkPaging(limit, offset); err != nil {
+		return err
 	}
 	be, err := e.backend(cmd.Context())
 	if err != nil {
