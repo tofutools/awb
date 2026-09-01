@@ -5,6 +5,47 @@
     "group:all",
     "schedule:monthly"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update npm tools installed by CI",
+      "managerFilePatterns": ["/^\\.github/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "npm install -g (?<depName>[^@\\s]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update ogen installed by CI",
+      "managerFilePatterns": ["/^\\.github/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "go install github\\.com/ogen-go/ogen/cmd/ogen@(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "github.com/ogen-go/ogen",
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "Update govulncheck installed by CI",
+      "managerFilePatterns": ["/^\\.github/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "go install golang\\.org/x/vuln/cmd/govulncheck@(?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "golang.org/x/vuln",
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "Update golangci-lint installed by CI",
+      "managerFilePatterns": ["/^\\.github/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "golangci-lint-action@[^\\s]+[^\\n]*\\n\\s+with:\\n\\s+version: (?<currentValue>v\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
   "vulnerabilityAlerts": {
     "enabled": true,
     "schedule": ["at any time"]
