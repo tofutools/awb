@@ -13,6 +13,7 @@ import {
   type Board,
   type BoardView,
   type BoardViewCreate,
+  type BoardViewPatch,
   type Facet,
   type Filters,
   type DirectoryUser,
@@ -616,6 +617,15 @@ function issueTable(
   for (const issue of issues) {
     const row = document.createElement("tr");
     row.dataset.issue = issue.id;
+    const workspaceIssues = orderingEnabled ? issues.filter((candidate) => candidate.project === issue.project) : [];
+    const workspacePosition = workspaceIssues.findIndex((candidate) => candidate.id === issue.id);
+    const reorder = (anchor: { before?: string; after?: string }): void => {
+      row.classList.add("moving");
+      void api.moveIssue(issue.id, { status: issue.status, ...anchor }).then(() => render()).catch((error) => {
+        row.classList.remove("moving");
+        mutationError(row, error);
+      });
+    };
     for (const column of columns) {
       const td = document.createElement("td");
       td.dataset.label = column.label;
@@ -631,6 +641,25 @@ function issueTable(
         });
         drag.addEventListener("dragend", () => { draggedListIssue = null; });
         td.append(drag);
+        const order = element("span", "list-row-order");
+        const earlier = button("↑", "secondary-button list-row-order-button");
+        earlier.setAttribute("aria-label", `Move ${issue.id} earlier in workspace ${issue.project}`);
+        earlier.title = "Move earlier in this workspace";
+        earlier.disabled = workspacePosition <= 0;
+        earlier.addEventListener("click", () => {
+          const previous = workspaceIssues[workspacePosition - 1];
+          if (previous !== undefined) reorder({ before: previous.id });
+        });
+        const later = button("↓", "secondary-button list-row-order-button");
+        later.setAttribute("aria-label", `Move ${issue.id} later in workspace ${issue.project}`);
+        later.title = "Move later in this workspace";
+        later.disabled = workspacePosition < 0 || workspacePosition >= workspaceIssues.length - 1;
+        later.addEventListener("click", () => {
+          const next = workspaceIssues[workspacePosition + 1];
+          if (next !== undefined) reorder({ after: next.id });
+        });
+        order.append(earlier, later);
+        td.append(order);
       }
       td.append(column.render(issue));
       row.append(td);
@@ -1039,8 +1068,9 @@ async function moveBoardIssue(
   epic: string,
   target: BoardStatus,
   before = "",
+  after = "",
 ): Promise<void> {
-  if (target === issue.status && before === issue.id) return;
+  if (target === issue.status && (before === issue.id || after === issue.id)) return;
   if (!legalBoardTargets(issue, identity).includes(target)) {
     mutationError(host, new Error("This move would release somebody else's assignment."));
     return;
@@ -1052,17 +1082,20 @@ async function moveBoardIssue(
       status: target,
       epic,
       ...(before === "" ? {} : { before }),
+      ...(after === "" ? {} : { after }),
     });
     await render();
   } catch (error) {
     host.classList.remove("moving");
     mutationError(host, error);
-    const control = host.querySelector<HTMLSelectElement>(".board-card-move select");
+    const control = host.querySelector<HTMLSelectElement>(".board-status-select");
     if (control !== null) control.value = issue.status;
   }
 }
 
-function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement {
+type BoardEpicChoice = { id: string; project: string; title: string };
+
+function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: BoardEpicChoice[]): HTMLElement {
   const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
   card.dataset.issue = issue.id;
   const drag = element("span", "board-card-drag", "⠿");
@@ -1079,10 +1112,30 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement
   const top = element("div", "board-card-top");
   top.append(address, drag);
   card.append(top, issueBadges(issue));
-  const move = element("label", "board-card-move");
-  move.append(document.createTextNode("Move"));
+  const move = element("div", "board-card-move");
+  const epicLabel = element("label");
+  epicLabel.append(document.createTextNode("Epic"));
+  const epicSelect = document.createElement("select");
+  epicSelect.className = "board-epic-select";
+  epicSelect.setAttribute("aria-label", `Epic for ${issue.id}`);
+  const noEpic = document.createElement("option");
+  noEpic.value = "";
+  noEpic.textContent = "No epic";
+  noEpic.selected = epic === "";
+  epicSelect.append(noEpic);
+  for (const choice of epics.filter((candidate) => candidate.project === issue.project)) {
+    const option = document.createElement("option");
+    option.value = choice.id;
+    option.textContent = choice.title;
+    option.selected = choice.id === epic;
+    epicSelect.append(option);
+  }
+  epicLabel.append(epicSelect);
+  const statusLabel = element("label");
+  statusLabel.append(document.createTextNode("Status"));
   const select = document.createElement("select");
-  select.setAttribute("aria-label", `Move ${issue.id}`);
+  select.className = "board-status-select";
+  select.setAttribute("aria-label", `Status for ${issue.id}`);
   for (const status of legalBoardTargets(issue, identity)) {
     const option = document.createElement("option");
     option.value = status;
@@ -1090,8 +1143,28 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement
     option.selected = status === issue.status;
     select.append(option);
   }
-  select.addEventListener("change", () => void moveBoardIssue(card, issue, epic, select.value as BoardStatus));
-  move.append(select);
+  epicSelect.addEventListener("change", () => void moveBoardIssue(card, issue, epicSelect.value, select.value as BoardStatus));
+  select.addEventListener("change", () => void moveBoardIssue(card, issue, epicSelect.value, select.value as BoardStatus));
+  statusLabel.append(select);
+  const order = element("span", "board-card-order");
+  const earlier = button("↑", "secondary-button board-card-order-button");
+  earlier.dataset.direction = "earlier";
+  earlier.setAttribute("aria-label", `Move ${issue.id} earlier in this board cell`);
+  earlier.title = "Move earlier in this board cell";
+  earlier.addEventListener("click", () => {
+    const previous = card.previousElementSibling as HTMLElement | null;
+    if (previous?.dataset.issue !== undefined) void moveBoardIssue(card, issue, epic, status, previous.dataset.issue);
+  });
+  const later = button("↓", "secondary-button board-card-order-button");
+  later.dataset.direction = "later";
+  later.setAttribute("aria-label", `Move ${issue.id} later in this board cell`);
+  later.title = "Move later in this board cell";
+  later.addEventListener("click", () => {
+    const next = card.nextElementSibling as HTMLElement | null;
+    if (next?.dataset.issue !== undefined) void moveBoardIssue(card, issue, epic, status, "", next.dataset.issue);
+  });
+  order.append(earlier, later);
+  move.append(epicLabel, statusLabel, order);
   card.append(move);
   card.addEventListener("dragover", (event) => {
     const moving = draggedBoardIssue;
@@ -1114,12 +1187,23 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement
   return card;
 }
 
+function syncBoardCardOrder(cards: HTMLElement): void {
+  const rows = [...cards.querySelectorAll<HTMLElement>(":scope > .board-card")];
+  for (const [index, row] of rows.entries()) {
+    const earlier = row.querySelector<HTMLButtonElement>('[data-direction="earlier"]');
+    const later = row.querySelector<HTMLButtonElement>('[data-direction="later"]');
+    if (earlier !== null) earlier.disabled = index === 0;
+    if (later !== null) later.disabled = index === rows.length - 1;
+  }
+}
+
 function boardColumn(
   ref: string,
   epic: Issue | null,
   selectedWorkspaces: string[],
   column: Board["lanes"][number]["columns"][number],
   issuesByID: Map<string, Issue>,
+  epics: BoardEpicChoice[],
 ): HTMLElement {
   const host = element("section", "board-column");
   host.dataset.status = column.status;
@@ -1140,8 +1224,9 @@ function boardColumn(
       if (loadedIDs.has(issue.id)) continue;
       loadedIDs.add(issue.id);
       issuesByID.set(issue.id, issue);
-      cards.append(boardCard(issue, epicID, column.status));
+      cards.append(boardCard(issue, epicID, column.status, epics));
     }
+    syncBoardCardOrder(cards);
   };
   append(column.issues);
   if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
@@ -1198,7 +1283,7 @@ function boardColumn(
   return host;
 }
 
-function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>): HTMLElement {
+function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, epics: BoardEpicChoice[]): HTMLElement {
   const host = element("section", "board-lane");
   const laneKey = lane.epic?.id ?? "no-epic";
   const laneLabel = lane.epic?.title ?? "No epic";
@@ -1216,7 +1301,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
-  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID));
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics));
   const collapsed = collapsedBoardLanes(ref);
   let isCollapsed = collapsed.has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
@@ -1293,9 +1378,20 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_projects: all.checked,
       projects: all.checked ? [] : [...projects.querySelectorAll<HTMLInputElement>('input:checked')].map((input) => input.value),
       labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4 };
-    const operation = source !== null && !duplicate
-      ? api.updateBoardView(source.id, body)
-      : api.createBoardView(body);
+    let operation: Promise<BoardView>;
+    if (source !== null && !duplicate) {
+      const patch: BoardViewPatch = {};
+      if (body.name !== source.name) patch.name = body.name;
+      if (body.shared !== source.shared) patch.shared = body.shared;
+      if (body.all_projects !== source.all_projects) patch.all_projects = body.all_projects;
+      if (JSON.stringify(body.projects) !== JSON.stringify(source.projects)) patch.projects = body.projects;
+      if (JSON.stringify(body.labels) !== JSON.stringify(source.labels)) patch.labels = body.labels;
+      if (JSON.stringify(body.assignees) !== JSON.stringify(source.assignees)) patch.assignees = body.assignees;
+      if (body.priority_max !== source.priority_max) patch.priority_max = body.priority_max;
+      operation = api.updateBoardView(source.id, patch);
+    } else {
+      operation = api.createBoardView(body);
+    }
     void operation.then((view) => { dialog.close(); location.hash = `#/boards/${view.id}`; }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
   });
   dialog.showModal(); name.focus();
@@ -1341,8 +1437,11 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     : "Workspace access and your ignored-workspace settings always apply to this view."));
   const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
   const selectedWorkspaces = filters.project ?? [];
+  const epics: BoardEpicChoice[] = board.lanes.flatMap((lane) => lane.epic === undefined
+    ? []
+    : [{ id: lane.epic.id, project: lane.epic.project, title: lane.epic.title }]);
   const loadedLanes = new Set<string>();
-  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID)); }
+  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics)); }
   if (board.lane_total === 0) lanes.append(element("p", "empty", "No epic lanes match this view."));
   view.append(lanes);
   if (board.lanes.length < board.lane_total) {
@@ -1360,7 +1459,8 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
           const key = lane.epic?.id ?? "no-epic";
           if (loadedLanes.has(key)) continue;
           loadedLanes.add(key);
-          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID));
+          if (lane.epic !== undefined) epics.push({ id: lane.epic.id, project: lane.epic.project, title: lane.epic.title });
+          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics));
         }
         if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }
         if (loadedLanes.size >= total) more.remove(); else { more.disabled = false; labelMore(); }

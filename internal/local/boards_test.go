@@ -75,6 +75,13 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.Equal(t, renamed, updated.Name)
 	assert.False(t, updated.Shared)
 	assert.Equal(t, []string{"awb"}, updated.Projects, "the mutation response is scoped too")
+	visibleReplacement := []string{"awb"}
+	_, err = alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Projects: &visibleReplacement}, backend.ETag(updated.UpdatedAt))
+	require.NoError(t, err, "replacing visible selections preserves inaccessible stored selections")
+	grant(t, root, ctx, "web", "alice", domain.AccessRegular)
+	restored, err := alice.GetBoardView(ctx, shared.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"awb", "web"}, restored.Projects)
 }
 
 func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {

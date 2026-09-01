@@ -555,7 +555,9 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   vertical-align: middle;
 }
 .listing-table tbody tr:last-child td { border-bottom: 0; }
-.list-row-drag { display: inline-block; margin-right: 0.45rem; color: var(--muted); cursor: grab; user-select: none; }
+.list-row-drag { display: inline-block; margin-right: 0.35rem; color: var(--muted); cursor: grab; user-select: none; }
+.list-row-order, .board-card-order { display: inline-flex; gap: 0.18rem; margin-right: 0.4rem; vertical-align: middle; }
+.list-row-order-button, .board-card-order-button { min-width: 1.7rem; min-height: 1.7rem; padding: 0.12rem 0.3rem; line-height: 1; }
 .listing-table tr.drop-before td { box-shadow: inset 0 3px 0 var(--accent); }
 .listing-table tr.drop-after td { box-shadow: inset 0 -3px 0 var(--accent); }
 .listing-table tr.moving { opacity: 0.55; }
@@ -1188,8 +1190,10 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-card-drag { padding: 0.1rem 0.2rem; color: var(--muted); cursor: grab; font-size: 1rem; line-height: 1; user-select: none; }
 .board-card.drop-before { box-shadow: 0 -3px 0 var(--accent), var(--shadow-sm); }
 .board-card > .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.board-card-move { display: flex; justify-content: end; gap: 0.35rem; align-items: center; color: var(--muted); font-size: 0.72rem; }
-.board-card-move select { padding: 0.18rem 0.3rem; font-size: 0.76rem; }
+.board-card-move { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto; gap: 0.4rem; align-items: end; color: var(--muted); font-size: 0.72rem; }
+.board-card-move label { display: grid; min-width: 0; gap: 0.18rem; }
+.board-card-move select { width: 100%; min-width: 0; padding: 0.18rem 0.3rem; font-size: 0.76rem; }
+.board-card-order { margin: 0; }
 .board-column-more { width: 100%; padding: 0.35rem; }
 .board-column-empty { margin: 1.5rem 0; color: var(--muted); text-align: center; font-size: 0.82rem; }
 .board-lanes-more { display: block; width: min(24rem, 100%); margin: 1rem auto 0; }
@@ -1214,7 +1218,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .board-columns { display: grid; max-width: 100%; grid-auto-flow: column; grid-auto-columns: min(84vw, 22rem); grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; }
   .board-column { scroll-snap-align: start; }
   .board-card-drag, .list-row-drag { display: none; }
-  .board-card-move { justify-content: space-between; }
+  .board-card-move { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto; }
 }
 .comment-composer {
   display: grid;

@@ -36,9 +36,10 @@ workflow engine, no custom fields and no reporting suite.
 
 ### Projects and issues
 
-A **project** is the top-level organising unit; every issue belongs to exactly
-one. An issue's creation project is its immutable ID prefix, while its current
-project may change without breaking that identifier. An **issue** carries a
+A **project** (shown as a **Workspace** in user-facing surfaces) is the
+top-level organising unit; every issue belongs to exactly one, and that
+workspace never changes. An issue's immutable workspace key is also its ID
+prefix. An **issue** carries a
 title, an optional Markdown description, a type, a status, a priority, a set of
 labels and an ordered set of assignees.
 
@@ -136,7 +137,7 @@ real server and fails if either direction allocates anything approaching it.
 
 ### Identifiers
 
-An issue ID is `<origin-project-key>-<hash>`, where the hash is derived from the
+An issue ID is `<workspace-key>-<hash>`, where the hash is derived from the
 issue's own content and a random salt. That derivation matters architecturally
 for one reason: **IDs are independently mintable**. No counter, no coordination,
 no central allocator — which is what would let two databases be merged, or a

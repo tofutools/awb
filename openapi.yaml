@@ -1959,7 +1959,7 @@ components:
       properties:
         id:
           type: string
-          description: '`<origin-project-key>-<hash>`, assigned at creation and immutable.'
+          description: '`<workspace-key>-<hash>`, assigned at creation and immutable.'
           examples: [awb-5c1d84]
         project: { $ref: '#/components/schemas/ProjectKey' }
         title:

@@ -224,6 +224,18 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		}
 		if req.Projects != nil {
 			next.Projects = slices.Clone(*req.Projects)
+			// A scoped response cannot disclose selections the owner can no
+			// longer access. Preserve those stored keys when replacing the
+			// visible set, otherwise an editor could silently delete them.
+			for _, project := range existing.Projects {
+				exists, err := tx.ProjectExists(project)
+				if err != nil {
+					return err
+				}
+				if !exists && !slices.Contains(next.Projects, project) {
+					next.Projects = append(next.Projects, project)
+				}
+			}
 		}
 		if req.Labels != nil {
 			next.Labels = slices.Clone(*req.Labels)
@@ -240,7 +252,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		}
 		valid.ID, valid.Owner, valid.CreatedAt, valid.UpdatedAt = existing.ID, existing.Owner, existing.CreatedAt, existing.UpdatedAt
 		if req.Projects != nil {
-			for _, project := range valid.Projects {
+			for _, project := range *req.Projects {
 				exists, err := tx.ProjectExists(project)
 				if err != nil {
 					return err
