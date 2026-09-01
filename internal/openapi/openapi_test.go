@@ -169,6 +169,14 @@ func TestTheVocabularySchemasCarryNoDefault(t *testing.T) {
 	}
 }
 
+func TestBoardViewCreationDeclaresItsPriorityDefault(t *testing.T) {
+	properties, ok := schema(t, document(t), "BoardViewCreate")["properties"].(map[string]any)
+	require.True(t, ok)
+	priority, ok := properties["priority_max"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 4, number(t, priority["default"]))
+}
+
 // Every field of the Issue shape must be declared and required: every field is
 // always present, so a consumer needs no absence handling.
 func TestIssueSchemaCoversEveryField(t *testing.T) {

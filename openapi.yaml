@@ -1724,7 +1724,9 @@ components:
         assignees:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
-        priority_max: { $ref: '#/components/schemas/Priority' }
+        priority_max:
+          $ref: '#/components/schemas/Priority'
+          default: 4
 
     BoardViewPatch:
       type: object
