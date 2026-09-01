@@ -130,16 +130,21 @@ var (
 	typeRank   = vocabularyRank("i.type", domain.Types)
 )
 
-// vocabularyRank renders the CASE expression the two above are. The values are
-// package constants of the closed set the schema's CHECK constraint enforces,
-// never caller input, so writing them into the SQL is not a way in. That same
-// constraint is why the ELSE is unreachable: it exists so the expression is
-// never NULL, not because a row could take it.
+// vocabularyRank renders the CASE expression the two above are. Each value is
+// written as a SQL string literal with any inner apostrophe doubled, which is
+// how SQLite escapes one, exactly as ftsQuery doubles an inner double quote.
+// Today's vocabularies hold none, so the escaping is what keeps that from
+// being something to remember when one does.
+//
+// The ELSE is unreachable: the schema's CHECK constraint closes both
+// vocabularies, so it exists to keep the expression from ever being NULL, not
+// because a row could take it.
 func vocabularyRank[T ~string](column string, values []T) string {
 	var b strings.Builder
 	b.WriteString("CASE " + column)
 	for rank, value := range values {
-		b.WriteString(" WHEN '" + string(value) + "' THEN " + strconv.Itoa(rank))
+		b.WriteString(" WHEN '" + strings.ReplaceAll(string(value), "'", "''") + "'" +
+			" THEN " + strconv.Itoa(rank))
 	}
 	b.WriteString(" ELSE " + strconv.Itoa(len(values)) + " END")
 	return b.String()
