@@ -228,9 +228,13 @@ func (t *Tx) walk(query string, args ...any) (map[string]struct{}, error) {
 // has-parent edge is added or replaced, where the edge that ends up violating
 // the decomposition rule is some existing blocked-by edge neither of whose
 // endpoints is an endpoint of the edge being added.
+//
+// It is ordered because the refusal names the offending edge: when more than
+// one violates the rule, the same one is named every time.
 func (t *Tx) BlockedByEdges() ([]domain.BlockedByEdge, error) {
 	rows, err := t.q.QueryContext(t.ctx,
-		`SELECT subject, other FROM relations WHERE type = 'blocked-by'`)
+		`SELECT subject, other FROM relations WHERE type = 'blocked-by'
+		  ORDER BY subject ASC, other ASC`)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read the dependency graph")
 	}

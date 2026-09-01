@@ -125,22 +125,22 @@ func orderBy(sort domain.Sort) string {
 	if sort.Desc {
 		direction = "DESC"
 	}
+	// The ORDER BY belongs to group_concat itself rather than to a subquery
+	// feeding it: only the aggregate's own clause fixes the order the values are
+	// joined in, so the sort key is the same string on every run and the paging
+	// it drives cannot reshuffle.
 	const assignees = `COALESCE((
-		SELECT group_concat(assignee, ' ')
-		  FROM (SELECT a.assignee
-		          FROM issue_assignees a
-		         WHERE a.issue = i.id
-		         ORDER BY a.position)
+		SELECT group_concat(a.assignee, ' ' ORDER BY a.position)
+		  FROM issue_assignees a
+		 WHERE a.issue = i.id
 	), '')`
 	const blockers = `COALESCE((
-		SELECT group_concat(other, ' ')
-		  FROM (SELECT r.other
-		          FROM relations r
-		         WHERE r.subject = i.id AND r.type = 'blocked-by'
-		           AND i.status <> 'closed'
-		           AND EXISTS (SELECT 1 FROM issues b
-		                        WHERE b.id = r.other AND b.status <> 'closed')
-		         ORDER BY r.other)
+		SELECT group_concat(r.other, ' ' ORDER BY r.other)
+		  FROM relations r
+		 WHERE r.subject = i.id AND r.type = 'blocked-by'
+		   AND i.status <> 'closed'
+		   AND EXISTS (SELECT 1 FROM issues b
+		                WHERE b.id = r.other AND b.status <> 'closed')
 	), '')`
 
 	switch sort.Key {

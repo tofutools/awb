@@ -360,6 +360,81 @@ func TestOutputIsDeterministic(t *testing.T) {
 	}
 }
 
+// Every listing has a total order, so it is reproducible even where nothing
+// distinguishes the rows but the tiebreak. The data below is deliberately tied
+// on every sort key each listing offers: same title, same priority, same
+// labels, same assignee, same content, all within the resolution of the
+// timestamps. Whatever remains different is what the order is specified on.
+func TestEveryListingIsDeterministic(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("project", "create", "web", "--name", "Agent Work Board")
+
+	ids := make([]string, 0, 8)
+	for range 4 {
+		for _, project := range []string{"awb", "web"} {
+			ids = append(ids, h.create("tied", "--project", project,
+				"--label", "b", "--label", "a", "--description", "tied parser text"))
+		}
+	}
+	blocker, parent := ids[0], ids[4]
+	for _, id := range ids[1:4] {
+		h.mustRun("dep", "add", id, "--blocked-by", blocker)
+	}
+	for _, id := range ids[5:8] {
+		h.mustRun("dep", "add", id, "--has-parent", parent)
+	}
+	// Two assignees on one issue, so --sort assignee joins a list rather than a
+	// single name, and the position order it joins in is what the listing shows.
+	h.mustRun("claim", ids[5], "--as", "zoe")
+	h.mustRun("claim", ids[5], "--as", "adam")
+	h.mustRun("claim", ids[6], "--as", "mikael")
+	h.mustRun("comment", "add", blocker, "--body", "one")
+	h.mustRun("comment", "add", blocker, "--body", "two")
+
+	path := filepath.Join(h.dir, "trace.txt")
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
+	for _, name := range []string{"c.txt", "a.txt", "b.txt"} {
+		h.mustRun("attach", "add", blocker, path, "--name", name)
+	}
+
+	h.mustRunStdin("hunter2\n", "user", "add", "alice")
+	h.mustRunStdin("hunter2\n", "user", "add", "bob")
+	h.mustRun("project", "grant", "awb", "bob")
+	h.mustRun("project", "grant", "awb", "alice")
+	h.mustRun("project", "grant", "web", "alice")
+
+	listings := [][]string{
+		{"list"}, {"ready"}, {"blocked"}, {"search", "parser"},
+		{"project", "list"}, {"user", "list"}, {"project", "members", "awb"},
+		{"attach", "list", blocker}, {"activity", blocker}, {"comment", "list", blocker},
+		{"dep", "tree", parent}, {"show", blocker}, {"status"},
+	}
+	// --sort is offered on the issue listings only, and every key it takes has
+	// to be as reproducible as the default.
+	for _, key := range []string{
+		"priority", "-priority", "created", "-created", "updated", "-updated", "id", "-id",
+	} {
+		listings = append(listings, []string{"list", "--all-projects", "--sort", key})
+	}
+	for _, key := range []string{"relevance", "-relevance"} {
+		listings = append(listings, []string{"search", "parser", "--sort", key})
+	}
+
+	for _, args := range listings {
+		for _, mode := range []string{"--json", "--compact", ""} {
+			full := args
+			if mode != "" {
+				full = append(append([]string{}, args...), mode)
+			}
+			first := h.mustRun(full...)
+			assert.NotEmpty(t, first, full)
+			for range 3 {
+				assert.Equal(t, first, h.mustRun(full...), full)
+			}
+		}
+	}
+}
+
 // show --compact prints the same single line a listing would and nothing else.
 func TestShowCompactIsOneLine(t *testing.T) {
 	h := newHarness(t)
