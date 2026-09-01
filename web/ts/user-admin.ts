@@ -35,7 +35,9 @@ export function userDeletionImpact(
 }
 
 export function userDeletionWarning(user: User, impact: UserDeletionImpact): string {
-  const membership = impact.memberships === 1 ? "1 project membership" : `${impact.memberships} project memberships`;
+  const membership = impact.memberships === 1
+    ? "1 workspace membership"
+    : `${impact.memberships} workspace memberships`;
   const warnings = [`Deletes @${user.name} and ${membership}. Assigned issue history remains.`];
   if (impact.self) warnings.push("You are deleting your own account and will be signed out.");
   if (impact.lastUserAdministrator) {

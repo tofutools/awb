@@ -1352,7 +1352,7 @@ function userAccountForm(user: User, directory: DirectoryUser[]): HTMLFormElemen
   userAdmin.type = "checkbox";
   userAdmin.checked = user.user_admin;
   const projectAdminLabel = element("label", "check-field user-role-field");
-  projectAdminLabel.append(projectAdmin, element("span", "", "Project administrator"));
+  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
   const userAdminLabel = element("label", "check-field user-role-field");
   userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
   const lastUserAdmin = user.user_admin
@@ -1450,16 +1450,16 @@ function userMembershipList(user: User): HTMLElement {
     const item = element("li", "profile-project");
     item.append(
       link(
-        `#/projects/${encodeURIComponent(membership.project)}/members`,
+        `#/workspaces/${encodeURIComponent(membership.project)}/members`,
         membership.project,
         "profile-project-name",
       ),
-      element("span", "profile-project-title", "Manage on the project's Members page"),
+      element("span", "profile-project-title", "Workspace Members page"),
       element("span", "listing-badge", membership.access),
     );
     list.append(item);
   }
-  if (user.projects.length === 0) list.append(element("li", "empty", "No project memberships."));
+  if (user.projects.length === 0) list.append(element("li", "empty", "No workspace memberships."));
   return list;
 }
 
@@ -1526,8 +1526,12 @@ async function viewUserEditor(name: string, signal?: AbortSignal): Promise<HTMLE
   passwordCard.append(element("h2", "", "Reset password"), userPasswordResetForm(user));
   const membershipCard = element("section", "profile-card");
   membershipCard.append(
-    element("h2", "", "Project memberships"),
-    element("p", "profile-form-help", "Memberships are read-only here."),
+    element("h2", "", "Workspaces"),
+    element(
+      "p",
+      "profile-form-help",
+      "Workspace memberships are read-only here. Manage access on each workspace's Members page.",
+    ),
     userMembershipList(user),
   );
   const factsCard = element("section", "profile-card");
@@ -1565,7 +1569,7 @@ function userCreateForm(): HTMLFormElement {
   const userAdmin = document.createElement("input");
   userAdmin.type = "checkbox";
   const projectAdminLabel = element("label", "check-field user-role-field");
-  projectAdminLabel.append(projectAdmin, element("span", "", "Project administrator"));
+  projectAdminLabel.append(projectAdmin, element("span", "", "Workspace administrator"));
   const userAdminLabel = element("label", "check-field user-role-field");
   userAdminLabel.append(userAdmin, element("span", "", "User administrator"));
   const submit = element("button", "primary-button", "Create user") as HTMLButtonElement;

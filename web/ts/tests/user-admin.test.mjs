@@ -43,7 +43,7 @@ test("deletion impact identifies self, memberships, and the last user administra
   assert.deepEqual(impact, { memberships: 2, self: true, lastUserAdministrator: true });
   assert.match(userDeletionWarning(target, impact), /deleting your own account/i);
   assert.match(userDeletionWarning(target, impact), /last user administrator/i);
-  assert.match(userDeletionWarning(target, impact), /2 project memberships/i);
+  assert.match(userDeletionWarning(target, impact), /2 workspace memberships/i);
 });
 
 test("another user administrator removes the last-admin warning", () => {
