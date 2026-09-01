@@ -10,7 +10,8 @@ import {
 
 const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
 
-test("suggestions wait for the fixed debounce and expose loading then results", async () => {
+test("suggestions wait for the fixed debounce and expose loading then results", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
   const calls = [];
   const states = [];
   const search = new SuggestionSearch(
@@ -23,9 +24,10 @@ test("suggestions wait for the fixed debounce and expose loading then results", 
 
   search.query("parser");
   assert.deepEqual(states, [["loading", []]]);
-  await wait(autocompleteDebounceMs - 30);
+  context.mock.timers.tick(autocompleteDebounceMs - 1);
   assert.deepEqual(calls, []);
-  await wait(50);
+  context.mock.timers.tick(1);
+  await Promise.resolve();
   assert.deepEqual(calls, ["parser"]);
   assert.equal(states.at(-1)[0], "ready");
   search.close();
