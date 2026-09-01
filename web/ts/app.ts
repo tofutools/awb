@@ -3270,6 +3270,9 @@ async function start(): Promise<void> {
 }
 
 async function refreshCaller(): Promise<void> {
+  // Account administration can change the current caller's workspace role.
+  // Force the next workspace view to resolve that effective capability again.
+  projectManager = null;
   try {
     const caller = await api.identity();
     identity = caller.identity;
