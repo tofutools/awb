@@ -21,6 +21,13 @@ export interface InspectorRect {
   height: number;
 }
 
+/** A native select can finish its activation after dispatching change. Opening
+ * synchronously lets that activation light-dismiss the new popover on some
+ * browsers, so the close editor waits for the next task. */
+export function deferInspectorPopoverOpen(open: () => void): void {
+  setTimeout(open);
+}
+
 /** Place a top-layer editor against its trigger, flipping above when the
  * viewport has no room below and always retaining an edge gutter. */
 export function inspectorPopoverPosition(

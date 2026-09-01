@@ -88,7 +88,11 @@ import {
   membershipChangeConfirmation,
   membershipSuggestions,
 } from "./membership.js";
-import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
+import {
+  deferInspectorPopoverOpen,
+  inspectorPopoverPosition,
+  inspectorStatusAction,
+} from "./inspector.js";
 import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
 import { attachSearchClear } from "./search-control.js";
 import {
@@ -3295,10 +3299,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
       if (action === "none") return;
       if (action === "close") {
         status.value = issue.status;
-        // A native select can finish its activation after dispatching change.
-        // Opening here synchronously lets that same activation light-dismiss
-        // the popover immediately on some browsers, leaving no visible action.
-        setTimeout(openCloseEditor);
+        deferInspectorPopoverOpen(openCloseEditor);
         return;
       }
       if (target === "open" && issue.assignees.length > 0) {
