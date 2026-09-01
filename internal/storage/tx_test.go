@@ -3,12 +3,10 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -154,59 +152,45 @@ func TestCommitFailureRollsBackConnection(t *testing.T) {
 	assertPoolRemainsUsable(t, db)
 }
 
-func TestRollbackFailureDiscardsConnection(t *testing.T) {
-	connector := &transactionFailureConnector{failQuery: "ROLLBACK"}
-	sqlDB := sql.OpenDB(connector)
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-	db := &DB{db: sqlDB}
+func TestWriteBeginsImmediateBeforeCallback(t *testing.T) {
+	db := newTxTestDB(t)
+	contender := openImmediateContender(t, db.Path())
 
-	err := db.Read(t.Context(), func(*Tx) error { return nil })
-	require.ErrorContains(t, err, "rollback transaction")
+	require.NoError(t, db.Write(t.Context(), func(*Tx) error {
+		_, err := contender.ExecContext(t.Context(), "BEGIN IMMEDIATE")
+		require.ErrorContains(t, err, "database is locked")
+		return nil
+	}))
 
-	// Raw returning driver.ErrBadConn closes the uncertain first connection.
-	// The next operation therefore opens a fresh one instead of reusing it.
-	require.NoError(t, db.Write(t.Context(), func(*Tx) error { return nil }))
-	assert.Equal(t, int32(2), connector.opened.Load())
-	assert.Equal(t, int32(1), connector.closed.Load())
+	_, err := contender.ExecContext(t.Context(), "BEGIN IMMEDIATE")
+	require.NoError(t, err)
+	_, err = contender.ExecContext(t.Context(), "ROLLBACK")
+	require.NoError(t, err)
 }
 
-func TestBeginFailureDiscardsConnection(t *testing.T) {
-	cases := []struct {
-		name      string
-		failQuery string
-		operation func(*DB, func(*Tx) error) error
-	}{
-		{"read", "BEGIN", func(db *DB, fn func(*Tx) error) error {
-			return db.Read(t.Context(), fn)
-		}},
-		{"write", "BEGIN IMMEDIATE", func(db *DB, fn func(*Tx) error) error {
-			return db.Write(t.Context(), fn)
-		}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			connector := &transactionFailureConnector{failQuery: tc.failQuery}
-			sqlDB := sql.OpenDB(connector)
-			sqlDB.SetMaxOpenConns(1)
-			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-			db := &DB{db: sqlDB}
+func TestReadRemainsDeferred(t *testing.T) {
+	db := newTxTestDB(t)
+	contender := openImmediateContender(t, db.Path())
 
-			// The test driver enters a transaction and then reports that BEGIN
-			// failed, modelling cancellation racing with modernc's SQLite step.
-			callbackRan := false
-			err := tc.operation(db, func(*Tx) error {
-				callbackRan = true
-				return nil
-			})
-			require.ErrorContains(t, err, "begin transaction")
-			assert.False(t, callbackRan)
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		if _, err := tx.AnyUsers(); err != nil {
+			return err
+		}
+		_, err := contender.ExecContext(t.Context(), "BEGIN IMMEDIATE")
+		if err != nil {
+			return err
+		}
+		_, err = contender.ExecContext(t.Context(), "ROLLBACK")
+		return err
+	}))
+}
 
-			require.NoError(t, db.Write(t.Context(), func(*Tx) error { return nil }))
-			assert.Equal(t, int32(2), connector.opened.Load())
-			assert.Equal(t, int32(1), connector.closed.Load())
-		})
-	}
+func openImmediateContender(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout=0")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	return db
 }
 
 func assertPoolRemainsUsable(t *testing.T, db *DB) {
@@ -221,75 +205,4 @@ func assertPoolRemainsUsable(t *testing.T, db *DB) {
 		}
 		return err
 	}))
-}
-
-func TestJoinTransactionErrorPreservesOperationError(t *testing.T) {
-	operationErr := errors.New("operation")
-	rollbackErr := errors.New("rollback")
-	err := joinTransactionError(operationErr, rollbackErr)
-	assert.ErrorIs(t, err, operationErr)
-	assert.ErrorIs(t, err, rollbackErr)
-}
-
-type transactionFailureConnector struct {
-	opened    atomic.Int32
-	closed    atomic.Int32
-	failQuery string
-}
-
-func (c *transactionFailureConnector) Connect(context.Context) (driver.Conn, error) {
-	n := c.opened.Add(1)
-	failQuery := ""
-	if n == 1 {
-		failQuery = c.failQuery
-	}
-	return &transactionFailureConn{connector: c, failQuery: failQuery}, nil
-}
-
-func (*transactionFailureConnector) Driver() driver.Driver { return transactionFailureDriver{} }
-
-type transactionFailureDriver struct{}
-
-func (transactionFailureDriver) Open(string) (driver.Conn, error) {
-	return nil, errors.New("use connector")
-}
-
-type transactionFailureConn struct {
-	connector     *transactionFailureConnector
-	failQuery     string
-	inTransaction bool
-}
-
-func (*transactionFailureConn) Prepare(string) (driver.Stmt, error) {
-	return nil, errors.New("prepare is not supported")
-}
-
-func (c *transactionFailureConn) Close() error {
-	c.connector.closed.Add(1)
-	return nil
-}
-
-func (*transactionFailureConn) Begin() (driver.Tx, error) {
-	return nil, errors.New("database/sql transactions are not used")
-}
-
-func (c *transactionFailureConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (
-	driver.Result, error,
-) {
-	switch query {
-	case "BEGIN", "BEGIN IMMEDIATE":
-		if c.inTransaction {
-			return nil, errors.New("cannot start a transaction within a transaction")
-		}
-		c.inTransaction = true
-	case "ROLLBACK", "COMMIT":
-		if query == c.failQuery {
-			return nil, errors.New("forced transaction failure")
-		}
-		c.inTransaction = false
-	}
-	if query == c.failQuery {
-		return nil, errors.New("forced transaction failure")
-	}
-	return driver.RowsAffected(0), nil
 }

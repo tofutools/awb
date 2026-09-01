@@ -3,18 +3,11 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
-	"errors"
-	"time"
 
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-const transactionCleanupTimeout = 5 * time.Second
-
-// queryer is the part of database/sql that the query helpers use, so the same
-// code runs on a pooled handle and on the dedicated connection a transaction
-// holds.
+// queryer is the part of database/sql.Tx that the query helpers use.
 type queryer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -42,84 +35,37 @@ type Tx struct {
 //
 // A transaction that cannot take the lock within the busy timeout fails rather
 // than being retried in a loop.
-func (d *DB) Write(ctx context.Context, fn func(*Tx) error) (retErr error) {
-	conn, err := d.db.Conn(ctx)
+func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
+	// The driver's _txlock=immediate setting makes every non-read-only
+	// transaction BEGIN IMMEDIATE; see dsn. Using database/sql's transaction
+	// type lets it own cancellation, rollback and the pooled connection state.
+	sqlTx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
-	}
-	defer conn.Close() //nolint:errcheck // returning the connection to the pool
-
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		discardConnection(conn)
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			retErr = joinTransactionError(retErr, rollback(conn))
-		}
-	}()
+	defer sqlTx.Rollback() //nolint:errcheck // safe after Commit; database/sql owns cleanup
 
-	if err := fn(&Tx{ctx: ctx, q: conn}); err != nil {
+	if err := fn(&Tx{ctx: ctx, q: sqlTx}); err != nil {
 		return err
 	}
 
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+	if err := sqlTx.Commit(); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "commit transaction")
 	}
-	committed = true
 	return nil
 }
 
 // Read runs fn inside a deferred transaction, so a composite read — an issue
 // with its labels, relations and blockers — sees one consistent snapshot. In
 // WAL mode a reader never blocks a writer.
-func (d *DB) Read(ctx context.Context, fn func(*Tx) error) (retErr error) {
-	conn, err := d.db.Conn(ctx)
+func (d *DB) Read(ctx context.Context, fn func(*Tx) error) error {
+	// modernc treats read-only transactions as deferred even when _txlock is
+	// immediate, so readers retain their WAL-mode non-blocking behaviour.
+	sqlTx, err := d.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "acquire database connection")
-	}
-	defer conn.Close() //nolint:errcheck // returning the connection to the pool
-
-	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
-		discardConnection(conn)
 		return awberr.Wrap(awberr.Runtime, err, "begin transaction")
 	}
-	defer func() { retErr = joinTransactionError(retErr, rollback(conn)) }()
+	defer sqlTx.Rollback() //nolint:errcheck // database/sql owns cleanup
 
-	return fn(&Tx{ctx: ctx, q: conn})
-}
-
-// rollback uses neither the request's cancellation nor an unbounded context:
-// a cancelled HTTP request must still end the transaction before its connection
-// can return to the pool. If ending it cannot be confirmed, ErrBadConn is the
-// database/sql-supported way to discard the connection rather than pool it in
-// an unknown transactional state.
-func rollback(conn *sql.Conn) error {
-	ctx, cancel := context.WithTimeout(context.Background(), transactionCleanupTimeout)
-	defer cancel()
-
-	if _, err := conn.ExecContext(ctx, "ROLLBACK"); err != nil {
-		discardConnection(conn)
-		return err
-	}
-	return nil
-}
-
-// An ExecContext error does not prove that SQLite did nothing: cancellation
-// can race with a successfully executed BEGIN. ErrBadConn makes database/sql
-// close an uncertain connection instead of returning it to the pool.
-func discardConnection(conn *sql.Conn) {
-	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-}
-
-func joinTransactionError(operationErr, rollbackErr error) error {
-	if rollbackErr == nil {
-		return operationErr
-	}
-	cleanupErr := awberr.Wrap(awberr.Runtime, rollbackErr, "rollback transaction")
-	if operationErr == nil {
-		return cleanupErr
-	}
-	return errors.Join(operationErr, cleanupErr)
+	return fn(&Tx{ctx: ctx, q: sqlTx})
 }
