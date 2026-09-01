@@ -1153,7 +1153,7 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		"/api/issues/suggestions?q=tied",
 		"/api/navigation?q=tied", "/api/navigation?q=awb",
 		"/api/projects", "/api/projects?state=archived", "/api/projects?state=all",
-		"/api/projects/awb/activity",
+		"/api/projects/old/activity",
 		"/api/preferences/projects", "/api/projects/awb/members",
 		"/api/users", "/api/labels", "/api/assignees",
 		"/api/issues/" + blocker, "/api/issues/" + blocker + "/attachments",
@@ -1191,6 +1191,11 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		resp, first := get(t, h, http.MethodGet, path, credentials...)
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
 		assert.NotEmpty(t, first, path)
+		// An empty array is a non-empty body, so comparing one against itself
+		// would say nothing about the order of a listing that returned no rows.
+		// Every path above is seeded to return some.
+		assert.NotEqual(t, "[]", strings.TrimSpace(first),
+			"%s returned no rows, so its order went untested", path)
 		for range 3 {
 			_, again := get(t, h, http.MethodGet, path, credentials...)
 			assert.Equal(t, first, again, path)
