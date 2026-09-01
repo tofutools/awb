@@ -10,6 +10,7 @@ declare module "codemirror" {
 
   interface EditorViewConfig {
     doc: string;
+    selection?: { anchor: number; head: number };
     extensions: readonly unknown[];
     parent: HTMLElement;
   }
@@ -20,6 +21,7 @@ declare module "codemirror" {
     static readonly updateListener: { of(listener: (update: ViewUpdate) => void): unknown };
     readonly contentDOM: HTMLElement;
     constructor(config: EditorViewConfig);
+    focus(): void;
     destroy(): void;
   }
 

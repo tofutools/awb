@@ -52,6 +52,7 @@ export function createMarkdownEditor(
   textarea.value = value;
   textarea.defaultValue = value;
   textarea.rows = 10;
+  textarea.setAttribute("aria-label", label);
   if (name !== undefined) textarea.name = name;
 
   const mount = document.createElement("div");
@@ -62,6 +63,7 @@ export function createMarkdownEditor(
   type EditorViewInstance = InstanceType<(typeof import("codemirror"))["EditorView"]>;
   let view: EditorViewInstance | undefined;
   let loading: Promise<void> | undefined;
+  let disposed = false;
 
   const editor: MarkdownEditor = {
     element,
@@ -69,6 +71,16 @@ export function createMarkdownEditor(
     activate(): Promise<void> {
       if (view !== undefined) return Promise.resolve();
       if (loading !== undefined) return loading;
+      if (!element.isConnected) {
+        loading = new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            loading = undefined;
+            if (element.isConnected && !disposed) void editor.activate().then(resolve);
+            else resolve();
+          });
+        });
+        return loading;
+      }
       loading = import("codemirror").then(({
         EditorView,
         classHighlighter,
@@ -79,9 +91,13 @@ export function createMarkdownEditor(
         markdown,
         syntaxHighlighting,
       }) => {
-        if (!element.isConnected) return;
+        if (disposed) return;
+        const restoreFocus = document.activeElement === textarea;
+        const anchor = textarea.selectionStart;
+        const head = textarea.selectionEnd;
         view = new EditorView({
           doc: textarea.value,
+          selection: { anchor, head },
           extensions: [
             history(),
             keymap.of(markdownEditorKeymap(defaultKeymap, historyKeymap)),
@@ -105,10 +121,12 @@ export function createMarkdownEditor(
         });
         textarea.hidden = true;
         mount.hidden = false;
+        if (restoreFocus) view.focus();
       });
       return loading;
     },
     destroy(): void {
+      disposed = true;
       view?.destroy();
       view = undefined;
       loading = undefined;
