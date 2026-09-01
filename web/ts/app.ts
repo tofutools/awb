@@ -323,6 +323,8 @@ function confirmMutation(
   trigger: HTMLElement,
   destructive = false,
 ): Promise<boolean> {
+  const active = document.activeElement;
+  const restoreFocus = active instanceof HTMLElement && active !== document.body ? active : trigger;
   const dialog = element("dialog", "confirmation-dialog") as HTMLDialogElement;
   const id = confirmationDialogID++;
   const titleID = `confirmation-title-${id}`;
@@ -358,7 +360,7 @@ function confirmMutation(
     dialog.addEventListener("close", () => {
       const confirmed = dialog.returnValue === "yes";
       dialog.remove();
-      trigger.focus();
+      if (restoreFocus.isConnected) restoreFocus.focus();
       resolve(confirmed);
     }, { once: true });
     dialog.showModal();
@@ -1591,13 +1593,12 @@ function attachmentEditor(issueID: string): HTMLFormElement {
     element("span", "attachment-browse", "browse"),
     file,
   );
-  picker.tabIndex = 0;
   form.append(picker);
   const upload = async (selected: File): Promise<void> => {
     const confirmed = await confirmMutation(
       "Upload attachment?",
       `Add ${selected.name} (${formatSize(selected.size)}) to ${issueID}.`,
-      picker,
+      file,
     );
     if (!confirmed) {
       file.value = "";
