@@ -361,7 +361,7 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 			"mode": "remote",
 			"database": "",
 			"server": "`+server.URL+`",
-			"ui": "`+server.URL+`/#/projects",
+			"ui": "`+server.URL+`/#/workspaces",
 			"attachments": ""
 		},
 		"configuration": {

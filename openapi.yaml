@@ -7,8 +7,14 @@ info:
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
     complete enough to drive a fully functional read/write web UI. The bundled
-    UI reads and edits projects and issues through the same operations available
+    UI reads and edits workspaces and issues through the same operations available
     to API and CLI clients.
+
+    The product calls its immutable top-level boundary a **workspace**. This
+    API retains the established `project` paths, operation IDs, schema names
+    and JSON fields for compatibility; they represent workspaces and are not a
+    second concept. An issue belongs to exactly one workspace and cannot be
+    transferred to another, so its workspace-prefixed ID remains stable.
 
     The component schemas below are the domain fields in the CLI's `--json`
     structures. In remote mode the CLI adds navigation links derived from the
@@ -25,22 +31,22 @@ info:
 
     **Authorization.** A server whose database holds at least one user
     authenticates every request and answers it with that user's permissions. A
-    user works in the projects they are a member of and sees nothing else: a
-    project they hold no access to, and every issue in it, is answered `404`
+    user works in the workspaces they are a member of and sees nothing else: a
+    workspace they hold no access to, and every issue in it, is answered `404`
     rather than `403`, and is absent from every listing, search, facet and
     tree, unpaged totals included. `403` is for something they can see and may
     not do. The user directory is the narrow exception: it includes current
-    accounts that participated in visible projects, but not their memberships
-    in any other project. A database holding no user at all is a server without
+    accounts that participated in visible workspaces, but not their memberships
+    in any other workspace. A database holding no user at all is a server without
     authentication, exactly as version 1 was, and applies none of this.
 
-    Two flags stand outside the projects: `project_admin` creates, changes and
-    deletes projects and holds `admin` access in every one of them, and
+    Two flags stand outside the workspaces: compatibility field `project_admin`
+    creates, changes and deletes workspaces and holds `admin` access in every one, and
     `user_admin` creates, changes and deletes users. Neither implies the other.
 
     Two things are deliberately *not* filtered, and both are about the graph
     rather than about the data. A visible issue's `relations` and `blockers`
-    may name issues in projects the caller has no access to: the issue is
+    may name issues in workspaces the caller has no access to: the issue is
     theirs to see and what it depends on is part of it. A name is all that is
     exposed — fetching one of those issues is a `404` like anything else. And
     `blocked`, with the `ready` and `blocked` listings that follow from it, is
@@ -644,12 +650,12 @@ paths:
     get:
       tags: [projects]
       operationId: listProjects
-      summary: List projects
+      summary: 'List workspaces (compatibility path: projects)'
       parameters:
         - $ref: '#/components/parameters/listingFilter'
         - name: state
           in: query
-          description: Lifecycle subset. Archived projects are omitted by default.
+          description: Lifecycle subset. Archived workspaces are omitted by default.
           schema:
             type: string
             enum: [active, archived, all]
@@ -671,7 +677,7 @@ paths:
     post:
       tags: [projects]
       operationId: createProject
-      summary: Create a project
+      summary: Create a workspace
       requestBody:
         required: true
         content:
@@ -690,7 +696,7 @@ paths:
     get:
       tags: [projects]
       operationId: getProject
-      summary: Read one project
+      summary: Read one workspace
       responses:
         '200': { $ref: '#/components/responses/Project' }
         default: { $ref: '#/components/responses/Error' }
@@ -698,7 +704,7 @@ paths:
     patch:
       tags: [projects]
       operationId: updateProject
-      summary: Change a project's name or description
+      summary: Change a workspace's name or description
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -712,22 +718,22 @@ paths:
     delete:
       tags: [projects]
       operationId: deleteProject
-      summary: Delete a project
+      summary: Delete a workspace
       description: |
-        Refuses while the project holds any issue at all, closed ones included,
+        Refuses while the workspace holds any issue at all, closed ones included,
         unless `cascade` is true — which deletes those issues and their
-        relations, including relations to issues in other projects, which may
+        relations, including relations to issues in other workspaces, which may
         unblock work elsewhere.
       parameters:
         - name: cascade
           in: query
-          description: Also delete the issues the project holds.
+          description: Also delete the issues the workspace holds.
           schema: { type: boolean, default: false }
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '200':
           description: |
-            The project as it was immediately before deletion. It carries no
+            The workspace as it was immediately before deletion. It carries no
             ETag: the version it describes is gone.
           content:
             application/json:
@@ -743,11 +749,12 @@ paths:
     post:
       tags: [projects]
       operationId: archiveProject
-      summary: Archive a project as retained read-only history
+      summary: Archive a workspace as retained read-only history
       description: |
         Requires the project_admin flag. Idempotent when already archived.
-        Existing records and stable URLs remain readable, while the project is
-        omitted from normal discovery and rejects work mutations.
+        Existing records, workspace-prefixed issue IDs and stable URLs remain
+        readable. Nothing transfers to another workspace; the archived
+        workspace is omitted from normal discovery and rejects work mutations.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -763,8 +770,8 @@ paths:
     post:
       tags: [projects]
       operationId: restoreProject
-      summary: Restore an archived project
-      description: Requires the project_admin flag and preserves every child record and preference.
+      summary: Restore an archived workspace
+      description: Requires the project_admin compatibility flag and preserves the same workspace boundary, every child record and every preference.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:
@@ -1342,14 +1349,14 @@ components:
             type: array
             items: { $ref: '#/components/schemas/Activity' }
     Project:
-      description: The project.
+      description: The workspace, represented by the compatibility-named Project schema.
       headers:
         Etag: { $ref: '#/components/headers/ETag' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
     ProjectCreated:
-      description: The new project.
+      description: The new workspace, represented by the compatibility-named Project schema.
       headers:
         Location: { $ref: '#/components/headers/Location' }
         Etag: { $ref: '#/components/headers/ETag' }
@@ -1357,7 +1364,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Project' }
     ProjectList:
-      description: The projects.
+      description: The workspaces, represented by the compatibility-named Project schema.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
       content:
@@ -1366,7 +1373,7 @@ components:
             type: array
             items: { $ref: '#/components/schemas/Project' }
     ProjectActivityList:
-      description: Project lifecycle audit entries, newest first.
+      description: Workspace lifecycle audit entries, newest first.
       headers:
         X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
       content:
@@ -1886,6 +1893,7 @@ components:
       examples: ['2026-08-26T09:12:03.412Z']
 
     Project:
+      description: Compatibility-named representation of one workspace.
       type: object
       additionalProperties: false
       required: [key, name, description, state, archived_at, archived_by, active_issues, created_at, updated_at]
@@ -1912,7 +1920,7 @@ components:
           type: integer
           description: |
             Derived and read-only: the number of issues that are not closed.
-            Changing it does not affect the project's `updated_at`.
+            Changing it does not affect the workspace's `updated_at`.
           minimum: 0
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }

@@ -215,7 +215,7 @@ var demoIssues = []demoIssue{{
 }}
 
 type demoParams struct {
-	Force bool `long:"force" optional:"true" help:"replace the demo project, deleting everything in it"`
+	Force bool `long:"force" optional:"true" help:"replace the demo workspace, deleting everything in it"`
 }
 
 func newDemoCommand(e *env) *cobra.Command {
@@ -231,7 +231,7 @@ func newDemoCommand(e *env) *cobra.Command {
 			"wholesale rather than reconciling it: nothing marks an issue there as one\n" +
 			"a previous run wrote, so --force is what says that deleting whatever is\n" +
 			"under the key is meant.\n\n" +
-			"No other project is created or deleted, but deleting this one drops the\n" +
+			"No other workspace is created or deleted, but deleting this one drops the\n" +
 			"relations its issues were on either end of, which may unblock work\n" +
 			"elsewhere.",
 		ParamEnrich: boaParams,
@@ -251,7 +251,7 @@ func newDemoCommand(e *env) *cobra.Command {
 			// success", for the reason the deleting commands are: a command that
 			// replaces a whole project should say what it left behind. The line is
 			// not a compatibility surface; a script reads --json.
-			return e.summarise("Created project %s with %d issue(s).\n",
+			return e.summarise("Created workspace %s with %d issue(s).\n",
 				project.Key, len(demoIssues))
 		},
 	}.ToCobra()

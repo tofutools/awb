@@ -28,7 +28,7 @@ func newDumpCommand(e *env) *cobra.Command {
 	return boa.CmdT[dumpParams]{
 		Use:   "dump",
 		Short: "Download a data source into a new local database",
-		Long: "Download every project, issue and attachment visible to the caller,\n" +
+		Long: "Download every workspace, issue and attachment visible to the caller,\n" +
 			"following every paginated listing, and create a local SQLite database and\n" +
 			"attachment directory. IDs, timestamps and\n" +
 			"stored issue state are preserved, so the result can be served by this version\n" +
@@ -37,7 +37,7 @@ func newDumpCommand(e *env) *cobra.Command {
 			"Both output paths must be absent unless --force is given. A forced dump\n" +
 			"keeps the existing outputs until the replacement has downloaded successfully.\n" +
 			"A failed dump removes only the new outputs it created.\n" +
-			"Users, credentials and project memberships are not included; the resulting\n" +
+			"Users, credentials and workspace memberships are not included; the resulting\n" +
 			"server is therefore unauthenticated.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *dumpParams, cmd *cobra.Command, _ []string) error {

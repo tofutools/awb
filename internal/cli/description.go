@@ -43,9 +43,9 @@ func newDescriptionCommand(e *env) *cobra.Command {
 }
 
 func newProjectDescriptionCommand(e *env) *cobra.Command {
-	return group("description", "Fetch a project description for safe file-based editing",
-		"Fetch records the project version in a receipt beside the output file. A later\n"+
-			"awb project update --description-file uses that receipt as a conditional-edit\n"+
+	return group("description", "Fetch a workspace description for safe file-based editing",
+		"Fetch records the workspace version in a receipt beside the output file. A later\n"+
+			"awb workspace update --description-file uses that receipt as a conditional-edit\n"+
 			"precondition, so it refuses to overwrite a concurrent change.",
 		newDescriptionGetCommand(e, "project"))
 }
@@ -204,7 +204,7 @@ func descriptionFetchRequired(entity, id string, file *string) error {
 	}
 	command := fmt.Sprintf("awb description get %s --output %s", id, path)
 	if entity == "project" {
-		command = fmt.Sprintf("awb project description get %s --output %s", id, path)
+		command = fmt.Sprintf("awb workspace description get %s --output %s", id, path)
 	}
 	return awberr.Usagef("description must be fetched before it can be updated; run %s, or use --force to replace it without a precondition", command)
 }
@@ -219,7 +219,7 @@ func descriptionPreconditionError(err error, entity, id, file string) error {
 	}
 	command := fmt.Sprintf("awb description get %s --output %s", id, file)
 	if entity == "project" {
-		command = fmt.Sprintf("awb project description get %s --output %s", id, file)
+		command = fmt.Sprintf("awb workspace description get %s --output %s", id, file)
 	}
 	return awberr.Wrap(awberr.KindOf(err), err,
 		"description receipt is stale; fetch the description again with %s", command)

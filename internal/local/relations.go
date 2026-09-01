@@ -250,7 +250,7 @@ func (s relationSnapshots) capture(tx *storage.Tx) func(string) error {
 			return err
 		}
 		if state == domain.ProjectArchived {
-			return awberr.Conflictf("the relation touches archived read-only project work")
+			return awberr.Conflictf("the relation touches archived read-only workspace work")
 		}
 		relations, err := tx.IssueRelations(id)
 		if err != nil {

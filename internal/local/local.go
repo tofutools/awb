@@ -121,7 +121,7 @@ func ensureProjectActive(tx *storage.Tx, key string) error {
 		return err
 	}
 	if project.State == domain.ProjectArchived {
-		return awberr.Conflictf("project %s is archived and read-only", key)
+		return awberr.Conflictf("workspace %s is archived and read-only", key)
 	}
 	return nil
 }

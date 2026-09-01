@@ -102,7 +102,7 @@ func (h *harness) mustRun(args ...string) string {
 func TestProjectArchiveAndRestoreCommands(t *testing.T) {
 	h := newHarness(t)
 	h.mustRun("create", "retained", "--project", "awb")
-	archived := h.mustRun("project", "archive", "awb", "--json")
+	archived := h.mustRun("workspace", "archive", "awb", "--json")
 	assert.Contains(t, archived, `"state": "archived"`)
 	activity := h.mustRun("project", "activity", "awb", "--compact")
 	assert.Contains(t, activity, " awb archived @mikael")
@@ -118,6 +118,7 @@ func TestProjectArchiveAndRestoreCommands(t *testing.T) {
 	require.Len(t, audit, 2)
 	assert.Equal(t, "restored", audit[0].Action)
 	h.mustRun("create", "resumed", "--project", "awb")
+	assert.Contains(t, h.mustRun("workspace", "show", "awb", "--json"), `"key": "awb"`)
 }
 
 // create makes an issue and returns its ID.
@@ -700,8 +701,8 @@ func TestAgentGuide(t *testing.T) {
 	guide := h.mustRun("agent-guide")
 	assert.Contains(t, guide, "awb ready --compact")
 	assert.Contains(t, guide, "Quoted `\\n` sequences")
-	assert.Contains(t, guide, "awb project description get <key> --output project.md")
-	assert.Contains(t, guide, "awb project update <key> --description-file project.md")
+	assert.Contains(t, guide, "awb workspace description get <key> --output workspace.md")
+	assert.Contains(t, guide, "awb workspace update <key> --description-file workspace.md")
 	assert.Contains(t, guide, "`--json` selects an output format")
 	assert.Contains(t, guide, "Exit codes")
 	assert.Contains(t, guide, "awb --help")
@@ -840,7 +841,7 @@ func TestProjectRemovalWithoutCascade(t *testing.T) {
 	h.mustRun("project", "create", "empty")
 
 	summary := h.mustRun("project", "delete", "empty", "--force")
-	assert.Equal(t, "Deleted project empty.\n", summary)
+	assert.Equal(t, "Deleted workspace empty.\n", summary)
 }
 
 // awb project show prints one project in each of the three modes, and reports a

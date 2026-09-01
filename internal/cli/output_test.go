@@ -188,15 +188,15 @@ func TestRemoteStatusLinksToTheWebUI(t *testing.T) {
 		require.NoError(t, e.printStatus(&statusReport{
 			Connection: statusConnection{
 				Mode: "remote", Server: "https://example.com/awb",
-				UI: "https://example.com/awb/#/projects",
+				UI: "https://example.com/awb/#/workspaces",
 			},
 			Configuration: statusConfiguration{Color: config.ColorAlways},
 			Projects:      []statusProject{{Key: "demo", Name: "Demo", Open: 2, Total: 2}},
 		}))
 	})
 	assert.Contains(t, out,
-		"\x1b]8;;https://example.com/awb/#/projects\x07https://example.com/awb/#/projects",
-		"the visible full UI URL opens the project index")
+		"\x1b]8;;https://example.com/awb/#/workspaces\x07https://example.com/awb/#/workspaces",
+		"the visible full UI URL opens the workspace index")
 	assert.Contains(t, out,
 		"\x1b]8;;https://example.com/awb/#/issues?project=demo\x07demo",
 		"the project key opens its filtered issue listing")

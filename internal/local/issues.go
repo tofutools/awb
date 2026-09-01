@@ -65,7 +65,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 			return err
 		}
 		if project.State == domain.ProjectArchived {
-			return awberr.Conflictf("project %s is archived and cannot receive new issues", issue.Project)
+			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Project)
 		}
 
 		if err := tx.InsertIssue(issue); err != nil {

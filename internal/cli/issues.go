@@ -109,7 +109,7 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 			if target == "" {
 				return awberr.Usagef(
-					"no project: give --project, set AWB_PROJECT, or put \"project\" in %s",
+					"no workspace: give the compatibility flag --project, set AWB_PROJECT, or put \"project\" in %s",
 					".awb.yaml or the user configuration file")
 			}
 

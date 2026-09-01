@@ -34,7 +34,7 @@ func (b *Backend) CreateProject(ctx context.Context, req backend.ProjectCreate) 
 		// nothing to hide behind a 404 here: the caller named a key that is not
 		// there yet either way.
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may create a project")
+			return awberr.Forbiddenf("only a workspace administrator may create a workspace")
 		}
 		if err := tx.InsertProject(key, name, description); err != nil {
 			return err
@@ -107,10 +107,10 @@ func (b *Backend) UpdateProject(ctx context.Context, key string, req backend.Pro
 			return err
 		}
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may change project %s", key)
+			return awberr.Forbiddenf("only a workspace administrator may change workspace %s", key)
 		}
 		if existing.State == domain.ProjectArchived {
-			return awberr.Conflictf("project %s is archived; restore it before changing it", key)
+			return awberr.Conflictf("workspace %s is archived; restore it before changing it", key)
 		}
 		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
 			return err
@@ -156,7 +156,7 @@ func (b *Backend) setProjectState(ctx context.Context, key string, state domain.
 			return err
 		}
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may change project %s lifecycle", key)
+			return awberr.Forbiddenf("only a workspace administrator may change workspace %s lifecycle", key)
 		}
 		if err := checkIfMatch(ifMatch, existing.UpdatedAt, "the project"); err != nil {
 			return err
@@ -217,10 +217,10 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 			return err
 		}
 		if !caller.MayManageProjects() {
-			return awberr.Forbiddenf("only a project administrator may delete project %s", key)
+			return awberr.Forbiddenf("only a workspace administrator may delete workspace %s", key)
 		}
 		if project.State == domain.ProjectArchived {
-			return awberr.Conflictf("project %s is archived and read-only; restore it before deleting it", key)
+			return awberr.Conflictf("workspace %s is archived and read-only; restore it before deleting it", key)
 		}
 		if err := checkIfMatch(ifMatch, project.UpdatedAt, "the project"); err != nil {
 			return err
@@ -232,7 +232,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 		}
 		if held > 0 && !cascade {
 			return awberr.Conflictf(
-				"project %s still holds %d issue(s), closed ones included; use --cascade to delete them too",
+				"workspace %s still holds %d issue(s), closed ones included; use --cascade to delete them too",
 				key, held)
 		}
 		if cascade {
@@ -241,7 +241,7 @@ func (b *Backend) DeleteProject(ctx context.Context, key string, cascade bool,
 				return err
 			}
 			if touchesArchived {
-				return awberr.Conflictf("project %s has relations touching archived read-only work", key)
+				return awberr.Conflictf("workspace %s has relations touching archived read-only work", key)
 			}
 		}
 

@@ -64,11 +64,11 @@ test("navigation results become keyboard commands with stable routes", () => {
     projects: [{ key: "client-ui", name: "Client UI" }],
     users: [{ name: "mikael", full_name: "Mikael Ståldal" }],
   }, (href) => navigated.push(href));
-  assert.deepEqual(commands.map(({ group }) => group), ["Issues", "Projects", "Users"]);
+  assert.deepEqual(commands.map(({ group }) => group), ["Issues", "Workspaces", "Users"]);
   assert.equal(commands[2].label, "Mikael Ståldal");
   assert.equal(commands[2].hint, "@mikael");
   commands.forEach(({ run }) => run());
-  assert.deepEqual(navigated, ["#/issues/awb-a1b2c3", "#/projects/client-ui", "#/users?user=mikael"]);
+  assert.deepEqual(navigated, ["#/issues/awb-a1b2c3", "#/workspaces/client-ui", "#/users?user=mikael"]);
 });
 
 test("page and boundary keys clamp across grouped static and dynamic results", () => {
@@ -85,7 +85,7 @@ test("page and boundary keys clamp across grouped static and dynamic results", (
     command("users", "Go to Users"),
   ];
   assert.deepEqual(commands.map(({ group }) => group),
-    ["Navigation", "Issues", "Issues", "Projects", "Users", "Navigation"]);
+    ["Navigation", "Issues", "Issues", "Workspaces", "Users", "Navigation"]);
 
   assert.equal(nextPaletteSelection("PageDown", 0, commands.length, 3), 3);
   assert.equal(nextPaletteSelection("PageDown", 3, commands.length, 3), 5);

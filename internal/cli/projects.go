@@ -21,8 +21,8 @@ func (e *env) summarise(format string, args ...any) error {
 }
 
 func newProjectCommand(e *env) *cobra.Command {
-	return group("project", "Manage projects",
-		"A project is the top-level organising unit; every issue belongs to exactly one.",
+	cmd := group("workspace", "Manage workspaces",
+		"A workspace is the top-level organising unit. Every issue belongs immutably to exactly one; the workspace key is its stable ID prefix.",
 		newProjectCreateCommand(e),
 		newProjectUpdateCommand(e),
 		newProjectDescriptionCommand(e),
@@ -36,6 +36,8 @@ func newProjectCommand(e *env) *cobra.Command {
 		newProjectRevokeCommand(e),
 		newProjectMembersCommand(e),
 	)
+	cmd.Aliases = []string{"project"}
+	return cmd
 }
 
 func newProjectActivityCommand(e *env) *cobra.Command {
@@ -45,7 +47,7 @@ func newProjectActivityCommand(e *env) *cobra.Command {
 		Offset *int   `long:"offset" optional:"true" help:"skip this many entries"`
 	}
 	return boa.CmdT[params]{
-		Use: "activity", Short: "List a project's archive and restore history", ParamEnrich: boaParams,
+		Use: "activity", Short: "List a workspace's archive and restore history", ParamEnrich: boaParams,
 		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
 			if p.Limit != nil && *p.Limit < 0 {
 				return awberr.Usagef("--limit must not be negative")
@@ -83,11 +85,11 @@ type projectCreateParams struct {
 func newProjectCreateCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectCreateParams]{
 		Use:   "create",
-		Short: "Create a project",
-		Long: "Create a project.\n\n" +
+		Short: "Create a workspace",
+		Long: "Create a workspace.\n\n" +
 			"The key is lowercase ASCII letters, digits and hyphens, starting with a\n" +
-			"letter, at most 16 characters. It becomes the issue ID prefix and is\n" +
-			"immutable. --name defaults to the key.",
+			"letter, at most 16 characters. It becomes the immutable issue ID prefix;\n" +
+			"issues cannot move to another workspace. --name defaults to the key.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *projectCreateParams, cmd *cobra.Command) error {
 			return describe("project")(ctx, &p.DescriptionFlags, cmd)
@@ -123,9 +125,9 @@ type projectUpdateParams struct {
 func newProjectUpdateCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectUpdateParams]{
 		Use:   "update",
-		Short: "Change a project's name or description",
-		Long: "Change a project's name or description. The key itself is immutable.\n\n" +
-			"A description file must first be fetched with awb project description get,\n" +
+		Short: "Change a workspace's name or description",
+		Long: "Change a workspace's name or description. Its key and issue boundary are immutable.\n\n" +
+			"A description file must first be fetched with awb workspace description get,\n" +
 			"whose receipt prevents overwriting a concurrent edit. --force deliberately\n" +
 			"replaces a description without that precondition. --name \"\" restores the\n" +
 			"key as the name.",
@@ -167,11 +169,11 @@ func newProjectShowCommand(e *env) *cobra.Command {
 	}
 	return boa.CmdT[params]{
 		Use:   "show",
-		Short: "Print one project in full",
-		Long: "Print a project with its description and its count of issues that are not\n" +
+		Short: "Print one workspace in full",
+		Long: "Print a workspace with its description and its count of issues that are not\n" +
 			"closed.\n\n" +
 			"On a terminal the description is drawn as the Markdown it is. Under\n" +
-			"--compact this prints the same single line project list would and nothing\n" +
+			"--compact this prints the same single line workspace list would and nothing\n" +
 			"else; --json is what a script uses when it needs the rest.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
@@ -191,12 +193,12 @@ func newProjectShowCommand(e *env) *cobra.Command {
 func newProjectListCommand(e *env) *cobra.Command {
 	type params struct {
 		InteractiveFlags
-		Archived bool `long:"archived" optional:"true" help:"list archived projects instead of active projects"`
-		All      bool `long:"all" optional:"true" help:"list active and archived projects"`
+		Archived bool `long:"archived" optional:"true" help:"list archived workspaces instead of active workspaces"`
+		All      bool `long:"all" optional:"true" help:"list active and archived workspaces"`
 	}
 	return boa.CmdT[params]{
 		Use:         "list",
-		Short:       "List projects with counts of issues that are not closed",
+		Short:       "List workspaces with counts of issues that are not closed",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
 			if p.Archived && p.All {
@@ -235,8 +237,9 @@ func newProjectArchiveCommand(e *env) *cobra.Command {
 	}
 	return boa.CmdT[params]{
 		Use:   "archive",
-		Short: "Archive a project as retained read-only history",
-		Long: "Archive a project without deleting anything. Its stable URLs and history remain\n" +
+		Short: "Archive a workspace as retained read-only history",
+		Long: "Archive a workspace without deleting or transferring anything. Its stable URLs,\n" +
+			"workspace-prefixed issue IDs and history remain\n" +
 			"readable, while normal listings and target pickers omit it and work mutations\n" +
 			"are refused. Repeating the command is idempotent.",
 		ParamEnrich: boaParams,
@@ -260,8 +263,8 @@ func newProjectRestoreCommand(e *env) *cobra.Command {
 	}
 	return boa.CmdT[params]{
 		Use:         "restore",
-		Short:       "Restore an archived project",
-		Long:        "Restore the same project, including all of its retained records and stable URLs.",
+		Short:       "Restore an archived workspace",
+		Long:        "Restore the same workspace boundary, including all retained records and stable URLs.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *params, cmd *cobra.Command, _ []string) error {
 			be, err := e.backend(cmd.Context())
@@ -280,23 +283,23 @@ func newProjectRestoreCommand(e *env) *cobra.Command {
 type projectDeleteParams struct {
 	Key     string `positional:"true" required:"true"`
 	Force   bool   `long:"force" optional:"true" help:"confirm the deletion"`
-	Cascade bool   `long:"cascade" optional:"true" help:"also delete the issues the project holds"`
+	Cascade bool   `long:"cascade" optional:"true" help:"also delete the issues the workspace holds"`
 }
 
 func newProjectDeleteCommand(e *env) *cobra.Command {
 	return boa.CmdT[projectDeleteParams]{
 		Use:   "delete",
-		Short: "Delete a project",
-		Long: "Delete a project.\n\n" +
-			"It refuses while the project holds any issue at all — closed ones included,\n" +
-			"so the refusal is wider than the count project list shows and --force alone\n" +
+		Short: "Delete a workspace",
+		Long: "Delete a workspace.\n\n" +
+			"It refuses while the workspace holds any issue at all — closed ones included,\n" +
+			"so the refusal is wider than the count workspace list shows and --force alone\n" +
 			"can never destroy closed history — unless --cascade is also given, which\n" +
 			"deletes those issues and their relations, including relations to issues in\n" +
-			"other projects, which may unblock work elsewhere.",
+			"other workspaces, which may unblock work elsewhere.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *projectDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {
-				return awberr.Usagef("awb project delete needs --force: it is not recoverable")
+				return awberr.Usagef("awb workspace delete needs --force: it is not recoverable")
 			}
 
 			be, err := e.backend(cmd.Context())
@@ -311,10 +314,10 @@ func newProjectDeleteCommand(e *env) *cobra.Command {
 				return e.writeProjectJSON(&deleted.Project)
 			}
 			if p.Cascade {
-				return e.summarise("Deleted project %s and the issues it held.\n",
+				return e.summarise("Deleted workspace %s and the issues it held.\n",
 					deleted.Project.Key)
 			}
-			return e.summarise("Deleted project %s.\n", deleted.Project.Key)
+			return e.summarise("Deleted workspace %s.\n", deleted.Project.Key)
 		},
 	}.ToCobra()
 }
