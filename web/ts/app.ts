@@ -725,9 +725,13 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
           message: `Issue ${created.id} was created, but ${failed.length === 1 ? "an attachment" : `${failed.length} attachments`} could not be uploaded: ${failed.map(({ file, reason }) => `${file.name} (${reason instanceof Error ? reason.message : String(reason)})`).join(", ")}`,
           error: true,
         };
+      } else {
+        pendingNotice = { message: `Issue ${created.id} was created.`, error: false };
       }
+      // Creation is an in-place board/list action: keep the current route and
+      // reload its data so the new issue appears without opening its inspector.
       dialog.close();
-      location.hash = `#/issues/${created.id}`;
+      await render();
     }).catch((error) => {
       editor.submit.disabled = false;
       mutationError(editor.form, error);
