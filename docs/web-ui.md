@@ -54,6 +54,8 @@ does not silently overwrite a concurrent change.
 
 ## Lists and discovery
 
+![The issues listing with filters, facets, status, assignees, and pagination](assets/issues.png)
+
 Ready, issues, and blocked pages mirror their CLI listings. Filters live in the
 URL, so a scoped list can be bookmarked or shared. Pagination keeps both the
 result set and facet selectors bounded for large databases.
