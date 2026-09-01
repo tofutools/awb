@@ -264,3 +264,28 @@ test("project creation and lifecycle use stable paths and advance the project ET
   assert.equal(new Headers(calls[3].init.headers).get("If-Match"), '"v3"');
   assert.equal(calls[4].path, "api/projects/team%2Fweb/activity");
 });
+
+test("project membership writes distinguish creation from the idempotent resource", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ project: "team/web", user: "a/b", access: "admin" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  await api.addProjectMember("team/web", "a/b", "admin");
+  await api.setProjectMember("team/web", "a/b", "admin");
+  await api.removeProjectMember("team/web", "a/b");
+
+  assert.equal(calls[0].path, "api/projects/team%2Fweb/members");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { user: "a/b", access: "admin" });
+  assert.equal(calls[1].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[1].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[1].init.body), { access: "admin" });
+  assert.equal(calls[2].path, "api/projects/team%2Fweb/members/a%2Fb");
+  assert.equal(calls[2].init.method, "DELETE");
+});

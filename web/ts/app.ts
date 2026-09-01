@@ -15,6 +15,7 @@ import {
   type DirectoryUser,
   type Issue,
   type IssueTree,
+  type Membership,
   type Project,
   type ProjectActivity,
   type ProjectPreference,
@@ -62,6 +63,12 @@ import {
 } from "./navigation.js";
 import { accountRoles, profileIdentity, saveProfileFullName } from "./profile.js";
 import { attachAutocomplete, type Suggestion } from "./autocomplete.js";
+import {
+  mayManageProjectMembership,
+  membershipAdditionError,
+  membershipChangeConfirmation,
+  membershipSuggestions,
+} from "./membership.js";
 import { inspectorPopoverPosition, inspectorStatusAction } from "./inspector.js";
 import { attachSearchClear } from "./search-control.js";
 import {
@@ -117,6 +124,7 @@ async function mayManageProjects(): Promise<boolean> {
   }
   return projectManager;
 }
+let pendingNotice: { message: string; error: boolean } | null = null;
 
 function listingPageSize(query: URLSearchParams): number {
   return pageSizeFrom(query, rememberedPageSize(paginationStorage));
@@ -1290,9 +1298,13 @@ async function viewUsers(route: Route, signal?: AbortSignal): Promise<HTMLElemen
   return view;
 }
 
-async function viewProject(key: string): Promise<HTMLElement> {
-  const [project, activity, canManage] = await Promise.all([
-    api.project(key), api.projectActivity(key), mayManageProjects(),
+async function viewProject(key: string, signal?: AbortSignal): Promise<HTMLElement> {
+  const [project, activity, canManage, memberPage, currentUser] = await Promise.all([
+    api.project(key),
+    api.projectActivity(key),
+    mayManageProjects(),
+    api.projectMembers(key, signal),
+    identity === "" ? Promise.resolve(null) : api.user(identity),
   ]);
   const view = element("div", "project-view");
   if (project.state === "archived") {
@@ -1341,6 +1353,217 @@ async function viewProject(key: string): Promise<HTMLElement> {
     "action",
   ));
   view.append(projectLifecycleCard(project, activity.rows, canManage));
+  view.append(projectMembershipSection(project, memberPage.rows, currentUser));
+  return view;
+}
+
+async function changeProjectMembership(
+  host: HTMLElement,
+  controls: Iterable<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>,
+  operation: () => Promise<unknown>,
+  success: string,
+  refreshNotFound = false,
+  redirect = false,
+  refreshConflict = false,
+): Promise<void> {
+  const section = host.closest<HTMLElement>(".membership-card") ?? host;
+  section.setAttribute("aria-busy", "true");
+  for (const control of controls) control.disabled = true;
+  try {
+    await operation();
+    pendingNotice = { message: success, error: false };
+    if (redirect) {
+      location.hash = "#/workspaces";
+      return;
+    }
+    await render();
+  } catch (error) {
+    if (refreshNotFound && error instanceof ApiError && error.status === 404) {
+      pendingNotice = {
+        message: "Membership changed elsewhere. The current member list has been reloaded.",
+        error: true,
+      };
+      await render();
+      return;
+    }
+    if (refreshConflict && error instanceof ApiError && error.status === 409) {
+      pendingNotice = {
+        message: "That user was added elsewhere. The current member list has been reloaded.",
+        error: true,
+      };
+      await render();
+      return;
+    }
+    for (const control of controls) control.disabled = false;
+    mutationError(host, error);
+  } finally {
+    section.removeAttribute("aria-busy");
+  }
+}
+
+function projectMembershipSection(project: Project, members: Membership[], currentUser: User | null): HTMLElement {
+  const section = element("section", "profile-card membership-card");
+  const heading = element("div", "membership-heading");
+  const title = element("div");
+  title.append(
+    element("h2", "", "Workspace members"),
+    element(
+      "p",
+      "membership-help",
+      "Membership grants access to this workspace. It is separate from each user's ignored-workspace preference.",
+    ),
+  );
+  heading.append(title, element("span", "membership-count", String(members.length)));
+  section.append(heading);
+
+  const manageable = mayManageProjectMembership(identity, currentUser, project.key, members);
+  if (manageable) section.append(projectMembershipEditor(project, members));
+  else section.append(element("p", "membership-help", "Workspace administrators can change membership and access."));
+
+  if (members.length === 0) {
+    section.append(element("p", "empty", "No stored members. Global workspace administrators still have access."));
+    return section;
+  }
+
+  const table = element("table", "listing-table membership-table") as HTMLTableElement;
+  const head = document.createElement("thead");
+  const headingRow = document.createElement("tr");
+  for (const label of ["User", "Access", "Actions"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    headingRow.append(cell);
+  }
+  head.append(headingRow);
+  const body = document.createElement("tbody");
+  for (const member of members) {
+    const row = document.createElement("tr");
+    const userCell = document.createElement("td");
+    userCell.dataset.label = "User";
+    const user = element("span", "user-name");
+    user.append(avatar(member.user), element("span", "user-identity", `@${member.user}`));
+    userCell.append(user);
+    const rowControls: Array<HTMLButtonElement | HTMLSelectElement> = [];
+
+    const accessCell = document.createElement("td");
+    accessCell.dataset.label = "Access";
+    if (manageable) {
+      const access = select(["regular", "admin"], member.access);
+      access.setAttribute("aria-label", `Access for @${member.user}`);
+      for (const option of access.options) {
+        option.textContent = option.value === "admin" ? "Administrator" : "Regular access";
+      }
+      rowControls.push(access);
+      access.addEventListener("change", () => {
+        const next = access.value as Membership["access"];
+        if (next === member.access) return;
+        if (!window.confirm(membershipChangeConfirmation(member, members, identity, next))) {
+          access.value = member.access;
+          return;
+        }
+        void changeProjectMembership(
+          accessCell,
+          rowControls,
+          () => api.setProjectMember(project.key, member.user, next),
+          `@${member.user} now has ${next} access to workspace ${project.key}.`,
+        ).then(() => {
+          // On failure the row remains mounted, so restore what the server
+          // still holds. A successful render has already detached this row.
+          if (access.isConnected) access.value = member.access;
+        });
+      });
+      accessCell.append(access);
+    } else accessCell.append(element("span", "listing-badge", member.access));
+
+    const actions = document.createElement("td");
+    actions.dataset.label = "Actions";
+    if (manageable) {
+      const remove = button("Remove", "danger-button membership-remove");
+      remove.setAttribute("aria-label", `Remove @${member.user} from workspace ${project.key}`);
+      rowControls.push(remove);
+      remove.addEventListener("click", () => {
+        if (!window.confirm(membershipChangeConfirmation(member, members, identity, null))) return;
+        const losesAccess = member.user === identity && currentUser?.project_admin !== true;
+        void changeProjectMembership(
+          actions,
+          rowControls,
+          () => api.removeProjectMember(project.key, member.user),
+          `@${member.user} was removed from workspace ${project.key}.`,
+          true,
+          losesAccess,
+        );
+      });
+      actions.append(remove);
+    } else actions.append(element("span", "muted", "—"));
+    row.append(userCell, accessCell, actions);
+    body.append(row);
+  }
+  table.append(head, body);
+  section.append(table);
+  return section;
+}
+
+function projectMembershipEditor(project: Project, members: Membership[]): HTMLFormElement {
+  const form = element("form", "compact-editor membership-editor") as HTMLFormElement;
+  const input = document.createElement("input");
+  input.required = true;
+  input.maxLength = 64;
+  input.placeholder = "Search users…";
+  input.setAttribute("aria-label", "User to add");
+  const autocomplete = attachAutocomplete(input, async (query, signal) => {
+    const page = await api.users({ filter: query, limit: 8 }, signal);
+    return membershipSuggestions(page.rows, members);
+  });
+  const access = select(["regular", "admin"], "regular");
+  access.setAttribute("aria-label", "Access to grant");
+  for (const option of access.options) {
+    option.textContent = option.value === "admin" ? "Administrator" : "Regular access";
+  }
+  const add = element("button", "primary-button", "Add member") as HTMLButtonElement;
+  add.type = "submit";
+  form.append(autocomplete, access, add);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const user = input.value.trim();
+    const next = access.value as Membership["access"];
+    const duplicate = membershipAdditionError(user, members);
+    if (duplicate !== null) {
+      mutationError(form, new Error(duplicate));
+      return;
+    }
+    void changeProjectMembership(
+      form,
+      [input, access, add],
+      () => api.addProjectMember(project.key, user, next),
+      `@${user} was added with ${next} access to workspace ${project.key}.`,
+      false,
+      false,
+      true,
+    );
+  });
+  return form;
+}
+
+async function viewProjectMembership(key: string, signal?: AbortSignal): Promise<HTMLElement> {
+  if (identity === "") throw new Error("No authenticated user is available.");
+  const [preferences, memberPage, currentUser] = await Promise.all([
+    api.projectPreferences(),
+    api.projectMembers(key, signal),
+    api.user(identity),
+  ]);
+  const preference = preferences.find((candidate) => candidate.project.key === key);
+  if (preference === undefined) throw new ApiError(404, `no such project: ${key}`);
+
+  const view = element("div", "project-view membership-admin-view");
+  const heading = element("div", "detail-heading");
+  const title = element("div");
+  title.append(
+    element("div", "issue-key", preference.project.key),
+    element("h1", "", preference.project.name),
+    element("p", "lede", preference.ignored ? "Ignored workspace administration" : "Workspace administration"),
+  );
+  heading.append(title, link("#/settings", "Back to settings", "secondary-button"));
+  view.append(heading, projectMembershipSection(preference.project, memberPage.rows, currentUser));
   return view;
 }
 
@@ -2498,7 +2721,14 @@ function ignoredProjectsSettingsCard(projects: ProjectPreference[]): HTMLElement
         preference.project.key, !preference.ignored,
       ));
     });
-    row.append(name, state, action);
+    const actions = element("span", "project-preference-actions");
+    actions.append(link(
+      `#/workspaces/${encodeURIComponent(preference.project.key)}/members`,
+      "Members",
+      "secondary-button project-preference-members",
+    ));
+    actions.append(action);
+    row.append(name, state, actions);
     rows.set(preference, row);
     list.append(row);
   }
@@ -2581,11 +2811,26 @@ async function render(): Promise<void> {
   try {
     const view = await routeView(route, request.signal);
     if (generation !== renderGeneration || request.signal.aborted) return;
+    const notice = pendingNotice;
+    if (notice !== null) {
+      const message = element("p", notice.error ? "app-notice app-notice-error" : "app-notice", notice.message);
+      message.setAttribute("role", notice.error ? "alert" : "status");
+      message.setAttribute("aria-live", notice.error ? "assertive" : "polite");
+      main.append(message);
+      pendingNotice = null;
+    }
     main.append(view);
     activateListingFilter(view);
   } catch (error) {
     if (generation !== renderGeneration || request.signal.aborted) return;
-    showRouteError(error, main);
+    const notice = pendingNotice;
+    if (notice !== null) {
+      const message = element("p", notice.error ? "app-notice app-notice-error" : "app-notice", notice.message);
+      message.setAttribute("role", notice.error ? "alert" : "status");
+      main.append(message);
+      pendingNotice = null;
+    }
+    showRouteError(error, main, false);
   }
 
   markActiveNav(route);
@@ -2602,9 +2847,9 @@ function activateListingFilter(view: HTMLElement): void {
   activeListingFilter = next ?? null;
 }
 
-function showRouteError(error: unknown, host = app.querySelector("main")): void {
+function showRouteError(error: unknown, host = app.querySelector("main"), replace = true): void {
   if (host === null) return;
-  clear(host);
+  if (replace) clear(host);
   const message = error instanceof ApiError ? error.message : String(error);
   const box = element("div", "error");
   box.append(element("h1", "", "Something went wrong"));
@@ -2623,7 +2868,10 @@ async function routeView(route: Route, signal?: AbortSignal): Promise<HTMLElemen
       return viewListing(route, "blocked", signal);
     case "workspaces":
     case "projects": // Legacy browser route; links emitted by this UI use /workspaces.
-      return route.path.length > 1 ? viewProject(route.path[1]) : viewProjects(route, signal);
+      if (route.path.length > 2 && route.path[2] === "members") {
+        return viewProjectMembership(route.path[1], signal);
+      }
+      return route.path.length > 1 ? viewProject(route.path[1], signal) : viewProjects(route, signal);
     case "profile":
       return viewProfile();
     case "settings":

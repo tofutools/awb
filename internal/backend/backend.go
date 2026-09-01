@@ -106,8 +106,10 @@ type Backend interface {
 	// The membership operations. A membership is keyed on its project and its
 	// user, as an attachment is keyed on its issue and its name, so it has no
 	// identifier of its own and none of these takes an ifMatch: a membership
-	// has one field and setting it is idempotent.
+	// has one field and setting it is idempotent. AddMember is the create-only
+	// form used when a stale caller must not replace an existing grant.
 	ListMembers(ctx context.Context, project string, limit, offset *int) (MemberPage, error)
+	AddMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
 	SetMember(ctx context.Context, project, user string, access domain.Access) (*domain.Membership, error)
 	RemoveMember(ctx context.Context, project, user string) (*domain.Membership, error)
 

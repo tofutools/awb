@@ -198,7 +198,13 @@ func (b *Backend) write(ctx context.Context, fn func(*storage.Tx, domain.Caller)
 	})
 }
 
-func (b *Backend) writeIncludingIgnored(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
+// writeIncludingIgnored is for a dedicated recovery/administration path whose
+// authorization still comes from project membership but whose own preference
+// boundary must not hide the project it administers. The check and mutation
+// remain in the same BEGIN IMMEDIATE transaction.
+func (b *Backend) writeIncludingIgnored(
+	ctx context.Context, fn func(*storage.Tx, domain.Caller) error,
+) error {
 	return b.db.Write(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, true)
 		if err != nil {
@@ -212,6 +218,20 @@ func (b *Backend) writeIncludingIgnored(ctx context.Context, fn func(*storage.Tx
 func (b *Backend) read(ctx context.Context, fn func(*storage.Tx, domain.Caller) error) error {
 	return b.db.Read(ctx, func(tx *storage.Tx) error {
 		caller, err := b.authorize(tx, false)
+		if err != nil {
+			return err
+		}
+		return fn(tx, caller)
+	})
+}
+
+// readIncludingIgnored is the read half of the same dedicated administration
+// path. It omits only the caller's preference boundary, never authorization.
+func (b *Backend) readIncludingIgnored(
+	ctx context.Context, fn func(*storage.Tx, domain.Caller) error,
+) error {
+	return b.db.Read(ctx, func(tx *storage.Tx) error {
+		caller, err := b.authorize(tx, true)
 		if err != nil {
 			return err
 		}
