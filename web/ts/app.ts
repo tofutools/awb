@@ -1145,7 +1145,7 @@ async function viewProjects(route: Route, signal?: AbortSignal): Promise<HTMLEle
   listing.append(listingFilter(
     route,
     "Filter all workspaces…",
-    "project",
+    "workspace",
     page.total,
     listingActions,
   ));
