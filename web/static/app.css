@@ -1258,6 +1258,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .close-editor input { flex: 1 1 auto; width: 0; }
 .edit-error { flex-basis: 100%; margin: 0.4rem 0 0; color: var(--warn); }
 .workspace-view { max-width: 58rem; }
+.workspace-edit-form > .primary-button { justify-self: start; }
 .workspace-detail-description { margin-top: 1.25rem; }
 .workspace-facts { color: var(--muted); }
 .membership-card { margin-top: 1.5rem; padding-bottom: 0.7rem; }

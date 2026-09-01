@@ -2907,7 +2907,7 @@ function workspaceArchiveConfirmation(workspace: Workspace, host: HTMLElement): 
 }
 
 function workspaceEditForm(workspace: Workspace): HTMLFormElement {
-  const form = element("form", "edit-panel") as HTMLFormElement;
+  const form = element("form", "edit-panel workspace-edit-form") as HTMLFormElement;
   form.append(element("h2", "", "Edit workspace"));
   const name = document.createElement("input");
   name.value = workspace.name;
