@@ -988,6 +988,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   background: color-mix(in srgb, var(--accent) 8%, var(--panel));
 }
 .inspector-add .icon { width: 0.85rem; height: 0.85rem; }
+.inspector-remove { color: var(--muted); }
+.inspector-remove:hover { color: var(--warn); }
 .inspector-add:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   outline-offset: 2px;
@@ -1031,9 +1033,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .editable-chip { display: inline-flex; align-items: center; }
 .editable-chip .listing-badge { border-radius: 4px 0 0 4px; }
 .parent-inspector-values { flex-wrap: nowrap; min-width: 0; }
-.parent-chip { min-width: 0; }
-.parent-link { overflow: hidden; color: var(--accent); text-overflow: ellipsis; }
-.parent-link:hover { border-color: currentcolor; text-decoration: underline; }
+.parent-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove {
   align-self: stretch;
   padding: 0 0.35rem;

@@ -3656,23 +3656,24 @@ function parentInspector(issue: Issue): [HTMLElement, HTMLElement] {
   const values = element("span", "inspector-values parent-inspector-values");
   if (parentID === undefined) values.append(document.createTextNode("—"));
   else {
-    const chip = element("span", "editable-chip parent-chip");
-    const parentLink = link(`#/issues/${parentID}`, parentID, "listing-badge parent-link");
+    const parentLink = link(`#/issues/${parentID}`, parentID, "parent-link");
     parentLink.title = `Open parent ${parentID}`;
-    const remove = button("×", "chip-remove");
-    remove.title = `Remove parent ${parentID}`;
-    remove.setAttribute("aria-label", remove.title);
-    remove.addEventListener("click", () => {
-      void mutateInspector(values, () => api.removeRelation(issue.id, "has-parent", parentID));
-    });
-    chip.append(parentLink, remove);
-    values.append(chip);
+    values.append(parentLink);
   }
 
   const edit = button("+", "inspector-add");
   if (parentID !== undefined) edit.replaceChildren(svgIcon("edit"));
   edit.setAttribute("aria-label", parentID === undefined ? "Set parent" : "Change parent");
   values.append(edit);
+  if (parentID !== undefined) {
+    const remove = button("×", "inspector-add inspector-remove");
+    remove.title = `Remove parent ${parentID}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      void mutateInspector(values, () => api.removeRelation(issue.id, "has-parent", parentID));
+    });
+    values.append(remove);
+  }
 
   const panel = element("div");
   const form = element("form", "sidebar-editor parent-editor") as HTMLFormElement;
