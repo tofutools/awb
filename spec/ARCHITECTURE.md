@@ -208,6 +208,15 @@ When a rule needs graph knowledge, storage gathers the relevant sets and calls
 a pure domain function. Keeping the rule independent of traversal makes it the
 same rule for local operations, API requests, migrations, and tests.
 
+Prose is gated on the way in rather than on the way out. Every Markdown field —
+an issue's and a workspace's description, a comment body, and the close reason
+that becomes one — is parsed with the one pinned dialect and refused if it
+holds raw HTML or a link or image destination whose scheme the field does not
+allow. Refusing at the boundary is what makes a stored description something a
+renderer can trust: script, style, SVG and MathML are all raw HTML, so keeping
+raw HTML out keeps all of them out, for the terminal renderer and the web UI
+alike. Accepted text is stored byte for byte; nothing is escaped or stripped.
+
 ### Backend: one operation contract
 
 `internal/backend` is the interface every command and handler uses.

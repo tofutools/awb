@@ -117,7 +117,8 @@ func ValidateTitle(s string) (string, error) {
 
 // ValidateCloseReason applies the input rules to a close reason. It is trimmed
 // and rejects a line break as a title does, but unlike a title it may be
-// empty: a value that is empty after trimming clears it.
+// empty: a value that is empty after trimming clears it. A non-empty reason
+// becomes the body of a Markdown comment, so it passes the Markdown gate too.
 func ValidateCloseReason(s string) (string, error) {
 	if err := checkUTF8("close reason", s); err != nil {
 		return "", err
@@ -129,12 +130,18 @@ func ValidateCloseReason(s string) (string, error) {
 	if err := checkMaxRunes("close reason", s, MaxCloseReasonLen); err != nil {
 		return "", err
 	}
+	if err := ValidateMarkdown("close reason", s); err != nil {
+		return "", err
+	}
 	return s, nil
 }
 
 // ValidateDescription applies the input rules to a description. It is never
 // trimmed, so a trailing line feed from a heredoc or an editor is part of it,
-// and it is bounded in bytes rather than in characters.
+// and it is bounded in bytes rather than in characters. Being Markdown, it
+// also passes the Markdown gate: raw HTML and a link or image destination
+// carrying an unsupported scheme are refused here rather than left to whatever
+// renders it.
 func ValidateDescription(s string) (string, error) {
 	if err := checkUTF8("description", s); err != nil {
 		return "", err
@@ -145,6 +152,9 @@ func ValidateDescription(s string) (string, error) {
 	if len(s) > MaxDescriptionBytes {
 		return "", awberr.Usagef("description is too long: %d bytes, maximum %d",
 			len(s), MaxDescriptionBytes)
+	}
+	if err := ValidateMarkdown("description", s); err != nil {
+		return "", err
 	}
 	return s, nil
 }

@@ -1444,3 +1444,36 @@ func TestBodyOnANoBodyEndpointIsRefusedWithoutReadingIt(t *testing.T) {
 	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID, "")
 	assert.Equal(t, http.StatusOK, resp.StatusCode, payload)
 }
+
+// TestMarkdownGateOverHTTP pins the Markdown gate to the API surface: it is
+// applied by the one operation layer both surfaces share, so it reaches every
+// Markdown field of every operation that writes one, and refusing is a 400.
+func TestMarkdownGateOverHTTP(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
+
+	for _, c := range []struct{ method, path, body string }{
+		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"<script>alert(1)</script>"}`},
+		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"[a](javascript:alert(1))"}`},
+		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"![a](data:image/svg+xml,<svg/>)"}`},
+		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":"<b>no</b>"}`},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/comments", `{"body":"<b>no</b>"}`},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":"see [why](javascript:alert(1))"}`},
+		{http.MethodPost, "/api/workspaces", `{"key":"web","description":"<style>body{}</style>"}`},
+		{http.MethodPatch, "/api/workspaces/awb", `{"description":"<math></math>"}`},
+	} {
+		resp, payload := a.do(c.method, c.path, c.body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "%s %s %s", c.method, c.path, c.body)
+		assert.Contains(t, payload, `"error"`, payload)
+	}
+
+	// The same fields accept the pinned dialect, links and images included.
+	const good = "# Title\n\n[docs](https://example.com/d) and ![shot](data:image/png;base64,AAAA)\n"
+	body, err := json.Marshal(struct {
+		Workspace   string `json:"workspace"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}{"awb", "Accepted", good})
+	require.NoError(t, err)
+	assert.Equal(t, good, a.createIssue(string(body)).Description)
+}
