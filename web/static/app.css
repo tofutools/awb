@@ -1032,7 +1032,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .editable-chip .listing-badge { border-radius: 4px 0 0 4px; }
 .parent-inspector-values { flex-wrap: nowrap; min-width: 0; }
 .parent-chip { min-width: 0; }
-.parent-link { overflow: hidden; text-overflow: ellipsis; }
+.parent-link { overflow: hidden; color: var(--accent); text-overflow: ellipsis; }
+.parent-link:hover { border-color: currentcolor; text-decoration: underline; }
 .chip-remove {
   align-self: stretch;
   padding: 0 0.35rem;
