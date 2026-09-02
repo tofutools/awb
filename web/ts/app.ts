@@ -3120,8 +3120,12 @@ function workspaceEditForm(workspace: Workspace): HTMLFormElement {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-  const issue = await api.issue(id);
-  const [activity, workspace] = await Promise.all([api.activity(id), api.workspace(issue.workspace)]);
+  const [issue, activity, children] = await Promise.all([
+    api.issue(id),
+    api.activity(id),
+    api.issues({ parent: id, "include-closed": true, "include-archived": true }),
+  ]);
+  const workspace = await api.workspace(issue.workspace);
 
   const view = element("div", "issue-view");
   view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
@@ -3184,6 +3188,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
+  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows));
+
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
   // open, so an issue with one resource does not reserve room for a form.
@@ -3233,6 +3239,19 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   });
   if (existingDraft !== undefined && workspace.state === "active") showEditor(true);
   return view;
+}
+
+function issueChildrenSection(children: Issue[]): HTMLElement {
+  const section = element("section", "issue-resource-section child-issues-section");
+  section.append(element("h2", "", "Child issues"));
+  const list = element("ul", "child-issues resource-list");
+  for (const child of children) {
+    const row = element("li");
+    row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
+    list.append(row);
+  }
+  section.append(list);
+  return section;
 }
 
 interface IssueResourceSection {

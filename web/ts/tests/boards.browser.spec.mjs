@@ -149,6 +149,14 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");
   if (caller !== "") expect(created.assignees).toContain(caller);
 
+  const parentID = created.relations.find((relation) => relation.type === "has-parent")?.other;
+  expect(parentID).toBeTruthy();
+  await page.goto(`${baseURL}/#/issues/${parentID}`);
+  const childIssues = page.locator(".child-issues-section");
+  await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
+  await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
+  await expect(childIssues).toContainText("in_progress");
+
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.
   await page.goto(`${baseURL}/#/issues`);
