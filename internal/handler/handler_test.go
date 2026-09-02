@@ -136,6 +136,7 @@ func TestIssueImplementationLinks(t *testing.T) {
 		`{"commit_hash":"1234567"}`,
 		`{"commit_hash":"1234567g"}`,
 		`{"pull_request_url":"ssh://example.com/repo"}`,
+		`{"pull_request_url":"https://:443/issues/42"}`,
 		`{"pull_request_url":"https://example.com/issues/ 42"}`,
 	} {
 		resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)

@@ -119,7 +119,7 @@ func TestValidateImplementationLinks(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, value, got)
 		}
-		for _, value := range []string{"example.com/pull/1", "ftp://example.com/pull/1", "https:///pull/1", "https://example.com/pull/ 1", strings.Repeat("x", domain.MaxPullRequestURLLen+1)} {
+		for _, value := range []string{"example.com/pull/1", "ftp://example.com/pull/1", "https:///pull/1", "https://:443/pull/1", "https://user@:443/pull/1", "https://example.com/pull/ 1", strings.Repeat("x", domain.MaxPullRequestURLLen+1)} {
 			_, err := domain.ValidatePullRequestURL(value)
 			assertUsage(t, err, value)
 		}

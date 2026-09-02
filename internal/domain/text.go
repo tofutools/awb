@@ -64,7 +64,7 @@ func ValidatePullRequestURL(s string) (string, error) {
 		return "", awberr.Usagef("pull request URL must not contain whitespace")
 	}
 	parsed, err := url.Parse(s)
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", awberr.Usagef("pull request URL must be an absolute http or https URL")
 	}
 	return s, nil
