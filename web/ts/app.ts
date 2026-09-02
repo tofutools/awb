@@ -1528,39 +1528,53 @@ function boardHiddenEpicsKey(ref: string): string {
   return `awb.board.${ref}.${identity}.hidden-epics`;
 }
 
-function hiddenBoardEpics(ref: string): Set<string> {
+type HiddenBoardEpic = Pick<Issue, "id" | "title">;
+
+function hiddenBoardEpicEntries(ref: string): HiddenBoardEpic[] {
+  const validID = (value: string): boolean => /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(value);
+  const entries = new Map<string, HiddenBoardEpic>();
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(boardHiddenEpicsKey(ref)) ?? "[]");
-    return new Set(Array.isArray(stored) ? stored.filter((value): value is string =>
-      typeof value === "string" && /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(value)) : []);
-  } catch {
-    return new Set();
-  }
+    if (!Array.isArray(stored)) return [];
+    for (const value of stored) {
+      if (typeof value === "string" && validID(value)) entries.set(value, { id: value, title: "" });
+      else if (value !== null && typeof value === "object") {
+        const candidate = value as Partial<HiddenBoardEpic>;
+        if (typeof candidate.id === "string" && validID(candidate.id) && typeof candidate.title === "string") {
+          entries.set(candidate.id, { id: candidate.id, title: candidate.title });
+        }
+      }
+    }
+  } catch { /* presentation state is best-effort */ }
+  return [...entries.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function saveHiddenBoardEpics(ref: string, epics: Set<string>): void {
-  try { localStorage.setItem(boardHiddenEpicsKey(ref), JSON.stringify([...epics].sort())); } catch { /* presentation state is best-effort */ }
+function hiddenBoardEpics(ref: string): Set<string> {
+  return new Set(hiddenBoardEpicEntries(ref).map((entry) => entry.id));
 }
 
-async function hiddenEpicEditor(ref: string): Promise<{ host: HTMLElement; inputs: HTMLInputElement[] }> {
+function saveHiddenBoardEpics(ref: string, epics: Set<string>, added?: HiddenBoardEpic): void {
+  const entries = new Map(hiddenBoardEpicEntries(ref).map((entry) => [entry.id, entry]));
+  if (added !== undefined) entries.set(added.id, { id: added.id, title: added.title });
+  const stored = [...epics].sort().map((id) => entries.get(id) ?? { id, title: "" });
+  try { localStorage.setItem(boardHiddenEpicsKey(ref), JSON.stringify(stored)); } catch { /* presentation state is best-effort */ }
+}
+
+function hiddenEpicEditor(ref: string): { host: HTMLElement; inputs: HTMLInputElement[] } {
   const host = element("div", "board-hidden-epics");
   host.append(element("h3", "", "Hidden epic lanes"), element("p", "board-view-help", "Uncheck a lane to show it again in this view and browser."));
-  const ids = [...hiddenBoardEpics(ref)].sort();
+  const entries = hiddenBoardEpicEntries(ref);
   const inputs: HTMLInputElement[] = [];
-  if (ids.length === 0) {
+  if (entries.length === 0) {
     host.append(element("p", "muted", "No epic lanes are hidden."));
     return { host, inputs };
   }
-  const issues = await Promise.all(ids.map(async (id) => {
-    try { return await api.issue(id); } catch { return undefined; }
-  }));
   const choices = element("div", "board-view-choices");
-  for (let index = 0; index < ids.length; index++) {
-    const id = ids[index]; const issue = issues[index];
+  for (const entry of entries) {
     const row = element("label", "board-view-choice");
-    const input = document.createElement("input"); input.type = "checkbox"; input.value = id; input.checked = true;
-    input.setAttribute("aria-label", `Hide ${id} in this view`); inputs.push(input);
-    const copy = element("span"); copy.append(element("code", "", id), element("span", issue === undefined ? "muted" : "", issue?.title ?? "Unavailable epic"));
+    const input = document.createElement("input"); input.type = "checkbox"; input.value = entry.id; input.checked = true;
+    input.setAttribute("aria-label", `Hide ${entry.id} in this view`); inputs.push(input);
+    const copy = element("span"); copy.append(element("code", "", entry.id), element("span", entry.title === "" ? "muted" : "", entry.title || "Title not cached"));
     row.append(input, copy); choices.append(row);
   }
   host.append(choices);
@@ -1632,7 +1646,7 @@ async function openBoardPresentationSettings(ref: string): Promise<void> {
   const header = element("header", "board-view-dialog-header");
   const heading = element("h2", "", "View settings"); heading.id = "board-presentation-settings-heading";
   header.append(heading, element("p", "muted", "These presentation settings apply only to you in this browser."));
-  const hidden = await hiddenEpicEditor(ref);
+  const hidden = hiddenEpicEditor(ref);
   const section = element("section", "board-view-section"); section.append(hidden.host);
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
@@ -1959,7 +1973,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
     hide.setAttribute("aria-label", `Hide ${epic.id} from this view`);
     hide.addEventListener("click", () => {
       hide.disabled = true;
-      const hidden = hiddenBoardEpics(ref); hidden.add(epic.id); saveHiddenBoardEpics(ref, hidden);
+      const hidden = hiddenBoardEpics(ref); hidden.add(epic.id); saveHiddenBoardEpics(ref, hidden, epic);
       void render().catch((error) => { hide.disabled = false; mutationError(host, error); });
     });
     meta.append(hide);
@@ -1999,7 +2013,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   }
   const epicPage = await api.issues({ type: ["epic"], "include-closed": true });
   const presentationRef = editDefault ? "default" : source?.id ?? route.path[1] ?? "default";
-  const hiddenPresentation = await hiddenEpicEditor(presentationRef);
+  const hiddenPresentation = hiddenEpicEditor(presentationRef);
   const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
   dialog.setAttribute("aria-labelledby", "board-view-dialog-heading");
   const form = element("form", "board-view-form") as HTMLFormElement;
