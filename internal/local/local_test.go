@@ -416,6 +416,31 @@ func TestUpdate(t *testing.T) {
 	assert.Empty(t, cleared.Description)
 }
 
+func TestIssueImplementationLinks(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "linked", CommitHash: "0123456789abcdef",
+		PullRequestURL: "https://example.com/pull/42",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "0123456789abcdef", issue.CommitHash)
+	assert.Equal(t, "https://example.com/pull/42", issue.PullRequestURL)
+
+	empty, nextURL := "", "http://example.com/pull/43"
+	updated, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{
+		CommitHash: &empty, PullRequestURL: &nextURL,
+	}, "")
+	require.NoError(t, err)
+	assert.Empty(t, updated.CommitHash)
+	assert.Equal(t, nextURL, updated.PullRequestURL)
+
+	badHash, badURL := "not-a-hash", "ssh://example.com/repo"
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{CommitHash: &badHash}, "")
+	assert.Equal(t, 2, exitOf(err))
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{PullRequestURL: &badURL}, "")
+	assert.Equal(t, 2, exitOf(err))
+}
+
 func TestClaim(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "t")

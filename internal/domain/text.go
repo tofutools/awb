@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -13,19 +14,64 @@ import (
 // the one field meant to hold prose, is bounded in bytes instead, because that
 // is the size that matters for a blob nobody counts characters in.
 const (
-	MaxTitleLen         = 500
-	MaxCloseReasonLen   = 500
-	MaxWorkspaceNameLen = 500
-	MaxUserFullNameLen  = 500
-	MaxSearchTermLen    = 500
-	MaxLabelLen         = 64
-	MaxAssigneeLen      = 64
-	MaxWorkspaceKeyLen  = 16
-	MaxBoardViewNameLen = 100
+	MaxTitleLen          = 500
+	MaxCloseReasonLen    = 500
+	MaxWorkspaceNameLen  = 500
+	MaxUserFullNameLen   = 500
+	MaxSearchTermLen     = 500
+	MaxLabelLen          = 64
+	MaxAssigneeLen       = 64
+	MaxWorkspaceKeyLen   = 16
+	MaxBoardViewNameLen  = 100
+	MaxCommitHashLen     = 128
+	MinCommitHashLen     = 8
+	MaxPullRequestURLLen = 1000
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
 	MaxDescriptionBytes = 64 * 1024
 )
+
+// ValidateCommitHash accepts an optional hexadecimal commit identifier. It is
+// stored exactly as supplied, including letter case.
+func ValidateCommitHash(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	if len(s) < MinCommitHashLen || len(s) > MaxCommitHashLen {
+		return "", awberr.Usagef("commit hash must be between %d and %d hexadecimal characters", MinCommitHashLen, MaxCommitHashLen)
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+			continue
+		default:
+			return "", awberr.Usagef("commit hash must contain only hexadecimal characters")
+		}
+	}
+	return s, nil
+}
+
+// ValidatePullRequestURL accepts an optional absolute HTTP(S) URL. The value
+// is stored verbatim rather than normalized.
+func ValidatePullRequestURL(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	if err := checkUTF8("pull request URL", s); err != nil {
+		return "", err
+	}
+	if utf8.RuneCountInString(s) > MaxPullRequestURLLen {
+		return "", awberr.Usagef("pull request URL is too long: maximum %d characters", MaxPullRequestURLLen)
+	}
+	if strings.IndexFunc(s, unicode.IsSpace) >= 0 {
+		return "", awberr.Usagef("pull request URL must not contain whitespace")
+	}
+	parsed, err := url.Parse(s)
+	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", awberr.Usagef("pull request URL must be an absolute http or https URL")
+	}
+	return s, nil
+}
 
 // checkUTF8 rejects a byte sequence that is not well-formed UTF-8. It is never
 // repaired and an invalid byte is never replaced with U+FFFD, so nothing is

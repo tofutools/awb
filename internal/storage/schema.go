@@ -32,6 +32,13 @@ var migrations = [][]string{
 	schemaV13,
 	schemaV14,
 	schemaV15,
+	schemaV16,
+}
+
+// schemaV16 adds independent optional links from an issue to its implementation.
+var schemaV16 = []string{
+	`ALTER TABLE issues ADD COLUMN commit_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE issues ADD COLUMN pull_request_url TEXT NOT NULL DEFAULT ''`,
 }
 
 // schemaV15 records board-only presentation state and the instant of the most

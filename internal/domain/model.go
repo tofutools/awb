@@ -42,25 +42,27 @@ type Relation struct {
 // read-only; they cannot be written through update or PATCH. An attachment is
 // added and removed by its own operations, exactly as a relation is.
 type Issue struct {
-	ID          string       `json:"id"`
-	Workspace   string       `json:"workspace"`
-	Title       string       `json:"title"`
-	Description string       `json:"description"`
-	Type        Type         `json:"type"`
-	Status      Status       `json:"status"`
-	Priority    int          `json:"priority"`
-	Order       int          `json:"order"`
-	BoardHidden bool         `json:"board_hidden"`
-	Labels      []string     `json:"labels"`
-	Assignees   []string     `json:"assignees"`
-	CreatedAt   string       `json:"created_at"`
-	UpdatedAt   string       `json:"updated_at"`
-	ClosedAt    string       `json:"closed_at"`
-	Blocked     bool         `json:"blocked"`
-	Blockers    []string     `json:"blockers"`
-	Relations   []Relation   `json:"relations"`
-	Links       []Link       `json:"links"`
-	Attachments []Attachment `json:"attachments"`
+	ID             string       `json:"id"`
+	Workspace      string       `json:"workspace"`
+	Title          string       `json:"title"`
+	Description    string       `json:"description"`
+	CommitHash     string       `json:"commit_hash"`
+	PullRequestURL string       `json:"pull_request_url"`
+	Type           Type         `json:"type"`
+	Status         Status       `json:"status"`
+	Priority       int          `json:"priority"`
+	Order          int          `json:"order"`
+	BoardHidden    bool         `json:"board_hidden"`
+	Labels         []string     `json:"labels"`
+	Assignees      []string     `json:"assignees"`
+	CreatedAt      string       `json:"created_at"`
+	UpdatedAt      string       `json:"updated_at"`
+	ClosedAt       string       `json:"closed_at"`
+	Blocked        bool         `json:"blocked"`
+	Blockers       []string     `json:"blockers"`
+	Relations      []Relation   `json:"relations"`
+	Links          []Link       `json:"links"`
+	Attachments    []Attachment `json:"attachments"`
 }
 
 // IssueTree is one Issue extended with its children, recursively. It is what
