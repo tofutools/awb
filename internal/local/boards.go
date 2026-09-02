@@ -635,10 +635,6 @@ func boardClosedAfter(days int) string {
 	return domain.FormatTime(time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour))
 }
 
-func boardIssueVisible(issue *domain.Issue, closedAfter string) bool {
-	return !issue.BoardHidden && (issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
-}
-
 // An epic is the board lane itself, rather than a card in a status column.
 // Closing it therefore removes the whole lane immediately; closed-day
 // retention applies only to the cards within lanes.
