@@ -624,6 +624,15 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   text-align: left;
   text-transform: uppercase;
 }
+.column-label {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
 .sort-button:hover, .sort-button:focus-visible { color: var(--fg); }
 .sort-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sort-button.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
@@ -678,11 +687,16 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .updated-display-option code { color: var(--muted); font: 0.85em var(--mono); }
 .mobile-updated-display { display: none; }
 
-.issue-table th:first-child { width: 42%; }
-.issue-table th:nth-child(2) { width: 11%; }
-.issue-table th:nth-child(n+3) { width: 11.75%; }
-.issue-table.listing-blocked th:first-child { width: 40%; }
-.issue-table.listing-blocked th:last-child { width: 20%; }
+.issue-table.listing-issues th.listing-col-id { width: 35%; }
+.issue-table.listing-issues th.listing-col-type { width: 9%; }
+.issue-table.listing-issues th.listing-col-parent { width: 13%; }
+.issue-table.listing-ready th.listing-col-id { width: 50%; }
+.issue-table.listing-ready th.listing-col-type { width: 11%; }
+.issue-table.listing-ready th.listing-col-parent { width: 15%; }
+.issue-table.listing-blocked th.listing-col-id { width: 32%; }
+.issue-table.listing-blocked th.listing-col-type { width: 9%; }
+.issue-table.listing-blocked th.listing-col-parent { width: 13%; }
+.issue-table.listing-blocked th.listing-col-blockers { width: 20%; }
 .issue-name-cell { display: block; min-width: 0; }
 .issue-name-cell a.name { display: inline-flex; max-width: 100%; }
 .row-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.12rem; }
@@ -698,6 +712,19 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .listing-badge.priority.p0, .listing-badge.priority.p1 { color: var(--warn); border-color: currentcolor; }
 .listing-badge.assignee.mine { color: var(--accent); border-color: currentcolor; }
+.listing-table .parent-link {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font: 0.74em var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listing-table .parent-link:hover, .listing-table .parent-link:focus-visible { color: var(--accent); }
+.listing-table .parent-marker { flex: 0 0 auto; color: var(--muted); }
 .timestamp, .blocker-list { color: var(--muted); font: 0.74em var(--mono); }
 .muted { color: var(--muted); }
 

@@ -824,6 +824,7 @@ interface SortChoice {
 }
 
 interface IssueColumn extends SortChoice {
+  sortable?: boolean;
   render: (issue: Issue) => HTMLElement;
 }
 
@@ -848,16 +849,31 @@ function issueNameCell(issue: Issue): HTMLElement {
   return cell;
 }
 
+function issueParentCell(issue: Issue): HTMLElement {
+  const parent = inspectorParent(issue.relations);
+  if (parent === undefined) return textCell("muted", "—");
+  const anchor = link(`#/issues/${parent}`, parent, "parent-link");
+  anchor.prepend(element("span", "parent-marker", "↳"));
+  anchor.setAttribute("aria-label", `Parent ${parent}`);
+  return anchor;
+}
+
 function badge(className: string, text: string): HTMLElement {
   return element("span", `listing-badge ${className}`, text);
 }
 
 function issueColumns(kind: ListingKind): IssueColumn[] {
   const issue: IssueColumn = { key: "id", label: "Issue", render: issueNameCell };
-  const workspace: IssueColumn = {
-    key: "workspace",
-    label: "Workspace",
-    render: (row) => textCell("id", row.workspace),
+  const type: IssueColumn = {
+    key: "type",
+    label: "Type",
+    render: (row) => badge("type", row.type),
+  };
+  const parent: IssueColumn = {
+    key: "parent",
+    label: "Parent",
+    sortable: false,
+    render: issueParentCell,
   };
   const priority: IssueColumn = {
     key: "priority",
@@ -873,12 +889,8 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   if (kind === "ready") {
     return [
       issue,
-      workspace,
-      {
-        key: "type",
-        label: "Type",
-        render: (row) => badge("type", row.type),
-      },
+      type,
+      parent,
       priority,
       updated,
     ];
@@ -899,7 +911,8 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
   if (kind === "blocked") {
     return [
       issue,
-      workspace,
+      type,
+      parent,
       priority,
       assignee,
       {
@@ -915,7 +928,8 @@ function issueColumns(kind: ListingKind): IssueColumn[] {
 
   return [
     issue,
-    workspace,
+    type,
+    parent,
     priority,
     {
       key: "status",
@@ -1020,9 +1034,12 @@ function issueTable(
   for (const column of columns) {
     const th = document.createElement("th");
     th.scope = "col";
+    th.classList.add(`listing-col-${column.key}`);
     if (state.key === column.key) th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
     const controls = element("div", "column-heading");
-    controls.append(sortButton(route, column, state, defaultKey, defaultDirection));
+    controls.append(column.sortable === false
+      ? element("span", "column-label", column.label)
+      : sortButton(route, column, state, defaultKey, defaultDirection));
     if (column.key === "updated") controls.append(updatedDisplayControl());
     th.append(controls);
     heading.append(th);
@@ -1038,6 +1055,7 @@ function issueTable(
     for (const column of columns) {
       const td = document.createElement("td");
       td.dataset.label = column.label;
+      td.classList.add(`listing-col-${column.key}`);
       td.append(column.render(issue));
       row.append(td);
     }
@@ -1232,7 +1250,10 @@ function issueList(
   const defaultDirection: SortDirection = "asc";
   const state = sortState(route.query.get("sort"), issueSortKeys, defaultKey, defaultDirection);
   const columns = issueColumns(kind);
-  const mobileColumns = [...columns, { key: "created", label: "Created" }];
+  const mobileColumns = [
+    ...columns.filter((column) => column.sortable !== false),
+    { key: "created", label: "Created" },
+  ];
   const listingActions = element("div", "listing-actions");
   listingActions.append(mobileSortControl(
     route,
