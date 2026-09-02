@@ -109,6 +109,15 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const idleBackground = await hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor);
   await hoverCard.hover();
   await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
+  // The surrounding lane and column already identify each card's epic and
+  // status, so cards stay compact and do not repeat them as form controls.
+  await expect(page.locator(".board-card select, .board-card-move")).toHaveCount(0);
+  const unchangedID = await hoverCard.getAttribute("data-issue");
+  expect(unchangedID).toBeTruthy();
+  await hoverCard.getByRole("button", { name: `Move ${unchangedID}` }).click();
+  const unchangedMove = page.getByRole("dialog", { name: `Move ${unchangedID}` });
+  await expect(unchangedMove.getByRole("button", { name: "Move issue" })).toBeDisabled();
+  await unchangedMove.getByRole("button", { name: "Cancel" }).click();
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await expect(releaseLane.locator(":scope > .board-lane-heading h2 a")).toHaveAttribute("href", /^#\/issues\/demo-/);
@@ -246,14 +255,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await crossWorkspaceTarget.dispatchEvent("drop", { dataTransfer: transfer });
   await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).order, otherIssue.id)).toBe(0);
 
-  // A failed card-to-card move must not reset the status control of the card
-  // used as the drop target; that card represents a different issue.
+  // A failed card-to-card move leaves both cards in their existing column.
   const failedMoveSource = page.locator(".board-card", { hasText: "Build the full text search index" });
   const failedMoveTarget = page.locator(".board-card", { hasText: "Browse the widget catalogue" });
   const assignedIssueID = await failedMoveTarget.getAttribute("data-issue");
   expect(assignedIssueID).toBeTruthy();
-  const targetStatus = failedMoveTarget.getByLabel(/Status for demo-/);
-  await expect(targetStatus).toHaveValue("in_progress");
+  await expect(failedMoveTarget.locator("xpath=ancestor::section[contains(@class, 'board-column')]")).toHaveAttribute("data-status", "in_progress");
   await page.route("**/api/issues/*/move", async (route) => {
     await route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"simulated failure"}' });
   }, { times: 1 });
@@ -261,29 +268,30 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await failedMoveSource.dispatchEvent("dragstart", { dataTransfer: failedTransfer });
   await failedMoveTarget.dispatchEvent("drop", { dataTransfer: failedTransfer });
   await expect(failedMoveTarget.locator(".edit-error")).toBeVisible();
-  await expect(targetStatus).toHaveValue("in_progress");
+  await expect(failedMoveTarget.locator("xpath=ancestor::section[contains(@class, 'board-column')]")).toHaveAttribute("data-status", "in_progress");
 
   // Opening assigned work is allowed for every assignee set, but the UI must
   // make the automatic unassignment explicit before sending the move.
-  await targetStatus.selectOption("open");
+  const releaseOpenColumn = releaseLane.locator(".board-column[data-status='open']");
+  await pointerDrag(page, failedMoveTarget, releaseOpenColumn);
   let openDialog = page.getByRole("dialog", { name: "Move issue to Open?" });
   await expect(openDialog).toContainText("This will unassign alice, bob.");
   await openDialog.getByRole("button", { name: "No" }).click();
-  await expect(targetStatus).toHaveValue("in_progress");
-  await targetStatus.selectOption("open");
+  await expect(releaseLane.locator(".board-column[data-status='in_progress']", { hasText: "Browse the widget catalogue" })).toBeVisible();
+  await pointerDrag(page, failedMoveTarget, releaseOpenColumn);
   openDialog = page.getByRole("dialog", { name: "Move issue to Open?" });
   await openDialog.getByRole("button", { name: "Yes" }).click();
   await expect.poll(() => page.evaluate(async (id) => {
     const issue = await (await fetch(`api/issues/${id}`)).json();
     return { status: issue.status, assignees: issue.assignees };
   }, assignedIssueID)).toEqual({ status: "open", assignees: [] });
-  await page.locator(".board-card", { hasText: "Browse the widget catalogue" }).getByLabel(/Status for demo-/).selectOption("in_progress");
+  await pointerDrag(page, page.locator(".board-card", { hasText: "Browse the widget catalogue" }), releaseLane.locator(".board-column[data-status='in_progress']"));
   await expect.poll(() => page.locator(".board-card", { hasText: "Browse the widget catalogue" }).getByText(/@/).count()).toBe(1);
 
   // Restarting closed work is a new claim by the caller, regardless of who
   // completed it previously.
   const closedCard = page.locator(".board-card", { hasText: "Design the catalogue database schema" });
-  await closedCard.getByLabel(/Status for demo-/).selectOption("in_progress");
+  await pointerDrag(page, closedCard, releaseLane.locator(".board-column[data-status='in_progress']"));
   await expect.poll(() => page.locator(".board-card", { hasText: "Design the catalogue database schema" }).getByText(/@/).count()).toBe(1);
 
   await page.getByRole("button", { name: "Edit view" }).click();
@@ -333,12 +341,14 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await editView.getByRole("button", { name: "Save changes" }).click();
   await expect(page.locator(".board-summary")).toContainText("All epic lanes");
 
-  const closeControl = page.locator(".board-card", { hasText: "Build the full text search index" }).getByLabel(/Status for demo-/);
-  await closeControl.selectOption("closed");
+  const closeCandidate = page.locator(".board-card", { hasText: "Build the full text search index" });
+  const noEpicClosedColumn = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) })
+    .locator(".board-column[data-status='closed']");
+  await pointerDrag(page, closeCandidate, noEpicClosedColumn);
   const closeDialog = page.getByRole("dialog", { name: "Close issue?" });
   await expect(closeDialog).toContainText("This can be reopened later.");
   await closeDialog.getByRole("button", { name: "No" }).click();
-  await expect(closeControl).toHaveValue("open");
+  await expect(page.locator(".board-column[data-status='open']", { hasText: "Build the full text search index" })).toBeVisible();
 
   // Epic-to-epic, epic-to-No-epic, and No-epic-to-epic all preserve the
   // immutable demo workspace while status and sparse position move atomically.
@@ -425,8 +435,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
 	const breakpointCard = page.locator(".board-card").first();
 	await expect(breakpointCard).toBeVisible();
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);
-	const breakpointStatus = breakpointCard.locator("select").first();
-	await breakpointStatus.dispatchEvent("pointerdown", { pointerId: 1 });
+	await breakpointCard.getByRole("button", { name: /Hide .* from boards/ }).dispatchEvent("pointerdown", { pointerId: 1 });
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(false);
 	await page.locator("body").dispatchEvent("pointerup", { pointerId: 1 });
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);
@@ -450,14 +459,20 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(movedID).toBeTruthy();
   await expect.poll(() => responsiveCard.evaluate((card) => card.draggable)).toBe(false);
   await expect(page.locator(".board-card-drag, .board-card-order-button, .list-row-drag, .list-row-order-button")).toHaveCount(0);
-  const epicControl = responsiveCard.getByLabel(/Epic for demo-/);
-  const initialEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
+  await expect(responsiveCard.locator("select")).toHaveCount(0);
+  const initialLaneCount = await page.locator(".board-lane").count();
   await page.getByRole("button", { name: /Load up to .* more epics/ }).click();
-  await expect.poll(async () => epicControl.locator("option").count()).toBeGreaterThan(initialEpicValues.length);
-  const loadedEpicValues = await epicControl.locator("option").evaluateAll((options) => options.map((option) => option.value));
-  const pagedEpic = loadedEpicValues.find((value) => !initialEpicValues.includes(value));
+  await expect.poll(() => page.locator(".board-lane").count()).toBeGreaterThan(initialLaneCount);
+  const pagedEpicHref = await page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) })
+    .first().locator(":scope > .board-lane-heading h2 a").getAttribute("href");
+  const pagedEpic = pagedEpicHref?.split("/").at(-1);
   expect(pagedEpic).toBeTruthy();
-  await responsiveCard.getByLabel(/Epic for demo-/).selectOption(pagedEpic);
+  const moveAction = responsiveCard.getByRole("button", { name: `Move ${movedID}` });
+  await moveAction.focus();
+  await moveAction.press("Enter");
+  const moveDialog = page.getByRole("dialog", { name: `Move ${movedID}` });
+  await moveDialog.getByLabel("Epic").selectOption(pagedEpic);
+  await moveDialog.getByRole("button", { name: "Move issue" }).click();
   await expect.poll(async () => page.evaluate(async ({ id, epic }) => {
     const issue = await (await fetch(`api/issues/${id}`)).json();
     return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
