@@ -170,6 +170,16 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.
   await page.goto(`${baseURL}/#/issues`);
+  const issueTable = page.locator(".issue-table");
+  await expect(issueTable.getByRole("columnheader", { name: "Type" })).toBeVisible();
+  await expect(issueTable.getByRole("columnheader", { name: "Parent" })).toBeVisible();
+  await expect(issueTable.getByRole("columnheader", { name: "Workspace" })).toHaveCount(0);
+  const createdListRow = issueTable.locator("tbody tr", { hasText: "Created from the board" });
+  await expect(createdListRow.locator(".listing-col-type")).toHaveText("feature");
+  await expect(createdListRow.getByRole("link", { name: `Parent ${parentID}` })).toHaveAttribute(
+    "href",
+    `#/issues/${parentID}`,
+  );
   await page.getByRole("button", { name: "New issue" }).click();
   const partialDialog = page.getByRole("dialog", { name: "New issue" });
   await partialDialog.getByLabel("Title").fill("Partially uploaded issue");
