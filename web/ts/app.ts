@@ -1503,39 +1503,116 @@ function saveCollapsedBoardLanes(ref: string, workspaces: Set<string>): void {
   try { localStorage.setItem(boardLaneCollapseKey(ref), JSON.stringify([...workspaces].sort())); } catch { /* presentation state is best-effort */ }
 }
 
-const defaultBoardClosedDaysFallback = 30;
+function boardHiddenEpicsKey(ref: string): string {
+  return `awb.board.${ref}.${identity}.hidden-epics`;
+}
 
-function defaultBoardClosedDays(): number {
+function hiddenBoardEpics(ref: string): Set<string> {
   try {
-    const stored = localStorage.getItem(`awb.board.default.${identity}.closed-days`);
-    if (stored === null) return defaultBoardClosedDaysFallback;
-    const value = Number(stored);
-    return Number.isInteger(value) && value >= 0 && value <= 3650 ? value : defaultBoardClosedDaysFallback;
+    const stored: unknown = JSON.parse(localStorage.getItem(boardHiddenEpicsKey(ref)) ?? "[]");
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string =>
+      typeof value === "string" && /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(value)) : []);
   } catch {
-    return defaultBoardClosedDaysFallback;
+    return new Set();
   }
 }
 
-function rememberDefaultBoardClosedDays(value: number): void {
-  try { localStorage.setItem(`awb.board.default.${identity}.closed-days`, String(value)); } catch { /* preference is best-effort */ }
+function saveHiddenBoardEpics(ref: string, epics: Set<string>): void {
+  try { localStorage.setItem(boardHiddenEpicsKey(ref), JSON.stringify([...epics].sort())); } catch { /* presentation state is best-effort */ }
 }
 
-function openDefaultBoardSettings(): void {
-  const dialog = element("dialog", "board-view-dialog board-default-settings") as HTMLDialogElement;
-  dialog.setAttribute("aria-labelledby", "board-default-settings-heading");
-  const form = element("form", "board-view-form") as HTMLFormElement;
-  form.method = "dialog";
+async function hiddenEpicEditor(ref: string): Promise<{ host: HTMLElement; inputs: HTMLInputElement[] }> {
+  const host = element("div", "board-hidden-epics");
+  host.append(element("h3", "", "Hidden epic lanes"), element("p", "board-view-help", "Uncheck a lane to show it again in this view and browser."));
+  const ids = [...hiddenBoardEpics(ref)].sort();
+  const inputs: HTMLInputElement[] = [];
+  if (ids.length === 0) {
+    host.append(element("p", "muted", "No epic lanes are hidden."));
+    return { host, inputs };
+  }
+  const issues = await Promise.all(ids.map(async (id) => {
+    try { return await api.issue(id); } catch { return undefined; }
+  }));
+  const choices = element("div", "board-view-choices");
+  for (let index = 0; index < ids.length; index++) {
+    const id = ids[index]; const issue = issues[index];
+    const row = element("label", "board-view-choice");
+    const input = document.createElement("input"); input.type = "checkbox"; input.value = id; input.checked = true;
+    input.setAttribute("aria-label", `Hide ${id} in this view`); inputs.push(input);
+    const copy = element("span"); copy.append(element("code", "", id), element("span", issue === undefined ? "muted" : "", issue?.title ?? "Unavailable epic"));
+    row.append(input, copy); choices.append(row);
+  }
+  host.append(choices);
+  return { host, inputs };
+}
+
+const defaultBoardClosedDaysFallback = 30;
+const boardLabelLikePattern = /^[a-z0-9._/-]+$/;
+
+type DefaultBoardPreferences = Pick<BoardView,
+  "all_workspaces" | "workspaces" | "all_epics" | "epics" | "include_no_epic" |
+  "labels" | "assignees" | "priority_max" | "closed_days" | "epic_closed_days">;
+
+function defaultBoardPreferencesKey(): string {
+  return `awb.board.default.${identity}.view`;
+}
+
+function defaultBoardPreferences(): DefaultBoardPreferences {
+  let legacyClosedDays = defaultBoardClosedDaysFallback;
+  try {
+    const stored = localStorage.getItem(`awb.board.default.${identity}.closed-days`);
+    if (stored !== null) {
+      const value = Number(stored);
+      if (Number.isInteger(value) && value >= 0 && value <= 3650) legacyClosedDays = value;
+    }
+  } catch { /* use the fallback */ }
+  const fallback: DefaultBoardPreferences = { all_workspaces: true, workspaces: [], all_epics: true, epics: [],
+    include_no_epic: true, labels: [], assignees: [], priority_max: 4, closed_days: legacyClosedDays, epic_closed_days: 0 };
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(defaultBoardPreferencesKey()) ?? "null");
+    if (parsed === null || typeof parsed !== "object") return fallback;
+    const value = parsed as Partial<DefaultBoardPreferences>;
+    const strings = (candidate: unknown): string[] => Array.isArray(candidate)
+      ? candidate.filter((item): item is string => typeof item === "string") : [];
+    const priority = Number(value.priority_max); const closedDays = Number(value.closed_days); const epicClosedDays = Number(value.epic_closed_days);
+    return {
+      all_workspaces: typeof value.all_workspaces === "boolean" ? value.all_workspaces : fallback.all_workspaces,
+      workspaces: strings(value.workspaces).filter((item) => item.length <= 16 && /^[a-z][a-z0-9-]*$/.test(item)),
+      all_epics: typeof value.all_epics === "boolean" ? value.all_epics : fallback.all_epics,
+      epics: strings(value.epics).filter((item) => /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(item)),
+      include_no_epic: typeof value.include_no_epic === "boolean" ? value.include_no_epic : fallback.include_no_epic,
+      labels: strings(value.labels).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
+      assignees: strings(value.assignees).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
+      priority_max: Number.isInteger(priority) && priority >= 0 && priority <= 4 ? priority as 0|1|2|3|4 : fallback.priority_max,
+      closed_days: Number.isInteger(closedDays) && closedDays >= 0 && closedDays <= 3650 ? closedDays : fallback.closed_days,
+      epic_closed_days: Number.isInteger(epicClosedDays) && epicClosedDays >= 0 && epicClosedDays <= 3650 ? epicClosedDays : fallback.epic_closed_days,
+    };
+  } catch { return fallback; }
+}
+
+function saveDefaultBoardPreferences(value: DefaultBoardPreferences): void {
+  try { localStorage.setItem(defaultBoardPreferencesKey(), JSON.stringify(value)); } catch { /* preference is best-effort */ }
+}
+
+function defaultBoardView(): BoardView {
+  return { id: "default", name: "Default board", owner: identity, shared: false,
+    ...defaultBoardPreferences(), created_at: "", updated_at: "" };
+}
+
+function effectiveDefaultBoardView(route: Route): BoardView {
+  const view = defaultBoardView(); const workspaces = route.query.getAll("workspace");
+  return workspaces.length === 0 ? view : { ...view, all_workspaces: false, workspaces };
+}
+
+async function openBoardPresentationSettings(ref: string): Promise<void> {
+  const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "board-presentation-settings-heading");
+  const form = element("form", "board-view-form") as HTMLFormElement; form.method = "dialog";
   const header = element("header", "board-view-dialog-header");
-  const heading = element("h2", "", "Default board settings");
-  heading.id = "board-default-settings-heading";
-  header.append(heading, element("p", "muted", "These settings apply to your default board in this browser."));
-  const section = element("section", "board-view-section");
-  const closedDays = document.createElement("input");
-  closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true;
-  closedDays.value = String(defaultBoardClosedDays());
-  const closedField = field("Show closed issues for (days)", closedDays);
-  closedField.append(element("span", "board-view-help", "Use 0 to hide an issue as soon as it is closed."));
-  section.append(closedField);
+  const heading = element("h2", "", "View settings"); heading.id = "board-presentation-settings-heading";
+  header.append(heading, element("p", "muted", "These presentation settings apply only to you in this browser."));
+  const hidden = await hiddenEpicEditor(ref);
+  const section = element("section", "board-view-section"); section.append(hidden.host);
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
   const save = element("button", "primary-button", "Save settings") as HTMLButtonElement; save.type = "submit";
@@ -1543,13 +1620,10 @@ function openDefaultBoardSettings(): void {
   dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const value = Number(closedDays.value);
-    if (!Number.isInteger(value) || value < 0 || value > 3650) return;
-    rememberDefaultBoardClosedDays(value);
-    dialog.close();
-    void render();
+    saveHiddenBoardEpics(ref, new Set(hidden.inputs.filter((input) => input.checked).map((input) => input.value)));
+    dialog.close(); void render();
   });
-  dialog.showModal(); closedDays.focus();
+  dialog.showModal(); save.focus();
 }
 
 function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
@@ -1724,6 +1798,7 @@ function boardColumn(
   column: Board["lanes"][number]["columns"][number],
   issuesByID: Map<string, Issue>,
   epics: BoardEpicChoice[],
+  boardFilters: Parameters<typeof api.board>[1],
 ): HTMLElement {
   const host = element("section", "board-column");
   host.dataset.status = column.status;
@@ -1805,8 +1880,8 @@ function boardColumn(
     more.addEventListener("click", () => {
       more.disabled = true;
       void api.board(ref, {
+        ...boardFilters,
         ...(epic === null && selectedWorkspaces.length > 0 ? { workspace: selectedWorkspaces } : {}),
-        ...(ref === "default" ? { "closed-days": defaultBoardClosedDays() } : {}),
         epic: epic?.id ?? "none", status: column.status, "lane-limit": 1,
         "card-limit": boardCardPageSize, "card-offset": cursor,
       }).then((page) => {
@@ -1862,7 +1937,7 @@ function boardColumn(
   return host;
 }
 
-function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, epics: BoardEpicChoice[]): HTMLElement {
+function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, epics: BoardEpicChoice[], boardFilters: Parameters<typeof api.board>[1]): HTMLElement {
   const host = element("section", "board-lane");
   const laneKey = lane.epic?.id ?? "no-epic";
   const laneLabel = lane.epic?.title ?? "No epic";
@@ -1873,14 +1948,29 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   const title = element("h2");
   title.id = headingID;
   if (lane.epic === undefined) title.append(document.createTextNode("No epic"));
-  else title.append(element("code", "", lane.epic.workspace), document.createTextNode(` ${lane.epic.title}`));
+  else {
+    const link = document.createElement("a"); link.href = `#/issues/${encodeURIComponent(lane.epic.id)}`;
+    link.append(element("code", "", lane.epic.workspace), document.createTextNode(` ${lane.epic.title}`)); title.append(link);
+  }
   name.append(title);
   const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
   const meta = element("div", "board-lane-meta");
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
+  if (lane.epic !== undefined) {
+    const epic = lane.epic;
+    const hide = button("Hide", "secondary-button board-lane-hide");
+    hide.title = "Hide this epic lane from the current view";
+    hide.setAttribute("aria-label", `Hide ${epic.id} from this view`);
+    hide.addEventListener("click", () => {
+      hide.disabled = true;
+      const hidden = hiddenBoardEpics(ref); hidden.add(epic.id); saveHiddenBoardEpics(ref, hidden);
+      void render().catch((error) => { hide.disabled = false; mutationError(host, error); });
+    });
+    meta.append(hide);
+  }
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
-  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics));
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics, boardFilters));
 	let isCollapsed = collapsedBoardLanes(ref).has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
   toggle.setAttribute("aria-controls", columns.id);
@@ -1905,33 +1995,38 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   return host;
 }
 
-async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route): Promise<void> {
+async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route, editDefault = false, saveAsNew = false): Promise<void> {
   let preferences: WorkspacePreference[] = [];
   try { preferences = await api.workspacePreferences(); } catch {
     const workspaces = await api.workspaces();
     preferences = workspaces.rows.map((workspace) => ({ workspace, ignored: false }));
   }
   const epicPage = await api.issues({ type: ["epic"], "include-closed": true });
+  const presentationRef = editDefault ? "default" : source?.id ?? route.path[1] ?? "default";
+  const hiddenPresentation = await hiddenEpicEditor(presentationRef);
   const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
   dialog.setAttribute("aria-labelledby", "board-view-dialog-heading");
   const form = element("form", "board-view-form") as HTMLFormElement;
   form.method = "dialog";
   const header = element("header", "board-view-dialog-header");
-  const heading = element("h2", "", source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
+  const heading = element("h2", "", editDefault ? "Edit default board" : source === null || saveAsNew ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
   heading.id = "board-view-dialog-heading";
-  header.append(heading, element("p", "muted", source === null
+  header.append(heading, element("p", "muted", editDefault
+    ? "These settings apply to your default board in this browser."
+    : source === null || saveAsNew
     ? "Keep this board scope and its filters for later."
     : duplicate ? "Create your own copy of this board view."
       : "Update who can open this view, its scope, and its issue filters."));
   form.append(header);
   const basics = element("section", "board-view-section"); basics.append(element("h3", "", "Basics"));
   const name = document.createElement("input");
-  name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
+  name.required = true; name.maxLength = 100; name.value = source === null || saveAsNew ? "" : `${source.name}${duplicate ? " copy" : ""}`;
   const nameField = field("Name", name); nameField.append(element("span", "board-view-help", "A short name shown in the board view picker.")); basics.append(nameField);
-  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && (source?.shared ?? false);
+  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && !saveAsNew && (source?.shared ?? false);
   const sharedLabel = element("label", "board-view-check"); const sharedCopy = element("span", "board-view-check-copy");
   sharedCopy.append(element("span", "", "Anyone with the link can open this view"), element("span", "board-view-help", "Only issues they already have access to will be shown."));
-  sharedLabel.append(shared, sharedCopy); basics.append(sharedLabel); form.append(basics);
+  sharedLabel.append(shared, sharedCopy); basics.append(sharedLabel);
+  if (!editDefault) form.append(basics);
 
   const scope = element("section", "board-view-section"); scope.append(element("h3", "", "Scope"));
   const scopeGrid = element("div", "board-view-scope-grid");
@@ -1965,7 +2060,9 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   for (const epic of epicPage.rows) {
     const row = element("label", "board-view-choice"); row.dataset.workspace = epic.workspace; row.dataset.search = `${epic.id} ${epic.title}`.toLocaleLowerCase();
     const input = document.createElement("input"); input.type = "checkbox"; input.value = epic.id; input.checked = selectedEpics.has(epic.id); epicInputs.push(input);
-    const copy = element("span"); copy.append(element("code", "", epic.id), element("span", "", epic.title)); row.append(input, copy); epicChoices.append(row);
+    const copy = element("span");
+    copy.append(element("code", "", epic.id), element("span", "", `${epic.title}${epic.status === "closed" ? " (closed)" : ""}`));
+    row.append(input, copy); epicChoices.append(row);
   }
   for (const id of source?.epics ?? []) {
     if (epicInputs.some((input) => input.value === id)) continue;
@@ -1994,7 +2091,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     const count = epicMode.all.checked ? epicInputs.filter((input) => !input.closest<HTMLElement>(".board-view-choice")?.hidden).length
       : epicInputs.filter((input) => input.checked).length;
     const selectedCount = count + (noEpic.checked ? 1 : 0);
-    selectionSummary.textContent = epicMode.all.checked ? "All epic lanes" : `${selectedCount} ${selectedCount === 1 ? "lane" : "lanes"} selected`;
+    selectionSummary.textContent = epicMode.all.checked ? "All epic lanes" : `${selectedCount} lane ${selectedCount === 1 ? "selection" : "selections"} configured`;
   };
   for (const input of [...workspaceInputs, ...epicInputs, workspaceMode.all, workspaceMode.selected, epicMode.all, epicMode.selected, noEpic]) input.addEventListener("change", syncScope);
   epicSearch.addEventListener("input", syncScope); syncScope();
@@ -2003,13 +2100,20 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const labels = document.createElement("input"); labels.value = source?.labels.join(", ") ?? ""; labels.placeholder = "release, frontend";
   const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam";
   const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4));
-  const closedDays = document.createElement("input"); closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true; closedDays.value = String(source?.closed_days ?? defaultBoardClosedDays());
-  filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority), field("Show closed for (days)", closedDays)); filters.append(filterGrid); form.append(filters);
+  const closedDays = document.createElement("input"); closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true; closedDays.value = String(source?.closed_days ?? defaultBoardPreferences().closed_days);
+  const epicClosedDays = document.createElement("input"); epicClosedDays.type = "number"; epicClosedDays.min = "0"; epicClosedDays.max = "3650"; epicClosedDays.required = true; epicClosedDays.value = String(source?.epic_closed_days ?? 0);
+  const closedCards = field("Show closed cards for (days)", closedDays);
+  closedCards.append(element("span", "board-view-help", "Use 0 to hide closed cards immediately."));
+  const closedEpics = field("Show closed epic lanes for (days)", epicClosedDays);
+  closedEpics.append(element("span", "board-view-help", "Use 0 to hide completed epics immediately."));
+  filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority));
+  const retentionGrid = element("div", "board-view-retention-grid"); retentionGrid.append(closedCards, closedEpics);
+  filters.append(filterGrid, retentionGrid, hiddenPresentation.host); form.append(filters);
   const error = element("p", "edit-error");
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
-  const save = element("button", "primary-button", source === null ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
-  if (source !== null && !duplicate && source.owner === identity) {
+  const save = element("button", "primary-button", editDefault ? "Save settings" : source === null || saveAsNew ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
+  if (source !== null && !duplicate && !editDefault && !saveAsNew && source.owner === identity) {
     const remove = button("Delete view", "danger-button board-view-delete");
     remove.addEventListener("click", async () => {
       const confirmed = await confirmMutation(
@@ -2028,17 +2132,37 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", (event) => {
     event.preventDefault(); save.disabled = true; error.textContent = "";
+    const labelFilters = splitBoardFilter(labels.value); const assigneeFilters = splitBoardFilter(assignees.value);
+    const invalidLabel = labelFilters.find((value) => value.length > 64 || !boardLabelLikePattern.test(value));
+    const invalidAssignee = assigneeFilters.find((value) => value.length > 64 || !boardLabelLikePattern.test(value));
+    if (invalidLabel !== undefined || invalidAssignee !== undefined) {
+      save.disabled = false;
+      const kind = invalidLabel !== undefined ? "Label" : "Assignee"; const value = invalidLabel ?? invalidAssignee;
+      error.textContent = `${kind} “${value}” must use at most 64 lowercase letters, digits, hyphens, underscores, dots, or slashes.`;
+      (invalidLabel !== undefined ? labels : assignees).focus(); return;
+    }
     const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_workspaces: workspaceMode.all.checked,
       workspaces: workspaceMode.all.checked ? [] : workspaceInputs.filter((input) => input.checked).map((input) => input.value).sort(),
       all_epics: epicMode.all.checked, epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
       include_no_epic: noEpic.checked,
-      labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4,
-      closed_days: Number(closedDays.value) };
+      labels: labelFilters, assignees: assigneeFilters, priority_max: Number(priority.value) as 0|1|2|3|4,
+      closed_days: Number(closedDays.value), epic_closed_days: Number(epicClosedDays.value) };
     if (!body.all_epics && (body.epics?.length ?? 0) === 0 && !body.include_no_epic) {
       save.disabled = false; error.textContent = "Select at least one epic lane or include No epic."; return;
     }
+    if (editDefault) {
+      saveDefaultBoardPreferences({ all_workspaces: workspaceMode.all.checked,
+        workspaces: workspaceMode.all.checked ? [] : workspaceInputs.filter((input) => input.checked).map((input) => input.value).sort(),
+        all_epics: epicMode.all.checked,
+        epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
+        include_no_epic: noEpic.checked, labels: labelFilters, assignees: assigneeFilters,
+        priority_max: Number(priority.value) as 0|1|2|3|4, closed_days: Number(closedDays.value),
+        epic_closed_days: Number(epicClosedDays.value) });
+      saveHiddenBoardEpics("default", new Set(hiddenPresentation.inputs.filter((input) => input.checked).map((input) => input.value)));
+      dialog.close(); void render(); return;
+    }
     let operation: Promise<BoardView>;
-    if (source !== null && !duplicate) {
+    if (source !== null && !duplicate && !saveAsNew) {
       const patch: BoardViewPatch = {};
       if (body.name !== source.name) patch.name = body.name;
       if (body.shared !== source.shared) patch.shared = body.shared;
@@ -2051,26 +2175,40 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
       if (JSON.stringify(body.assignees) !== JSON.stringify(source.assignees)) patch.assignees = body.assignees;
       if (body.priority_max !== source.priority_max) patch.priority_max = body.priority_max;
       if (body.closed_days !== source.closed_days) patch.closed_days = body.closed_days;
+      if (body.epic_closed_days !== source.epic_closed_days) patch.epic_closed_days = body.epic_closed_days;
       operation = api.updateBoardView(source.id, patch);
     } else {
       operation = api.createBoardView(body);
     }
     void operation.then((view) => {
+      saveHiddenBoardEpics(view.id, new Set(hiddenPresentation.inputs.filter((input) => input.checked).map((input) => input.value)));
       dialog.close();
       const destination = `#/boards/${view.id}`;
       if (location.hash === destination) void render(); else location.hash = destination;
     }).catch((reason) => { save.disabled = false; error.textContent = reason instanceof Error ? reason.message : String(reason); });
   });
-  dialog.showModal(); name.focus();
+  dialog.showModal(); (editDefault ? closedDays : name).focus();
 }
 
 async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const ref = route.path[1] ?? "default";
   const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize, "card-limit": boardCardPageSize };
   if (ref === "default") {
-    const workspaces = route.query.getAll("workspace"); if (workspaces.length > 0) filters.workspace = workspaces;
-    filters["closed-days"] = defaultBoardClosedDays();
+    const preferences = defaultBoardPreferences();
+    const workspaces = route.query.getAll("workspace");
+    if (workspaces.length > 0) filters.workspace = workspaces;
+    else if (!preferences.all_workspaces) filters.workspace = preferences.workspaces;
+    filters["all-workspaces"] = preferences.all_workspaces;
+    filters["all-epics"] = preferences.all_epics;
+    if (!preferences.all_epics) filters["selected-epic"] = preferences.epics;
+    filters["include-no-epic"] = preferences.include_no_epic;
+    if (preferences.labels.length > 0) filters.label = preferences.labels;
+    if (preferences.assignees.length > 0) filters.assignee = preferences.assignees;
+    filters["priority-max"] = preferences.priority_max;
+    filters["closed-days"] = preferences.closed_days;
+    filters["epic-closed-days"] = preferences.epic_closed_days;
   }
+  const hiddenEpics = [...hiddenBoardEpics(ref)]; if (hiddenEpics.length > 0) filters["hidden-epic"] = hiddenEpics;
   const [board, owned] = await Promise.all([api.board(ref, filters, signal), api.boardViews()]);
   const view = element("div", "board-page");
   const heading = element("div", "board-heading");
@@ -2087,12 +2225,13 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
   const saved = board.view;
   if (saved === undefined) {
-    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(null, false, route)); actions.append(save);
-    const settings = button("Board settings"); settings.addEventListener("click", openDefaultBoardSettings); actions.append(settings);
+    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(effectiveDefaultBoardView(route), false, route, false, true)); actions.append(save);
+    const settings = button("Edit view"); settings.addEventListener("click", () => void openBoardViewEditor(defaultBoardView(), false, route, true)); actions.append(settings);
   } else if (saved.owner === identity) {
     const edit = button("Edit view"); edit.addEventListener("click", () => void api.boardView(saved.id).then((full) => openBoardViewEditor(full, false, route))); actions.append(edit);
   } else {
     const duplicate = button("Duplicate"); duplicate.addEventListener("click", () => void openBoardViewEditor(saved, true, route)); actions.append(duplicate);
+    const settings = button("View settings"); settings.addEventListener("click", () => void openBoardPresentationSettings(saved.id)); actions.append(settings);
   }
   if (saved?.shared) {
     const share = button("Copy link", "primary-button");
@@ -2110,10 +2249,11 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   heading.append(title, actions); view.append(heading);
   if (saved !== undefined) {
     const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
-    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
+    const workspaceCount = saved.workspaces.length;
+    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`));
     const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
-    chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} epic ${epicLaneCount === 1 ? "lane" : "lanes"}`));
-    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `${saved.closed_days} closed days`)); summary.append(owner, chips); view.append(summary);
+    chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} lane ${epicLaneCount === 1 ? "selection" : "selections"}`));
+    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `Closed cards: ${saved.closed_days} days`), element("span", "", `Closed epics: ${saved.epic_closed_days} days`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted
     ? "Some workspaces are archived or hidden by your access or ignored-workspace settings."
@@ -2124,7 +2264,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     ? []
     : [{ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title }]);
   const loadedLanes = new Set<string>();
-  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics)); }
+  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics, filters)); }
   if (board.lane_total === 0) lanes.append(element("p", "empty", "No epic lanes match this view."));
   view.append(lanes);
   if (board.lanes.length < board.lane_total) {
@@ -2143,7 +2283,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
           if (loadedLanes.has(key)) continue;
           loadedLanes.add(key);
           if (lane.epic !== undefined) epics.push({ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title });
-          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics));
+          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics, filters));
         }
         syncBoardEpicChoices(lanes, epics, issuesByID);
         if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }

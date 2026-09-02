@@ -37,9 +37,12 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if req.ClosedDays < 0 || req.ClosedDays > maximumBoardClosedDays {
 		return nil, awberr.Usagef("board closed days must be between 0 and %d", maximumBoardClosedDays)
 	}
+	if req.EpicClosedDays < 0 || req.EpicClosedDays > maximumBoardClosedDays {
+		return nil, awberr.Usagef("board epic closed days must be between 0 and %d", maximumBoardClosedDays)
+	}
 	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
 		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority,
-		ClosedDays: req.ClosedDays}
+		ClosedDays: req.ClosedDays, EpicClosedDays: req.EpicClosedDays}
 	seen := map[string]bool{}
 	for _, value := range req.Workspaces {
 		valid, err := domain.ValidateWorkspaceKey(value)
@@ -89,7 +92,7 @@ func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
 	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
 		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
 		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees,
-		PriorityMax: view.PriorityMax, ClosedDays: view.ClosedDays}
+		PriorityMax: view.PriorityMax, ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays}
 }
 
 func validateBoardViewEpics(tx *storage.Tx, view *domain.BoardView, requested []string) error {
@@ -342,6 +345,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if req.ClosedDays != nil {
 			next.ClosedDays = *req.ClosedDays
 		}
+		if req.EpicClosedDays != nil {
+			next.EpicClosedDays = *req.EpicClosedDays
+		}
 		valid, err := validateBoardView(boardCreateFrom(&next))
 		if err != nil {
 			return err
@@ -432,6 +438,26 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			return nil, err
 		}
 	}
+	for _, epic := range append(slices.Clone(query.Epics), query.HiddenEpics...) {
+		if _, err := domain.ValidateIssueID(epic); err != nil {
+			return nil, err
+		}
+	}
+	for _, label := range query.Labels {
+		if _, err := domain.ValidateLabel(label); err != nil {
+			return nil, err
+		}
+	}
+	for _, assignee := range query.Assignees {
+		if _, err := domain.ValidateAssignee(assignee); err != nil {
+			return nil, err
+		}
+	}
+	if query.PriorityMax != nil {
+		if _, err := domain.ParsePriority(*query.PriorityMax); err != nil {
+			return nil, err
+		}
+	}
 	if query.Status != "" {
 		if _, err := domain.ParseStatus(string(query.Status)); err != nil {
 			return nil, err
@@ -451,6 +477,13 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	if closedDays < 0 || closedDays > maximumBoardClosedDays {
 		return nil, awberr.Usagef("board closed days must be between 0 and %d", maximumBoardClosedDays)
 	}
+	epicClosedDays := 0
+	if query.EpicClosedDays != nil {
+		epicClosedDays = *query.EpicClosedDays
+	}
+	if epicClosedDays < 0 || epicClosedDays > maximumBoardClosedDays {
+		return nil, awberr.Usagef("board epic closed days must be between 0 and %d", maximumBoardClosedDays)
+	}
 	for name, offset := range map[string]*int{"lane": query.LaneOffset, "card": query.CardOffset} {
 		if offset != nil && *offset < 0 {
 			return nil, awberr.Usagef("board %s offset must not be negative", name)
@@ -464,6 +497,32 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		}
 		var view *domain.BoardView
 		var selected []string
+		if query.AllWorkspaces != nil && !*query.AllWorkspaces {
+			selected = slices.Clone(query.Workspaces)
+			if selected == nil {
+				selected = []string{}
+			}
+		}
+		allEpics, includeNoEpic := true, true
+		selectedEpics := make([]string, 0, len(query.Epics))
+		seenEpics := map[string]bool{}
+		for _, id := range query.Epics {
+			if !seenEpics[id] {
+				selectedEpics = append(selectedEpics, id)
+				seenEpics[id] = true
+			}
+		}
+		if query.AllEpics != nil {
+			allEpics = *query.AllEpics
+		}
+		if query.IncludeNoEpic != nil {
+			includeNoEpic = *query.IncludeNoEpic
+		}
+		cardLabels, cardAssignees := slices.Clone(query.Labels), slices.Clone(query.Assignees)
+		priorityMax := 4
+		if query.PriorityMax != nil {
+			priorityMax = *query.PriorityMax
+		}
 		if ref != "default" {
 			view, err = tx.GetBoardView(ref)
 			if err != nil {
@@ -472,6 +531,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if !caller.MayManageBoardView(view.Owner) && !view.Shared {
 				return awberr.NotFoundf("no such board view: %s", ref)
 			}
+			selected = nil
 			if !view.AllWorkspaces {
 				selected = slices.Clone(view.Workspaces)
 			}
@@ -489,8 +549,12 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			shown.Normalize()
 			result.View = &shown
 			closedDays = view.ClosedDays
+			epicClosedDays = view.EpicClosedDays
+			allEpics, selectedEpics, includeNoEpic = view.AllEpics, slices.Clone(view.Epics), view.IncludeNoEpic
+			cardLabels, cardAssignees, priorityMax = slices.Clone(view.Labels), slices.Clone(view.Assignees), view.PriorityMax
 		}
 		closedAfter := boardClosedAfter(closedDays)
+		epicClosedAfter := boardClosedAfter(epicClosedDays)
 		laneSelection := selected
 		if len(query.Workspaces) > 0 {
 			requested := []string{}
@@ -501,14 +565,18 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 			laneSelection = requested
 		}
+		canShowNoEpic := laneSelection == nil || len(laneSelection) > 0
 		laneLimit, laneOffset := *query.LaneLimit, 0
 		if query.LaneOffset != nil {
 			laneOffset = *query.LaneOffset
 		}
 		laneEpics := []*domain.Issue{}
 		if query.Epic != nil {
-			if view != nil && ((*query.Epic == "none" && !view.IncludeNoEpic) ||
-				(*query.Epic != "none" && !view.AllEpics && !slices.Contains(view.Epics, *query.Epic))) {
+			if (*query.Epic == "none" && (!includeNoEpic || !canShowNoEpic)) ||
+				(*query.Epic != "none" && !allEpics && !slices.Contains(selectedEpics, *query.Epic)) {
+				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+			}
+			if slices.Contains(query.HiddenEpics, *query.Epic) {
 				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 			}
 			result.LaneTotal = 1
@@ -522,7 +590,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				if !active || epic.Type != domain.TypeEpic || !boardIssueVisible(epic, closedAfter) ||
+				if !active || !boardEpicVisible(epic, epicClosedAfter) ||
 					(laneSelection != nil && !slices.Contains(laneSelection, epic.Workspace)) {
 					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 				}
@@ -530,9 +598,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if laneOffset == 0 && laneLimit > 0 {
 				laneEpics = append(laneEpics, epic)
 			}
-		} else if view != nil && !view.AllEpics {
-			selectedEpics := []domain.Issue{}
-			for _, id := range view.Epics {
+		} else if !allEpics {
+			selectedEpicIssues := []domain.Issue{}
+			for _, id := range selectedEpics {
 				epic, loadErr := tx.GetIssue(id)
 				if loadErr != nil {
 					if awberr.KindOf(loadErr) == awberr.NotFound {
@@ -540,21 +608,21 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					}
 					return loadErr
 				}
-				if epic.Type == domain.TypeEpic && boardIssueVisible(epic, closedAfter) &&
+				if boardEpicVisible(epic, epicClosedAfter) && !slices.Contains(query.HiddenEpics, epic.ID) &&
 					(laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
-					selectedEpics = append(selectedEpics, *epic)
+					selectedEpicIssues = append(selectedEpicIssues, *epic)
 				}
 			}
-			result.LaneTotal = len(selectedEpics)
-			if view.IncludeNoEpic {
+			result.LaneTotal = len(selectedEpicIssues)
+			if includeNoEpic && canShowNoEpic {
 				result.LaneTotal++
 			}
 			all := []*domain.Issue{}
-			if view.IncludeNoEpic {
+			if includeNoEpic && canShowNoEpic {
 				all = append(all, nil)
 			}
-			for i := range selectedEpics {
-				all = append(all, &selectedEpics[i])
+			for i := range selectedEpicIssues {
+				all = append(all, &selectedEpicIssues[i])
 			}
 			end := min(laneOffset+laneLimit, len(all))
 			if laneOffset < len(all) {
@@ -562,7 +630,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 		} else {
 			epicLimit, epicOffset := laneLimit, 0
-			hasNoEpic := view == nil || view.IncludeNoEpic
+			hasNoEpic := includeNoEpic && canShowNoEpic
 			epicOffset = laneOffset
 			if hasNoEpic && laneOffset > 0 {
 				epicOffset = laneOffset - 1
@@ -571,7 +639,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if includeNoEpic {
 				epicLimit--
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, closedAfter, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, query.HiddenEpics, epicClosedAfter, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}
@@ -606,12 +674,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if status == domain.StatusClosed {
 					filter.ClosedAfter = closedAfter
 				}
-				if view != nil {
-					filter.Labels = view.Labels
-					filter.Assignees = view.Assignees
-					max := view.PriorityMax
-					filter.PriorityMax = &max
-				}
+				filter.Labels = cardLabels
+				filter.Assignees = cardAssignees
+				filter.PriorityMax = &priorityMax
 				issues, total, err := []domain.Issue{}, 0, error(nil)
 				if workspaces == nil || len(workspaces) > 0 {
 					issues, total, err = tx.ListIssues(filter)
@@ -635,8 +700,12 @@ func boardClosedAfter(days int) string {
 	return domain.FormatTime(time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour))
 }
 
-func boardIssueVisible(issue *domain.Issue, closedAfter string) bool {
-	return !issue.BoardHidden && (issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
+// An epic is the board lane itself, rather than a card in a status column, so
+// its independent cutoff controls the whole lane. A zero-day window becomes a
+// future cutoff and therefore removes every closed epic immediately.
+func boardEpicVisible(issue *domain.Issue, closedAfter string) bool {
+	return issue.Type == domain.TypeEpic && !issue.BoardHidden &&
+		(issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
 }
 
 func boundedBoardLimit(value *int, fallback, maximum int, name string) (*int, error) {

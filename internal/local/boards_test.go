@@ -112,9 +112,13 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	thirty := 30
 	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty})
 	require.NoError(t, err)
-	assert.Equal(t, 2, board.LaneTotal, "a recent closed epic remains as a lane while a hidden epic does not")
+	assert.Equal(t, 1, board.LaneTotal, "closed and hidden epics disappear immediately")
 	assert.Equal(t, []string{visible.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
 	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues))
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty, EpicClosedDays: &thirty})
+	require.NoError(t, err)
+	assert.Equal(t, 2, board.LaneTotal, "epic lanes have an independent retention window")
+	assert.Equal(t, closedEpic.ID, board.Lanes[1].Epic.ID)
 
 	zero := 0
 	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &zero})
@@ -133,10 +137,29 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	view, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{ClosedDays: &thirty}, backend.ETag(view.UpdatedAt))
 	require.NoError(t, err)
 	assert.Equal(t, 30, view.ClosedDays)
-	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero})
+	noWorkspaces := false
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero, AllWorkspaces: &noWorkspaces})
 	require.NoError(t, err)
-	assert.Equal(t, 2, board.LaneTotal)
-	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "query settings do not override a saved view")
+	assert.Equal(t, 1, board.LaneTotal)
+	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "request preferences do not override a saved view")
+
+	pinned, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Pinned", AllWorkspaces: true,
+		Epics: []string{closedEpic.ID}, PriorityMax: 4, ClosedDays: 30})
+	require.NoError(t, err)
+	board, err = root.GetBoard(ctx, pinned.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.Zero(t, board.LaneTotal, "a pinned closed epic disappears with the default zero-day retention")
+	_, err = root.GetBoard(ctx, "default", backend.BoardQuery{Epic: &closedEpic.ID})
+	notFound(t, err, "a closed epic cannot be requested directly")
+	pinned, err = root.UpdateBoardView(ctx, pinned.ID, backend.BoardViewPatch{EpicClosedDays: &thirty}, backend.ETag(pinned.UpdatedAt))
+	require.NoError(t, err)
+	board, err = root.GetBoard(ctx, pinned.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 1)
+	assert.Equal(t, closedEpic.ID, board.Lanes[0].Epic.ID)
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{Epic: &closedEpic.ID, EpicClosedDays: &thirty})
+	require.NoError(t, err, "a retained closed epic can be requested directly")
+	require.Len(t, board.Lanes, 1)
 }
 
 func issueIDs(issues []domain.Issue) []string {
@@ -231,14 +254,22 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, specific.Lanes, 1)
 	assert.Equal(t, visibleEpic.ID, specific.Lanes[0].Epic.ID)
+	hiddenFromView, err := root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{HiddenEpics: []string{visibleEpic.ID}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, hiddenFromView.LaneTotal, "the No epic lane remains while the requested epic is excluded")
+	require.Len(t, hiddenFromView.Lanes, 1)
+	assert.Nil(t, hiddenFromView.Lanes[0].Epic)
 	for _, query := range []backend.BoardQuery{
 		{Epic: &hiddenEpic.ID},
 		{Epic: &hiddenEpic.ID, LaneLimit: &zero},
 		{Epic: &hiddenEpic.ID, LaneOffset: &one},
+		{Epic: &visibleEpic.ID, HiddenEpics: []string{visibleEpic.ID}},
 	} {
 		_, err = root.WithUser("alice").GetBoard(ctx, "default", query)
 		notFound(t, err, "pagination must not bypass explicit epic validation")
 	}
+	_, err = root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{HiddenEpics: []string{"not-an-id"}})
+	assert.Equal(t, 2, exitOf(err))
 }
 
 func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
@@ -257,6 +288,9 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	require.Len(t, board.Lanes, 1)
 	require.NotNil(t, board.Lanes[0].Epic)
 	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{HiddenEpics: []string{first.ID}})
+	require.NoError(t, err)
+	assert.Zero(t, board.LaneTotal, "viewer presentation state can hide a pinned lane without changing the view")
 	_, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{Epic: &second.ID})
 	notFound(t, err, "an explicit lane cannot escape a saved view's pinned epic set")
 
@@ -282,6 +316,42 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	name := "stale"
 	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(updated.UpdatedAt))
 	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+}
+
+func TestDefaultBoardAcceptsTheSameScopeAndIssueFiltersAsSavedViews(t *testing.T) {
+	root, ctx := newInstance(t)
+	first, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "First epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	second, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Second epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	priorityOne, priorityThree := 1, 3
+	matching, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Matching",
+		Priority: &priorityOne, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: first.ID}}})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Wrong priority",
+		Priority: &priorityThree, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: first.ID}}})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Wrong epic",
+		Priority: &priorityOne, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: second.ID}}})
+	require.NoError(t, err)
+
+	allWorkspaces, allEpics, includeNoEpic, priorityMax := false, false, false, 2
+	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{AllWorkspaces: &allWorkspaces, Workspaces: []string{"awb"},
+		AllEpics: &allEpics, Epics: []string{first.ID, first.ID},
+		IncludeNoEpic: &includeNoEpic, Labels: []string{"release"}, Assignees: []string{"alex"}, PriorityMax: &priorityMax})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 1)
+	assert.Equal(t, 1, board.LaneTotal, "repeated selected epic IDs describe one lane")
+	require.NotNil(t, board.Lanes[0].Epic)
+	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
+	assert.Equal(t, []string{matching.ID}, issueIDs(board.Lanes[0].Columns[1].Issues))
+
+	empty, err := root.GetBoard(ctx, "default", backend.BoardQuery{AllWorkspaces: &allWorkspaces})
+	require.NoError(t, err)
+	assert.Zero(t, empty.LaneTotal, "an empty selected-workspace scope must not widen to every workspace")
 }
 
 func TestChangingAPinnedEpicTypeMovesTheBoardViewVersion(t *testing.T) {

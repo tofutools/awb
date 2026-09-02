@@ -111,6 +111,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
+  await expect(releaseLane.locator(":scope > .board-lane-heading h2 a")).toHaveAttribute("href", /^#\/issues\/demo-/);
   const inProgressColumn = releaseLane.locator(".board-column[data-status='in_progress']");
   const relatedID = await page.locator(".board-card").first().getAttribute("data-issue");
   expect(relatedID).toBeTruthy();
@@ -285,8 +286,27 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await closedCard.getByLabel(/Status for demo-/).selectOption("in_progress");
   await expect.poll(() => page.locator(".board-card", { hasText: "Design the catalogue database schema" }).getByText(/@/).count()).toBe(1);
 
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const defaultEditor = page.getByRole("dialog", { name: "Edit default board" });
+  await defaultEditor.getByLabel("Labels (any)").fill("Release");
+  await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+  await expect(defaultEditor.locator(".edit-error")).toContainText("must use at most 64 lowercase");
+  await defaultEditor.getByLabel("Labels (any)").fill("");
+  await expect(defaultEditor.getByLabel("Show closed epic lanes for (days)")).toHaveValue("0");
+  await defaultEditor.getByLabel("Show closed epic lanes for (days)").fill("7");
+  const defaultWorkspaceScope = defaultEditor.locator(".board-view-scope-card").first();
+  await defaultWorkspaceScope.getByText("Selected", { exact: true }).click();
+  await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input").check();
+  await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+  await page.goto(`${baseURL}/#/boards?workspace=demo`);
+
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
+  const inheritedWorkspaceScope = dialog.locator(".board-view-scope-card").first();
+  await expect(inheritedWorkspaceScope.getByRole("radio", { name: "Selected" })).toBeChecked();
+  await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input")).toBeChecked();
+  await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input")).not.toBeChecked();
+  await expect(dialog.getByLabel("Show closed epic lanes for (days)")).toHaveValue("7");
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
   const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
@@ -297,13 +317,16 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page).toHaveURL(/#\/boards\/view-[0-9a-f]{24}$/);
   const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
-  await expect(page.locator(".board-summary")).toContainText("1 epic lane");
+  await expect(page.locator(".board-summary")).toContainText("1 workspace");
+  await expect(page.locator(".board-summary")).toContainText("Closed epics: 7 days");
+  await expect(page.locator(".board-summary")).toContainText("1 lane selection");
   await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
 
   await page.getByRole("button", { name: "Edit view" }).click();
   const editView = page.getByRole("dialog", { name: "Edit board view" });
   await expect(editView.getByRole("button", { name: "Delete view" })).toBeVisible();
+  await editView.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
   const editEpicScope = editView.locator(".board-view-scope-card", { hasText: "Epic lanes" });
   await editEpicScope.getByText("All", { exact: true }).click();
   await editEpicScope.getByText("No epic", { exact: true }).click();
@@ -395,6 +418,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
 	await page.setViewportSize({ width: 710, height: 900 });
 	await page.goto(`${baseURL}/#/boards`);
+	await page.getByRole("button", { name: "Edit view" }).click();
+	const resetDefault = page.getByRole("dialog", { name: "Edit default board" });
+	await resetDefault.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
+	await resetDefault.getByRole("button", { name: "Save settings" }).click();
 	const breakpointCard = page.locator(".board-card").first();
 	await expect(breakpointCard).toBeVisible();
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);
@@ -436,7 +463,38 @@ test("save, share and work from a responsive board", async ({ page }) => {
     return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
   }, { id: movedID, epic: pagedEpic })).toBe(true);
 
+  const hideableLanes = page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) });
+  const hideableLane = hideableLanes.first();
+  const hideableHeading = await hideableLane.locator(":scope > .board-lane-heading h2").textContent();
+  expect(hideableHeading).toBeTruthy();
+  const hideableEpicID = await hideableLane.getByRole("button", { name: /Hide .* from this view/ }).getAttribute("aria-label")
+    .then((label) => label?.split(" ")[1]);
+  expect(hideableEpicID).toBeTruthy();
+  await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from this view` }).click();
+  await expect(page.locator(".board-lane", { has: page.getByRole("heading", { name: hideableHeading, exact: true }) })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(false);
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const settings = page.getByRole("dialog", { name: "Edit default board" });
+  await expect(settings.getByRole("heading", { name: "Scope" })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Issue filters" })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Hidden epic lanes" })).toBeVisible();
+  await settings.getByLabel(`Hide ${hideableEpicID} in this view`).uncheck();
+  await settings.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByRole("heading", { name: hideableHeading, exact: true })).toBeVisible();
+
   await page.goto(savedViewURL);
+  const savedHideableLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Platform epic/ }) });
+  const savedHideableHeading = await savedHideableLane.locator(":scope > .board-lane-heading h2").textContent();
+  const savedHideableID = await savedHideableLane.getByRole("button", { name: /Hide .* from this view/ }).getAttribute("aria-label")
+    .then((label) => label?.split(" ")[1]);
+  expect(savedHideableHeading).toBeTruthy(); expect(savedHideableID).toBeTruthy();
+  await savedHideableLane.getByRole("button", { name: `Hide ${savedHideableID} from this view` }).click();
+  await expect(page.getByRole("heading", { name: savedHideableHeading, exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const restoreDialog = page.getByRole("dialog", { name: "Edit board view" });
+  await restoreDialog.getByLabel(`Hide ${savedHideableID} in this view`).uncheck();
+  await restoreDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("heading", { name: savedHideableHeading, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit view" }).click();
   await page.getByRole("dialog", { name: "Edit board view" }).getByRole("button", { name: "Delete" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "Delete board view?" });

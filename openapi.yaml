@@ -786,8 +786,12 @@ paths:
           schema: { type: integer, minimum: 0 }
         - name: closed-days
           in: query
-          description: Closed issues remain on the default board for this many days. Saved views use their stored value.
+          description: Closed non-epic cards remain on the default board for this many days. Saved views use their stored value.
           schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
+        - name: epic-closed-days
+          in: query
+          description: Closed epic lanes remain on the default board for this many days. Saved views use their stored value.
+          schema: { type: integer, minimum: 0, maximum: 3650, default: 0 }
         - name: workspace
           in: query
           schema:
@@ -795,6 +799,54 @@ paths:
             items: { $ref: '#/components/schemas/WorkspaceKey' }
           style: form
           explode: true
+        - name: all-workspaces
+          in: query
+          description: Whether the default board includes every visible workspace. False with no workspace values selects none. Saved views ignore this request preference.
+          schema: { type: boolean }
+        - name: hidden-epic
+          in: query
+          description: Omit these epic lanes as viewer-specific presentation state.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/IssueID' }
+          style: form
+          explode: true
+        - name: all-epics
+          in: query
+          description: Whether the default board dynamically selects every epic lane.
+          schema: { type: boolean }
+        - name: selected-epic
+          in: query
+          description: Epic lanes selected when `all-epics` is false on the default board.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/IssueID' }
+          style: form
+          explode: true
+        - name: include-no-epic
+          in: query
+          description: Whether the default board includes the derived No epic lane.
+          schema: { type: boolean }
+        - name: label
+          in: query
+          description: Keep default-board cards carrying any of these labels.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Label' }
+          style: form
+          explode: true
+        - name: assignee
+          in: query
+          description: Keep default-board cards assigned to any of these users.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Assignee' }
+          style: form
+          explode: true
+        - name: priority-max
+          in: query
+          description: Keep default-board cards from P0 through this priority.
+          schema: { $ref: '#/components/schemas/Priority' }
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/Status' }
@@ -1715,7 +1767,7 @@ components:
       additionalProperties: false
       required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
         epics, include_no_epic, labels,
-        assignees, priority_max, closed_days, created_at, updated_at]
+        assignees, priority_max, closed_days, epic_closed_days, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
         name: { type: string, minLength: 1, maxLength: 100 }
@@ -1737,7 +1789,16 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
-        closed_days: { type: integer, minimum: 0, maximum: 3650 }
+        closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed epic lanes remain visible.
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
@@ -1771,6 +1832,13 @@ components:
           minimum: 0
           maximum: 3650
           default: 30
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          default: 0
+          description: Number of days closed epic lanes remain visible.
 
     BoardViewPatch:
       type: object
@@ -1799,7 +1867,16 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
-        closed_days: { type: integer, minimum: 0, maximum: 3650 }
+        closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed epic lanes remain visible.
         id: { $ref: '#/components/schemas/BoardViewID' }
         owner: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }

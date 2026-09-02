@@ -112,21 +112,22 @@ type WorkspacePreference struct {
 // dynamic scope from an explicitly selected set which currently has no visible
 // members. IncludeNoEpic independently selects the derived unassigned lane.
 type BoardView struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Owner         string   `json:"owner"`
-	Shared        bool     `json:"shared"`
-	AllWorkspaces bool     `json:"all_workspaces"`
-	Workspaces    []string `json:"workspaces"`
-	AllEpics      bool     `json:"all_epics"`
-	Epics         []string `json:"epics"`
-	IncludeNoEpic bool     `json:"include_no_epic"`
-	Labels        []string `json:"labels"`
-	Assignees     []string `json:"assignees"`
-	PriorityMax   int      `json:"priority_max"`
-	ClosedDays    int      `json:"closed_days"`
-	CreatedAt     string   `json:"created_at"`
-	UpdatedAt     string   `json:"updated_at"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Owner          string   `json:"owner"`
+	Shared         bool     `json:"shared"`
+	AllWorkspaces  bool     `json:"all_workspaces"`
+	Workspaces     []string `json:"workspaces"`
+	AllEpics       bool     `json:"all_epics"`
+	Epics          []string `json:"epics"`
+	IncludeNoEpic  bool     `json:"include_no_epic"`
+	Labels         []string `json:"labels"`
+	Assignees      []string `json:"assignees"`
+	PriorityMax    int      `json:"priority_max"`
+	ClosedDays     int      `json:"closed_days"`
+	EpicClosedDays int      `json:"epic_closed_days"`
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
 }
 
 // Normalize makes every collection deterministic and non-null on the wire.
