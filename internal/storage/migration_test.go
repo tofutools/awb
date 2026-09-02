@@ -131,6 +131,7 @@ func TestV15AddsBoardVisibilityAndClosedRetention(t *testing.T) {
 		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, readErr)
 		assert.Equal(t, 30, view.ClosedDays)
+		assert.Zero(t, view.EpicClosedDays)
 		return nil
 	}))
 }

@@ -115,6 +115,10 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	assert.Equal(t, 1, board.LaneTotal, "closed and hidden epics disappear immediately")
 	assert.Equal(t, []string{visible.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
 	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues))
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty, EpicClosedDays: &thirty})
+	require.NoError(t, err)
+	assert.Equal(t, 2, board.LaneTotal, "epic lanes have an independent retention window")
+	assert.Equal(t, closedEpic.ID, board.Lanes[1].Epic.ID)
 
 	zero := 0
 	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &zero})
@@ -144,9 +148,18 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	require.NoError(t, err)
 	board, err = root.GetBoard(ctx, pinned.ID, backend.BoardQuery{})
 	require.NoError(t, err)
-	assert.Zero(t, board.LaneTotal, "a pinned closed epic does not keep its lane")
+	assert.Zero(t, board.LaneTotal, "a pinned closed epic disappears with the default zero-day retention")
 	_, err = root.GetBoard(ctx, "default", backend.BoardQuery{Epic: &closedEpic.ID})
 	notFound(t, err, "a closed epic cannot be requested directly")
+	pinned, err = root.UpdateBoardView(ctx, pinned.ID, backend.BoardViewPatch{EpicClosedDays: &thirty}, backend.ETag(pinned.UpdatedAt))
+	require.NoError(t, err)
+	board, err = root.GetBoard(ctx, pinned.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 1)
+	assert.Equal(t, closedEpic.ID, board.Lanes[0].Epic.ID)
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{Epic: &closedEpic.ID, EpicClosedDays: &thirty})
+	require.NoError(t, err, "a retained closed epic can be requested directly")
+	require.Len(t, board.Lanes, 1)
 }
 
 func issueIDs(issues []domain.Issue) []string {

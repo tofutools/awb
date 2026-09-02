@@ -145,50 +145,53 @@ type IssuePage struct {
 }
 
 type BoardViewCreate struct {
-	Name          string
-	Shared        bool
-	AllWorkspaces bool
-	Workspaces    []string
-	AllEpics      bool
-	Epics         []string
-	IncludeNoEpic bool
-	Labels        []string
-	Assignees     []string
-	PriorityMax   int
-	ClosedDays    int
+	Name           string
+	Shared         bool
+	AllWorkspaces  bool
+	Workspaces     []string
+	AllEpics       bool
+	Epics          []string
+	IncludeNoEpic  bool
+	Labels         []string
+	Assignees      []string
+	PriorityMax    int
+	ClosedDays     int
+	EpicClosedDays int
 }
 
 type BoardViewPatch struct {
-	Name          *string
-	Shared        *bool
-	AllWorkspaces *bool
-	Workspaces    *[]string
-	AllEpics      *bool
-	Epics         *[]string
-	IncludeNoEpic *bool
-	Labels        *[]string
-	Assignees     *[]string
-	PriorityMax   *int
-	ClosedDays    *int
+	Name           *string
+	Shared         *bool
+	AllWorkspaces  *bool
+	Workspaces     *[]string
+	AllEpics       *bool
+	Epics          *[]string
+	IncludeNoEpic  *bool
+	Labels         *[]string
+	Assignees      *[]string
+	PriorityMax    *int
+	ClosedDays     *int
+	EpicClosedDays *int
 }
 
 type BoardQuery struct {
-	LaneLimit     *int
-	LaneOffset    *int
-	CardLimit     *int
-	CardOffset    *int
-	ClosedDays    *int
-	Workspaces    []string
-	AllWorkspaces *bool
-	AllEpics      *bool
-	Epics         []string
-	IncludeNoEpic *bool
-	HiddenEpics   []string
-	Labels        []string
-	Assignees     []string
-	PriorityMax   *int
-	Status        domain.Status
-	Epic          *string
+	LaneLimit      *int
+	LaneOffset     *int
+	CardLimit      *int
+	CardOffset     *int
+	ClosedDays     *int
+	EpicClosedDays *int
+	Workspaces     []string
+	AllWorkspaces  *bool
+	AllEpics       *bool
+	Epics          []string
+	IncludeNoEpic  *bool
+	HiddenEpics    []string
+	Labels         []string
+	Assignees      []string
+	PriorityMax    *int
+	Status         domain.Status
+	Epic           *string
 }
 
 // WorkspacePage is a workspace listing with its unpaged total.

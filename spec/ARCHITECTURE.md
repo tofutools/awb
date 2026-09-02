@@ -188,8 +188,9 @@ are distinct states so disappearing access cannot silently widen a saved view.
 Each saved view owns its filter scope and closed-card retention window. The
 default board accepts the same fields as request preferences, which the web UI
 keeps locally for that browser and identity. Board-hidden issues never enter
-the projection. A closed epic stops being a lane immediately, while a closed
-non-epic card remains until its most recent close is older than that window.
+the projection. Closed epic lanes and closed non-epic cards have independent
+retention windows; each remains until its most recent close is older than its
+window, and a zero-day window hides it immediately.
 Epic lanes may also be hidden as viewer-local presentation state for one board
 without changing the epic or a saved view's shared definition. The exclusion
 is applied before lane totals and pagination. Card pagination remains

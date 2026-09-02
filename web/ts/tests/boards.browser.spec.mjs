@@ -284,6 +284,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await defaultEditor.getByRole("button", { name: "Save settings" }).click();
   await expect(defaultEditor.locator(".edit-error")).toContainText("must use at most 64 lowercase");
   await defaultEditor.getByLabel("Labels (any)").fill("");
+  await expect(defaultEditor.getByLabel("Show closed epic lanes for (days)")).toHaveValue("0");
+  await defaultEditor.getByLabel("Show closed epic lanes for (days)").fill("7");
   const defaultWorkspaceScope = defaultEditor.locator(".board-view-scope-card").first();
   await defaultWorkspaceScope.getByText("Selected", { exact: true }).click();
   await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input").check();
@@ -296,6 +298,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(inheritedWorkspaceScope.getByRole("radio", { name: "Selected" })).toBeChecked();
   await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input")).toBeChecked();
   await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input")).not.toBeChecked();
+  await expect(dialog.getByLabel("Show closed epic lanes for (days)")).toHaveValue("7");
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
   const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
@@ -307,6 +310,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
   await expect(page.locator(".board-summary")).toContainText("1 workspace");
+  await expect(page.locator(".board-summary")).toContainText("Closed epics: 7 days");
   await expect(page.locator(".board-summary")).toContainText("1 lane selection");
   await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();

@@ -786,8 +786,12 @@ paths:
           schema: { type: integer, minimum: 0 }
         - name: closed-days
           in: query
-          description: Closed cards remain on the default board for this many days. Closed epic lanes disappear immediately. Saved views use their stored value.
+          description: Closed non-epic cards remain on the default board for this many days. Saved views use their stored value.
           schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
+        - name: epic-closed-days
+          in: query
+          description: Closed epic lanes remain on the default board for this many days. Saved views use their stored value.
+          schema: { type: integer, minimum: 0, maximum: 3650, default: 0 }
         - name: workspace
           in: query
           schema:
@@ -1763,7 +1767,7 @@ components:
       additionalProperties: false
       required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
         epics, include_no_epic, labels,
-        assignees, priority_max, closed_days, created_at, updated_at]
+        assignees, priority_max, closed_days, epic_closed_days, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
         name: { type: string, minLength: 1, maxLength: 100 }
@@ -1789,7 +1793,12 @@ components:
           type: integer
           minimum: 0
           maximum: 3650
-          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed epic lanes remain visible.
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
@@ -1823,7 +1832,13 @@ components:
           minimum: 0
           maximum: 3650
           default: 30
-          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          default: 0
+          description: Number of days closed epic lanes remain visible.
 
     BoardViewPatch:
       type: object
@@ -1856,7 +1871,12 @@ components:
           type: integer
           minimum: 0
           maximum: 3650
-          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
+          description: Number of days closed non-epic cards remain visible.
+        epic_closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed epic lanes remain visible.
         id: { $ref: '#/components/schemas/BoardViewID' }
         owner: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }

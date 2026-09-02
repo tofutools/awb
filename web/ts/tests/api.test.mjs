@@ -164,7 +164,7 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
     workspace: ["awb", "web"], "all-workspaces": false, "hidden-epic": ["awb-hidden", "web-hidden"], status: "open",
     "all-epics": false, "selected-epic": ["awb-selected"], "include-no-epic": false,
     label: ["release", "frontend"], assignee: ["alex"], "priority-max": 2,
-    epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
+    epic: "awb-epic", "lane-limit": 10, "card-offset": 8, "epic-closed-days": 5,
   });
 
   assert.equal(calls[0].path, "api/board-views/view-aaaaaaaaaaaaaaaaaaaaaaaa");
@@ -183,6 +183,7 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");
   assert.equal(boardURL.searchParams.get("card-offset"), "8");
+  assert.equal(boardURL.searchParams.get("epic-closed-days"), "5");
 });
 
 test("identity exposes the backend's effective account-administration capability", async (t) => {
