@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 0.6.0
+  version: 0.7.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -27,6 +27,25 @@ info:
     body where it declares none, and an unrecognised body field are all refused
     rather than ignored, because something the server never reads is a thing
     the client believes it said.
+
+    **Markdown.** Every Markdown field — an issue's and a workspace's
+    `description`, a comment `body`, and the `reason` that becomes one — is
+    validated when it is written and refused with `400` when it does not hold.
+    The accepted dialect is CommonMark plus GitHub Flavored Markdown's tables,
+    task lists, strikethrough and autolinks, minus two things. Raw HTML, inline
+    and block alike, is refused rather than escaped, which is what keeps
+    script, style, SVG and MathML out of stored prose; a bare `<word>` is raw
+    HTML to a Markdown parser, so it has to be written as a code span or with
+    the `<` escaped. And a destination must carry a scheme the field allows: a
+    link may be `http:`, `https:` or `mailto:`, an image may be `http:`,
+    `https:` or a `data:` URL of type `image/jpeg`, `image/png`, `image/gif` or
+    `image/webp`. A destination with no scheme at all — a relative path, a
+    fragment — is accepted. A bare URL the autolink extension picks up is a
+    link like any other, so mentioning an `ftp://` address in prose means
+    wrapping it in a code span. The gate rewrites nothing: it accepts text or
+    refuses it, escaping and stripping neither. A description and a comment body
+    are therefore stored byte for byte; a close reason is trimmed first, which
+    is that field's own rule rather than the gate's.
 
     **Authorization.** A server whose database holds at least one user
     authenticates every request and answers it with that user's permissions. A
@@ -2083,7 +2102,8 @@ components:
           description: |
             Markdown for a comment; empty for a change. A comment whose
             `action` is `closed` is the reason attached atomically to that
-            closing transition.
+            closing transition. At most 64 KiB of UTF-8, a bound in bytes that
+            no `maxLength` can express.
         action:
           type: string
           description: |
@@ -2102,7 +2122,10 @@ components:
       properties:
         body:
           type: string
-          description: GitHub Flavored Markdown, stored exactly as sent. Must not be blank.
+          description: |
+            GitHub Flavored Markdown, stored exactly as sent and validated as
+            **Markdown** above describes. Must not be blank, and bounded like a
+            description at 64 KiB of UTF-8.
           minLength: 1
 
     Issue:
@@ -2136,8 +2159,10 @@ components:
           type: string
           description: |
             GitHub Flavored Markdown, returned and accepted exactly as stored so
-            an editor round-trips it losslessly. Rendering and sanitising are
-            the client's job. At most 64 KiB of UTF-8.
+            an editor round-trips it losslessly. Validated on the way in as
+            **Markdown** above describes, so a client renders it knowing raw
+            HTML and an unsupported link or image scheme are not in it. At most
+            64 KiB of UTF-8.
         type: { $ref: '#/components/schemas/Type' }
         status: { $ref: '#/components/schemas/Status' }
         priority: { $ref: '#/components/schemas/Priority' }
@@ -2252,7 +2277,11 @@ components:
             arrives: unlike a title, it is not trimmed.
           minLength: 1
           maxLength: 500
-        description: { type: string }
+        description:
+          type: string
+          description: |
+            GitHub Flavored Markdown, validated on the way in as **Markdown**
+            above describes. At most 64 KiB of UTF-8.
         state:
           type: string
           enum: [active, archived]
@@ -2567,8 +2596,9 @@ components:
           maxLength: 500
           description: |
             A non-empty reason becomes a typed Markdown comment whose `action`
-            is `closed`, in the same transaction as the transition. Empty or
-            absent records no reason comment.
+            is `closed`, in the same transaction as the transition, and is
+            validated as **Markdown** above describes. Empty or absent records
+            no reason comment.
 
     LabelRequest:
       type: object

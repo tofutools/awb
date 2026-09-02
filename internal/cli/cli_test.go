@@ -786,6 +786,38 @@ func TestDescriptionFromStdin(t *testing.T) {
 		"a trailing line feed from a heredoc is part of the description")
 }
 
+// The Markdown gate is the operation layer's, so direct mode gets it from the
+// same place the API does: every command that writes a Markdown field refuses
+// raw HTML and an unsupported link or image scheme, as a usage error.
+func TestMarkdownGateInDirectMode(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("t", "--workspace", "awb")
+
+	for _, args := range [][]string{
+		{"create", "t", "--workspace", "awb", "--description", "<script>alert(1)</script>"},
+		{"create", "t", "--workspace", "awb", "--description", "[a](javascript:alert(1))"},
+		{"create", "t", "--workspace", "awb", "--description", "![a](data:image/svg+xml,x)"},
+		{"update", id, "--force", "--description", "<b>no</b>"},
+		{"comment", "add", id, "--body", "<b>no</b>"},
+		{"close", id, "--reason", "see [why](javascript:alert(1))"},
+		{"workspace", "create", "web", "--description", "<style>body{}</style>"},
+		{"workspace", "update", "awb", "--description", "<!-- hidden -->"},
+	} {
+		stdout, stderr, code := h.run(args...)
+		assert.Equal(t, 2, code, args)
+		assert.Empty(t, stdout, args)
+		assert.NotEmpty(t, stderr, args)
+	}
+
+	// The pinned dialect goes through, links and images included, and is stored
+	// byte for byte.
+	const good = "# Title\n\n[docs](https://example.com/d) ![shot](data:image/png;base64,AAAA)\n"
+	h.mustRun("update", id, "--force", "--description", good)
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, good, issue.Description)
+}
+
 // A grouping command rejects a name that is not one of its subcommands, and
 // the former top-level Project spelling is not retained as an alias.
 func TestUnknownSubcommandIsAUsageError(t *testing.T) {

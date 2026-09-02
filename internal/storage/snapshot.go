@@ -27,6 +27,17 @@ type Snapshot struct {
 // This is intentionally not expressed through the ordinary create operations:
 // those mint new issue IDs and timestamps and apply transition defaults, while
 // a dump must remain a faithful local copy of what the server returned.
+//
+// It therefore does not apply domain's prose gate either, and that is the one
+// place a description, a comment body or a close reason enters a database
+// without passing it. A restore is a copy of prose some other database already
+// holds, not prose somebody is writing: refusing it would only mean a source
+// predating the gate, or holding rows migrated from before it, could not be
+// dumped at all, which is the opposite of faithful. The gate is on the
+// operations, so a restored database is exactly as trustworthy as the source
+// it was taken from, and TestRestoreSnapshotIsFaithfulToProseTheGateWouldRefuse
+// pins that. Both renderers escape raw HTML rather than honour it, which is
+// what keeps such a copy safe to serve.
 func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 	return d.Write(ctx, func(tx *Tx) error {
 		var populated int
