@@ -348,7 +348,8 @@ func TestOperations(t *testing.T) {
 	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listWorkspaces"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))
 	assert.ElementsMatch(t, []string{
-		"lane-limit", "lane-offset", "card-limit", "card-offset", "closed-days", "workspace", "hidden-epic", "status", "epic",
+		"lane-limit", "lane-offset", "card-limit", "card-offset", "closed-days", "workspace", "all-workspaces", "all-epics",
+		"selected-epic", "include-no-epic", "hidden-epic", "label", "assignee", "priority-max", "status", "epic",
 	}, names("getBoard"))
 	assert.ElementsMatch(t, []string{"label"}, names("removeLabel"))
 	assert.ElementsMatch(t, []string{"cascade"}, names("deleteWorkspace"))

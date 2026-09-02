@@ -84,9 +84,28 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	for _, workspace := range query.Workspaces {
 		values.Add("workspace", workspace)
 	}
+	if query.AllWorkspaces != nil {
+		values.Set("all-workspaces", strconv.FormatBool(*query.AllWorkspaces))
+	}
 	for _, epic := range query.HiddenEpics {
 		values.Add("hidden-epic", epic)
 	}
+	if query.AllEpics != nil {
+		values.Set("all-epics", strconv.FormatBool(*query.AllEpics))
+	}
+	for _, epic := range query.Epics {
+		values.Add("selected-epic", epic)
+	}
+	if query.IncludeNoEpic != nil {
+		values.Set("include-no-epic", strconv.FormatBool(*query.IncludeNoEpic))
+	}
+	for _, label := range query.Labels {
+		values.Add("label", label)
+	}
+	for _, assignee := range query.Assignees {
+		values.Add("assignee", assignee)
+	}
+	set("priority-max", query.PriorityMax)
 	if query.Status != "" {
 		values.Set("status", string(query.Status))
 	}

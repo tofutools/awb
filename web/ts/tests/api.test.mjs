@@ -161,7 +161,9 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   await api.boardView("view-aaaaaaaaaaaaaaaaaaaaaaaa");
   await api.updateBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa", { name: "Next" });
   await api.board("view-aaaaaaaaaaaaaaaaaaaaaaaa", {
-    workspace: ["awb", "web"], "hidden-epic": ["awb-hidden", "web-hidden"], status: "open",
+    workspace: ["awb", "web"], "all-workspaces": false, "hidden-epic": ["awb-hidden", "web-hidden"], status: "open",
+    "all-epics": false, "selected-epic": ["awb-selected"], "include-no-epic": false,
+    label: ["release", "frontend"], assignee: ["alex"], "priority-max": 2,
     epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
   });
 
@@ -169,7 +171,14 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"view-v1"');
   const boardURL = new URL(calls[2].path, "https://example.test/");
   assert.deepEqual(boardURL.searchParams.getAll("workspace"), ["awb", "web"]);
+  assert.equal(boardURL.searchParams.get("all-workspaces"), "false");
   assert.deepEqual(boardURL.searchParams.getAll("hidden-epic"), ["awb-hidden", "web-hidden"]);
+  assert.equal(boardURL.searchParams.get("all-epics"), "false");
+  assert.deepEqual(boardURL.searchParams.getAll("selected-epic"), ["awb-selected"]);
+  assert.equal(boardURL.searchParams.get("include-no-epic"), "false");
+  assert.deepEqual(boardURL.searchParams.getAll("label"), ["release", "frontend"]);
+  assert.deepEqual(boardURL.searchParams.getAll("assignee"), ["alex"]);
+  assert.equal(boardURL.searchParams.get("priority-max"), "2");
   assert.equal(boardURL.searchParams.get("status"), "open");
   assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");

@@ -439,8 +439,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from this view` }).click();
   await expect(page.locator(".board-lane", { has: page.getByRole("heading", { name: hideableHeading, exact: true }) })).toHaveCount(0);
   await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(false);
-  await page.getByRole("button", { name: "Board settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Default board settings" });
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const settings = page.getByRole("dialog", { name: "Edit default board" });
+  await expect(settings.getByRole("heading", { name: "Scope" })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Issue filters" })).toBeVisible();
   await expect(settings.getByRole("heading", { name: "Hidden epic lanes" })).toBeVisible();
   await settings.getByLabel(`Hide ${hideableEpicID} in this view`).uncheck();
   await settings.getByRole("button", { name: "Save settings" }).click();

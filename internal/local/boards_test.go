@@ -133,10 +133,11 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	view, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{ClosedDays: &thirty}, backend.ETag(view.UpdatedAt))
 	require.NoError(t, err)
 	assert.Equal(t, 30, view.ClosedDays)
-	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero})
+	noWorkspaces := false
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero, AllWorkspaces: &noWorkspaces})
 	require.NoError(t, err)
 	assert.Equal(t, 1, board.LaneTotal)
-	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "query settings do not override a saved view")
+	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "request preferences do not override a saved view")
 
 	pinned, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Pinned", AllWorkspaces: true,
 		Epics: []string{closedEpic.ID}, PriorityMax: 4, ClosedDays: 30})
@@ -302,6 +303,41 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	name := "stale"
 	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(updated.UpdatedAt))
 	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+}
+
+func TestDefaultBoardAcceptsTheSameScopeAndIssueFiltersAsSavedViews(t *testing.T) {
+	root, ctx := newInstance(t)
+	first, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "First epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	second, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Second epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	priorityOne, priorityThree := 1, 3
+	matching, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Matching",
+		Priority: &priorityOne, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: first.ID}}})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Wrong priority",
+		Priority: &priorityThree, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: first.ID}}})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Wrong epic",
+		Priority: &priorityOne, Labels: []string{"release"}, Assignees: []string{"alex"},
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: second.ID}}})
+	require.NoError(t, err)
+
+	allWorkspaces, allEpics, includeNoEpic, priorityMax := false, false, false, 2
+	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{AllWorkspaces: &allWorkspaces, Workspaces: []string{"awb"},
+		AllEpics: &allEpics, Epics: []string{first.ID},
+		IncludeNoEpic: &includeNoEpic, Labels: []string{"release"}, Assignees: []string{"alex"}, PriorityMax: &priorityMax})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 1)
+	require.NotNil(t, board.Lanes[0].Epic)
+	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
+	assert.Equal(t, []string{matching.ID}, issueIDs(board.Lanes[0].Columns[1].Issues))
+
+	empty, err := root.GetBoard(ctx, "default", backend.BoardQuery{AllWorkspaces: &allWorkspaces})
+	require.NoError(t, err)
+	assert.Zero(t, empty.LaneTotal, "an empty selected-workspace scope must not widen to every workspace")
 }
 
 func TestChangingAPinnedEpicTypeMovesTheBoardViewVersion(t *testing.T) {

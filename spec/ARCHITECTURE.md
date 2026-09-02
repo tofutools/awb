@@ -185,8 +185,9 @@ A saved board view belongs to one user and stores filter scope, not a materializ
 issue set. It may be shared by link, but every reader's current authorization
 and ignored-workspace preferences still apply. Empty selected scope and “all”
 are distinct states so disappearing access cannot silently widen a saved view.
-Each saved view also owns its closed-card retention window; the default board
-accepts the same window as a request preference. Board-hidden issues never enter
+Each saved view owns its filter scope and closed-card retention window. The
+default board accepts the same fields as request preferences, which the web UI
+keeps locally for that browser and identity. Board-hidden issues never enter
 the projection. A closed epic stops being a lane immediately, while a closed
 non-epic card remains until its most recent close is older than that window.
 Epic lanes may also be hidden as viewer-local presentation state for one board

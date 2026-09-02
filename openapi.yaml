@@ -795,6 +795,10 @@ paths:
             items: { $ref: '#/components/schemas/WorkspaceKey' }
           style: form
           explode: true
+        - name: all-workspaces
+          in: query
+          description: Whether the default board includes every visible workspace. False with no workspace values selects none. Saved views ignore this request preference.
+          schema: { type: boolean }
         - name: hidden-epic
           in: query
           description: Omit these epic lanes as viewer-specific presentation state.
@@ -803,6 +807,42 @@ paths:
             items: { $ref: '#/components/schemas/IssueID' }
           style: form
           explode: true
+        - name: all-epics
+          in: query
+          description: Whether the default board dynamically selects every epic lane.
+          schema: { type: boolean }
+        - name: selected-epic
+          in: query
+          description: Epic lanes selected when `all-epics` is false on the default board.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/IssueID' }
+          style: form
+          explode: true
+        - name: include-no-epic
+          in: query
+          description: Whether the default board includes the derived No epic lane.
+          schema: { type: boolean }
+        - name: label
+          in: query
+          description: Keep default-board cards carrying any of these labels.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Label' }
+          style: form
+          explode: true
+        - name: assignee
+          in: query
+          description: Keep default-board cards assigned to any of these users.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Assignee' }
+          style: form
+          explode: true
+        - name: priority-max
+          in: query
+          description: Keep default-board cards from P0 through this priority.
+          schema: { $ref: '#/components/schemas/Priority' }
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/Status' }
