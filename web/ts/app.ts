@@ -1700,10 +1700,13 @@ function openBoardCardMove(issue: Issue, epic: string, epics: BoardEpicChoice[],
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
   const move = element("button", "primary-button", "Move issue") as HTMLButtonElement; move.type = "submit";
+  const syncMove = (): void => { move.disabled = epicSelect.value === epic && statusSelect.value === issue.status; };
+  epicSelect.addEventListener("change", syncMove); statusSelect.addEventListener("change", syncMove); syncMove();
   actions.append(cancel, move); form.append(header, fields, actions); dialog.append(form); document.body.append(dialog);
   dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", (event) => {
     event.preventDefault(); dialog.close();
+    if (epicSelect.value === epic && statusSelect.value === issue.status) return;
     void moveBoardIssue(card, issue, epicSelect.value, statusSelect.value as BoardStatus);
   });
   dialog.showModal(); epicSelect.focus();

@@ -112,6 +112,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // The surrounding lane and column already identify each card's epic and
   // status, so cards stay compact and do not repeat them as form controls.
   await expect(page.locator(".board-card select, .board-card-move")).toHaveCount(0);
+  const unchangedID = await hoverCard.getAttribute("data-issue");
+  expect(unchangedID).toBeTruthy();
+  await hoverCard.getByRole("button", { name: `Move ${unchangedID}` }).click();
+  const unchangedMove = page.getByRole("dialog", { name: `Move ${unchangedID}` });
+  await expect(unchangedMove.getByRole("button", { name: "Move issue" })).toBeDisabled();
+  await unchangedMove.getByRole("button", { name: "Cancel" }).click();
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await expect(releaseLane.locator(":scope > .board-lane-heading h2 a")).toHaveAttribute("href", /^#\/issues\/demo-/);
