@@ -449,12 +449,28 @@ test("save, share and work from a responsive board", async ({ page }) => {
   });
   await page.reload();
   const responsiveCard = page.locator('.board-card[data-issue^="demo-"]').first();
+  const movedID = await responsiveCard.getAttribute("data-issue");
+  expect(movedID).toBeTruthy();
   await expect.poll(() => responsiveCard.evaluate((card) => card.draggable)).toBe(false);
   await expect(page.locator(".board-card-drag, .board-card-order-button, .list-row-drag, .list-row-order-button")).toHaveCount(0);
   await expect(responsiveCard.locator("select")).toHaveCount(0);
   const initialLaneCount = await page.locator(".board-lane").count();
   await page.getByRole("button", { name: /Load up to .* more epics/ }).click();
   await expect.poll(() => page.locator(".board-lane").count()).toBeGreaterThan(initialLaneCount);
+  const pagedEpicHref = await page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) })
+    .first().locator(":scope > .board-lane-heading h2 a").getAttribute("href");
+  const pagedEpic = pagedEpicHref?.split("/").at(-1);
+  expect(pagedEpic).toBeTruthy();
+  const moveAction = responsiveCard.getByRole("button", { name: `Move ${movedID}` });
+  await moveAction.focus();
+  await moveAction.press("Enter");
+  const moveDialog = page.getByRole("dialog", { name: `Move ${movedID}` });
+  await moveDialog.getByLabel("Epic").selectOption(pagedEpic);
+  await moveDialog.getByRole("button", { name: "Move issue" }).click();
+  await expect.poll(async () => page.evaluate(async ({ id, epic }) => {
+    const issue = await (await fetch(`api/issues/${id}`)).json();
+    return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
+  }, { id: movedID, epic: pagedEpic })).toBe(true);
 
   const hideableLanes = page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) });
   const hideableLane = hideableLanes.first();

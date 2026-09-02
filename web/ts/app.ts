@@ -1673,12 +1673,52 @@ async function moveBoardIssue(
   }
 }
 
-function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement {
+type BoardEpicChoice = { id: string; workspace: string; title: string };
+
+function openBoardCardMove(issue: Issue, epic: string, epics: BoardEpicChoice[], card: HTMLElement): void {
+  const dialog = element("dialog", "board-view-dialog board-card-move-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "board-card-move-heading");
+  const form = element("form", "board-view-form") as HTMLFormElement; form.method = "dialog";
+  const header = element("header", "board-view-dialog-header");
+  const heading = element("h2", "", `Move ${issue.id}`); heading.id = "board-card-move-heading";
+  header.append(heading, element("p", "muted", "Choose a lane and column for this issue."));
+  const fields = element("section", "board-view-section board-card-move-fields");
+  const epicSelect = document.createElement("select");
+  const noEpic = document.createElement("option"); noEpic.value = ""; noEpic.textContent = "No epic"; epicSelect.append(noEpic);
+  for (const choice of epics.filter((candidate) => candidate.workspace === issue.workspace)) {
+    const option = document.createElement("option"); option.value = choice.id; option.textContent = choice.title; epicSelect.append(option);
+  }
+  epicSelect.value = epic;
+  const statusSelect = document.createElement("select");
+  for (const status of legalBoardTargets()) {
+    const option = document.createElement("option"); option.value = status;
+    option.textContent = status === "closed" && status !== issue.status ? "Closed…" : boardStatusLabel(status);
+    statusSelect.append(option);
+  }
+  statusSelect.value = issue.status;
+  fields.append(field("Epic", epicSelect), field("Status", statusSelect));
+  const actions = element("footer", "board-view-dialog-actions");
+  const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
+  const move = element("button", "primary-button", "Move issue") as HTMLButtonElement; move.type = "submit";
+  actions.append(cancel, move); form.append(header, fields, actions); dialog.append(form); document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  form.addEventListener("submit", (event) => {
+    event.preventDefault(); dialog.close();
+    void moveBoardIssue(card, issue, epicSelect.value, statusSelect.value as BoardStatus);
+  });
+  dialog.showModal(); epicSelect.focus();
+}
+
+function boardCard(issue: Issue, epic: string, status: BoardStatus, epics: BoardEpicChoice[]): HTMLElement {
   const card = element("article", `board-card${issue.status === "closed" ? " closed" : ""}`);
   card.dataset.issue = issue.id;
   configureDragSurface(card, issue, () => { draggedBoardIssue = issue; }, () => { draggedBoardIssue = null; });
   const address = nameLink(`#/issues/${encodeURIComponent(issue.id)}`, issue.id, issue.title);
   const top = element("div", "board-card-top");
+  const actions = element("div", "board-card-actions");
+  const move = button("Move", "secondary-button board-card-action");
+  move.setAttribute("aria-label", `Move ${issue.id}`);
+  move.addEventListener("click", () => openBoardCardMove(issue, epic, epics, card));
   const hide = button("Hide", "secondary-button board-card-hide");
   hide.title = "Hide this issue from every board";
   hide.setAttribute("aria-label", `Hide ${issue.id} from boards`);
@@ -1688,7 +1728,7 @@ function boardCard(issue: Issue, epic: string, status: BoardStatus): HTMLElement
       .then(() => render())
       .catch((error) => { hide.disabled = false; mutationError(card, error); });
   });
-  top.append(address, hide);
+  actions.append(move, hide); top.append(address, actions);
   card.append(top, issueBadges(issue));
   let dropAfter = false;
   card.addEventListener("dragover", (event) => {
@@ -1729,6 +1769,7 @@ function boardColumn(
   selectedWorkspaces: string[],
   column: Board["lanes"][number]["columns"][number],
   issuesByID: Map<string, Issue>,
+  epics: BoardEpicChoice[],
   boardFilters: Parameters<typeof api.board>[1],
 ): HTMLElement {
   const host = element("section", "board-column");
@@ -1793,7 +1834,7 @@ function boardColumn(
       if (loadedIDs.has(issue.id)) continue;
       loadedIDs.add(issue.id);
       issuesByID.set(issue.id, issue);
-      cards.append(boardCard(issue, epicID, column.status));
+      cards.append(boardCard(issue, epicID, column.status, epics));
     }
   };
   append(column.issues);
@@ -1868,7 +1909,7 @@ function boardColumn(
   return host;
 }
 
-function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, boardFilters: Parameters<typeof api.board>[1]): HTMLElement {
+function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces: string[], issuesByID: Map<string, Issue>, epics: BoardEpicChoice[], boardFilters: Parameters<typeof api.board>[1]): HTMLElement {
   const host = element("section", "board-lane");
   const laneKey = lane.epic?.id ?? "no-epic";
   const laneLabel = lane.epic?.title ?? "No epic";
@@ -1901,7 +1942,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   }
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
-  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, boardFilters));
+  for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics, boardFilters));
 	let isCollapsed = collapsedBoardLanes(ref).has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
   toggle.setAttribute("aria-controls", columns.id);
@@ -2191,8 +2232,11 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     : `Workspace access and ignored-workspace settings apply. Each epic/status column loads up to ${boardCardPageSize} cards independently.`));
   const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
   const selectedWorkspaces = filters.workspace ?? [];
+  const epics: BoardEpicChoice[] = board.lanes.flatMap((lane) => lane.epic === undefined
+    ? []
+    : [{ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title }]);
   const loadedLanes = new Set<string>();
-  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, filters)); }
+  for (const lane of board.lanes) { const key = lane.epic?.id ?? "no-epic"; loadedLanes.add(key); lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics, filters)); }
   if (board.lane_total === 0) lanes.append(element("p", "empty", "No epic lanes match this view."));
   view.append(lanes);
   if (board.lanes.length < board.lane_total) {
@@ -2210,7 +2254,8 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
           const key = lane.epic?.id ?? "no-epic";
           if (loadedLanes.has(key)) continue;
           loadedLanes.add(key);
-          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, filters));
+          if (lane.epic !== undefined) epics.push({ id: lane.epic.id, workspace: lane.epic.workspace, title: lane.epic.title });
+          lanes.append(boardLane(ref, lane, selectedWorkspaces, issuesByID, epics, filters));
         }
         if (loadedLanes.size > total || (cursor >= total && loadedLanes.size < total)) { void render(); return; }
         if (loadedLanes.size >= total) more.remove(); else { more.disabled = false; labelMore(); }
