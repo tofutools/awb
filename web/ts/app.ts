@@ -1509,8 +1509,8 @@ function openDefaultBoardSettings(): void {
   const closedDays = document.createElement("input");
   closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true;
   closedDays.value = String(defaultBoardClosedDays());
-  const closedField = field("Show closed issues for (days)", closedDays);
-  closedField.append(element("span", "board-view-help", "Use 0 to hide an issue as soon as it is closed."));
+  const closedField = field("Show closed cards for (days)", closedDays);
+  closedField.append(element("span", "board-view-help", "Epic lanes disappear as soon as they are closed. Use 0 to hide other issues immediately too."));
   section.append(closedField);
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
@@ -1980,7 +1980,9 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam";
   const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4));
   const closedDays = document.createElement("input"); closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true; closedDays.value = String(source?.closed_days ?? defaultBoardClosedDays());
-  filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority), field("Show closed for (days)", closedDays)); filters.append(filterGrid); form.append(filters);
+  const closedCards = field("Show closed cards for (days)", closedDays);
+  closedCards.append(element("span", "board-view-help", "Epic lanes disappear as soon as they are closed."));
+  filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority), closedCards); filters.append(filterGrid); form.append(filters);
   const error = element("p", "edit-error");
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
@@ -2089,7 +2091,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
     const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
     chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} epic ${epicLaneCount === 1 ? "lane" : "lanes"}`));
-    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `${saved.closed_days} closed days`)); summary.append(owner, chips); view.append(summary);
+    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `Closed cards: ${saved.closed_days} days`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted
     ? "Some workspaces are archived or hidden by your access or ignored-workspace settings."

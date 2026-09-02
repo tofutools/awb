@@ -12,14 +12,14 @@ import (
 // ListBoardEpics returns visible epic issues in the workspaces selected by a
 // board. A nil workspace set means every workspace allowed by the transaction;
 // a non-nil empty set means none.
-func (t *Tx) ListBoardEpics(workspaces []string, closedAfter string, limit, offset *int) ([]domain.Issue, int, error) {
+func (t *Tx) ListBoardEpics(workspaces []string, limit, offset *int) ([]domain.Issue, int, error) {
 	if workspaces != nil && len(workspaces) == 0 {
 		return []domain.Issue{}, 0, nil
 	}
 	return t.ListIssues(&domain.Filter{
-		Workspaces: workspaces, Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true,
+		Workspaces: workspaces, Types: []domain.Type{domain.TypeEpic},
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
-		BoardOnly: true, ClosedAfter: closedAfter,
+		BoardOnly: true,
 	})
 }
 

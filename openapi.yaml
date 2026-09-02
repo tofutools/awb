@@ -786,7 +786,7 @@ paths:
           schema: { type: integer, minimum: 0 }
         - name: closed-days
           in: query
-          description: Closed issues remain on the default board for this many days. Saved views use their stored value.
+          description: Closed cards remain on the default board for this many days. Closed epic lanes disappear immediately. Saved views use their stored value.
           schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
         - name: workspace
           in: query
@@ -1737,7 +1737,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
-        closed_days: { type: integer, minimum: 0, maximum: 3650 }
+        closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
         created_at: { $ref: '#/components/schemas/Timestamp' }
         updated_at: { $ref: '#/components/schemas/Timestamp' }
 
@@ -1771,6 +1775,7 @@ components:
           minimum: 0
           maximum: 3650
           default: 30
+          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
 
     BoardViewPatch:
       type: object
@@ -1799,7 +1804,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
-        closed_days: { type: integer, minimum: 0, maximum: 3650 }
+        closed_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Number of days closed cards remain visible; closed epic lanes disappear immediately.
         id: { $ref: '#/components/schemas/BoardViewID' }
         owner: { $ref: '#/components/schemas/Assignee' }
         created_at: { $ref: '#/components/schemas/Timestamp' }

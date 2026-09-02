@@ -112,7 +112,7 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	thirty := 30
 	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty})
 	require.NoError(t, err)
-	assert.Equal(t, 2, board.LaneTotal, "a recent closed epic remains as a lane while a hidden epic does not")
+	assert.Equal(t, 1, board.LaneTotal, "closed and hidden epics disappear immediately")
 	assert.Equal(t, []string{visible.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
 	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues))
 
@@ -135,8 +135,17 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	assert.Equal(t, 30, view.ClosedDays)
 	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{ClosedDays: &zero})
 	require.NoError(t, err)
-	assert.Equal(t, 2, board.LaneTotal)
+	assert.Equal(t, 1, board.LaneTotal)
 	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues), "query settings do not override a saved view")
+
+	pinned, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Pinned", AllWorkspaces: true,
+		Epics: []string{closedEpic.ID}, PriorityMax: 4, ClosedDays: 30})
+	require.NoError(t, err)
+	board, err = root.GetBoard(ctx, pinned.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	assert.Zero(t, board.LaneTotal, "a pinned closed epic does not keep its lane")
+	_, err = root.GetBoard(ctx, "default", backend.BoardQuery{Epic: &closedEpic.ID})
+	notFound(t, err, "a closed epic cannot be requested directly")
 }
 
 func issueIDs(issues []domain.Issue) []string {

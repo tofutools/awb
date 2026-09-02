@@ -522,7 +522,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				if !active || epic.Type != domain.TypeEpic || !boardIssueVisible(epic, closedAfter) ||
+				if !active || !boardEpicVisible(epic) ||
 					(laneSelection != nil && !slices.Contains(laneSelection, epic.Workspace)) {
 					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 				}
@@ -540,7 +540,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					}
 					return loadErr
 				}
-				if epic.Type == domain.TypeEpic && boardIssueVisible(epic, closedAfter) &&
+				if boardEpicVisible(epic) &&
 					(laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
 					selectedEpics = append(selectedEpics, *epic)
 				}
@@ -571,7 +571,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if includeNoEpic {
 				epicLimit--
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, closedAfter, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}
@@ -637,6 +637,13 @@ func boardClosedAfter(days int) string {
 
 func boardIssueVisible(issue *domain.Issue, closedAfter string) bool {
 	return !issue.BoardHidden && (issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
+}
+
+// An epic is the board lane itself, rather than a card in a status column.
+// Closing it therefore removes the whole lane immediately; closed-day
+// retention applies only to the cards within lanes.
+func boardEpicVisible(issue *domain.Issue) bool {
+	return issue.Type == domain.TypeEpic && issue.Status != domain.StatusClosed && !issue.BoardHidden
 }
 
 func boundedBoardLimit(value *int, fallback, maximum int, name string) (*int, error) {
