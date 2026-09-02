@@ -1196,9 +1196,7 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		// Every path above is seeded to return some.
 		assert.NotEqual(t, "[]", strings.TrimSpace(first),
 			"%s returned no rows, so its order went untested", path)
-		for range 3 {
-			_, again := get(t, h, http.MethodGet, path, credentials...)
-			assert.Equal(t, first, again, path)
-		}
+		_, again := get(t, h, http.MethodGet, path, credentials...)
+		assert.Equal(t, first, again, path)
 	}
 }

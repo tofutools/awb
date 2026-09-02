@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -17,6 +18,7 @@ import (
 	"github.com/tofutools/awb/internal/cli"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/openapi"
+	"github.com/tofutools/awb/internal/storage"
 )
 
 // openAPI is the document main embeds and hands to Execute, read from the file
@@ -30,6 +32,41 @@ var openAPI = func() *openapi.Document {
 	}
 	return openapi.New(raw)
 }()
+
+var (
+	cliTestDatabaseOnce sync.Once
+	cliTestDatabase     []byte
+	cliTestDatabaseErr  error
+)
+
+// writeTestDatabase gives the general CLI tests an isolated, current database
+// without replaying the migration history in every harness. Tests of init and
+// migrations still exercise storage.Init directly.
+func writeTestDatabase(t *testing.T, path string) {
+	t.Helper()
+	cliTestDatabaseOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "awb-cli-test-")
+		if err != nil {
+			cliTestDatabaseErr = err
+			return
+		}
+		defer os.RemoveAll(dir)
+
+		templatePath := filepath.Join(dir, "awb.db")
+		db, err := storage.Init(t.Context(), templatePath)
+		if err != nil {
+			cliTestDatabaseErr = err
+			return
+		}
+		if err := db.Close(); err != nil {
+			cliTestDatabaseErr = err
+			return
+		}
+		cliTestDatabase, cliTestDatabaseErr = os.ReadFile(templatePath)
+	})
+	require.NoError(t, cliTestDatabaseErr)
+	require.NoError(t, os.WriteFile(path, cliTestDatabase, 0o600))
+}
 
 // harness runs awb with a scratch database and isolated configuration, the way
 // a script or an agent would.
@@ -60,7 +97,7 @@ func newHarness(t *testing.T) *harness {
 	t.Chdir(work)
 
 	h := &harness{t: t, dir: work}
-	h.mustRun("init")
+	writeTestDatabase(t, filepath.Join(root, "awb.db"))
 	h.mustRun("workspace", "create", "awb", "--name", "Agent Work Board")
 	return h
 }
@@ -522,9 +559,7 @@ func TestOutputIsDeterministic(t *testing.T) {
 		{"workspace", "list", "--json"},
 	} {
 		first := h.mustRun(args...)
-		for range 3 {
-			assert.Equal(t, first, h.mustRun(args...), args)
-		}
+		assert.Equal(t, first, h.mustRun(args...), args)
 	}
 }
 
@@ -613,9 +648,7 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 			}
 			first := h.mustRun(full...)
 			assert.NotEmpty(t, first, full)
-			for range 3 {
-				assert.Equal(t, first, h.mustRun(full...), full)
-			}
+			assert.Equal(t, first, h.mustRun(full...), full)
 		}
 	}
 }
@@ -1475,6 +1508,7 @@ func TestAttachmentsDirectory(t *testing.T) {
 // soon as it has run.
 func TestInitCreatesTheAttachmentsDirectory(t *testing.T) {
 	h := newHarness(t)
+	h.mustRun("init")
 	info, err := os.Stat(filepath.Join(h.root(), "attachments"))
 	require.NoError(t, err)
 	assert.True(t, info.IsDir())

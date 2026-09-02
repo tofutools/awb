@@ -26,13 +26,11 @@ import (
 func newBackendWithBlobs(t *testing.T) (*local.Backend, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDatabase(t, filepath.Join(dir, "awb.db"))
 
 	blobs := filepath.Join(dir, "attachments")
 	b := local.New(db, storage.NewBlobs(blobs), "mikael")
-	_, err = b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
+	_, err := b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context(), blobs
 }

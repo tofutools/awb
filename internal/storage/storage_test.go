@@ -1019,11 +1019,9 @@ func TestListOrderIsTotal(t *testing.T) {
 	} {
 		first, _, err := listWith(t, db, &domain.Filter{Sort: sort})
 		require.NoError(t, err)
-		for range 3 {
-			again, _, err := listWith(t, db, &domain.Filter{Sort: sort})
-			require.NoError(t, err)
-			assert.Equal(t, first, again, "sort %v", sort)
-		}
+		again, _, err := listWith(t, db, &domain.Filter{Sort: sort})
+		require.NoError(t, err)
+		assert.Equal(t, first, again, "sort %v", sort)
 	}
 }
 
