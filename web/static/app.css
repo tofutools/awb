@@ -1356,7 +1356,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-heading .lede { margin: 0; }
 .board-view-actions { display: flex; align-items: end; gap: 0.55rem; }
 .board-view-actions > label { display: grid; gap: 0.2rem; color: var(--muted); font-size: 0.78rem; }
-.board-view-actions select, .board-card-move select { padding: 0.38rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); font: inherit; }
+.board-view-actions select { padding: 0.38rem 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); font: inherit; }
 .board-view-actions > label select { min-width: 13rem; }
 .board-summary { display: flex; justify-content: space-between; gap: 1rem; align-items: center; padding: 0.7rem 0.85rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .board-summary > div:first-child { display: grid; gap: 0.15rem; }
@@ -1417,9 +1417,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-hidden-epics { display: grid; gap: 0.55rem; margin-top: 1rem; }
 .board-hidden-epics > h3, .board-hidden-epics > p { margin: 0; }
 .board-card > .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.board-card-move { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 0.4rem; align-items: end; color: var(--muted); font-size: 0.72rem; }
-.board-card-move label { display: grid; min-width: 0; gap: 0.18rem; }
-.board-card-move select { width: 100%; min-width: 0; padding: 0.18rem 0.3rem; font-size: 0.76rem; }
 .board-column-more { width: 100%; padding: 0.35rem; }
 .board-column-empty { margin: 1.5rem 0; color: var(--muted); text-align: center; font-size: 0.82rem; }
 .board-lanes-more { display: block; width: min(24rem, 100%); margin: 1rem auto 0; }
@@ -1486,7 +1483,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .board-lane-name { display: grid; gap: 0.1rem; }
   .board-columns { display: grid; max-width: 100%; grid-auto-flow: column; grid-auto-columns: min(84vw, 22rem); grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; }
   .board-column { scroll-snap-align: start; }
-  .board-card-move { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); }
   .issue-create-form .edit-field-row { grid-template-columns: 1fr; }
   .issue-create-resources { grid-template-columns: 1fr; }
   .board-view-scope-grid, .board-view-filter-grid, .board-view-retention-grid { grid-template-columns: minmax(0, 1fr); }
