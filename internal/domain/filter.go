@@ -217,6 +217,10 @@ type Filter struct {
 	Unassigned bool
 
 	Workspaces []string
+	// IDs selects exact issue IDs. It is board-internal: named views use it to
+	// page their explicitly selected epic lanes in storage rather than loading
+	// every selection before applying the lane limit.
+	IDs []string
 	// ExcludeIDs removes exact issue IDs. It is board-internal: default and
 	// named board presentation preferences use it to omit epic lanes without
 	// changing the issues or a saved view's shared filter definition.
