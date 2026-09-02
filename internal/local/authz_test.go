@@ -23,9 +23,7 @@ import (
 func newInstance(t *testing.T) (root *local.Backend, ctx context.Context) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDatabase(t, filepath.Join(dir, "awb.db"))
 
 	root = local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
 	for _, key := range []string{"awb", "web"} {

@@ -3,8 +3,10 @@ package local_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,15 +19,55 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
+var (
+	testDatabaseOnce sync.Once
+	testDatabase     []byte
+	testDatabaseErr  error
+)
+
+// newTestDatabase copies a blank, current database rather than running the
+// complete migration history for every test. Closing the template checkpoints
+// and removes its WAL, so the database file is complete on its own. Each test
+// still gets its own file and connection, preserving transaction and SQLite
+// behaviour.
+func newTestDatabase(t *testing.T, path string) *storage.DB {
+	t.Helper()
+	testDatabaseOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "awb-local-test-")
+		if err != nil {
+			testDatabaseErr = err
+			return
+		}
+		defer os.RemoveAll(dir)
+
+		templatePath := filepath.Join(dir, "awb.db")
+		db, err := storage.Init(context.Background(), templatePath)
+		if err != nil {
+			testDatabaseErr = err
+			return
+		}
+		if err := db.Close(); err != nil {
+			testDatabaseErr = err
+			return
+		}
+		testDatabase, testDatabaseErr = os.ReadFile(templatePath)
+	})
+	require.NoError(t, testDatabaseErr)
+	require.NoError(t, os.WriteFile(path, testDatabase, 0o600))
+
+	db, err := storage.Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
 func newBackend(t *testing.T) (*local.Backend, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	db := newTestDatabase(t, filepath.Join(dir, "awb.db"))
 
 	b := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
-	_, err = b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
+	_, err := b.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
 	return b, t.Context()
 }
