@@ -217,6 +217,13 @@ renderer can trust: script, style, SVG and MathML are all raw HTML, so keeping
 raw HTML out keeps all of them out, for the terminal renderer and the web UI
 alike. Accepted text is stored byte for byte; nothing is escaped or stripped.
 
+The gate is on the operations, so it holds for what is written through them and
+not for what a database already contains: rows written before the gate existed
+are not revalidated, and `dump`'s restore deliberately copies prose verbatim
+because a faithful local copy is the whole point of a dump. Both renderers
+escape raw HTML rather than honour it, which is what keeps such rows safe to
+display.
+
 ### Backend: one operation contract
 
 `internal/backend` is the interface every command and handler uses.

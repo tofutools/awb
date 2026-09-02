@@ -2100,7 +2100,8 @@ components:
           description: |
             Markdown for a comment; empty for a change. A comment whose
             `action` is `closed` is the reason attached atomically to that
-            closing transition.
+            closing transition. At most 64 KiB of UTF-8, a bound in bytes that
+            no `maxLength` can express.
         action:
           type: string
           description: |
@@ -2121,7 +2122,8 @@ components:
           type: string
           description: |
             GitHub Flavored Markdown, stored exactly as sent and validated as
-            **Markdown** above describes. Must not be blank.
+            **Markdown** above describes. Must not be blank, and bounded like a
+            description at 64 KiB of UTF-8.
           minLength: 1
 
     Issue:
