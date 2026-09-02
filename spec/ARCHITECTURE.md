@@ -182,11 +182,11 @@ chooses a value between them instead of rewriting every card; storage can
 rebalance when no gap remains. Natural issue lists use the same order when no
 explicit sort overrides it.
 
-A saved board view belongs to one user and stores filter scope, not a materialized
+A saved board view belongs to one user and stores configuration, not a materialized
 issue set. It may be shared by link, but every reader's current authorization
 and ignored-workspace preferences still apply. Empty selected scope and “all”
 are distinct states so disappearing access cannot silently widen a saved view.
-Each saved view owns its filter scope and closed-card retention window. The
+Each saved view owns its filter scope, per-column card page size, and closed-card retention window. The
 default board accepts the same fields as request preferences, which the web UI
 keeps locally for that browser and identity. Board-hidden issues never enter
 the projection. Closed epic lanes and closed non-epic cards have independent

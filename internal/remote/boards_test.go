@@ -28,7 +28,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4,"closed_days":30,"epic_closed_days":0}`, string(body))
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4,"card_limit":8,"closed_days":30,"epic_closed_days":0}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))

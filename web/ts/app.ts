@@ -1420,7 +1420,7 @@ async function viewListing(
 }
 
 const boardLanePageSize = 10;
-const boardCardPageSize = 8;
+const defaultBoardCardPageSize = 8;
 let draggedBoardIssue: Issue | null = null;
 const dragInteractionSelector = "a, button, input, select, textarea, label, [data-act], [contenteditable], [role='button']";
 let suppressedDragSurface: HTMLElement | null = null;
@@ -1551,7 +1551,7 @@ const boardLabelLikePattern = /^[a-z0-9._/-]+$/;
 
 type DefaultBoardPreferences = Pick<BoardView,
   "all_workspaces" | "workspaces" | "all_epics" | "epics" | "include_no_epic" |
-  "labels" | "assignees" | "priority_max" | "closed_days" | "epic_closed_days">;
+  "labels" | "assignees" | "priority_max" | "card_limit" | "closed_days" | "epic_closed_days">;
 
 function defaultBoardPreferencesKey(): string {
   return `awb.board.default.${identity}.view`;
@@ -1567,14 +1567,16 @@ function defaultBoardPreferences(): DefaultBoardPreferences {
     }
   } catch { /* use the fallback */ }
   const fallback: DefaultBoardPreferences = { all_workspaces: true, workspaces: [], all_epics: true, epics: [],
-    include_no_epic: true, labels: [], assignees: [], priority_max: 4, closed_days: legacyClosedDays, epic_closed_days: 0 };
+    include_no_epic: true, labels: [], assignees: [], priority_max: 4, card_limit: defaultBoardCardPageSize,
+    closed_days: legacyClosedDays, epic_closed_days: 0 };
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(defaultBoardPreferencesKey()) ?? "null");
     if (parsed === null || typeof parsed !== "object") return fallback;
     const value = parsed as Partial<DefaultBoardPreferences>;
     const strings = (candidate: unknown): string[] => Array.isArray(candidate)
       ? candidate.filter((item): item is string => typeof item === "string") : [];
-    const priority = Number(value.priority_max); const closedDays = Number(value.closed_days); const epicClosedDays = Number(value.epic_closed_days);
+    const priority = Number(value.priority_max); const cardLimit = Number(value.card_limit);
+    const closedDays = Number(value.closed_days); const epicClosedDays = Number(value.epic_closed_days);
     return {
       all_workspaces: typeof value.all_workspaces === "boolean" ? value.all_workspaces : fallback.all_workspaces,
       workspaces: strings(value.workspaces).filter((item) => item.length <= 16 && /^[a-z][a-z0-9-]*$/.test(item)),
@@ -1584,6 +1586,7 @@ function defaultBoardPreferences(): DefaultBoardPreferences {
       labels: strings(value.labels).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
       assignees: strings(value.assignees).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
       priority_max: Number.isInteger(priority) && priority >= 0 && priority <= 4 ? priority as 0|1|2|3|4 : fallback.priority_max,
+      card_limit: Number.isInteger(cardLimit) && cardLimit >= 1 && cardLimit <= 50 ? cardLimit : fallback.card_limit,
       closed_days: Number.isInteger(closedDays) && closedDays >= 0 && closedDays <= 3650 ? closedDays : fallback.closed_days,
       epic_closed_days: Number.isInteger(epicClosedDays) && epicClosedDays >= 0 && epicClosedDays <= 3650 ? epicClosedDays : fallback.epic_closed_days,
     };
@@ -1844,12 +1847,13 @@ function boardColumn(
   if (column.total === 0) cards.append(element("p", "board-column-empty", "No issues."));
   host.append(cards);
   if (column.issues.length < column.total) {
+    const cardPageSize = boardFilters?.["card-limit"] ?? defaultBoardCardPageSize;
     let total = column.total;
     let cursor = column.issues.length;
     const more = button("", "secondary-button board-column-more");
     const labelMore = (): void => {
       const remaining = Math.max(0, total - loadedIDs.size);
-      more.textContent = `Load ${Math.min(boardCardPageSize, remaining)} more · ${loadedIDs.size} of ${total}`;
+      more.textContent = `Load ${Math.min(cardPageSize, remaining)} more · ${loadedIDs.size} of ${total}`;
     };
     labelMore();
     more.addEventListener("click", () => {
@@ -1858,7 +1862,7 @@ function boardColumn(
         ...boardFilters,
         ...(epic === null && selectedWorkspaces.length > 0 ? { workspace: selectedWorkspaces } : {}),
         epic: epic?.id ?? "none", status: column.status, "lane-limit": 1,
-        "card-limit": boardCardPageSize, "card-offset": cursor,
+        "card-limit": cardPageSize, "card-offset": cursor,
       }).then((page) => {
         const nextColumn = page.lanes[0]?.columns[0];
         if (nextColumn === undefined) { void render(); return; }
@@ -2077,12 +2081,15 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4));
   const closedDays = document.createElement("input"); closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true; closedDays.value = String(source?.closed_days ?? defaultBoardPreferences().closed_days);
   const epicClosedDays = document.createElement("input"); epicClosedDays.type = "number"; epicClosedDays.min = "0"; epicClosedDays.max = "3650"; epicClosedDays.required = true; epicClosedDays.value = String(source?.epic_closed_days ?? 0);
+  const cardLimit = document.createElement("input"); cardLimit.type = "number"; cardLimit.min = "1"; cardLimit.max = "50"; cardLimit.required = true; cardLimit.value = String(source?.card_limit ?? defaultBoardPreferences().card_limit);
   const closedCards = field("Show closed cards for (days)", closedDays);
   closedCards.append(element("span", "board-view-help", "Use 0 to hide closed cards immediately."));
   const closedEpics = field("Show closed epic lanes for (days)", epicClosedDays);
   closedEpics.append(element("span", "board-view-help", "Use 0 to hide completed epics immediately."));
   filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority));
-  const retentionGrid = element("div", "board-view-retention-grid"); retentionGrid.append(closedCards, closedEpics);
+  const cardsPerColumn = field("Cards per column", cardLimit);
+  cardsPerColumn.append(element("span", "board-view-help", "Load between 1 and 50 cards in each status column."));
+  const retentionGrid = element("div", "board-view-retention-grid"); retentionGrid.append(closedCards, closedEpics, cardsPerColumn);
   filters.append(filterGrid, retentionGrid, hiddenPresentation.host); form.append(filters);
   const error = element("p", "edit-error");
   const actions = element("footer", "board-view-dialog-actions");
@@ -2121,7 +2128,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
       all_epics: epicMode.all.checked, epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
       include_no_epic: noEpic.checked,
       labels: labelFilters, assignees: assigneeFilters, priority_max: Number(priority.value) as 0|1|2|3|4,
-      closed_days: Number(closedDays.value), epic_closed_days: Number(epicClosedDays.value) };
+      card_limit: Number(cardLimit.value), closed_days: Number(closedDays.value), epic_closed_days: Number(epicClosedDays.value) };
     if (!body.all_epics && (body.epics?.length ?? 0) === 0 && !body.include_no_epic) {
       save.disabled = false; error.textContent = "Select at least one epic lane or include No epic."; return;
     }
@@ -2131,7 +2138,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
         all_epics: epicMode.all.checked,
         epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
         include_no_epic: noEpic.checked, labels: labelFilters, assignees: assigneeFilters,
-        priority_max: Number(priority.value) as 0|1|2|3|4, closed_days: Number(closedDays.value),
+        priority_max: Number(priority.value) as 0|1|2|3|4, card_limit: Number(cardLimit.value), closed_days: Number(closedDays.value),
         epic_closed_days: Number(epicClosedDays.value) });
       saveHiddenBoardEpics("default", new Set(hiddenPresentation.inputs.filter((input) => input.checked).map((input) => input.value)));
       dialog.close(); void render(); return;
@@ -2149,6 +2156,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
       if (JSON.stringify(body.labels) !== JSON.stringify(source.labels)) patch.labels = body.labels;
       if (JSON.stringify(body.assignees) !== JSON.stringify(source.assignees)) patch.assignees = body.assignees;
       if (body.priority_max !== source.priority_max) patch.priority_max = body.priority_max;
+      if (body.card_limit !== source.card_limit) patch.card_limit = body.card_limit;
       if (body.closed_days !== source.closed_days) patch.closed_days = body.closed_days;
       if (body.epic_closed_days !== source.epic_closed_days) patch.epic_closed_days = body.epic_closed_days;
       operation = api.updateBoardView(source.id, patch);
@@ -2167,9 +2175,11 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
 
 async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const ref = route.path[1] ?? "default";
-  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize, "card-limit": boardCardPageSize };
+  const defaultPreferences = defaultBoardPreferences();
+  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize };
   if (ref === "default") {
-    const preferences = defaultBoardPreferences();
+    const preferences = defaultPreferences;
+    filters["card-limit"] = preferences.card_limit;
     const workspaces = route.query.getAll("workspace");
     if (workspaces.length > 0) filters.workspace = workspaces;
     else if (!preferences.all_workspaces) filters.workspace = preferences.workspaces;
@@ -2185,6 +2195,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   }
   const hiddenEpics = [...hiddenBoardEpics(ref)]; if (hiddenEpics.length > 0) filters["hidden-epic"] = hiddenEpics;
   const [board, owned] = await Promise.all([api.board(ref, filters, signal), api.boardViews()]);
+  if (board.view !== undefined) filters["card-limit"] = board.view.card_limit;
   const view = element("div", "board-page");
   const heading = element("div", "board-heading");
   const title = element("div"); title.append(element("h1", "", "Boards"), element("p", "lede", "Move work through the existing awb workflow."));
@@ -2228,11 +2239,11 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`));
     const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
     chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} lane ${epicLaneCount === 1 ? "selection" : "selections"}`));
-    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `Closed cards: ${saved.closed_days} days`), element("span", "", `Closed epics: ${saved.epic_closed_days} days`)); summary.append(owner, chips); view.append(summary);
+    for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `${saved.card_limit} cards per column`), element("span", "", `Closed cards: ${saved.closed_days} days`), element("span", "", `Closed epics: ${saved.epic_closed_days} days`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted
     ? "Some workspaces are archived or hidden by your access or ignored-workspace settings."
-    : `Workspace access and ignored-workspace settings apply. Each epic/status column loads up to ${boardCardPageSize} cards independently.`));
+    : `Workspace access and ignored-workspace settings apply. Each epic/status column loads up to ${filters["card-limit"]} cards independently.`));
   const lanes = element("div", "board-lanes"); const issuesByID = new Map<string, Issue>();
   const selectedWorkspaces = filters.workspace ?? [];
   const epics: BoardEpicChoice[] = board.lanes.flatMap((lane) => lane.epic === undefined

@@ -780,7 +780,8 @@ paths:
           schema: { type: integer, minimum: 0 }
         - name: card-limit
           in: query
-          schema: { type: integer, minimum: 0, maximum: 50, default: 50 }
+          description: Maximum cards per column. Saved views use their stored value when this is omitted.
+          schema: { type: integer, minimum: 0, maximum: 50 }
         - name: card-offset
           in: query
           schema: { type: integer, minimum: 0 }
@@ -1767,7 +1768,7 @@ components:
       additionalProperties: false
       required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
         epics, include_no_epic, labels,
-        assignees, priority_max, closed_days, epic_closed_days, created_at, updated_at]
+        assignees, priority_max, card_limit, closed_days, epic_closed_days, created_at, updated_at]
       properties:
         id: { $ref: '#/components/schemas/BoardViewID' }
         name: { type: string, minLength: 1, maxLength: 100 }
@@ -1789,6 +1790,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
+        card_limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Maximum number of cards loaded in each epic/status column.
         closed_days:
           type: integer
           minimum: 0
@@ -1827,6 +1833,12 @@ components:
         priority_max:
           $ref: '#/components/schemas/Priority'
           default: 4
+        card_limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 8
+          description: Maximum number of cards loaded in each epic/status column.
         closed_days:
           type: integer
           minimum: 0
@@ -1867,6 +1879,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max: { $ref: '#/components/schemas/Priority' }
+        card_limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Maximum number of cards loaded in each epic/status column.
         closed_days:
           type: integer
           minimum: 0

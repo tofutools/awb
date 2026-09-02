@@ -27,7 +27,7 @@ func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 	var view domain.BoardView
 	err := row.Scan(&view.ID, &view.Name, &view.Owner, &view.Shared,
 		&view.AllWorkspaces, &view.AllEpics, &view.IncludeNoEpic,
-		&view.PriorityMax, &view.ClosedDays, &view.EpicClosedDays, &view.CreatedAt, &view.UpdatedAt)
+		&view.PriorityMax, &view.CardLimit, &view.ClosedDays, &view.EpicClosedDays, &view.CreatedAt, &view.UpdatedAt)
 	return &view, err
 }
 
@@ -37,7 +37,7 @@ func scanBoardView(row rowScanner) (*domain.BoardView, error) {
 func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 	view, err := scanBoardView(t.q.QueryRowContext(t.ctx, `
 		SELECT id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
-		       priority_max, closed_days, epic_closed_days, created_at, updated_at
+		       priority_max, card_limit, closed_days, epic_closed_days, created_at, updated_at
 		  FROM board_views WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such board view: %s", id)
@@ -56,7 +56,7 @@ func (t *Tx) GetBoardView(id string) (*domain.BoardView, error) {
 func (t *Tx) ListBoardViews(owner string) ([]domain.BoardView, error) {
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
-		       priority_max, closed_days, epic_closed_days, created_at, updated_at
+		       priority_max, card_limit, closed_days, epic_closed_days, created_at, updated_at
 		  FROM board_views WHERE owner = ? ORDER BY name, id`, owner)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "list board views")
@@ -124,9 +124,9 @@ func (t *Tx) InsertBoardView(view *domain.BoardView) error {
 	view.CreatedAt, view.UpdatedAt = now, now
 	_, err := t.q.ExecContext(t.ctx, `INSERT INTO board_views
 		(id, name, owner, shared, all_workspaces, all_epics, include_no_epic,
-		 priority_max, closed_days, epic_closed_days, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, view.ID, view.Name, view.Owner, view.Shared,
-		view.AllWorkspaces, view.AllEpics, view.IncludeNoEpic, view.PriorityMax, view.ClosedDays, view.EpicClosedDays, now, now)
+		 priority_max, card_limit, closed_days, epic_closed_days, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, view.ID, view.Name, view.Owner, view.Shared,
+		view.AllWorkspaces, view.AllEpics, view.IncludeNoEpic, view.PriorityMax, view.CardLimit, view.ClosedDays, view.EpicClosedDays, now, now)
 	if isUniqueViolation(err) {
 		return awberr.Conflictf("board view already exists: %s", view.ID)
 	}
@@ -141,6 +141,7 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 	if existing.Name == next.Name && existing.Shared == next.Shared &&
 		existing.AllWorkspaces == next.AllWorkspaces && existing.AllEpics == next.AllEpics &&
 		existing.IncludeNoEpic == next.IncludeNoEpic && existing.PriorityMax == next.PriorityMax &&
+		existing.CardLimit == next.CardLimit &&
 		existing.ClosedDays == next.ClosedDays && existing.EpicClosedDays == next.EpicClosedDays &&
 		slices.Equal(existing.Workspaces, next.Workspaces) && slices.Equal(existing.Labels, next.Labels) &&
 		slices.Equal(existing.Assignees, next.Assignees) && slices.Equal(existing.Epics, next.Epics) {
@@ -148,9 +149,9 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 	}
 	next.UpdatedAt = bumpedTimestamp(existing.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx, `UPDATE board_views SET name = ?, shared = ?,
-		all_workspaces = ?, all_epics = ?, include_no_epic = ?, priority_max = ?, closed_days = ?, epic_closed_days = ?,
+		all_workspaces = ?, all_epics = ?, include_no_epic = ?, priority_max = ?, card_limit = ?, closed_days = ?, epic_closed_days = ?,
 		updated_at = ? WHERE id = ?`, next.Name, next.Shared, next.AllWorkspaces,
-		next.AllEpics, next.IncludeNoEpic, next.PriorityMax, next.ClosedDays, next.EpicClosedDays, next.UpdatedAt, existing.ID)
+		next.AllEpics, next.IncludeNoEpic, next.PriorityMax, next.CardLimit, next.ClosedDays, next.EpicClosedDays, next.UpdatedAt, existing.ID)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update board view %s", existing.ID)
 	}

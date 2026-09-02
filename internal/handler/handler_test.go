@@ -202,6 +202,7 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 	var view domain.BoardView
 	require.NoError(t, json.Unmarshal([]byte(payload), &view))
+	assert.Equal(t, 8, view.CardLimit)
 	assert.Equal(t, "/api/board-views/"+view.ID, resp.Header.Get("Location"))
 	assert.NotEmpty(t, resp.Header.Get("ETag"))
 

@@ -160,6 +160,27 @@ func TestV16AddsEmptyImplementationLinks(t *testing.T) {
 	}))
 }
 
+func TestV18AddsThePreviousBoardCardLimitToExistingViews(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 17)
+	_, err := raw.ExecContext(t.Context(), `INSERT INTO board_views
+		(id, name, owner, created_at, updated_at)
+		VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Release', 'alice',
+		        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, 8, view.CardLimit)
+		return nil
+	}))
+}
+
 func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
 	raw := openAtVersion(t, path, 10)
@@ -174,7 +195,7 @@ func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
 		view := &domain.BoardView{ID: "view-aaaaaaaaaaaaaaaaaaaaaaaa", Name: "Release", Owner: "alice",
-			AllWorkspaces: false, Workspaces: []string{"awb"}, PriorityMax: 4}
+			AllWorkspaces: false, Workspaces: []string{"awb"}, PriorityMax: 4, CardLimit: 8}
 		return tx.InsertBoardView(view)
 	}))
 	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
