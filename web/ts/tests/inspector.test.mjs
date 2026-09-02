@@ -3,9 +3,19 @@ import test from "node:test";
 
 import {
   deferInspectorPopoverOpen,
+  inspectorParent,
   inspectorPopoverPosition,
   inspectorStatusAction,
 } from "../../static/inspector.js";
+
+test("the parent field uses only the outgoing parent relation", () => {
+  assert.equal(inspectorParent([
+    { type: "has-parent", other: "awb-child", direction: "in" },
+    { type: "blocked-by", other: "awb-blocker", direction: "out" },
+    { type: "has-parent", other: "awb-parent", direction: "out" },
+  ]), "awb-parent");
+  assert.equal(inspectorParent([]), undefined);
+});
 
 test("the native status control dispatches domain transitions", () => {
   assert.equal(inspectorStatusAction("open", "open"), "none");

@@ -1,6 +1,19 @@
 export type InspectorStatus = "open" | "in_progress" | "closed";
 export type InspectorStatusAction = "none" | "close" | "claim" | "release" | "reopen";
 
+interface InspectorRelation {
+  type: string;
+  other: string;
+  direction: string;
+}
+
+/** Parent is the outgoing end of has-parent. Incoming has-parent relations are
+ * children and remain part of the general relation list. */
+export function inspectorParent(relations: InspectorRelation[]): string | undefined {
+  return relations.find((relation) =>
+    relation.type === "has-parent" && relation.direction === "out")?.other;
+}
+
 /** Status is presented as one native control, but each change remains one of
  * the domain transitions that keeps status and assignees consistent. */
 export function inspectorStatusAction(

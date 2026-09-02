@@ -90,6 +90,7 @@ import {
 } from "./membership.js";
 import {
   deferInspectorPopoverOpen,
+  inspectorParent,
   inspectorPopoverPosition,
   inspectorStatusAction,
 } from "./inspector.js";
@@ -236,7 +237,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "info" | "issues" | "workspaces" | "ready" | "relation" | "search" | "tag" | "users";
+type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "edit" | "info" | "issues" | "workspaces" | "ready" | "relation" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -247,6 +248,7 @@ function svgIcon(name: IconName): SVGSVGElement {
     boards: '<rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="11" rx="1"></rect><rect x="17" y="4" width="4" height="14" rx="1"></rect>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+    edit: '<path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4z"></path><path d="m13.5 6.5 4 4"></path>',
     info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     workspaces: '<path d="M3 6h7l2 2h9v11H3z"></path>',
@@ -3492,6 +3494,8 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   };
   add("ID", element("span", "id", issue.id));
   add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.workspace)}`, issue.workspace));
+  const [parent, parentPopover] = parentInspector(issue);
+  add("Parent", parent, parentPopover);
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
   type.className = "sidebar-select";
   type.setAttribute("aria-label", "Type");
@@ -3645,6 +3649,59 @@ function matchingValues(values: string[], query: string, excluded: string[] = []
   return values.filter((value) => !hidden.has(value) && value.toLocaleLowerCase().includes(needle))
     .slice(0, 8)
     .map((value) => ({ value, label: value }));
+}
+
+function parentInspector(issue: Issue): [HTMLElement, HTMLElement] {
+  const parentID = inspectorParent(issue.relations);
+  const values = element("span", "inspector-values parent-inspector-values");
+  if (parentID === undefined) values.append(document.createTextNode("—"));
+  else {
+    const chip = element("span", "editable-chip parent-chip");
+    const parentLink = link(`#/issues/${parentID}`, parentID, "listing-badge parent-link");
+    parentLink.title = `Open parent ${parentID}`;
+    const remove = button("×", "chip-remove");
+    remove.title = `Remove parent ${parentID}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      void mutateInspector(values, () => api.removeRelation(issue.id, "has-parent", parentID));
+    });
+    chip.append(parentLink, remove);
+    values.append(chip);
+  }
+
+  const edit = button("+", "inspector-add");
+  if (parentID !== undefined) edit.replaceChildren(svgIcon("edit"));
+  edit.setAttribute("aria-label", parentID === undefined ? "Set parent" : "Change parent");
+  values.append(edit);
+
+  const panel = element("div");
+  const form = element("form", "sidebar-editor parent-editor") as HTMLFormElement;
+  const input = document.createElement("input");
+  input.placeholder = parentID === undefined ? "Parent issue ID" : "New parent issue ID";
+  input.setAttribute("aria-label", "Parent issue ID");
+  input.required = true;
+  const autocomplete = attachAutocomplete(input, async (query, signal) => {
+    const page = await api.issueSuggestions(query, signal);
+    return page.rows.filter((candidate) => candidate.id !== issue.id).map((candidate) => ({
+      value: candidate.id,
+      label: candidate.id,
+      detail: candidate.title,
+    }));
+  });
+  const save = element("button", "quiet-action", parentID === undefined ? "Set" : "Replace") as HTMLButtonElement;
+  save.type = "submit";
+  form.append(autocomplete, save);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutateInspector(panel, () => api.addRelation(issue.id, {
+      type: "has-parent",
+      other: input.value,
+      force: parentID !== undefined,
+    }));
+  });
+  panel.append(form);
+  configureInspectorPopover(edit, panel, parentID === undefined ? "Set parent" : "Change parent");
+  return [values, panel];
 }
 
 function labelEditor(issue: Issue): HTMLFormElement {
