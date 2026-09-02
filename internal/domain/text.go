@@ -57,8 +57,11 @@ func ValidatePullRequestURL(s string) (string, error) {
 	if err := checkUTF8("pull request URL", s); err != nil {
 		return "", err
 	}
-	if len([]rune(s)) > MaxPullRequestURLLen {
+	if utf8.RuneCountInString(s) > MaxPullRequestURLLen {
 		return "", awberr.Usagef("pull request URL is too long: maximum %d characters", MaxPullRequestURLLen)
+	}
+	if strings.IndexFunc(s, unicode.IsSpace) >= 0 {
+		return "", awberr.Usagef("pull request URL must not contain whitespace")
 	}
 	parsed, err := url.Parse(s)
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
