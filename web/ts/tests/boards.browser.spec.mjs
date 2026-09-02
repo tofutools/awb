@@ -428,12 +428,15 @@ test("save, share and work from a responsive board", async ({ page }) => {
     return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
   }, { id: movedID, epic: pagedEpic })).toBe(true);
 
-  const hideableLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) }).first();
+  const hideableLanes = page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) });
+  const hideableLane = hideableLanes.first();
+  const hideableHeading = await hideableLane.locator(":scope > .board-lane-heading h2").textContent();
+  expect(hideableHeading).toBeTruthy();
   const hideableEpicID = await hideableLane.getByRole("button", { name: /Hide .* from boards/ }).getAttribute("aria-label")
     .then((label) => label?.split(" ")[1]);
   expect(hideableEpicID).toBeTruthy();
   await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from boards` }).click();
-  await expect(hideableLane).toHaveCount(0);
+  await expect(page.locator(".board-lane", { has: page.getByRole("heading", { name: hideableHeading, exact: true }) })).toHaveCount(0);
   await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(true);
 
   await page.goto(savedViewURL);
