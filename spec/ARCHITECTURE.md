@@ -215,7 +215,9 @@ holds raw HTML or a link or image destination whose scheme the field does not
 allow. Refusing at the boundary is what makes a stored description something a
 renderer can trust: script, style, SVG and MathML are all raw HTML, so keeping
 raw HTML out keeps all of them out, for the terminal renderer and the web UI
-alike. Accepted text is stored byte for byte; nothing is escaped or stripped.
+alike. The gate rewrites nothing, so a description and a comment body are
+stored byte for byte, and a close reason after the trimming its own rule
+applies.
 
 The gate is on the operations, so it holds for what is written through them and
 not for what a database already contains: rows written before the gate existed

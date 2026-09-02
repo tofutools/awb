@@ -42,8 +42,10 @@ info:
     `image/webp`. A destination with no scheme at all — a relative path, a
     fragment — is accepted. A bare URL the autolink extension picks up is a
     link like any other, so mentioning an `ftp://` address in prose means
-    wrapping it in a code span. Accepted text is stored byte for byte: nothing is
-    rewritten, escaped or stripped on the way in.
+    wrapping it in a code span. The gate rewrites nothing: it accepts text or
+    refuses it, escaping and stripping neither. A description and a comment body
+    are therefore stored byte for byte; a close reason is trimmed first, which
+    is that field's own rule rather than the gate's.
 
     **Authorization.** A server whose database holds at least one user
     authenticates every request and answers it with that user's permissions. A

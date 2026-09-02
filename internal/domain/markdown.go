@@ -58,8 +58,10 @@ var (
 // protocol-relative //host — is accepted. It carries no scheme, so there is no
 // other scheme for it to be.
 //
-// Nothing is rewritten: the value is stored exactly as it arrived or not at
-// all.
+// The gate rewrites nothing: it accepts a value or refuses it. Whether the
+// caller's bytes then reach storage untouched is the field's own rule — a
+// description and a comment body are stored as they arrived, a close reason
+// after ValidateCloseReason has trimmed it.
 func ValidateMarkdown(field, s string) error {
 	if s == "" {
 		return nil
