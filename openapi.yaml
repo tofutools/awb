@@ -177,7 +177,7 @@ paths:
     patch:
       tags: [issues]
       operationId: updateIssue
-      summary: Change an issue's title, description, type or priority
+      summary: Change an issue's editable fields
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -2078,6 +2078,17 @@ components:
       minLength: 1
       maxLength: 255
 
+    CommitHash:
+      type: string
+      description: An optional hexadecimal commit identifier, stored exactly as supplied.
+      pattern: '^(|[0-9A-Fa-f]{8,128})$'
+
+    PullRequestURL:
+      type: string
+      description: An optional absolute HTTP or HTTPS pull request URL, stored exactly as supplied.
+      maxLength: 1000
+      pattern: '^(|https?://[^/\s?#]+(?:[^\s]*)?)$'
+
     ContentType:
       type: string
       description: |
@@ -2218,7 +2229,7 @@ components:
         unchanged data therefore produce byte-identical output.
       additionalProperties: false
       required:
-        [id, workspace, title, description, type, status, priority, order, board_hidden, labels,
+        [id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, order, board_hidden, labels,
          assignees, created_at, updated_at, closed_at, blocked, blockers,
          relations, links, attachments]
       properties:
@@ -2240,6 +2251,8 @@ components:
             **Markdown** above describes, so a client renders it knowing raw
             HTML and an unsupported link or image scheme are not in it. At most
             64 KiB of UTF-8.
+        commit_hash: { $ref: '#/components/schemas/CommitHash' }
+        pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
         type: { $ref: '#/components/schemas/Type' }
         status: { $ref: '#/components/schemas/Status' }
         priority: { $ref: '#/components/schemas/Priority' }
@@ -2541,6 +2554,8 @@ components:
         workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         title: { type: string, minLength: 1, maxLength: 500 }
         description: { type: string }
+        commit_hash: { $ref: '#/components/schemas/CommitHash' }
+        pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
         assignees:
@@ -2589,6 +2604,8 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 500 }
         description: { type: string }
+        commit_hash: { $ref: '#/components/schemas/CommitHash' }
+        pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
         board_hidden: { type: boolean }

@@ -33,12 +33,19 @@ var migrations = [][]string{
 	schemaV14,
 	schemaV15,
 	schemaV16,
+	schemaV17,
 }
 
-// schemaV16 gives epic lanes their own closed-item retention window. Zero
+// schemaV17 gives epic lanes their own closed-item retention window. Zero
 // preserves the immediate-hide behaviour introduced with board retention.
-var schemaV16 = []string{
+var schemaV17 = []string{
 	`ALTER TABLE board_views ADD COLUMN epic_closed_days INTEGER NOT NULL DEFAULT 0 CHECK (epic_closed_days BETWEEN 0 AND 3650)`,
+}
+
+// schemaV16 adds independent optional links from an issue to its implementation.
+var schemaV16 = []string{
+	`ALTER TABLE issues ADD COLUMN commit_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE issues ADD COLUMN pull_request_url TEXT NOT NULL DEFAULT ''`,
 }
 
 // schemaV15 records board-only presentation state and the instant of the most

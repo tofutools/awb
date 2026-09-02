@@ -90,6 +90,7 @@ import {
 } from "./membership.js";
 import {
   deferInspectorPopoverOpen,
+  inspectorParent,
   inspectorPopoverPosition,
   inspectorStatusAction,
 } from "./inspector.js";
@@ -159,12 +160,16 @@ function listingPageSize(query: URLSearchParams): number {
 interface IssueEditDraft {
   title: string;
   description: string;
+  commitHash: string;
+  pullRequestURL: string;
 }
 
 interface IssueForm {
   form: HTMLFormElement;
   title: HTMLInputElement;
   description: MarkdownEditor;
+  commitHash: HTMLInputElement;
+  pullRequestURL: HTMLInputElement;
   submit: HTMLButtonElement;
   actions: HTMLElement;
 }
@@ -236,7 +241,7 @@ function element(tag: string, className = "", text = ""): HTMLElement {
   return node;
 }
 
-type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "info" | "issues" | "workspaces" | "ready" | "relation" | "search" | "tag" | "users";
+type IconName = "attachment" | "blocked" | "boards" | "change" | "clock" | "edit" | "info" | "issues" | "workspaces" | "ready" | "relation" | "search" | "tag" | "users";
 
 /** svgIcon keeps the small, decorative interface icons in the document rather
  * than adding another asset pipeline or network request. */
@@ -247,6 +252,7 @@ function svgIcon(name: IconName): SVGSVGElement {
     boards: '<rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="11" rx="1"></rect><rect x="17" y="4" width="4" height="14" rx="1"></rect>',
     change: '<path d="M7 7h11l-3-3m3 3-3 3"></path><path d="M17 17H6l3 3m-3-3 3-3"></path>',
     clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+    edit: '<path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4z"></path><path d="m13.5 6.5 4 4"></path>',
     info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>',
     issues: '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path>',
     workspaces: '<path d="M3 6h7l2 2h9v11H3z"></path>',
@@ -496,6 +502,8 @@ function issueForm(
   submitLabel: string,
   titleValue: string,
   descriptionValue: string,
+  commitHashValue = "",
+  pullRequestURLValue = "",
   className = "edit-panel",
 ): IssueForm {
   const form = element("form", className) as HTMLFormElement;
@@ -506,11 +514,25 @@ function issueForm(
   title.required = true;
   title.maxLength = 500;
   const description = createMarkdownEditor(descriptionValue, "description", "Issue description (Markdown)");
+  const commitHash = document.createElement("input");
+  commitHash.name = "commit_hash";
+  commitHash.value = commitHashValue;
+  commitHash.pattern = "[0-9A-Fa-f]{8,128}";
+  commitHash.maxLength = 128;
+  commitHash.placeholder = "Optional commit hash";
+  const pullRequestURL = document.createElement("input");
+  pullRequestURL.name = "pull_request_url";
+  pullRequestURL.type = "url";
+  pullRequestURL.value = pullRequestURLValue;
+  pullRequestURL.maxLength = 1000;
+  pullRequestURL.placeholder = "https://…";
   const submit = element("button", "primary-button", submitLabel) as HTMLButtonElement;
   submit.type = "submit";
   const actions = element("div", "edit-actions");
-  form.append(field("Title", title), markdownField("Description (Markdown)", description), actions);
-  return { form, title, description, submit, actions };
+  const implementation = element("div", "edit-field-row");
+  implementation.append(field("Commit", commitHash), field("Pull request", pullRequestURL));
+  form.append(field("Title", title), markdownField("Description (Markdown)", description), implementation, actions);
+  return { form, title, description, commitHash, pullRequestURL, submit, actions };
 }
 
 function stagedIssueResources(epic?: Issue): StagedIssueResources {
@@ -656,7 +678,7 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
 
   const dialog = element("dialog", "issue-create-dialog") as HTMLDialogElement;
   dialog.setAttribute("aria-labelledby", "issue-create-heading");
-  const editor = issueForm("New issue", "Create issue", "", "", "issue-create-form");
+  const editor = issueForm("New issue", "Create issue", "", "", "", "", "issue-create-form");
   editor.form.querySelector("h2")!.id = "issue-create-heading";
 
   const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? defaults.epic?.workspace ?? workspaces[0].key);
@@ -709,6 +731,8 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
       workspace: workspace.value,
       title: editor.title.value,
       description: editor.description.textarea.value,
+      commit_hash: editor.commitHash.value,
+      pull_request_url: editor.pullRequestURL.value,
       type: type.value as IssueCreate["type"],
       priority: Number(priority.value) as IssueCreate["priority"],
       ...(assign.checked && identity !== "" ? { assignees: [identity] } : {}),
@@ -3260,8 +3284,12 @@ function workspaceEditForm(workspace: Workspace): HTMLFormElement {
 }
 
 async function viewIssue(id: string): Promise<HTMLElement> {
-  const issue = await api.issue(id);
-  const [activity, workspace] = await Promise.all([api.activity(id), api.workspace(issue.workspace)]);
+  const [issue, activity, children] = await Promise.all([
+    api.issue(id),
+    api.activity(id),
+    api.issues({ parent: id, "include-closed": true, "include-archived": true }),
+  ]);
+  const workspace = await api.workspace(issue.workspace);
 
   const view = element("div", "issue-view");
   view.classList.toggle("sidebar-collapsed", issueSidebarCollapsed(issueSidebarStorage(window)));
@@ -3277,6 +3305,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const editForm = issueEditForm(issue, existingDraft);
   const editTitle = editForm.elements.namedItem("title") as HTMLInputElement;
   const editDescription = editForm.elements.namedItem("description") as HTMLTextAreaElement;
+  const editCommitHash = editForm.elements.namedItem("commit_hash") as HTMLInputElement;
+  const editPullRequestURL = editForm.elements.namedItem("pull_request_url") as HTMLInputElement;
   editForm.hidden = true;
   const attachmentSection = issueAttachmentSection(issue);
   const relationSection = issueRelationSection(issue);
@@ -3285,6 +3315,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       issueEditDrafts.set(issue.id, {
         title: editTitle.value,
         description: editDescription.value,
+        commitHash: editCommitHash.value,
+        pullRequestURL: editPullRequestURL.value,
       });
     } else {
       issueEditDrafts.delete(issue.id);
@@ -3323,6 +3355,8 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     description.append(element("p", "empty", "No description."));
   }
   content.append(description);
+
+  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows));
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3373,6 +3407,19 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   });
   if (existingDraft !== undefined && workspace.state === "active") showEditor(true);
   return view;
+}
+
+function issueChildrenSection(children: Issue[]): HTMLElement {
+  const section = element("section", "issue-resource-section child-issues-section");
+  section.append(element("h2", "", "Child issues"));
+  const list = element("ul", "child-issues resource-list");
+  for (const child of children) {
+    const row = element("li");
+    row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
+    list.append(row);
+  }
+  section.append(list);
+  return section;
 }
 
 interface IssueResourceSection {
@@ -3440,6 +3487,8 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     "Save changes",
     draft?.title ?? issue.title,
     draft?.description ?? issue.description,
+    draft?.commitHash ?? issue.commit_hash,
+    draft?.pullRequestURL ?? issue.pull_request_url,
     "edit-panel issue-edit-form",
   );
   editor.actions.append(
@@ -3452,16 +3501,25 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
   boardVisibilityCopy.append(element("span", "", "Show on boards"), element("span", "board-view-help", "Turn this off to keep the issue in lists while hiding it from every board."));
   boardVisibility.append(showOnBoards, boardVisibilityCopy); editor.actions.before(boardVisibility);
   const rememberDraft = (): void => {
-    issueEditDrafts.set(issue.id, { title: editor.title.value, description: editor.description.textarea.value });
+    issueEditDrafts.set(issue.id, {
+      title: editor.title.value,
+      description: editor.description.textarea.value,
+      commitHash: editor.commitHash.value,
+      pullRequestURL: editor.pullRequestURL.value,
+    });
   };
   editor.title.addEventListener("input", rememberDraft);
   editor.description.textarea.addEventListener("input", rememberDraft);
+  editor.commitHash.addEventListener("input", rememberDraft);
+  editor.pullRequestURL.addEventListener("input", rememberDraft);
   editor.form.addEventListener("submit", (event) => {
     event.preventDefault();
     void mutate(editor.form, [editor.submit], async () => {
       const updated = await api.updateIssue(issue.id, {
         title: editor.title.value,
         description: editor.description.textarea.value,
+        commit_hash: editor.commitHash.value,
+        pull_request_url: editor.pullRequestURL.value,
         board_hidden: !showOnBoards.checked,
       });
       issueEditDrafts.delete(issue.id);
@@ -3613,6 +3671,10 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   };
   add("ID", element("span", "id", issue.id));
   add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.workspace)}`, issue.workspace));
+  if (issue.commit_hash !== "") add("Commit", element("span", "id", issue.commit_hash));
+  if (issue.pull_request_url !== "") add("Pull request", link(issue.pull_request_url, issue.pull_request_url));
+  const [parent, parentPopover] = parentInspector(issue);
+  add("Parent", parent, parentPopover);
   const type = select(["epic", "feature", "bug", "task", "chore"], issue.type);
   type.className = "sidebar-select";
   type.setAttribute("aria-label", "Type");
@@ -3766,6 +3828,60 @@ function matchingValues(values: string[], query: string, excluded: string[] = []
   return values.filter((value) => !hidden.has(value) && value.toLocaleLowerCase().includes(needle))
     .slice(0, 8)
     .map((value) => ({ value, label: value }));
+}
+
+function parentInspector(issue: Issue): [HTMLElement, HTMLElement] {
+  const parentID = inspectorParent(issue.relations);
+  const values = element("span", "inspector-values parent-inspector-values");
+  if (parentID === undefined) values.append(document.createTextNode("—"));
+  else {
+    const parentLink = link(`#/issues/${parentID}`, parentID, "parent-link");
+    parentLink.title = `Open parent ${parentID}`;
+    values.append(parentLink);
+  }
+
+  const edit = button("+", "inspector-add");
+  if (parentID !== undefined) edit.replaceChildren(svgIcon("edit"));
+  edit.setAttribute("aria-label", parentID === undefined ? "Set parent" : "Change parent");
+  values.append(edit);
+  if (parentID !== undefined) {
+    const remove = button("×", "inspector-add inspector-remove");
+    remove.title = `Remove parent ${parentID}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      void mutateInspector(values, () => api.removeRelation(issue.id, "has-parent", parentID));
+    });
+    values.append(remove);
+  }
+
+  const panel = element("div");
+  const form = element("form", "sidebar-editor parent-editor") as HTMLFormElement;
+  const input = document.createElement("input");
+  input.placeholder = parentID === undefined ? "Parent issue ID" : "New parent issue ID";
+  input.setAttribute("aria-label", "Parent issue ID");
+  input.required = true;
+  const autocomplete = attachAutocomplete(input, async (query, signal) => {
+    const page = await api.issueSuggestions(query, signal);
+    return page.rows.filter((candidate) => candidate.id !== issue.id).map((candidate) => ({
+      value: candidate.id,
+      label: candidate.id,
+      detail: candidate.title,
+    }));
+  });
+  const save = element("button", "quiet-action", parentID === undefined ? "Set" : "Replace") as HTMLButtonElement;
+  save.type = "submit";
+  form.append(autocomplete, save);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void mutateInspector(panel, () => api.addRelation(issue.id, {
+      type: "has-parent",
+      other: input.value,
+      force: parentID !== undefined,
+    }));
+  });
+  panel.append(form);
+  configureInspectorPopover(edit, panel, parentID === undefined ? "Set parent" : "Change parent");
+  return [values, panel];
 }
 
 function labelEditor(issue: Issue): HTMLFormElement {

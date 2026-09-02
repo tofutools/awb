@@ -136,6 +136,30 @@ func TestV15AddsBoardVisibilityAndClosedRetention(t *testing.T) {
 	}))
 }
 
+func TestV16AddsEmptyImplementationLinks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 15)
+	_, err := raw.ExecContext(t.Context(), `
+		INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+		VALUES ('awb', 'AWB', '', 'active', '', '', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+		INSERT INTO issues (id, workspace, title, description, type, status, priority, board_order, created_at, updated_at)
+		VALUES ('awb-aaaaaa', 'awb', 'existing', '', 'task', 'open', 2, 0,
+		        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		issue, readErr := tx.GetIssue("awb-aaaaaa")
+		require.NoError(t, readErr)
+		assert.Empty(t, issue.CommitHash)
+		assert.Empty(t, issue.PullRequestURL)
+		return nil
+	}))
+}
+
 func TestV11AddsBoardViewsWithoutChangingExistingWork(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "awb.db")
 	raw := openAtVersion(t, path, 10)

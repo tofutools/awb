@@ -81,6 +81,7 @@ the caller also requests a cascade.
 An issue belongs to exactly one workspace and carries:
 
 - a title and Markdown description;
+- optional implementation commit and pull request references;
 - one fixed type and workflow status;
 - priority from zero through four;
 - a sparse manual order;

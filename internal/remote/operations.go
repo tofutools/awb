@@ -18,14 +18,16 @@ import (
 // is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
-	Workspace   string         `json:"workspace"`
-	Title       string         `json:"title"`
-	Description string         `json:"description,omitempty"`
-	Type        domain.Type    `json:"type,omitempty"`
-	Priority    *int           `json:"priority,omitempty"`
-	Assignees   []string       `json:"assignees,omitempty"`
-	Labels      []string       `json:"labels,omitempty"`
-	Relations   []relationBody `json:"relations,omitempty"`
+	Workspace      string         `json:"workspace"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description,omitempty"`
+	CommitHash     string         `json:"commit_hash,omitempty"`
+	PullRequestURL string         `json:"pull_request_url,omitempty"`
+	Type           domain.Type    `json:"type,omitempty"`
+	Priority       *int           `json:"priority,omitempty"`
+	Assignees      []string       `json:"assignees,omitempty"`
+	Labels         []string       `json:"labels,omitempty"`
+	Relations      []relationBody `json:"relations,omitempty"`
 }
 
 type relationBody struct {
@@ -35,11 +37,13 @@ type relationBody struct {
 }
 
 type issuePatchBody struct {
-	Title       *string      `json:"title,omitempty"`
-	Description *string      `json:"description,omitempty"`
-	Type        *domain.Type `json:"type,omitempty"`
-	Priority    *int         `json:"priority,omitempty"`
-	BoardHidden *bool        `json:"board_hidden,omitempty"`
+	Title          *string      `json:"title,omitempty"`
+	Description    *string      `json:"description,omitempty"`
+	CommitHash     *string      `json:"commit_hash,omitempty"`
+	PullRequestURL *string      `json:"pull_request_url,omitempty"`
+	Type           *domain.Type `json:"type,omitempty"`
+	Priority       *int         `json:"priority,omitempty"`
+	BoardHidden    *bool        `json:"board_hidden,omitempty"`
 
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
@@ -97,13 +101,15 @@ type commentBody struct {
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	body := issueCreateBody{
-		Workspace:   req.Workspace,
-		Title:       req.Title,
-		Description: req.Description,
-		Type:        req.Type,
-		Priority:    req.Priority,
-		Assignees:   req.Assignees,
-		Labels:      req.Labels,
+		Workspace:      req.Workspace,
+		Title:          req.Title,
+		Description:    req.Description,
+		CommitHash:     req.CommitHash,
+		PullRequestURL: req.PullRequestURL,
+		Type:           req.Type,
+		Priority:       req.Priority,
+		Assignees:      req.Assignees,
+		Labels:         req.Labels,
 	}
 	for _, rel := range req.Relations {
 		body.Relations = append(body.Relations, relationBody{Type: rel.Type, Other: rel.Other})
@@ -251,11 +257,13 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.IssuePatch,
 	ifMatch string) (*domain.Issue, error) {
 	body := issuePatchBody{
-		Title:       req.Title,
-		Description: req.Description,
-		Type:        req.Type,
-		Priority:    req.Priority,
-		BoardHidden: req.BoardHidden,
+		Title:          req.Title,
+		Description:    req.Description,
+		CommitHash:     req.CommitHash,
+		PullRequestURL: req.PullRequestURL,
+		Type:           req.Type,
+		Priority:       req.Priority,
+		BoardHidden:    req.BoardHidden,
 
 		Labels:    req.ExpectLabels,
 		Status:    req.ExpectStatus,
