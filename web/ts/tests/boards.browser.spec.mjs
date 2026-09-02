@@ -286,14 +286,16 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await defaultEditor.getByLabel("Labels (any)").fill("");
   const defaultWorkspaceScope = defaultEditor.locator(".board-view-scope-card").first();
   await defaultWorkspaceScope.getByText("Selected", { exact: true }).click();
-  await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input").check();
+  await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input").check();
   await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+  await page.goto(`${baseURL}/#/boards?workspace=demo`);
 
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
   const inheritedWorkspaceScope = dialog.locator(".board-view-scope-card").first();
   await expect(inheritedWorkspaceScope.getByRole("radio", { name: "Selected" })).toBeChecked();
   await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input")).toBeChecked();
+  await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input")).not.toBeChecked();
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
   const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
@@ -304,6 +306,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page).toHaveURL(/#\/boards\/view-[0-9a-f]{24}$/);
   const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
+  await expect(page.locator(".board-summary")).toContainText("1 workspace");
   await expect(page.locator(".board-summary")).toContainText("1 lane selection");
   await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
@@ -311,6 +314,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.getByRole("button", { name: "Edit view" }).click();
   const editView = page.getByRole("dialog", { name: "Edit board view" });
   await expect(editView.getByRole("button", { name: "Delete view" })).toBeVisible();
+  await editView.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
   const editEpicScope = editView.locator(".board-view-scope-card", { hasText: "Epic lanes" });
   await editEpicScope.getByText("All", { exact: true }).click();
   await editEpicScope.getByText("No epic", { exact: true }).click();
@@ -402,6 +406,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
 	await page.setViewportSize({ width: 710, height: 900 });
 	await page.goto(`${baseURL}/#/boards`);
+	await page.getByRole("button", { name: "Edit view" }).click();
+	const resetDefault = page.getByRole("dialog", { name: "Edit default board" });
+	await resetDefault.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
+	await resetDefault.getByRole("button", { name: "Save settings" }).click();
 	const breakpointCard = page.locator(".board-card").first();
 	await expect(breakpointCard).toBeVisible();
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);

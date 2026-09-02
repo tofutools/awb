@@ -1574,6 +1574,11 @@ function defaultBoardView(): BoardView {
     ...defaultBoardPreferences(), created_at: "", updated_at: "" };
 }
 
+function effectiveDefaultBoardView(route: Route): BoardView {
+  const view = defaultBoardView(); const workspaces = route.query.getAll("workspace");
+  return workspaces.length === 0 ? view : { ...view, all_workspaces: false, workspaces };
+}
+
 async function openBoardPresentationSettings(ref: string): Promise<void> {
   const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
   dialog.setAttribute("aria-labelledby", "board-presentation-settings-heading");
@@ -2071,7 +2076,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const assignees = document.createElement("input"); assignees.value = source?.assignees.join(", ") ?? ""; assignees.placeholder = "alex, sam";
   const priority = select(["0", "1", "2", "3", "4"], String(source?.priority_max ?? 4));
   const closedDays = document.createElement("input"); closedDays.type = "number"; closedDays.min = "0"; closedDays.max = "3650"; closedDays.required = true; closedDays.value = String(source?.closed_days ?? defaultBoardPreferences().closed_days);
-  const closedCards = field("Show closed cards for (days)", closedDays);
+  const closedCards = field("Show closed for (days)", closedDays);
   closedCards.append(element("span", "board-view-help", "Epic lanes disappear as soon as they are closed."));
   filterGrid.append(field("Labels (any)", labels), field("Assignees (any)", assignees), field("Maximum priority", priority), closedCards);
   filters.append(filterGrid, hiddenPresentation.host); form.append(filters);
@@ -2188,7 +2193,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
   const saved = board.view;
   if (saved === undefined) {
-    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(defaultBoardView(), false, route, false, true)); actions.append(save);
+    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(effectiveDefaultBoardView(route), false, route, false, true)); actions.append(save);
     const settings = button("Edit view"); settings.addEventListener("click", () => void openBoardViewEditor(defaultBoardView(), false, route, true)); actions.append(settings);
   } else if (saved.owner === identity) {
     const edit = button("Edit view"); edit.addEventListener("click", () => void api.boardView(saved.id).then((full) => openBoardViewEditor(full, false, route))); actions.append(edit);
@@ -2212,7 +2217,8 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   heading.append(title, actions); view.append(heading);
   if (saved !== undefined) {
     const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
-    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
+    const workspaceCount = saved.workspaces.length;
+    const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}`));
     const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
     chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} lane ${epicLaneCount === 1 ? "selection" : "selections"}`));
     for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `Closed cards: ${saved.closed_days} days`)); summary.append(owner, chips); view.append(summary);

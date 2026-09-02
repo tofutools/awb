@@ -1425,7 +1425,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-view-section { display: grid; gap: 0.7rem; padding: 1rem 1.25rem 0; }
 .board-view-section h3 { margin: 0; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; }
 .board-view-form input:not([type="checkbox"]):not([type="radio"]), .board-view-form select {
-  width: 100%; padding: 0.48rem 0.58rem; border: 1px solid var(--line); border-radius: var(--radius);
+  width: 100%; min-width: 0; height: 2.4rem; padding: 0.48rem 0.58rem; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg); color: var(--fg); font: inherit;
 }
 .board-view-form input:focus, .board-view-form select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
@@ -1456,7 +1456,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-view-epic-picker { padding-top: 0.65rem; }
 .board-view-epic-picker > input { width: calc(100% - 1.5rem) !important; margin: 0 0.75rem 0.25rem; font-size: 0.82rem !important; }
 .board-view-no-epic { margin: 0; padding: 0.6rem 0.75rem; border-top: 1px solid var(--line); }
-.board-view-filter-grid { display: grid; grid-template-columns: 1fr 1fr 9rem 10rem; gap: 0.75rem; }
+.board-view-filter-grid { display: grid; grid-template-columns: 1fr 1fr 9rem 10rem; gap: 0.75rem; align-items: start; }
+.board-view-filter-grid > .edit-field { align-content: start; }
 .board-default-settings { width: min(28rem, calc(100vw - 2rem)); }
 .issue-board-visibility { padding: 0.1rem 0; }
 .edit-panel .issue-board-visibility > input { min-width: auto; margin-top: 0.3rem; padding: 0; border: 0; accent-color: var(--accent); }
