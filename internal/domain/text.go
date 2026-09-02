@@ -41,7 +41,10 @@ func ValidateCommitHash(s string) (string, error) {
 		return "", awberr.Usagef("commit hash must be between %d and %d hexadecimal characters", MinCommitHashLen, MaxCommitHashLen)
 	}
 	for _, r := range s {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+			continue
+		default:
 			return "", awberr.Usagef("commit hash must contain only hexadecimal characters")
 		}
 	}
