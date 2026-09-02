@@ -1310,6 +1310,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   border-bottom: 1px solid var(--line);
 }
 .attachments li { grid-template-columns: minmax(10rem, 1fr) auto auto auto; }
+.child-issues li { grid-template-columns: minmax(10rem, 1fr) auto; }
+.child-issues .badges { justify-content: flex-end; }
 .relations li { grid-template-columns: minmax(7rem, auto) minmax(7rem, auto) minmax(7rem, 1fr) auto; }
 .resource-list .inline-button { align-self: center; }
 .relation-type { font-family: var(--mono); font-size: 0.8em; color: var(--muted); }
@@ -1626,6 +1628,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .issue-heading { padding-top: 1.2rem; }
   .issue-facts { grid-template-columns: minmax(0, 1fr); }
   .attachments li { grid-template-columns: minmax(0, 1fr) auto; }
+  .child-issues li { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .child-issues .badges { justify-content: flex-start; }
   .attachments .content-type { grid-column: 1; }
   .attachments .resource-remove { grid-column: 2; grid-row: 1; }
   .relations li { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
