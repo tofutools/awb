@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -323,6 +324,60 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	name := "stale"
 	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Name: &name}, backend.ETag(updated.UpdatedAt))
 	assert.ErrorIs(t, err, awberr.ErrPreconditionFailed)
+}
+
+func TestSavedBoardFiltersSelectedEpicsBeforePaging(t *testing.T) {
+	root, ctx := newInstance(t)
+	selected := []string{}
+	hidden := []string{}
+	visible := []string{}
+	for i := range 30 {
+		epic, err := root.CreateIssue(ctx, backend.IssueCreate{
+			Workspace: "awb", Title: fmt.Sprintf("Epic %02d", i), Type: domain.TypeEpic,
+		})
+		require.NoError(t, err)
+		selected = append(selected, epic.ID)
+		switch {
+		case i < 10:
+			_, err = root.CloseIssue(ctx, epic.ID, backend.CloseRequest{}, "")
+			require.NoError(t, err)
+		case i < 20:
+			hidden = append(hidden, epic.ID)
+		default:
+			visible = append(visible, epic.ID)
+		}
+	}
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Selected", AllWorkspaces: true,
+		AllEpics: false, Epics: selected, IncludeNoEpic: false, PriorityMax: 4})
+	require.NoError(t, err)
+
+	slices.Sort(visible)
+	limit, offset := 3, 0
+	board, err := root.GetBoard(ctx, view.ID, backend.BoardQuery{
+		HiddenEpics: hidden, LaneLimit: &limit, LaneOffset: &offset,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, len(visible), board.LaneTotal)
+	require.Len(t, board.Lanes, limit)
+	assert.Equal(t, visible[:limit], laneEpicIDs(board.Lanes),
+		"closed and viewer-hidden selections are removed before the lane page is chosen")
+
+	offset = limit
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{
+		HiddenEpics: hidden, LaneLimit: &limit, LaneOffset: &offset,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, visible[offset:offset+limit], laneEpicIDs(board.Lanes))
+}
+
+func laneEpicIDs(lanes []domain.BoardLane) []string {
+	ids := make([]string, 0, len(lanes))
+	for _, lane := range lanes {
+		if lane.Epic != nil {
+			ids = append(ids, lane.Epic.ID)
+		}
+	}
+	return ids
 }
 
 func TestDefaultBoardAcceptsTheSameScopeAndIssueFiltersAsSavedViews(t *testing.T) {

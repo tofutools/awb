@@ -9,18 +9,43 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// ListBoardEpics returns visible epic issues in the workspaces selected by a
-// board. A nil workspace set means every workspace allowed by the transaction;
-// a non-nil empty set means none.
-func (t *Tx) ListBoardEpics(workspaces, hiddenEpics []string, closedAfter string, limit, offset *int) ([]domain.Issue, int, error) {
-	if workspaces != nil && len(workspaces) == 0 {
+// ListBoardEpics returns visible epic issues in the workspaces and optional
+// explicit epic set selected by a board. A nil set means every value allowed
+// by the transaction; a non-nil empty set means none.
+func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter string, limit, offset *int) ([]domain.Issue, int, error) {
+	if (workspaces != nil && len(workspaces) == 0) || (epics != nil && len(epics) == 0) {
 		return []domain.Issue{}, 0, nil
 	}
 	return t.ListIssues(&domain.Filter{
 		Workspaces: workspaces, ExcludeIDs: hiddenEpics, Types: []domain.Type{domain.TypeEpic},
+		IDs:   epics,
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
 		BoardOnly: true, IncludeClosed: true, ClosedAfter: closedAfter,
 	})
+}
+
+// ListVisibleEpicIDs filters a saved view's configured epic IDs through the
+// transaction's visibility and active-workspace scope without hydrating the
+// full issues one at a time.
+func (t *Tx) ListVisibleEpicIDs(ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return []string{}, nil
+	}
+	c := t.selection(&domain.Filter{IDs: ids, Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true})
+	rows, err := t.q.QueryContext(t.ctx, `SELECT i.id FROM issues i WHERE `+c.where()+` ORDER BY i.id`, c.args...)
+	if err != nil {
+		return nil, awberr.Wrap(awberr.Runtime, err, "list visible board view epics")
+	}
+	defer rows.Close()
+	result := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, awberr.Wrap(awberr.Runtime, err, "list visible board view epics")
+		}
+		result = append(result, id)
+	}
+	return result, awberr.Wrap(awberr.Runtime, rows.Err(), "list visible board view epics")
 }
 
 func scanBoardView(row rowScanner) (*domain.BoardView, error) {
