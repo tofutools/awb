@@ -491,7 +491,14 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 		}
 		allEpics, includeNoEpic := true, true
-		selectedEpics := slices.Clone(query.Epics)
+		selectedEpics := make([]string, 0, len(query.Epics))
+		seenEpics := map[string]bool{}
+		for _, id := range query.Epics {
+			if !seenEpics[id] {
+				selectedEpics = append(selectedEpics, id)
+				seenEpics[id] = true
+			}
+		}
 		if query.AllEpics != nil {
 			allEpics = *query.AllEpics
 		}

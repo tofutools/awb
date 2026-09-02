@@ -1486,7 +1486,8 @@ function boardHiddenEpicsKey(ref: string): string {
 function hiddenBoardEpics(ref: string): Set<string> {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(boardHiddenEpicsKey(ref)) ?? "[]");
-    return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : []);
+    return new Set(Array.isArray(stored) ? stored.filter((value): value is string =>
+      typeof value === "string" && /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(value)) : []);
   } catch {
     return new Set();
   }
@@ -1522,6 +1523,7 @@ async function hiddenEpicEditor(ref: string): Promise<{ host: HTMLElement; input
 }
 
 const defaultBoardClosedDaysFallback = 30;
+const boardLabelLikePattern = /^[a-z0-9._/-]+$/;
 
 type DefaultBoardPreferences = Pick<BoardView,
   "all_workspaces" | "workspaces" | "all_epics" | "epics" | "include_no_epic" |
@@ -1551,11 +1553,12 @@ function defaultBoardPreferences(): DefaultBoardPreferences {
     const priority = Number(value.priority_max); const closedDays = Number(value.closed_days);
     return {
       all_workspaces: typeof value.all_workspaces === "boolean" ? value.all_workspaces : fallback.all_workspaces,
-      workspaces: strings(value.workspaces),
+      workspaces: strings(value.workspaces).filter((item) => item.length <= 16 && /^[a-z][a-z0-9-]*$/.test(item)),
       all_epics: typeof value.all_epics === "boolean" ? value.all_epics : fallback.all_epics,
-      epics: strings(value.epics),
+      epics: strings(value.epics).filter((item) => /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(item)),
       include_no_epic: typeof value.include_no_epic === "boolean" ? value.include_no_epic : fallback.include_no_epic,
-      labels: strings(value.labels), assignees: strings(value.assignees),
+      labels: strings(value.labels).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
+      assignees: strings(value.assignees).filter((item) => item.length <= 64 && boardLabelLikePattern.test(item)),
       priority_max: Number.isInteger(priority) && priority >= 0 && priority <= 4 ? priority as 0|1|2|3|4 : fallback.priority_max,
       closed_days: Number.isInteger(closedDays) && closedDays >= 0 && closedDays <= 3650 ? closedDays : fallback.closed_days,
     };
@@ -1569,6 +1572,28 @@ function saveDefaultBoardPreferences(value: DefaultBoardPreferences): void {
 function defaultBoardView(): BoardView {
   return { id: "default", name: "Default board", owner: identity, shared: false,
     ...defaultBoardPreferences(), created_at: "", updated_at: "" };
+}
+
+async function openBoardPresentationSettings(ref: string): Promise<void> {
+  const dialog = element("dialog", "board-view-dialog") as HTMLDialogElement;
+  dialog.setAttribute("aria-labelledby", "board-presentation-settings-heading");
+  const form = element("form", "board-view-form") as HTMLFormElement; form.method = "dialog";
+  const header = element("header", "board-view-dialog-header");
+  const heading = element("h2", "", "View settings"); heading.id = "board-presentation-settings-heading";
+  header.append(heading, element("p", "muted", "These presentation settings apply only to you in this browser."));
+  const hidden = await hiddenEpicEditor(ref);
+  const section = element("section", "board-view-section"); section.append(hidden.host);
+  const actions = element("footer", "board-view-dialog-actions");
+  const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
+  const save = element("button", "primary-button", "Save settings") as HTMLButtonElement; save.type = "submit";
+  actions.append(cancel, save); form.append(header, section, actions); dialog.append(form); document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveHiddenBoardEpics(ref, new Set(hidden.inputs.filter((input) => input.checked).map((input) => input.value)));
+    dialog.close(); void render();
+  });
+  dialog.showModal(); save.focus();
 }
 
 function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
@@ -1940,7 +1965,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   return host;
 }
 
-async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route, editDefault = false): Promise<void> {
+async function openBoardViewEditor(source: BoardView | null, duplicate: boolean, route: Route, editDefault = false, saveAsNew = false): Promise<void> {
   let preferences: WorkspacePreference[] = [];
   try { preferences = await api.workspacePreferences(); } catch {
     const workspaces = await api.workspaces();
@@ -1954,20 +1979,20 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const form = element("form", "board-view-form") as HTMLFormElement;
   form.method = "dialog";
   const header = element("header", "board-view-dialog-header");
-  const heading = element("h2", "", editDefault ? "Edit default board" : source === null ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
+  const heading = element("h2", "", editDefault ? "Edit default board" : source === null || saveAsNew ? "Save board view" : duplicate ? "Duplicate board view" : "Edit board view");
   heading.id = "board-view-dialog-heading";
   header.append(heading, element("p", "muted", editDefault
     ? "These settings apply to your default board in this browser."
-    : source === null
+    : source === null || saveAsNew
     ? "Keep this board scope and its filters for later."
     : duplicate ? "Create your own copy of this board view."
       : "Update who can open this view, its scope, and its issue filters."));
   form.append(header);
   const basics = element("section", "board-view-section"); basics.append(element("h3", "", "Basics"));
   const name = document.createElement("input");
-  name.required = true; name.maxLength = 100; name.value = source === null ? "" : `${source.name}${duplicate ? " copy" : ""}`;
+  name.required = true; name.maxLength = 100; name.value = source === null || saveAsNew ? "" : `${source.name}${duplicate ? " copy" : ""}`;
   const nameField = field("Name", name); nameField.append(element("span", "board-view-help", "A short name shown in the board view picker.")); basics.append(nameField);
-  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && (source?.shared ?? false);
+  const shared = document.createElement("input"); shared.type = "checkbox"; shared.checked = !duplicate && !saveAsNew && (source?.shared ?? false);
   const sharedLabel = element("label", "board-view-check"); const sharedCopy = element("span", "board-view-check-copy");
   sharedCopy.append(element("span", "", "Anyone with the link can open this view"), element("span", "board-view-help", "Only issues they already have access to will be shown."));
   sharedLabel.append(shared, sharedCopy); basics.append(sharedLabel);
@@ -2053,8 +2078,8 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   const error = element("p", "edit-error");
   const actions = element("footer", "board-view-dialog-actions");
   const cancel = button("Cancel"); cancel.addEventListener("click", () => dialog.close());
-  const save = element("button", "primary-button", editDefault ? "Save settings" : source === null ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
-  if (source !== null && !duplicate && !editDefault && source.owner === identity) {
+  const save = element("button", "primary-button", editDefault ? "Save settings" : source === null || saveAsNew ? "Save view" : duplicate ? "Duplicate" : "Save changes") as HTMLButtonElement; save.type = "submit";
+  if (source !== null && !duplicate && !editDefault && !saveAsNew && source.owner === identity) {
     const remove = button("Delete view", "danger-button board-view-delete");
     remove.addEventListener("click", async () => {
       const confirmed = await confirmMutation(
@@ -2073,11 +2098,20 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   dialog.addEventListener("close", () => dialog.remove());
   form.addEventListener("submit", (event) => {
     event.preventDefault(); save.disabled = true; error.textContent = "";
+    const labelFilters = splitBoardFilter(labels.value); const assigneeFilters = splitBoardFilter(assignees.value);
+    const invalidLabel = labelFilters.find((value) => value.length > 64 || !boardLabelLikePattern.test(value));
+    const invalidAssignee = assigneeFilters.find((value) => value.length > 64 || !boardLabelLikePattern.test(value));
+    if (invalidLabel !== undefined || invalidAssignee !== undefined) {
+      save.disabled = false;
+      const kind = invalidLabel !== undefined ? "Label" : "Assignee"; const value = invalidLabel ?? invalidAssignee;
+      error.textContent = `${kind} “${value}” must use at most 64 lowercase letters, digits, hyphens, underscores, dots, or slashes.`;
+      (invalidLabel !== undefined ? labels : assignees).focus(); return;
+    }
     const body: BoardViewCreate = { name: name.value, shared: shared.checked, all_workspaces: workspaceMode.all.checked,
       workspaces: workspaceMode.all.checked ? [] : workspaceInputs.filter((input) => input.checked).map((input) => input.value).sort(),
       all_epics: epicMode.all.checked, epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
       include_no_epic: noEpic.checked,
-      labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value), priority_max: Number(priority.value) as 0|1|2|3|4,
+      labels: labelFilters, assignees: assigneeFilters, priority_max: Number(priority.value) as 0|1|2|3|4,
       closed_days: Number(closedDays.value) };
     if (!body.all_epics && (body.epics?.length ?? 0) === 0 && !body.include_no_epic) {
       save.disabled = false; error.textContent = "Select at least one epic lane or include No epic."; return;
@@ -2087,13 +2121,13 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
         workspaces: workspaceMode.all.checked ? [] : workspaceInputs.filter((input) => input.checked).map((input) => input.value).sort(),
         all_epics: epicMode.all.checked,
         epics: epicMode.all.checked ? [] : epicInputs.filter((input) => input.checked).map((input) => input.value).sort(),
-        include_no_epic: noEpic.checked, labels: splitBoardFilter(labels.value), assignees: splitBoardFilter(assignees.value),
+        include_no_epic: noEpic.checked, labels: labelFilters, assignees: assigneeFilters,
         priority_max: Number(priority.value) as 0|1|2|3|4, closed_days: Number(closedDays.value) });
       saveHiddenBoardEpics("default", new Set(hiddenPresentation.inputs.filter((input) => input.checked).map((input) => input.value)));
       dialog.close(); void render(); return;
     }
     let operation: Promise<BoardView>;
-    if (source !== null && !duplicate) {
+    if (source !== null && !duplicate && !saveAsNew) {
       const patch: BoardViewPatch = {};
       if (body.name !== source.name) patch.name = body.name;
       if (body.shared !== source.shared) patch.shared = body.shared;
@@ -2154,12 +2188,13 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
   const saved = board.view;
   if (saved === undefined) {
-    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(null, false, route)); actions.append(save);
+    const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(defaultBoardView(), false, route, false, true)); actions.append(save);
     const settings = button("Edit view"); settings.addEventListener("click", () => void openBoardViewEditor(defaultBoardView(), false, route, true)); actions.append(settings);
   } else if (saved.owner === identity) {
     const edit = button("Edit view"); edit.addEventListener("click", () => void api.boardView(saved.id).then((full) => openBoardViewEditor(full, false, route))); actions.append(edit);
   } else {
     const duplicate = button("Duplicate"); duplicate.addEventListener("click", () => void openBoardViewEditor(saved, true, route)); actions.append(duplicate);
+    const settings = button("View settings"); settings.addEventListener("click", () => void openBoardPresentationSettings(saved.id)); actions.append(settings);
   }
   if (saved?.shared) {
     const share = button("Copy link", "primary-button");

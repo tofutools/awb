@@ -327,10 +327,11 @@ func TestDefaultBoardAcceptsTheSameScopeAndIssueFiltersAsSavedViews(t *testing.T
 
 	allWorkspaces, allEpics, includeNoEpic, priorityMax := false, false, false, 2
 	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{AllWorkspaces: &allWorkspaces, Workspaces: []string{"awb"},
-		AllEpics: &allEpics, Epics: []string{first.ID},
+		AllEpics: &allEpics, Epics: []string{first.ID, first.ID},
 		IncludeNoEpic: &includeNoEpic, Labels: []string{"release"}, Assignees: []string{"alex"}, PriorityMax: &priorityMax})
 	require.NoError(t, err)
 	require.Len(t, board.Lanes, 1)
+	assert.Equal(t, 1, board.LaneTotal, "repeated selected epic IDs describe one lane")
 	require.NotNil(t, board.Lanes[0].Epic)
 	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
 	assert.Equal(t, []string{matching.ID}, issueIDs(board.Lanes[0].Columns[1].Issues))

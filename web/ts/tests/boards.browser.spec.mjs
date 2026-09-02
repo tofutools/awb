@@ -278,8 +278,22 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await closedCard.getByLabel(/Status for demo-/).selectOption("in_progress");
   await expect.poll(() => page.locator(".board-card", { hasText: "Design the catalogue database schema" }).getByText(/@/).count()).toBe(1);
 
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const defaultEditor = page.getByRole("dialog", { name: "Edit default board" });
+  await defaultEditor.getByLabel("Labels (any)").fill("Release");
+  await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+  await expect(defaultEditor.locator(".edit-error")).toContainText("must use at most 64 lowercase");
+  await defaultEditor.getByLabel("Labels (any)").fill("");
+  const defaultWorkspaceScope = defaultEditor.locator(".board-view-scope-card").first();
+  await defaultWorkspaceScope.getByText("Selected", { exact: true }).click();
+  await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input").check();
+  await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+
   await page.getByRole("button", { name: "Save as view" }).click();
   const dialog = page.getByRole("dialog", { name: "Save board view" });
+  const inheritedWorkspaceScope = dialog.locator(".board-view-scope-card").first();
+  await expect(inheritedWorkspaceScope.getByRole("radio", { name: "Selected" })).toBeChecked();
+  await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input")).toBeChecked();
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
   const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
