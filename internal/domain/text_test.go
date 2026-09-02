@@ -100,6 +100,32 @@ func TestValidateDescription(t *testing.T) {
 	})
 }
 
+func TestValidateImplementationLinks(t *testing.T) {
+	t.Run("commit hash", func(t *testing.T) {
+		for _, value := range []string{"", "01234567", strings.Repeat("A", domain.MaxCommitHashLen)} {
+			got, err := domain.ValidateCommitHash(value)
+			require.NoError(t, err)
+			assert.Equal(t, value, got)
+		}
+		for _, value := range []string{"1234567", "1234567g", strings.Repeat("a", domain.MaxCommitHashLen+1)} {
+			_, err := domain.ValidateCommitHash(value)
+			assertUsage(t, err, value)
+		}
+	})
+
+	t.Run("pull request URL", func(t *testing.T) {
+		for _, value := range []string{"", "http://example.com/pull/1", "https://example.com/pull/1#discussion"} {
+			got, err := domain.ValidatePullRequestURL(value)
+			require.NoError(t, err)
+			assert.Equal(t, value, got)
+		}
+		for _, value := range []string{"example.com/pull/1", "ftp://example.com/pull/1", "https:///pull/1", strings.Repeat("x", domain.MaxPullRequestURLLen+1)} {
+			_, err := domain.ValidatePullRequestURL(value)
+			assertUsage(t, err, value)
+		}
+	})
+}
+
 func TestValidateWorkspaceKey(t *testing.T) {
 	for _, s := range []string{"awb", "a", "web-ui", "x1", "a-1-b"} {
 		got, err := domain.ValidateWorkspaceKey(s)

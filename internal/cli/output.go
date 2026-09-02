@@ -641,6 +641,8 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
 	e.field(t, "Assignees", t.apply(t.assignee, strings.Join(issue.Assignees, ", ")))
 	e.field(t, "Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
+	e.field(t, "Commit", issue.CommitHash)
+	e.field(t, "Pull request", issue.PullRequestURL)
 	e.field(t, "Created", issue.CreatedAt)
 	e.field(t, "Updated", issue.UpdatedAt)
 

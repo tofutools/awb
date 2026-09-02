@@ -118,6 +118,30 @@ func TestCreateIssue(t *testing.T) {
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 }
 
+func TestIssueImplementationLinks(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"Linked","commit_hash":"01234567","pull_request_url":"https://example.com/issues/42"}`)
+	assert.Equal(t, "01234567", issue.CommitHash)
+	assert.Equal(t, "https://example.com/issues/42", issue.PullRequestURL)
+
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"commit_hash":"","pull_request_url":"http://example.com/pull/43"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var updated domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
+	assert.Empty(t, updated.CommitHash)
+	assert.Equal(t, "http://example.com/pull/43", updated.PullRequestURL)
+
+	for _, body := range []string{
+		`{"commit_hash":"1234567"}`,
+		`{"commit_hash":"1234567g"}`,
+		`{"pull_request_url":"ssh://example.com/repo"}`,
+	} {
+		resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	}
+}
+
 func TestSearchNavigation(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Keyboard Command Palette"}`)

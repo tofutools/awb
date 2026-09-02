@@ -30,6 +30,12 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	if issue.Description, err = domain.ValidateDescription(req.Description); err != nil {
 		return nil, err
 	}
+	if issue.CommitHash, err = domain.ValidateCommitHash(req.CommitHash); err != nil {
+		return nil, err
+	}
+	if issue.PullRequestURL, err = domain.ValidatePullRequestURL(req.PullRequestURL); err != nil {
+		return nil, err
+	}
 	if req.Type != "" {
 		if issue.Type, err = domain.ParseType(string(req.Type)); err != nil {
 			return nil, err
@@ -260,6 +266,20 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 				return err
 			}
 			fields.Description = description
+		}
+		if req.CommitHash != nil {
+			commitHash, err := domain.ValidateCommitHash(*req.CommitHash)
+			if err != nil {
+				return err
+			}
+			fields.CommitHash = commitHash
+		}
+		if req.PullRequestURL != nil {
+			pullRequestURL, err := domain.ValidatePullRequestURL(*req.PullRequestURL)
+			if err != nil {
+				return err
+			}
+			fields.PullRequestURL = pullRequestURL
 		}
 		if req.Type != nil {
 			issueType, err := domain.ParseType(string(*req.Type))

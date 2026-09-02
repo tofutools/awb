@@ -339,7 +339,7 @@ func TestFieldsWithNoValuePrintNothing(t *testing.T) {
 			cfg: &config.Config{Color: mode}}
 		e.printIssueDetail(issue)
 
-		for _, absent := range []string{"Assignee", "Labels", "Closed", "Blocked by"} {
+		for _, absent := range []string{"Assignee", "Labels", "Commit", "Pull request", "Closed", "Blocked by"} {
 			assert.NotContains(t, buf.String(), absent, "colour mode %v", mode)
 		}
 		assert.Contains(t, buf.String(), "Status", "the fields that do have a value are still printed")

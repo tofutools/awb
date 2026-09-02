@@ -825,6 +825,22 @@ func TestDescriptionFromStdin(t *testing.T) {
 		"a trailing line feed from a heredoc is part of the description")
 }
 
+func TestIssueImplementationLinkFlags(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("linked", "--workspace", "awb", "--commit-hash", "01234567",
+		"--pull-request-url", "https://example.com/pull/42")
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, "01234567", issue.CommitHash)
+	assert.Equal(t, "https://example.com/pull/42", issue.PullRequestURL)
+
+	h.mustRun("update", id, "--commit-hash", "", "--pull-request-url", "http://example.com/pull/43")
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Empty(t, issue.CommitHash)
+	assert.Equal(t, "http://example.com/pull/43", issue.PullRequestURL)
+}
+
 // The Markdown gate is the operation layer's, so direct mode gets it from the
 // same place the API does: every command that writes a Markdown field refuses
 // raw HTML and an unsupported link or image scheme, as a usage error.

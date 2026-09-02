@@ -10,7 +10,7 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, workspace, title, description, type, status, priority, board_order,
+const issueColumns = `id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, board_order,
 	board_hidden, created_at, updated_at, closed_at`
 
 type rowScanner interface {
@@ -19,7 +19,7 @@ type rowScanner interface {
 
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.Type, &i.Status,
+	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.CommitHash, &i.PullRequestURL, &i.Type, &i.Status,
 		&i.Priority, &i.Order, &i.BoardHidden, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
 	if err != nil {
 		return nil, err
@@ -307,8 +307,8 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.Type,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL, issue.Type,
 			issue.Status, issue.Priority, issue.Order, issue.BoardHidden,
 			issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
 		if err == nil {
@@ -336,20 +336,22 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 // IssueFields are the stored fields an update may change.
 type IssueFields struct {
-	Title       string
-	Description string
-	Type        domain.Type
-	Status      domain.Status
-	Priority    int
-	Order       int
-	BoardHidden bool
-	Assignees   []string
+	Title          string
+	Description    string
+	CommitHash     string
+	PullRequestURL string
+	Type           domain.Type
+	Status         domain.Status
+	Priority       int
+	Order          int
+	BoardHidden    bool
+	Assignees      []string
 }
 
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
-		Title: i.Title, Description: i.Description, Type: i.Type, Status: i.Status,
+		Title: i.Title, Description: i.Description, CommitHash: i.CommitHash, PullRequestURL: i.PullRequestURL, Type: i.Type, Status: i.Status,
 		Priority: i.Priority, Order: i.Order, BoardHidden: i.BoardHidden,
 		Assignees: slices.Clone(i.Assignees),
 	}
@@ -363,7 +365,7 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		return err
 	}
 	before := Fields(issue)
-	if before.Title == fields.Title && before.Description == fields.Description &&
+	if before.Title == fields.Title && before.Description == fields.Description && before.CommitHash == fields.CommitHash && before.PullRequestURL == fields.PullRequestURL &&
 		before.Type == fields.Type && before.Status == fields.Status &&
 		before.Priority == fields.Priority && before.Order == fields.Order &&
 		before.BoardHidden == fields.BoardHidden &&
@@ -387,10 +389,10 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET title = ?, description = ?, type = ?, status = ?, priority = ?, board_order = ?,
+		   SET title = ?, description = ?, commit_hash = ?, pull_request_url = ?, type = ?, status = ?, priority = ?, board_order = ?,
 		       board_hidden = ?, updated_at = ?, closed_at = ?
 		 WHERE id = ?`,
-		fields.Title, fields.Description, fields.Type, fields.Status, fields.Priority, fields.Order,
+		fields.Title, fields.Description, fields.CommitHash, fields.PullRequestURL, fields.Type, fields.Status, fields.Priority, fields.Order,
 		fields.BoardHidden, updated, closedAt, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
@@ -411,6 +413,8 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	issue.Title = fields.Title
 	issue.Description = fields.Description
+	issue.CommitHash = fields.CommitHash
+	issue.PullRequestURL = fields.PullRequestURL
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority

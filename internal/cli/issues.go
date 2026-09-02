@@ -70,6 +70,8 @@ type createParams struct {
 	Title          string   `positional:"true" required:"true"`
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
+	CommitHash     string   `long:"commit-hash" optional:"true" help:"implementing commit hash"`
+	PullRequestURL string   `long:"pull-request-url" optional:"true" help:"implementing pull request URL"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
 	Workspace      string   `long:"workspace" optional:"true" help:"the workspace to create the issue in"`
@@ -114,10 +116,12 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 
 			req := backend.IssueCreate{
-				Workspace: target,
-				Title:     p.Title,
-				Assignees: p.Assignees,
-				Type:      domain.Type(p.Type),
+				Workspace:      target,
+				Title:          p.Title,
+				Assignees:      p.Assignees,
+				Type:           domain.Type(p.Type),
+				CommitHash:     p.CommitHash,
+				PullRequestURL: p.PullRequestURL,
 			}
 			if !cmd.Flags().Changed("type") {
 				req.Type = ""
@@ -327,18 +331,20 @@ func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, interactive bool
 
 type updateParams struct {
 	DescriptionFlags
-	ID       string  `positional:"true" required:"true"`
-	Title    *string `long:"title" help:"new title"`
-	Type     *string `long:"type" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
-	Priority *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
-	Force    bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
+	ID             string  `positional:"true" required:"true"`
+	Title          *string `long:"title" help:"new title"`
+	Type           *string `long:"type" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
+	Priority       *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
+	CommitHash     *string `long:"commit-hash" help:"implementing commit hash; empty clears it"`
+	PullRequestURL *string `long:"pull-request-url" help:"implementing pull request URL; empty clears it"`
+	Force          bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
 func newUpdateCommand(e *env) *cobra.Command {
 	return boa.CmdT[updateParams]{
 		Use:   "update",
 		Short: "Change an issue's fields",
-		Long: "Change the title, description, type or priority.\n\n" +
+		Long: "Change the title, description, implementation links, type or priority.\n\n" +
 			"A description file must first be fetched with awb description get, whose\n" +
 			"receipt prevents overwriting a concurrent edit. --force deliberately\n" +
 			"replaces a description without that precondition.\n\n" +
@@ -362,6 +368,8 @@ func newUpdateCommand(e *env) *cobra.Command {
 			if p.Priority != nil {
 				patch.Priority = p.Priority
 			}
+			patch.CommitHash = p.CommitHash
+			patch.PullRequestURL = p.PullRequestURL
 			description, ifMatch, err := p.valueForUpdate(e, "issue", p.ID, p.Force)
 			if err != nil {
 				return err

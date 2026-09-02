@@ -22,13 +22,15 @@ func issueResponse(issue *domain.Issue) *api.IssueHeaders {
 func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 	*api.IssueCreatedHeaders, error) {
 	create := backend.IssueCreate{
-		Workspace:   string(req.Workspace),
-		Title:       req.Title,
-		Description: req.Description.Or(""),
-		Type:        domain.Type(req.Type.Or("")),
-		Priority:    optPriority(req.Priority),
-		Assignees:   fromAssignees(req.Assignees),
-		Labels:      fromLabels(req.Labels),
+		Workspace:      string(req.Workspace),
+		Title:          req.Title,
+		Description:    req.Description.Or(""),
+		CommitHash:     string(req.CommitHash.Or("")),
+		PullRequestURL: string(req.PullRequestURL.Or("")),
+		Type:           domain.Type(req.Type.Or("")),
+		Priority:       optPriority(req.Priority),
+		Assignees:      fromAssignees(req.Assignees),
+		Labels:         fromLabels(req.Labels),
 	}
 	parents := 0
 	for _, relation := range req.Relations {
@@ -79,11 +81,13 @@ func (h *Handler) GetIssue(ctx context.Context, params api.GetIssueParams) (
 func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 	params api.UpdateIssueParams) (*api.IssueHeaders, error) {
 	patch := backend.IssuePatch{
-		Title:       optString(req.Title),
-		Description: optString(req.Description),
-		Type:        optType(req.Type),
-		Priority:    optPriority(req.Priority),
-		BoardHidden: optBool(req.BoardHidden),
+		Title:          optString(req.Title),
+		Description:    optString(req.Description),
+		CommitHash:     optCommitHash(req.CommitHash),
+		PullRequestURL: optPullRequestURL(req.PullRequestURL),
+		Type:           optType(req.Type),
+		Priority:       optPriority(req.Priority),
+		BoardHidden:    optBool(req.BoardHidden),
 
 		ExpectStatus: optStatus(req.Status),
 	}
@@ -103,6 +107,22 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 		return nil, err
 	}
 	return issueResponse(issue), nil
+}
+
+func optCommitHash(value api.OptCommitHash) *string {
+	if got, ok := value.Get(); ok {
+		out := string(got)
+		return &out
+	}
+	return nil
+}
+
+func optPullRequestURL(value api.OptPullRequestURL) *string {
+	if got, ok := value.Get(); ok {
+		out := string(got)
+		return &out
+	}
+	return nil
 }
 
 func (h *Handler) MoveIssue(ctx context.Context, req *api.IssueMove,

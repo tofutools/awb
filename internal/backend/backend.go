@@ -290,11 +290,13 @@ type AttachmentCreate struct {
 // but Workspace and Title may be left at its zero value and then takes its
 // documented default.
 type IssueCreate struct {
-	Workspace   string
-	Title       string
-	Description string
-	Type        domain.Type
-	Priority    *int
+	Workspace      string
+	Title          string
+	Description    string
+	CommitHash     string
+	PullRequestURL string
+	Type           domain.Type
+	Priority       *int
 	// Assignees permits an atomic create-and-claim by several people.
 	Assignees []string
 	Labels    []string
@@ -317,11 +319,13 @@ type NewRelation struct {
 // A nil field is left alone; a non-nil one is written, so an empty string
 // clears an optional value.
 type IssuePatch struct {
-	Title       *string
-	Description *string
-	Type        *domain.Type
-	Priority    *int
-	BoardHidden *bool
+	Title          *string
+	Description    *string
+	CommitHash     *string
+	PullRequestURL *string
+	Type           *domain.Type
+	Priority       *int
+	BoardHidden    *bool
 
 	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,
