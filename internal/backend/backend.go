@@ -173,14 +173,15 @@ type BoardViewPatch struct {
 }
 
 type BoardQuery struct {
-	LaneLimit  *int
-	LaneOffset *int
-	CardLimit  *int
-	CardOffset *int
-	ClosedDays *int
-	Workspaces []string
-	Status     domain.Status
-	Epic       *string
+	LaneLimit   *int
+	LaneOffset  *int
+	CardLimit   *int
+	CardOffset  *int
+	ClosedDays  *int
+	Workspaces  []string
+	HiddenEpics []string
+	Status      domain.Status
+	Epic        *string
 }
 
 // WorkspacePage is a workspace listing with its unpaged total.

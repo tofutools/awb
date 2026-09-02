@@ -84,6 +84,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	for _, workspace := range query.Workspaces {
 		values.Add("workspace", workspace)
 	}
+	for _, epic := range query.HiddenEpics {
+		values.Add("hidden-epic", epic)
+	}
 	if query.Status != "" {
 		values.Set("status", string(query.Status))
 	}

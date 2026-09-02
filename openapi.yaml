@@ -795,6 +795,14 @@ paths:
             items: { $ref: '#/components/schemas/WorkspaceKey' }
           style: form
           explode: true
+        - name: hidden-epic
+          in: query
+          description: Omit these epic lanes as viewer-specific presentation state.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/IssueID' }
+          style: form
+          explode: true
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/Status' }

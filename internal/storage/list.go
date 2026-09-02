@@ -64,6 +64,9 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	c.addIn("i.type", anyArgs(f.Types))
 	c.addIn("i.priority", anyArgs(f.Priorities))
 	c.addIn("i.workspace", anyArgs(f.Workspaces))
+	if len(f.ExcludeIDs) > 0 {
+		c.add("i.id NOT IN ("+placeholders(len(f.ExcludeIDs))+")", anyArgs(f.ExcludeIDs)...)
+	}
 
 	if f.PriorityMax != nil {
 		// Inclusive, and reading as urgency rather than as a number: because 0 is

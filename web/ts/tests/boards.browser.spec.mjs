@@ -111,6 +111,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
+  await expect(releaseLane.locator(":scope > .board-lane-heading h2 a")).toHaveAttribute("href", /^#\/issues\/demo-/);
   const inProgressColumn = releaseLane.locator(".board-column[data-status='in_progress']");
   const relatedID = await page.locator(".board-card").first().getAttribute("data-issue");
   expect(relatedID).toBeTruthy();
@@ -432,14 +433,32 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const hideableLane = hideableLanes.first();
   const hideableHeading = await hideableLane.locator(":scope > .board-lane-heading h2").textContent();
   expect(hideableHeading).toBeTruthy();
-  const hideableEpicID = await hideableLane.getByRole("button", { name: /Hide .* from boards/ }).getAttribute("aria-label")
+  const hideableEpicID = await hideableLane.getByRole("button", { name: /Hide .* from this view/ }).getAttribute("aria-label")
     .then((label) => label?.split(" ")[1]);
   expect(hideableEpicID).toBeTruthy();
-  await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from boards` }).click();
+  await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from this view` }).click();
   await expect(page.locator(".board-lane", { has: page.getByRole("heading", { name: hideableHeading, exact: true }) })).toHaveCount(0);
-  await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(true);
+  await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(false);
+  await page.getByRole("button", { name: "Board settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Default board settings" });
+  await expect(settings.getByRole("heading", { name: "Hidden epic lanes" })).toBeVisible();
+  await settings.getByLabel(`Hide ${hideableEpicID} in this view`).uncheck();
+  await settings.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByRole("heading", { name: hideableHeading, exact: true })).toBeVisible();
 
   await page.goto(savedViewURL);
+  const savedHideableLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Platform epic/ }) });
+  const savedHideableHeading = await savedHideableLane.locator(":scope > .board-lane-heading h2").textContent();
+  const savedHideableID = await savedHideableLane.getByRole("button", { name: /Hide .* from this view/ }).getAttribute("aria-label")
+    .then((label) => label?.split(" ")[1]);
+  expect(savedHideableHeading).toBeTruthy(); expect(savedHideableID).toBeTruthy();
+  await savedHideableLane.getByRole("button", { name: `Hide ${savedHideableID} from this view` }).click();
+  await expect(page.getByRole("heading", { name: savedHideableHeading, exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit view" }).click();
+  const restoreDialog = page.getByRole("dialog", { name: "Edit board view" });
+  await restoreDialog.getByLabel(`Hide ${savedHideableID} in this view`).uncheck();
+  await restoreDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("heading", { name: savedHideableHeading, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit view" }).click();
   await page.getByRole("dialog", { name: "Edit board view" }).getByRole("button", { name: "Delete" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "Delete board view?" });

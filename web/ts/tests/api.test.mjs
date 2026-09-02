@@ -161,13 +161,15 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   await api.boardView("view-aaaaaaaaaaaaaaaaaaaaaaaa");
   await api.updateBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa", { name: "Next" });
   await api.board("view-aaaaaaaaaaaaaaaaaaaaaaaa", {
-    workspace: ["awb", "web"], status: "open", epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
+    workspace: ["awb", "web"], "hidden-epic": ["awb-hidden", "web-hidden"], status: "open",
+    epic: "awb-epic", "lane-limit": 10, "card-offset": 8,
   });
 
   assert.equal(calls[0].path, "api/board-views/view-aaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"view-v1"');
   const boardURL = new URL(calls[2].path, "https://example.test/");
   assert.deepEqual(boardURL.searchParams.getAll("workspace"), ["awb", "web"]);
+  assert.deepEqual(boardURL.searchParams.getAll("hidden-epic"), ["awb-hidden", "web-hidden"]);
   assert.equal(boardURL.searchParams.get("status"), "open");
   assert.equal(boardURL.searchParams.get("epic"), "awb-epic");
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");

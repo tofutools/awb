@@ -240,14 +240,22 @@ func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, specific.Lanes, 1)
 	assert.Equal(t, visibleEpic.ID, specific.Lanes[0].Epic.ID)
+	hiddenFromView, err := root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{HiddenEpics: []string{visibleEpic.ID}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, hiddenFromView.LaneTotal, "the No epic lane remains while the requested epic is excluded")
+	require.Len(t, hiddenFromView.Lanes, 1)
+	assert.Nil(t, hiddenFromView.Lanes[0].Epic)
 	for _, query := range []backend.BoardQuery{
 		{Epic: &hiddenEpic.ID},
 		{Epic: &hiddenEpic.ID, LaneLimit: &zero},
 		{Epic: &hiddenEpic.ID, LaneOffset: &one},
+		{Epic: &visibleEpic.ID, HiddenEpics: []string{visibleEpic.ID}},
 	} {
 		_, err = root.WithUser("alice").GetBoard(ctx, "default", query)
 		notFound(t, err, "pagination must not bypass explicit epic validation")
 	}
+	_, err = root.WithUser("alice").GetBoard(ctx, "default", backend.BoardQuery{HiddenEpics: []string{"not-an-id"}})
+	assert.Equal(t, 2, exitOf(err))
 }
 
 func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
@@ -266,6 +274,9 @@ func TestSavedBoardSelectsAndUpdatesEpicLanes(t *testing.T) {
 	require.Len(t, board.Lanes, 1)
 	require.NotNil(t, board.Lanes[0].Epic)
 	assert.Equal(t, first.ID, board.Lanes[0].Epic.ID)
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{HiddenEpics: []string{first.ID}})
+	require.NoError(t, err)
+	assert.Zero(t, board.LaneTotal, "viewer presentation state can hide a pinned lane without changing the view")
 	_, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{Epic: &second.ID})
 	notFound(t, err, "an explicit lane cannot escape a saved view's pinned epic set")
 

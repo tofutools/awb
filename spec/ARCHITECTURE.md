@@ -189,7 +189,10 @@ Each saved view also owns its closed-card retention window; the default board
 accepts the same window as a request preference. Board-hidden issues never enter
 the projection. A closed epic stops being a lane immediately, while a closed
 non-epic card remains until its most recent close is older than that window.
-Card pagination remains independent for every epic and status column.
+Epic lanes may also be hidden as viewer-local presentation state for one board
+without changing the epic or a saved view's shared definition. The exclusion
+is applied before lane totals and pagination. Card pagination remains
+independent for every epic and status column.
 
 Ignoring a workspace is per-user presentation state. Normal discovery excludes
 it, while the dedicated preference recovery path can still list it. This layer

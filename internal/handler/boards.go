@@ -150,6 +150,9 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 	for _, value := range params.Workspace {
 		query.Workspaces = append(query.Workspaces, string(value))
 	}
+	for _, value := range params.HiddenEpic {
+		query.HiddenEpics = append(query.HiddenEpics, string(value))
+	}
 	if value, ok := params.Status.Get(); ok {
 		query.Status = domain.Status(value)
 	}

@@ -41,6 +41,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/boards/"+id:
 			assert.Equal(t, []string{"awb", "web"}, r.URL.Query()["workspace"])
+			assert.Equal(t, []string{"awb-hidden", "web-hidden"}, r.URL.Query()["hidden-epic"])
 			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
 			assert.Equal(t, "14", r.URL.Query().Get("closed-days"))
@@ -80,7 +81,8 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 
 	laneLimit, cardOffset, closedDays, epic := 7, 3, 14, "awb-epic"
 	_, err = client.GetBoard(t.Context(), id, backend.BoardQuery{LaneLimit: &laneLimit, CardOffset: &cardOffset,
-		ClosedDays: &closedDays, Workspaces: []string{"awb", "web"}, Status: domain.StatusOpen, Epic: &epic})
+		ClosedDays: &closedDays, Workspaces: []string{"awb", "web"}, HiddenEpics: []string{"awb-hidden", "web-hidden"},
+		Status: domain.StatusOpen, Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
 		Status: domain.StatusOpen, Epic: &epic, Direction: "earlier",

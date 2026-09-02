@@ -432,6 +432,11 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			return nil, err
 		}
 	}
+	for _, epic := range query.HiddenEpics {
+		if _, err := domain.ValidateIssueID(epic); err != nil {
+			return nil, err
+		}
+	}
 	if query.Status != "" {
 		if _, err := domain.ParseStatus(string(query.Status)); err != nil {
 			return nil, err
@@ -511,6 +516,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				(*query.Epic != "none" && !view.AllEpics && !slices.Contains(view.Epics, *query.Epic))) {
 				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 			}
+			if slices.Contains(query.HiddenEpics, *query.Epic) {
+				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+			}
 			result.LaneTotal = 1
 			var epic *domain.Issue
 			if *query.Epic != "none" {
@@ -540,7 +548,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 					}
 					return loadErr
 				}
-				if boardEpicVisible(epic) &&
+				if boardEpicVisible(epic) && !slices.Contains(query.HiddenEpics, epic.ID) &&
 					(laneSelection == nil || slices.Contains(laneSelection, epic.Workspace)) {
 					selectedEpics = append(selectedEpics, *epic)
 				}
@@ -571,7 +579,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if includeNoEpic {
 				epicLimit--
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, query.HiddenEpics, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}

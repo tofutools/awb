@@ -217,6 +217,10 @@ type Filter struct {
 	Unassigned bool
 
 	Workspaces []string
+	// ExcludeIDs removes exact issue IDs. It is board-internal: default and
+	// named board presentation preferences use it to omit epic lanes without
+	// changing the issues or a saved view's shared filter definition.
+	ExcludeIDs []string
 	// Parent selects the direct children of that issue — the issues whose
 	// has-parent relation names it — not the whole subtree.
 	Parent string
