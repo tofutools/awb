@@ -26,8 +26,10 @@ var (
 )
 
 // newTestDatabase copies a blank, current database rather than running the
-// complete migration history for every test. Each test still gets its own
-// file and connection, so transaction and SQLite behaviour remain covered.
+// complete migration history for every test. Closing the template checkpoints
+// and removes its WAL, so the database file is complete on its own. Each test
+// still gets its own file and connection, preserving transaction and SQLite
+// behaviour.
 func newTestDatabase(t *testing.T, path string) *storage.DB {
 	t.Helper()
 	testDatabaseOnce.Do(func() {
@@ -39,7 +41,7 @@ func newTestDatabase(t *testing.T, path string) *storage.DB {
 		defer os.RemoveAll(dir)
 
 		templatePath := filepath.Join(dir, "awb.db")
-		db, err := storage.Init(t.Context(), templatePath)
+		db, err := storage.Init(context.Background(), templatePath)
 		if err != nil {
 			testDatabaseErr = err
 			return

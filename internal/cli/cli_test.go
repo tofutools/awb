@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -40,8 +41,9 @@ var (
 )
 
 // writeTestDatabase gives the general CLI tests an isolated, current database
-// without replaying the migration history in every harness. Tests of init and
-// migrations still exercise storage.Init directly.
+// without replaying the migration history in every harness. Closing the
+// template checkpoints and removes its WAL, so the database file is complete
+// on its own. Tests of init and migrations still exercise storage.Init directly.
 func writeTestDatabase(t *testing.T, path string) {
 	t.Helper()
 	cliTestDatabaseOnce.Do(func() {
@@ -53,7 +55,7 @@ func writeTestDatabase(t *testing.T, path string) {
 		defer os.RemoveAll(dir)
 
 		templatePath := filepath.Join(dir, "awb.db")
-		db, err := storage.Init(t.Context(), templatePath)
+		db, err := storage.Init(context.Background(), templatePath)
 		if err != nil {
 			cliTestDatabaseErr = err
 			return
@@ -559,6 +561,8 @@ func TestOutputIsDeterministic(t *testing.T) {
 		{"workspace", "list", "--json"},
 	} {
 		first := h.mustRun(args...)
+		// The contract is equality across two invocations; further repetitions
+		// sample for flakiness without covering another behaviour.
 		assert.Equal(t, first, h.mustRun(args...), args)
 	}
 }
@@ -648,6 +652,8 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 			}
 			first := h.mustRun(full...)
 			assert.NotEmpty(t, first, full)
+			// The breadth comes from the commands, modes and sort keys above;
+			// a second invocation is the comparison the contract requires.
 			assert.Equal(t, first, h.mustRun(full...), full)
 		}
 	}
