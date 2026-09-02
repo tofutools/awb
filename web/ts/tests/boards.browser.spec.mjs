@@ -111,13 +111,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect.poll(() => hoverCard.evaluate((card) => getComputedStyle(card).backgroundColor)).not.toBe(idleBackground);
   // The surrounding lane and column already identify each card's epic and
   // status, so cards stay compact and do not repeat them as form controls.
-  await expect(page.locator(".board-card select, .board-card-move")).toHaveCount(0);
-  const unchangedID = await hoverCard.getAttribute("data-issue");
-  expect(unchangedID).toBeTruthy();
-  await hoverCard.getByRole("button", { name: `Move ${unchangedID}` }).click();
-  const unchangedMove = page.getByRole("dialog", { name: `Move ${unchangedID}` });
-  await expect(unchangedMove.getByRole("button", { name: "Move issue" })).toBeDisabled();
-  await unchangedMove.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".board-card select")).toHaveCount(0);
+  await expect(hoverCard.getByRole("button", { name: /^(Move|Hide) / })).toHaveCount(0);
 
   const releaseLane = page.locator(".board-lane", { has: page.getByRole("heading", { name: /demo Ship the 1.0 release/ }) });
   await expect(releaseLane.locator(":scope > .board-lane-heading h2 a")).toHaveAttribute("href", /^#\/issues\/demo-/);
@@ -450,7 +445,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
 	const breakpointCard = page.locator(".board-card").first();
 	await expect(breakpointCard).toBeVisible();
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);
-	await breakpointCard.getByRole("button", { name: /Hide .* from boards/ }).dispatchEvent("pointerdown", { pointerId: 1 });
+	await breakpointCard.getByRole("link").dispatchEvent("pointerdown", { pointerId: 1 });
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(false);
 	await page.locator("body").dispatchEvent("pointerup", { pointerId: 1 });
 	await expect.poll(() => breakpointCard.evaluate((card) => card.draggable)).toBe(true);
@@ -470,29 +465,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
   });
   await page.reload();
   const responsiveCard = page.locator('.board-card[data-issue^="demo-"]').first();
-  const movedID = await responsiveCard.getAttribute("data-issue");
-  expect(movedID).toBeTruthy();
   await expect.poll(() => responsiveCard.evaluate((card) => card.draggable)).toBe(false);
   await expect(page.locator(".board-card-drag, .board-card-order-button, .list-row-drag, .list-row-order-button")).toHaveCount(0);
   await expect(responsiveCard.locator("select")).toHaveCount(0);
+  await expect(responsiveCard.getByRole("button", { name: /^(Move|Hide) / })).toHaveCount(0);
   const initialLaneCount = await page.locator(".board-lane").count();
   await page.getByRole("button", { name: /Load up to .* more epics/ }).click();
   await expect.poll(() => page.locator(".board-lane").count()).toBeGreaterThan(initialLaneCount);
-  const pagedEpicHref = await page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) })
-    .first().locator(":scope > .board-lane-heading h2 a").getAttribute("href");
-  const pagedEpic = pagedEpicHref?.split("/").at(-1);
-  expect(pagedEpic).toBeTruthy();
-  const moveAction = responsiveCard.getByRole("button", { name: `Move ${movedID}` });
-  await moveAction.focus();
-  await moveAction.press("Enter");
-  const moveDialog = page.getByRole("dialog", { name: `Move ${movedID}` });
-  await moveDialog.getByLabel("Epic").selectOption(pagedEpic);
-  await moveDialog.getByRole("button", { name: "Move issue" }).click();
-  await expect.poll(async () => page.evaluate(async ({ id, epic }) => {
-    const issue = await (await fetch(`api/issues/${id}`)).json();
-    return issue.relations.some((relation) => relation.type === "has-parent" && relation.other === epic);
-  }, { id: movedID, epic: pagedEpic })).toBe(true);
-
   const hideableLanes = page.locator(".board-lane", { has: page.getByRole("heading", { name: /Overflow epic/ }) });
   const hideableLane = hideableLanes.first();
   const hideableHeading = await hideableLane.locator(":scope > .board-lane-heading h2").textContent();
