@@ -289,7 +289,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page).toHaveURL(/#\/boards\/view-[0-9a-f]{24}$/);
   const savedViewURL = page.url();
   await expect(page.locator(".board-summary")).toContainText("Release train");
-  await expect(page.locator(".board-summary")).toContainText("1 epic lane");
+  await expect(page.locator(".board-summary")).toContainText("1 lane selection");
   await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
 

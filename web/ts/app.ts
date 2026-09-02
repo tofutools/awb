@@ -1954,7 +1954,9 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
   for (const epic of epicPage.rows) {
     const row = element("label", "board-view-choice"); row.dataset.workspace = epic.workspace; row.dataset.search = `${epic.id} ${epic.title}`.toLocaleLowerCase();
     const input = document.createElement("input"); input.type = "checkbox"; input.value = epic.id; input.checked = selectedEpics.has(epic.id); epicInputs.push(input);
-    const copy = element("span"); copy.append(element("code", "", epic.id), element("span", "", epic.title)); row.append(input, copy); epicChoices.append(row);
+    const copy = element("span");
+    copy.append(element("code", "", epic.id), element("span", "", `${epic.title}${epic.status === "closed" ? " (closed; hidden until reopened)" : ""}`));
+    row.append(input, copy); epicChoices.append(row);
   }
   for (const id of source?.epics ?? []) {
     if (epicInputs.some((input) => input.value === id)) continue;
@@ -1983,7 +1985,7 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
     const count = epicMode.all.checked ? epicInputs.filter((input) => !input.closest<HTMLElement>(".board-view-choice")?.hidden).length
       : epicInputs.filter((input) => input.checked).length;
     const selectedCount = count + (noEpic.checked ? 1 : 0);
-    selectionSummary.textContent = epicMode.all.checked ? "All epic lanes" : `${selectedCount} ${selectedCount === 1 ? "lane" : "lanes"} selected`;
+    selectionSummary.textContent = epicMode.all.checked ? "All epic lanes" : `${selectedCount} lane ${selectedCount === 1 ? "selection" : "selections"} configured`;
   };
   for (const input of [...workspaceInputs, ...epicInputs, workspaceMode.all, workspaceMode.selected, epicMode.all, epicMode.selected, noEpic]) input.addEventListener("change", syncScope);
   epicSearch.addEventListener("input", syncScope); syncScope();
@@ -2103,7 +2105,7 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
     const summary = element("section", "board-summary"); const owner = element("div"); owner.append(element("strong", "", saved.name), element("span", "", `${saved.shared ? "Shared" : "Private"} · owned by @${saved.owner}`));
     const chips = element("div", "board-filter-chips"); chips.append(element("span", "", saved.all_workspaces ? "All workspaces" : `${saved.workspaces.length} workspaces`));
     const epicLaneCount = saved.epics.length + (saved.include_no_epic ? 1 : 0);
-    chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} epic ${epicLaneCount === 1 ? "lane" : "lanes"}`));
+    chips.append(element("span", "", saved.all_epics ? "All epic lanes" : `${epicLaneCount} lane ${epicLaneCount === 1 ? "selection" : "selections"}`));
     for (const label of saved.labels) chips.append(element("span", "", `#${label}`)); for (const assignee of saved.assignees) chips.append(element("span", "", `@${assignee}`)); chips.append(element("span", "", `P0–P${saved.priority_max}`), element("span", "", `Closed cards: ${saved.closed_days} days`)); summary.append(owner, chips); view.append(summary);
   }
   view.append(element("p", board.workspaces_omitted ? "board-scope-note warning" : "board-scope-note", board.workspaces_omitted
