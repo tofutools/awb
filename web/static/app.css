@@ -1404,7 +1404,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-card-top { display: flex; gap: 0.55rem; align-items: start; justify-content: space-between; }
 .board-card-top > .name { display: grid; gap: 0.2rem; }
 .board-card-top > .name .title { line-height: 1.3; font-weight: 650; }
-.board-card-hide { flex: 0 0 auto; padding: 0.18rem 0.4rem; font-size: 0.72rem; }
+.board-card-hide, .board-lane-hide { flex: 0 0 auto; padding: 0.18rem 0.4rem; font-size: 0.72rem; }
 .board-card > .badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .board-card-move { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 0.4rem; align-items: end; color: var(--muted); font-size: 0.72rem; }
 .board-card-move label { display: grid; min-width: 0; gap: 0.18rem; }

@@ -1854,6 +1854,19 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   const total = lane.columns.reduce((sum, column) => sum + column.total, 0);
   const meta = element("div", "board-lane-meta");
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
+  if (lane.epic !== undefined) {
+    const epic = lane.epic;
+    const hide = button("Hide", "secondary-button board-lane-hide");
+    hide.title = "Hide this epic from every board";
+    hide.setAttribute("aria-label", `Hide ${epic.id} from boards`);
+    hide.addEventListener("click", () => {
+      hide.disabled = true;
+      void api.updateIssue(epic.id, { board_hidden: true })
+        .then(() => render())
+        .catch((error) => { hide.disabled = false; mutationError(host, error); });
+    });
+    meta.append(hide);
+  }
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
   for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, epics));
