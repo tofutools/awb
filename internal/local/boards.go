@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	defaultBoardLaneLimit  = 10
-	maximumBoardLaneLimit  = 50
-	defaultBoardCardLimit  = 50
-	maximumBoardCardLimit  = 50
-	defaultBoardClosedDays = 30
-	maximumBoardClosedDays = 3650
+	defaultBoardLaneLimit     = 10
+	maximumBoardLaneLimit     = 50
+	defaultBoardCardLimit     = 50
+	maximumBoardCardLimit     = 50
+	defaultBoardViewCardLimit = 8
+	defaultBoardClosedDays    = 30
+	maximumBoardClosedDays    = 3650
 )
 
 func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
@@ -25,6 +26,11 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	// board default when an in-process caller leaves every new field unset.
 	if !req.AllEpics && req.Epics == nil && !req.IncludeNoEpic {
 		req.AllEpics, req.IncludeNoEpic = true, true
+	}
+	// Zero is the Go interface's omitted value. The HTTP decoder rejects an
+	// explicit zero before it reaches here.
+	if req.CardLimit == 0 {
+		req.CardLimit = defaultBoardViewCardLimit
 	}
 	name, err := domain.ValidateBoardViewName(req.Name)
 	if err != nil {
@@ -40,9 +46,12 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if req.EpicClosedDays < 0 || req.EpicClosedDays > maximumBoardClosedDays {
 		return nil, awberr.Usagef("board epic closed days must be between 0 and %d", maximumBoardClosedDays)
 	}
+	if req.CardLimit < 1 || req.CardLimit > maximumBoardCardLimit {
+		return nil, awberr.Usagef("board card limit must be between 1 and %d", maximumBoardCardLimit)
+	}
 	view := &domain.BoardView{Name: name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
 		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority,
-		ClosedDays: req.ClosedDays, EpicClosedDays: req.EpicClosedDays}
+		CardLimit: req.CardLimit, ClosedDays: req.ClosedDays, EpicClosedDays: req.EpicClosedDays}
 	seen := map[string]bool{}
 	for _, value := range req.Workspaces {
 		valid, err := domain.ValidateWorkspaceKey(value)
@@ -92,7 +101,7 @@ func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
 	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
 		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
 		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees,
-		PriorityMax: view.PriorityMax, ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays}
+		PriorityMax: view.PriorityMax, CardLimit: view.CardLimit, ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays}
 }
 
 func validateBoardViewEpics(tx *storage.Tx, view *domain.BoardView, requested []string) error {
@@ -342,6 +351,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if req.PriorityMax != nil {
 			next.PriorityMax = *req.PriorityMax
 		}
+		if req.CardLimit != nil {
+			next.CardLimit = *req.CardLimit
+		}
 		if req.ClosedDays != nil {
 			next.ClosedDays = *req.ClosedDays
 		}
@@ -464,6 +476,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		}
 	}
 	var err error
+	cardLimitProvided := query.CardLimit != nil
 	if query.LaneLimit, err = boundedBoardLimit(query.LaneLimit, defaultBoardLaneLimit, maximumBoardLaneLimit, "lane"); err != nil {
 		return nil, err
 	}
@@ -548,6 +561,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 			shown.Normalize()
 			result.View = &shown
+			if !cardLimitProvided {
+				query.CardLimit = &view.CardLimit
+			}
 			closedDays = view.ClosedDays
 			epicClosedDays = view.EpicClosedDays
 			allEpics, selectedEpics, includeNoEpic = view.AllEpics, slices.Clone(view.Epics), view.IncludeNoEpic

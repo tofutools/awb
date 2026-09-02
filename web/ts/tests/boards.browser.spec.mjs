@@ -312,10 +312,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await defaultEditor.getByLabel("Labels (any)").fill("");
   await expect(defaultEditor.getByLabel("Show closed epic lanes for (days)")).toHaveValue("0");
   await defaultEditor.getByLabel("Show closed epic lanes for (days)").fill("7");
+  await expect(defaultEditor.getByLabel("Cards per column")).toHaveValue("8");
+  await defaultEditor.getByLabel("Cards per column").fill("3");
   const defaultWorkspaceScope = defaultEditor.locator(".board-view-scope-card").first();
   await defaultWorkspaceScope.getByText("Selected", { exact: true }).click();
   await defaultWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input").check();
   await defaultEditor.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.locator(".board-scope-note")).toContainText("up to 3 cards");
   await page.goto(`${baseURL}/#/boards?workspace=demo`);
 
   await page.getByRole("button", { name: "Save as view" }).click();
@@ -325,6 +328,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "demo" }).locator("input")).toBeChecked();
   await expect(inheritedWorkspaceScope.locator(".board-view-choice", { hasText: "other" }).locator("input")).not.toBeChecked();
   await expect(dialog.getByLabel("Show closed epic lanes for (days)")).toHaveValue("7");
+  await expect(dialog.getByLabel("Cards per column")).toHaveValue("3");
   await dialog.getByLabel("Name").fill("Release train");
   await dialog.getByText("Anyone with the link").click();
   const epicScope = dialog.locator(".board-view-scope-card", { hasText: "Epic lanes" });
@@ -337,6 +341,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.locator(".board-summary")).toContainText("Release train");
   await expect(page.locator(".board-summary")).toContainText("1 workspace");
   await expect(page.locator(".board-summary")).toContainText("Closed epics: 7 days");
+  await expect(page.locator(".board-summary")).toContainText("3 cards per column");
   await expect(page.locator(".board-summary")).toContainText("1 lane selection");
   await expect(page.locator(".board-lane")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();

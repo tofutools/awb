@@ -155,6 +155,7 @@ type BoardViewCreate struct {
 	Labels         []string
 	Assignees      []string
 	PriorityMax    int
+	CardLimit      int
 	ClosedDays     int
 	EpicClosedDays int
 }
@@ -170,6 +171,7 @@ type BoardViewPatch struct {
 	Labels         *[]string
 	Assignees      *[]string
 	PriorityMax    *int
+	CardLimit      *int
 	ClosedDays     *int
 	EpicClosedDays *int
 }

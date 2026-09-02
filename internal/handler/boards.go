@@ -21,7 +21,8 @@ func toBoardView(view *domain.BoardView) api.BoardView {
 		Shared: view.Shared, AllWorkspaces: view.AllWorkspaces, Workspaces: workspaces,
 		AllEpics: view.AllEpics, Epics: epics, IncludeNoEpic: view.IncludeNoEpic,
 		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees),
-		PriorityMax: api.Priority(view.PriorityMax), ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays,
+		PriorityMax: api.Priority(view.PriorityMax), CardLimit: view.CardLimit,
+		ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays,
 		CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
 }
 
@@ -107,7 +108,8 @@ func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate)
 		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
 		AllEpics: req.AllEpics.Or(true), Epics: stringsFromIssueIDs(req.Epics), IncludeNoEpic: req.IncludeNoEpic.Or(true),
 		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees),
-		PriorityMax: int(req.PriorityMax.Or(4)), ClosedDays: req.ClosedDays.Or(30), EpicClosedDays: req.EpicClosedDays.Or(0)})
+		PriorityMax: int(req.PriorityMax.Or(4)), CardLimit: req.CardLimit.Or(8),
+		ClosedDays: req.ClosedDays.Or(30), EpicClosedDays: req.EpicClosedDays.Or(0)})
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +130,8 @@ func (h *Handler) UpdateBoardView(ctx context.Context, req *api.BoardViewPatch, 
 		Name: optString(req.Name), Shared: optBool(req.Shared), AllWorkspaces: optBool(req.AllWorkspaces),
 		Workspaces: optWorkspaces(req.Workspaces), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
 		AllEpics: optBool(req.AllEpics), Epics: optIssueIDs(req.Epics), IncludeNoEpic: optBool(req.IncludeNoEpic),
-		PriorityMax: optPriority(req.PriorityMax), ClosedDays: optInt(req.ClosedDays), EpicClosedDays: optInt(req.EpicClosedDays)}, params.IfMatch.Or(""))
+		PriorityMax: optPriority(req.PriorityMax), CardLimit: optInt(req.CardLimit),
+		ClosedDays: optInt(req.ClosedDays), EpicClosedDays: optInt(req.EpicClosedDays)}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
 	}

@@ -34,6 +34,13 @@ var migrations = [][]string{
 	schemaV15,
 	schemaV16,
 	schemaV17,
+	schemaV18,
+}
+
+// schemaV18 makes the number of cards loaded per epic/status column a board
+// view setting. Eight preserves the web UI's previous fixed page size.
+var schemaV18 = []string{
+	`ALTER TABLE board_views ADD COLUMN card_limit INTEGER NOT NULL DEFAULT 8 CHECK (card_limit BETWEEN 1 AND 50)`,
 }
 
 // schemaV17 gives epic lanes their own closed-item retention window. Zero

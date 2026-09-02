@@ -124,6 +124,7 @@ type BoardView struct {
 	Labels         []string `json:"labels"`
 	Assignees      []string `json:"assignees"`
 	PriorityMax    int      `json:"priority_max"`
+	CardLimit      int      `json:"card_limit"`
 	ClosedDays     int      `json:"closed_days"`
 	EpicClosedDays int      `json:"epic_closed_days"`
 	CreatedAt      string   `json:"created_at"`

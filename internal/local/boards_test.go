@@ -33,6 +33,7 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	private, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Private", AllWorkspaces: true, PriorityMax: 4})
 	require.NoError(t, err)
 	assert.Equal(t, "Release", shared.Name)
+	assert.Equal(t, 8, shared.CardLimit)
 
 	views, err := alice.ListBoardViews(ctx)
 	require.NoError(t, err)
@@ -70,10 +71,13 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	}
 	renamed := "Release train"
 	unshared := false
-	updated, err := alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Name: &renamed, Shared: &unshared}, backend.ETag(shared.UpdatedAt))
+	twelve := 12
+	updated, err := alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Name: &renamed, Shared: &unshared,
+		CardLimit: &twelve}, backend.ETag(shared.UpdatedAt))
 	require.NoError(t, err, "an unrelated edit preserves an inaccessible stored selection")
 	assert.Equal(t, renamed, updated.Name)
 	assert.False(t, updated.Shared)
+	assert.Equal(t, 12, updated.CardLimit)
 	assert.Equal(t, []string{"awb"}, updated.Workspaces, "the mutation response is scoped too")
 	visibleReplacement := []string{"awb"}
 	_, err = alice.UpdateBoardView(ctx, shared.ID, backend.BoardViewPatch{Workspaces: &visibleReplacement}, backend.ETag(updated.UpdatedAt))
@@ -184,7 +188,7 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	require.NoError(t, err)
 	alice := root.WithUser("alice")
 	view, err := alice.CreateBoardView(ctx, backend.BoardViewCreate{Name: "Release", AllWorkspaces: false,
-		Workspaces: []string{"awb", "web"}, Labels: []string{"release"}, PriorityMax: 2})
+		Workspaces: []string{"awb", "web"}, Labels: []string{"release"}, PriorityMax: 2, CardLimit: 1})
 	require.NoError(t, err)
 	_, err = alice.SetWorkspaceIgnored(ctx, "web", true)
 	require.NoError(t, err)
@@ -193,6 +197,9 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	require.Len(t, views, 1)
 	assert.Equal(t, []string{"awb", "web"}, views[0].Workspaces, "the owner can still edit an ignored selection")
 	one, zero := 1, 0
+	storedPage, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{LaneLimit: &one})
+	require.NoError(t, err)
+	assert.Len(t, storedPage.Lanes[0].Columns[0].Issues, 1, "an omitted request limit uses the saved view setting")
 	board, err := alice.GetBoard(ctx, view.ID, backend.BoardQuery{LaneLimit: &one, LaneOffset: &zero, CardLimit: &one})
 	require.NoError(t, err)
 	assert.Equal(t, 1, board.LaneTotal)
