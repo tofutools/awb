@@ -197,7 +197,7 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 				logger.Printf("refusing %s %s from %s: this database has no user with a password",
 					r.Method, r.URL.Path, r.RemoteAddr)
 				writeAuthError(w, http.StatusServiceUnavailable,
-					"no users: this server answers nothing until a user with a password is added")
+					"no user with a password: this server answers nothing until one is added")
 				return
 			case !given || !ok:
 				logger.Printf("authentication failed: %s %s from %s",
