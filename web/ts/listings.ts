@@ -25,6 +25,23 @@ export function listingParentTitle(title: string): string {
   return `${characters.slice(0, listingParentTitleMaxLength - 1).join("")}…`;
 }
 
+export type ListingRelationshipRole = "parent" | "sibling" | null;
+
+/** listingRelationshipRole classifies one visible row while a child's parent
+ * link is active. The child itself stays unmarked: the active link already
+ * identifies it, while the overlays point out its family elsewhere on the
+ * current page. */
+export function listingRelationshipRole(
+  issueID: string,
+  issueParentID: string | undefined,
+  childID: string,
+  parentID: string,
+): ListingRelationshipRole {
+  if (issueID === parentID) return "parent";
+  if (issueID !== childID && issueParentID === parentID) return "sibling";
+  return null;
+}
+
 /** Runs one debounced listing request at a time. Aborting saves backend work;
  * the generation guard also rejects a stale transport completion. */
 export class BackendListingFilter<T> {
