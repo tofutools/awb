@@ -588,8 +588,8 @@ func TestRelatedCycleSerializesAsThinReferences(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(payload), &result))
 		require.Len(t, result.Relations, 2)
 		assert.ElementsMatch(t, []map[string]any{
-			{"type": "related", "other": second.ID, "direction": "out"},
-			{"type": "related", "other": third.ID, "direction": "out"},
+			{"type": "related", "other": second.ID, "other_title": "second", "direction": "out"},
+			{"type": "related", "other": third.ID, "other_title": "third", "direction": "out"},
 		}, result.Relations)
 	}
 }
