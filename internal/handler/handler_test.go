@@ -556,6 +556,44 @@ func TestMutationsReturnTheObject(t *testing.T) {
 	}
 }
 
+// Related is the one relation graph that may contain cycles. Relations in an
+// Issue remain thin references to IDs, so walking neither the ordinary issue
+// response nor the recursively shaped tree response can follow that cycle.
+func TestRelatedCycleSerializesAsThinReferences(t *testing.T) {
+	a := newAPI(t)
+	first := a.createIssue(`{"workspace":"awb","title":"first"}`)
+	second := a.createIssue(`{"workspace":"awb","title":"second"}`)
+	third := a.createIssue(`{"workspace":"awb","title":"third"}`)
+
+	for _, edge := range [][2]string{
+		{first.ID, second.ID},
+		{second.ID, third.ID},
+		{third.ID, first.ID},
+	} {
+		resp, payload := a.do(http.MethodPost, "/api/issues/"+edge[0]+"/relations",
+			`{"type":"related","other":"`+edge[1]+`"}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	}
+
+	for _, path := range []string{
+		"/api/issues/" + first.ID,
+		"/api/issues/" + first.ID + "/tree",
+	} {
+		resp, payload := a.do(http.MethodGet, path, "")
+		require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+		var result struct {
+			Relations []map[string]any `json:"relations"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(payload), &result))
+		require.Len(t, result.Relations, 2)
+		assert.ElementsMatch(t, []map[string]any{
+			{"type": "related", "other": second.ID, "other_title": "second", "direction": "out"},
+			{"type": "related", "other": third.ID, "other_title": "third", "direction": "out"},
+		}, result.Relations)
+	}
+}
+
 // Paging, and the unpaged total X-Total-Count carries.
 func TestPaging(t *testing.T) {
 	a := newAPI(t)

@@ -24,11 +24,13 @@ type Link struct {
 	URL  string `json:"url"`
 }
 
-// Relation is one end of a directed link between two issues. Direction says
-// which end this issue is: out when it is the subject — the one named first —
-// and in when Other is. A directed relation always keeps the same reading, so
-// "A blocked-by B" appears on A as {blocked-by, B, out} and on B as
-// {blocked-by, A, in}, and both still read "A blocked-by B".
+// Relation is one end of a directed link between two issues. Other is only the
+// other issue's ID, never an embedded Issue, so even an unconstrained related
+// graph cannot make issue serialization recursive. Direction says which end
+// this issue is: out when it is the subject — the one named first — and in
+// when Other is. A directed relation always keeps the same reading, so "A
+// blocked-by B" appears on A as {blocked-by, B, out} and on B as {blocked-by,
+// A, in}, and both still read "A blocked-by B".
 type Relation struct {
 	Type      RelationType `json:"type"`
 	Other     string       `json:"other"`
