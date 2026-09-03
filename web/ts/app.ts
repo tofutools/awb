@@ -3346,7 +3346,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     attachmentSection.editor.hidden = !show;
     attachmentSection.section.hidden = !show && issue.attachments.length === 0;
     relationSection.editor.hidden = !show;
-    relationSection.section.hidden = !show && issue.relations.length === 0;
+    relationSection.section.hidden = !show && displayedIssueRelations(issue).length === 0;
     editButton.textContent = show ? "Hide editor" : "Edit issue";
     if (show) activateMarkdownEditors(editForm);
   };
@@ -3374,7 +3374,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
-  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows));
+  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows, workspace.state === "active"));
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3427,13 +3427,46 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   return view;
 }
 
-function issueChildrenSection(children: Issue[]): HTMLElement {
+function issueChildrenSection(children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   section.append(element("h2", "", "Child issues"));
   const list = element("ul", "child-issues resource-list");
+  let draggedChild: Issue | null = null;
   for (const child of children) {
     const row = element("li");
+    row.dataset.issue = child.id;
     row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
+    if (mutable) {
+      configureDragSurface(row, child, () => { draggedChild = child; }, () => { draggedChild = null; });
+      let before = child.id;
+      let after = "";
+      row.addEventListener("dragover", (event) => {
+        if (draggedChild === null || draggedChild.id === child.id) return;
+        event.preventDefault();
+        clearDropPositions();
+        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+        before = below ? "" : child.id;
+        after = below ? child.id : "";
+        row.classList.toggle("drop-after", below);
+        row.classList.toggle("drop-before", !below);
+      });
+      row.addEventListener("drop", (event) => {
+        const moving = draggedChild;
+        row.classList.remove("drop-before", "drop-after");
+        if (moving === null || moving.id === child.id) return;
+        event.preventDefault();
+        draggedChild = null;
+        row.classList.add("moving");
+        void api.moveIssue(moving.id, {
+          status: moving.status,
+          ...(before === "" ? {} : { before }),
+          ...(after === "" ? {} : { after }),
+        }).then(() => render()).catch((error) => {
+          row.classList.remove("moving");
+          mutationError(row, error);
+        });
+      });
+    }
     list.append(row);
   }
   section.append(list);
@@ -3443,6 +3476,13 @@ function issueChildrenSection(children: Issue[]): HTMLElement {
 interface IssueResourceSection {
   section: HTMLElement;
   editor: HTMLFormElement;
+}
+
+function displayedIssueRelations(issue: Issue): Issue["relations"] {
+  // Incoming has-parent edges are the children rendered in their richer,
+  // reorderable section. Keep the issue's own outgoing parent visible.
+  return issue.relations.filter((relation) =>
+    relation.type !== "has-parent" || relation.direction !== "in");
 }
 
 function issueAttachmentSection(issue: Issue): IssueResourceSection {
@@ -3463,9 +3503,10 @@ function issueAttachmentSection(issue: Issue): IssueResourceSection {
 function issueRelationSection(issue: Issue): IssueResourceSection {
   const section = element("section", "issue-resource-section relation-section");
   section.append(element("h2", "", "Relations"));
-  if (issue.relations.length > 0) {
+  const relations = displayedIssueRelations(issue);
+  if (relations.length > 0) {
     const list = element("ul", "relations resource-list");
-    for (const relation of issue.relations) {
+    for (const relation of relations) {
       // Every relation reads "subject — type — other", whichever end is
       // viewed.
       const [subject, other] =
@@ -3495,7 +3536,7 @@ function issueRelationSection(issue: Issue): IssueResourceSection {
   const editor = relationEditor(issue.id);
   editor.hidden = true;
   section.append(editor);
-  section.hidden = issue.relations.length === 0;
+  section.hidden = relations.length === 0;
   return { section, editor };
 }
 

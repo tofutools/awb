@@ -164,6 +164,17 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
+  await expect(page.locator(".relation-section")).not.toContainText(createdID);
+  const createdChild = childIssues.locator(`li[data-issue='${createdID}']`);
+  await expect(createdChild).toHaveJSProperty("draggable", true);
+  const reorderTarget = childIssues.locator(`li:has(.status-in_progress):not([data-issue='${createdID}'])`).first();
+  await expect(reorderTarget).toBeVisible();
+  const reorderTargetID = await reorderTarget.getAttribute("data-issue");
+  await pointerDrag(page, createdChild, reorderTarget, true);
+  await expect.poll(async () => {
+    const ids = await childIssues.locator("li").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
+    return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
+  }).toBe(true);
 
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.
