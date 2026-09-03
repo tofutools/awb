@@ -118,6 +118,24 @@ type IssueTree struct {
 	Children []IssueTree `json:"children"`
 }
 
+// UnmarshalJSON keeps children when Issue's custom decoder is promoted through
+// the anonymous embedding. Each child uses this same decoder recursively.
+func (t *IssueTree) UnmarshalJSON(data []byte) error {
+	var issue Issue
+	if err := json.Unmarshal(data, &issue); err != nil {
+		return err
+	}
+	var tree struct {
+		Children []IssueTree `json:"children"`
+	}
+	if err := json.Unmarshal(data, &tree); err != nil {
+		return err
+	}
+	t.Issue = issue
+	t.Children = tree.Children
+	return nil
+}
+
 // Workspace is the top-level organising unit. ActiveIssues counts the issues
 // that are not closed; it is derived and read-only, as are the two timestamps.
 type Workspace struct {
