@@ -16,12 +16,13 @@ import (
 // deleting it removes the relations its issues are on either end of, which can
 // unblock work in another workspace.
 //
-// It creates no user, deliberately, although the data set otherwise shows
-// everything there is to show. A database holding no user is a server without
-// authentication, so seeding one would make "awb demo" quietly turn a server's
-// authentication on — with a password the operator never chose and would then
-// have to guess. What users look like is shown by "awb user add" instead,
-// which is a decision somebody made.
+// It creates the three people its issues are assigned to, and gives none of
+// them a password. An assignee has to be a user, so a data set that assigns
+// work has to bring them with it; a user with no password can be assigned work
+// and cannot log in, so seeding one does not turn a server's authentication on
+// with a password the operator never chose and would then have to guess. What
+// an account somebody logs in to looks like is still shown by
+// "awb user add --password" instead, which is a decision somebody made.
 const (
 	demoWorkspaceKey  = "demo"
 	demoWorkspaceName = "DEMO"
@@ -73,6 +74,15 @@ type demoIssue struct {
 type demoAttachment struct {
 	name    string
 	content string
+}
+
+// demoUsers are the people the data set assigns work to. They carry no
+// password, which is what lets the demo have assignees without turning a
+// server's authentication on; see the comment on demoWorkspaceKey.
+var demoUsers = []struct{ name, fullName string }{
+	{"alice", "Alice Andersson"},
+	{"bob", "Bob Bergström"},
+	{"carol", "Carol Carlsson"},
 }
 
 // demoIssues is the demo data set, in creation order.
@@ -291,6 +301,10 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 		}
 	}
 
+	if err := createDemoUsers(ctx, be); err != nil {
+		return nil, err
+	}
+
 	if _, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{
 		Key:         demoWorkspaceKey,
 		Name:        demoWorkspaceName,
@@ -344,6 +358,23 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 	// Re-read, so the returned workspace carries the count of the issues just
 	// created rather than the zero it was born with.
 	return be.GetWorkspace(ctx, demoWorkspaceKey)
+}
+
+// createDemoUsers creates the people the data set assigns work to, without
+// passwords, and leaves any that already exist exactly as they are.
+//
+// They outlive the workspace: deleting the demo workspace does not delete
+// them, because an account is not owned by one and somebody may have given it
+// a password or access elsewhere. A second run therefore finds them and says
+// nothing, which is why a conflict here is not a failure.
+func createDemoUsers(ctx context.Context, be backend.Backend) error {
+	for _, user := range demoUsers {
+		_, err := be.CreateUser(ctx, backend.UserCreate{Name: user.name, FullName: user.fullName})
+		if err != nil && awberr.KindOf(err) != awberr.Conflict {
+			return err
+		}
+	}
+	return nil
 }
 
 // relations turns the table's keys into the relations of one issue, in the

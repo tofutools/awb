@@ -109,6 +109,14 @@ the issue atomically. Releasing removes one identity and reopens the issue if
 the last assignee leaves. Reopening clears all assignees. Closing retains them
 as the people who completed the work.
 
+An assignee is stored as text and is checked against the user directory
+wherever an assignment is made, on a database that holds any user; one that
+holds none takes any name. There is no foreign key, so deleting an account
+leaves the record of who did the work standing, and releasing a name is never
+refused because the name is no longer a user. The command line on the database
+file may override the check with `--force`, where whoever holds the file could
+write the row anyway; the API may not.
+
 The board's `move` operation changes status, optional epic parent, and optional
 manual position in one transaction. A visible card cannot move halfway between
 columns or lanes.
@@ -294,10 +302,15 @@ the same transaction as the operation. Direct mode applies none: a caller who
 can open and rewrite the database file already has complete access, so an
 application check would be advisory rather than a security boundary.
 
+A user's password is optional. An account without one is an assignee the
+tracker knows and nothing authenticates as it, which is what a local tracker
+and a command-line agent need; only a password is a login.
+
 The database records whether authentication has ever been enabled. A database
-that has never held users can be served openly on loopback. Adding the first
-user enables Basic Authentication on the next request. Removing the last leaves
-the server locked instead of falling open. Direct access is the recovery path.
+that has never held a user with a password can be served openly on loopback.
+Adding the first password enables Basic Authentication on the next request.
+Removing the last leaves the server locked instead of falling open. Direct
+access is the recovery path.
 
 Workspace access is either regular or admin. Regular members work with issues;
 admins also manage membership. Account-wide workspace administrators manage

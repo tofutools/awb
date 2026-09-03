@@ -73,6 +73,12 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if workspace.State == domain.WorkspaceArchived {
 			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Workspace)
 		}
+		// Create-and-claim is a claim, and holds to the same rule. There is no
+		// --force here to override it: creating an issue for somebody who is not
+		// a user is create-then-claim.
+		if err := checkAssignees(tx, issue.Assignees...); err != nil {
+			return err
+		}
 
 		if err := tx.InsertIssue(issue); err != nil {
 			return err
@@ -110,6 +116,21 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 	return issue, nil
+}
+
+// movingAssignee is who a board move that starts work assigns it to: the
+// caller, who has to be one of the tracker's users like any other assignee.
+// The board has no --force, so an identity the directory does not know cannot
+// start work from it; the command line can still claim for that name.
+func movingAssignee(tx *storage.Tx, caller domain.Caller) (string, error) {
+	assignee, err := domain.ValidateAssignee(caller.Name)
+	if err != nil {
+		return "", err
+	}
+	if err := checkAssignees(tx, assignee); err != nil {
+		return "", err
+	}
+	return assignee, nil
 }
 
 func validateAssignees(assignees []string) ([]string, error) {
@@ -426,7 +447,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			if issue.Blocked {
 				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
 			}
-			assignee, err := domain.ValidateAssignee(caller.Name)
+			assignee, err := movingAssignee(tx, caller)
 			if err != nil {
 				return err
 			}
@@ -435,7 +456,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			fields.Assignees = nil
 		case status == domain.StatusClosed:
 		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
-			assignee, err := domain.ValidateAssignee(caller.Name)
+			assignee, err := movingAssignee(tx, caller)
 			if err != nil {
 				return err
 			}

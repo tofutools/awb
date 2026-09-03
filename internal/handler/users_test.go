@@ -53,9 +53,9 @@ func TestCreateUserWithAPasswordHash(t *testing.T) {
 		`{"name":"alice","password_hash":"$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by"}`)
 	assert.Equal(t, "alice", user.Name)
 
-	// The two are two ways of stating one credential, and neither is optional.
+	// The two are two ways of stating one credential, so a body may not say
+	// both, and a hash that is not one is not a password to fall back on.
 	for _, body := range []string{
-		`{"name":"bob"}`,
 		`{"name":"bob","password":"hunter2","password_hash":"$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by"}`,
 		`{"name":"bob","password_hash":"hunter2"}`,
 	} {
@@ -63,6 +63,10 @@ func TestCreateUserWithAPasswordHash(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
+
+	// Neither is an account that exists to be an assignee and that nothing
+	// authenticates as.
+	assert.Equal(t, "bob", a.createUser(`{"name":"bob"}`).Name)
 }
 
 // Nothing beyond the recognised fields is accepted: a field the server never

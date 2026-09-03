@@ -55,14 +55,18 @@ become exit `1` in the remote CLI.
 
 ## Authentication behavior
 
-Authentication state belongs to the database and is evaluated on each request:
+Authentication state belongs to the database and is evaluated on each request.
+Only a user with a password counts; one without exists to be an assignee and
+nothing authenticates as it.
 
-- A database that has never held a user is open. Any client that reaches the
-  listener has full access, which is why the default binds loopback.
-- Adding the first user enables HTTP Basic Authentication immediately, without
-  restarting the server.
-- Deleting the last user does not reopen the server. It enters a locked state
-  and returns `503` until an account is added directly to the database.
+- A database that has never held a user with a password is open. Any client
+  that reaches the listener has full access, which is why the default binds
+  loopback.
+- Adding the first password enables HTTP Basic Authentication immediately,
+  without restarting the server.
+- Deleting the last user with a password does not reopen the server. It enters
+  a locked state and returns `503` until an account with a password is added
+  directly to the database.
 - `--no-auth` explicitly bypasses accounts for the lifetime of that server
   process. Adding a user will not close it until it restarts without the flag.
 
@@ -71,16 +75,17 @@ deployment: a non-loopback binding, `--public-url`, `--https`, or an explicitly
 chosen Basic-auth realm. Use accounts for a shared deployment. Use `--no-auth`
 only when unauthenticated access is deliberate and protected elsewhere.
 
-Create the first account through direct database access. A password is read
-from standard input or entered without terminal echo; it is never a flag:
+Create the first account through direct database access. `--password` reads it
+from standard input or prompts for it without terminal echo; it is never a flag
+value:
 
 ```console
-echo 'choose-a-better-secret' | awb user add alice \
+echo 'choose-a-better-secret' | awb user add alice --password \
   --user-admin --workspace-admin
 ```
 
 `--password-hash` accepts an existing bcrypt hash when plaintext should never
-reach awb.
+reach awb. Without either flag the account has no password.
 
 ## Authorization
 

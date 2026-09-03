@@ -17,7 +17,8 @@ import (
 // hidden behind, and who may read and change one is a rule instead. The rules
 // themselves are in the domain layer, so both surfaces reach the same answer.
 
-// CreateUser creates an account.
+// CreateUser creates an account. Its password is optional: an account without
+// one exists to be an assignee, and nothing authenticates as it.
 func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*domain.User, error) {
 	name, err := domain.ValidateUsername(req.Name)
 	if err != nil {
@@ -27,7 +28,7 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 	if err != nil {
 		return nil, err
 	}
-	hash, err := credential(name, req.Password, req.PasswordHash, true)
+	hash, err := credential(name, req.Password, req.PasswordHash)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +38,7 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 		if !caller.MayManageUsers() {
 			return awberr.Forbiddenf("only a user administrator may create a user")
 		}
-		if err := tx.InsertUser(name, fullName, *hash, req.WorkspaceAdmin, req.UserAdmin); err != nil {
+		if err := tx.InsertUser(name, fullName, deref(hash), req.WorkspaceAdmin, req.UserAdmin); err != nil {
 			return err
 		}
 		user, err = tx.GetUser(name)
@@ -53,9 +54,10 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 // is stored, and reports nil when neither was given.
 //
 // Exactly one of them may be given: a request carrying both says two things
-// about one credential, and picking either would be a guess. required is set
-// where an account is being made, which cannot be made without one.
-func credential(name, password, hash string, required bool) (*string, error) {
+// about one credential, and picking either would be a guess. Neither is an
+// account with no password, which can be an assignee and cannot log in; see
+// storage.AnyUsersWithPassword for what that does and does not turn on.
+func credential(name, password, hash string) (*string, error) {
 	switch {
 	case password != "" && hash != "":
 		return nil, awberr.Usagef("give a password or a password hash, not both")
@@ -71,8 +73,6 @@ func credential(name, password, hash string, required bool) (*string, error) {
 			return nil, err
 		}
 		return &derived, nil
-	case required:
-		return nil, awberr.Usagef("a user needs a password")
 	default:
 		return nil, nil
 	}
@@ -137,7 +137,7 @@ func (b *Backend) UpdateUser(ctx context.Context, name string, req backend.UserP
 	if _, err := domain.ValidateUsername(name); err != nil {
 		return nil, err
 	}
-	hash, err := credential(name, deref(req.Password), deref(req.PasswordHash), false)
+	hash, err := credential(name, deref(req.Password), deref(req.PasswordHash))
 	if err != nil {
 		return nil, err
 	}

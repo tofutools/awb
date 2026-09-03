@@ -16,50 +16,67 @@ import (
 // directory: it derives people from workspaces in Tx.scope, and scopes the
 // memberships it returns by that same set.
 
-// AnyUsers reports whether the database holds a user at all.
+// AnyUsers reports whether the database holds a user at all, with a password
+// or without one.
 //
-// This is what a server switches on: a database with no user is the version 1
-// database, and a server over it behaves exactly as version 1's did. Adding
-// the first user closes the door, and it closes on the next request rather
-// than on the next restart, because this is asked per request.
+// This is what the assignee rule switches on: a database with no user has no
+// directory to check a name against, so it keeps the version 1 behaviour of
+// taking any assignee as free text. Adding the first user turns the check on,
+// whether or not that user can log in.
+func (t *Tx) AnyUsers() (bool, error) {
+	return t.exists(`SELECT 1 FROM users LIMIT 1`, "read users")
+}
+
+// AnyUsersWithPassword reports whether the database holds a user who can log
+// in.
+//
+// This is what a server switches on: a database with no such user is the
+// version 1 database, and a server over it behaves exactly as version 1's did.
+// Adding the first password closes the door, and it closes on the next request
+// rather than on the next restart, because this is asked per request.
+//
+// A user without a password is not one: they exist to be an assignee, and an
+// account nobody can authenticate as cannot be what makes a server start
+// demanding authentication.
 //
 // The answer going back to "none" does not open it again. That is what
-// UsersHaveExisted is for, and the two are asked together.
-func (t *Tx) AnyUsers() (bool, error) {
-	var one int
-	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM users LIMIT 1`).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, awberr.Wrap(awberr.Runtime, err, "read users")
-	}
-	return true, nil
+// UsersWithPasswordHaveExisted is for, and the two are asked together.
+func (t *Tx) AnyUsersWithPassword() (bool, error) {
+	return t.exists(`SELECT 1 FROM users WHERE password_hash <> '' LIMIT 1`,
+		"read users")
 }
 
-// UsersHaveExisted reports whether this database has ever held a user, which
-// no deletion clears; see schemaV6 for why the fact is stored rather than
-// remembered.
+// UsersWithPasswordHaveExisted reports whether this database has ever held a
+// user who could log in, which no deletion clears; see schemaV6 for why the
+// fact is stored rather than remembered.
 //
 // It is what tells a database that authenticates and has just lost its last
-// account apart from one that never had one. The first is a server that must
-// refuse everybody until an account exists again; the second is a local
+// credential apart from one that never had one. The first is a server that
+// must refuse everybody until a password exists again; the second is a local
 // tracker, and is what every version 1 database still is.
-func (t *Tx) UsersHaveExisted() (bool, error) {
+func (t *Tx) UsersWithPasswordHaveExisted() (bool, error) {
+	return t.exists(`SELECT 1 FROM user_history LIMIT 1`, "read user history")
+}
+
+func (t *Tx) exists(query, what string) (bool, error) {
 	var one int
-	err := t.q.QueryRowContext(t.ctx, `SELECT 1 FROM user_history LIMIT 1`).Scan(&one)
+	err := t.q.QueryRowContext(t.ctx, query).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
-		return false, awberr.Wrap(awberr.Runtime, err, "read user history")
+		return false, awberr.Wrap(awberr.Runtime, err, "%s", what)
 	}
 	return true, nil
 }
 
-// PasswordHash returns a user's stored hash, and whether the user exists. It
-// is the one place the hash is read, and the value never travels further than
-// the comparison it is read for.
+// PasswordHash returns a user's stored hash, and whether the user has one at
+// all. It is the one place the hash is read, and the value never travels
+// further than the comparison it is read for.
+//
+// A user without a password is reported exactly as a name that is no user is,
+// so that the one caller cannot treat the empty hash as something to compare
+// against: there is no password for it to be the wrong one for.
 func (t *Tx) PasswordHash(name string) (string, bool, error) {
 	var hash string
 	err := t.q.QueryRowContext(t.ctx,
@@ -69,6 +86,9 @@ func (t *Tx) PasswordHash(name string) (string, bool, error) {
 	}
 	if err != nil {
 		return "", false, awberr.Wrap(awberr.Runtime, err, "read user %s", name)
+	}
+	if hash == "" {
+		return "", false, nil
 	}
 	return hash, true, nil
 }
@@ -447,11 +467,13 @@ func (t *Tx) membershipsOf(name string) ([]domain.Membership, error) {
 		 WHERE user = ? AND `+visible+` ORDER BY workspace ASC`, args)
 }
 
-// InsertUser stores a new user, and records that this database has had one.
+// InsertUser stores a new user and, when they have a password, records that
+// this database has had one who can log in. An empty hash is an account that
+// exists to be an assignee and cannot authenticate.
 //
 // The two are one statement pair in one transaction, and the record is written
-// here rather than by the operation above, so that no way of creating a user
-// can leave the fact unwritten.
+// here rather than by the operation above, so that no way of giving a user a
+// password can leave the fact unwritten.
 func (t *Tx) InsertUser(name, fullName, hash string, workspaceAdmin, userAdmin bool) error {
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
@@ -463,9 +485,18 @@ func (t *Tx) InsertUser(name, fullName, hash string, workspaceAdmin, userAdmin b
 		}
 		return awberr.Wrap(awberr.Runtime, err, "create user %s", name)
 	}
+	return t.recordPassword(name, hash)
+}
+
+// recordPassword marks the database as one whose server authenticates, which
+// only a password does and no deletion undoes.
+func (t *Tx) recordPassword(name, hash string) error {
+	if hash == "" {
+		return nil
+	}
 	if _, err := t.q.ExecContext(t.ctx,
 		`INSERT OR IGNORE INTO user_history (one) VALUES (1)`); err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "record that user %s was created", name)
+		return awberr.Wrap(awberr.Runtime, err, "record that user %s has a password", name)
 	}
 	return nil
 }
@@ -503,6 +534,11 @@ func (t *Tx) UpdateUser(u *domain.User, fields UserFields, hash *string) error {
 	}
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update user %s", u.Name)
+	}
+	if hash != nil {
+		if err := t.recordPassword(u.Name, *hash); err != nil {
+			return err
+		}
 	}
 
 	u.FullName = fields.FullName

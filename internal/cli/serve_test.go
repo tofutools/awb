@@ -562,6 +562,60 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 		"--no-auth means it: the users are simply not consulted")
 }
 
+// A password is what turns authentication on, not an account. A user without
+// one is an assignee the tracker knows about, and a server over a database
+// holding only such users is still the open one — so adding an agent to the
+// directory cannot lock everybody out of an installation that never had a
+// password.
+func TestOnlyAPasswordTurnsAuthenticationOn(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "claude-1"})
+	require.NoError(t, err)
+
+	users, err := readUserState(t.Context(), be.DB())
+	require.NoError(t, err)
+	assert.Equal(t, userState{}, users, "an assignee is not an account to authenticate")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, users),
+		"still the local tracker's open server")
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
+		"and still refused where being reachable would be the accident")
+
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "no credentials are asked for")
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", "")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "and none are checked")
+
+	// Giving that same account a password closes the door on the next request,
+	// with no restart, exactly as creating one with a password does.
+	password := "hunter2"
+	_, err = be.UpdateUser(t.Context(), "claude-1", backend.UserPatch{Password: &password}, "")
+	require.NoError(t, err)
+
+	users, err = readUserState(t.Context(), be.DB())
+	require.NoError(t, err)
+	assert.Equal(t, userState{any: true, existed: true}, users)
+
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", "hunter2")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// An account with no password is not a login with an empty one, on a server
+// that authenticates: it is a name nothing can be presented for.
+func TestAPasswordlessAccountCannotAuthenticate(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "claude-1"})
+	require.NoError(t, err)
+
+	for _, password := range []string{"", "hunter2"} {
+		resp, _ := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", password)...)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, password)
+	}
+}
+
 func TestNoAuthServerDoesNotUseAStoredIdentityPreference(t *testing.T) {
 	h, be := newServeHandlerAuthenticating(t, serveOptions{
 		addr: "127.0.0.1", port: 7777, noAuth: true,

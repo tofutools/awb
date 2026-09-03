@@ -81,7 +81,8 @@ $ awb close app-a3f9c1 --reason "Guard against the empty token stream"
 Work commands are non-interactive unless interactivity is explicitly requested.
 Account password commands are the deliberate exception: they read from standard
 input and hide terminal entry, while scripts can pipe a password or provide a
-bcrypt hash. Successful mutations are transactional, errors have classified
+bcrypt hash. A password is optional; an account without one is an assignee that
+nothing logs in as. Successful mutations are transactional, errors have classified
 exit codes, and the compact vocabulary fits in a short agent instruction. Print
 or install that instruction with:
 

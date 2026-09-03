@@ -1183,8 +1183,10 @@ paths:
       description: |
         Requires the `user_admin` flag.
 
-        Creating the first user of a database turns authentication on, from the
-        next request onwards.
+        Creating the first user of a database that has a password turns
+        authentication on, from the next request onwards. One created without
+        a password does not: it is an assignee the tracker knows, and nothing
+        authenticates as it.
       requestBody:
         required: true
         content:
@@ -1223,7 +1225,9 @@ paths:
         grant themselves anything.
 
         `password` and `password_hash` may not both appear: they are two ways
-        of stating one credential, and picking either would be a guess.
+        of stating one credential, and picking either would be a guess. This is
+        also how an account created without a password is given one, which
+        turns authentication on from the next request onwards.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
@@ -1367,10 +1371,15 @@ components:
       type: http
       scheme: basic
       description: |
-        In force whenever the database holds at least one user, and absent when
-        it holds none. The username and password are checked against the `users`
-        table, whose passwords are bcrypt hashes; the username is also the
-        identity every action of that request is attributed to.
+        In force whenever the database holds at least one user with a password,
+        and absent when it holds none. The username and password are checked
+        against the `users` table, whose passwords are bcrypt hashes; the
+        username is also the identity every action of that request is
+        attributed to.
+
+        A user with no password never brings it into force and can never
+        satisfy it. Such an account exists so that the tracker knows the name
+        as an assignee, and nothing authenticates as it.
 
         Credentials that are missing or wrong are a `401`, which is about the
         credentials rather than about what was asked for and therefore carries
@@ -2682,6 +2691,13 @@ components:
             Who joins the issue. May be omitted, in which case the request's
             identity is used. Claiming is idempotent and does not remove any
             existing assignee.
+
+            On a database that holds any user, it has to name one of them, and
+            `force` does not override that here: the command line on the
+            database file may record a name the directory does not know,
+            because whoever holds the file can write one anyway, but a client
+            of a server may not. A database holding no user at all has no
+            directory to check against and takes any assignee.
         force:
           type: boolean
           default: false
@@ -2696,6 +2712,10 @@ components:
           description: |
             The assignee to remove. May be omitted when `force` is true;
             forced release removes every assignee.
+
+            It is not checked against the user directory: releasing is how an
+            assignment naming somebody who is no longer a user is taken off an
+            issue.
         force: { type: boolean, default: false }
 
     CloseRequest:
@@ -2766,9 +2786,14 @@ components:
     UserCreate:
       type: object
       description: |
-        Exactly one of `password` and `password_hash` is required: a body
-        carrying both says two things about one credential, and one carrying
-        neither describes an account nobody can log in to.
+        `password` and `password_hash` may not both appear: a body carrying
+        both says two things about one credential, and picking either would be
+        a guess.
+
+        Carrying neither creates an account with no password. It can be an
+        issue's assignee and nothing can authenticate as it, and it does not
+        bring `basicAuth` into force on a server that was not already
+        authenticating.
       additionalProperties: false
       required: [name]
       properties:
