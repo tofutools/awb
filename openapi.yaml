@@ -296,7 +296,7 @@ paths:
         epic, immediately before or after one anchor in the same ordering
         scope, or one transaction-time place earlier/later without requiring a
         visible anchor. These position choices are mutually exclusive. Omitting
-        all of them appends it to that manually ranked sibling sequence. Workspace
+        all of them appends it to that manually ranked sequence. Workspace
         and issue ID are immutable. Status changes apply the same assignment
         safety rules as claim, release, close and reopen.
       requestBody:
@@ -2300,7 +2300,7 @@ components:
         order:
           type: integer
           minimum: 0
-          description: Sparse manual rank among siblings; zero means priority/recency fallback.
+          description: Sparse manual rank; zero means priority/recency fallback.
         labels:
           type: array
           description: Sorted.

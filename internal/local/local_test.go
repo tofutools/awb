@@ -193,25 +193,18 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 func TestMoveOrdersChildrenWithinTheirParent(t *testing.T) {
 	b, ctx := newBackend(t)
 	parent := create(t, b, ctx, "parent")
-	otherParent := create(t, b, ctx, "other parent")
-	child := func(title, parentID string) *domain.Issue {
+	child := func(title string) *domain.Issue {
 		return create(t, b, ctx, title, func(req *backend.IssueCreate) {
-			req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: parentID}}
+			req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}}
 		})
 	}
-	child("first child", parent.ID)
-	child("second child", parent.ID)
-	otherChild := child("other child", otherParent.ID)
+	child("first child")
+	child("second child")
 
 	page, err := b.ListIssues(ctx, &domain.Filter{Parent: parent.ID, Sort: domain.DefaultSort})
 	require.NoError(t, err)
 	require.Len(t, page.Issues, 2)
 	first, second := page.Issues[0], page.Issues[1]
-
-	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
-		Status: domain.StatusOpen, Before: otherChild.ID,
-	}, "")
-	assert.Equal(t, 2, exitOf(err), "an ordering anchor must be a sibling")
 
 	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
 		Status: domain.StatusOpen, Before: first.ID,
@@ -221,9 +214,6 @@ func TestMoveOrdersChildrenWithinTheirParent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page.Issues, 2)
 	assert.Equal(t, []string{second.ID, first.ID}, []string{page.Issues[0].ID, page.Issues[1].ID})
-	otherChild, err = b.GetIssue(ctx, otherChild.ID)
-	require.NoError(t, err)
-	assert.Zero(t, otherChild.Order, "reordering one sibling set does not rank another")
 }
 
 func TestMoveIssueRestartsClosedWorkAndCanClearAnyAssignment(t *testing.T) {

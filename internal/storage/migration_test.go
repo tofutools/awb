@@ -94,6 +94,14 @@ func TestV20GeneralizesIssueOrderAndDropsBoardHidden(t *testing.T) {
 	assert.True(t, names["issue_order"])
 	assert.False(t, names["board_order"])
 	assert.False(t, names["board_hidden"])
+	_, err = db.SQL().ExecContext(t.Context(), `UPDATE issues SET issue_order = -1 WHERE id = 'awb-aaaaaa'`)
+	require.Error(t, err, "the renamed column retains its non-negative constraint")
+	var indexes string
+	require.NoError(t, db.SQL().QueryRowContext(t.Context(), `
+		SELECT group_concat(name, ',' ORDER BY name) FROM sqlite_schema
+		WHERE type = 'index' AND tbl_name = 'issues'`).Scan(&indexes))
+	assert.Contains(t, indexes, "idx_issues_issue_order")
+	assert.NotContains(t, indexes, "idx_issues_board_order")
 }
 
 // openAtVersion builds a real historical database shape from the batches that

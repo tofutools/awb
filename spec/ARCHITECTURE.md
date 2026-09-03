@@ -185,12 +185,10 @@ epic” is a derived lane rather than a special issue. Board pages and each colu
 are bounded independently so a large installation cannot create an unbounded
 response.
 
-Manual ordering is sparse and scoped to siblings: top-level issues share one
-sequence and each parent owns a sequence for its direct children. Moving
-between a predecessor and successor normally chooses a value between them
-instead of rewriting every issue; storage can rebalance when no gap remains.
-Boards narrow that sibling sequence further by status column. Natural issue
-lists use the same order when no explicit sort overrides it.
+Manual ordering is sparse. Moving between a predecessor and successor normally
+chooses a value between them instead of rewriting every issue; storage can
+rebalance when no gap remains. Natural issue lists, including lists of one
+parent's children, use the same order when no explicit sort overrides it.
 
 A saved board view belongs to one user and stores configuration, not a materialized
 issue set. It may be shared by link, but every reader's current authorization

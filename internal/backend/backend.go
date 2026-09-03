@@ -356,7 +356,7 @@ type IssuePatch struct {
 }
 
 // IssueMove atomically changes workflow status, optional direct epic
-// membership, and sparse sibling position. Workspace and issue ID are immutable. A nil
+// membership, and sparse position. Workspace and issue ID are immutable. A nil
 // Epic preserves membership; a pointer to empty clears it. Open clears
 // assignees, while In progress assigns the caller when restarting closed work.
 type IssueMove struct {

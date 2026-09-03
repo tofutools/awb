@@ -322,7 +322,7 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 }
 
 // MoveIssue is the board/list drag operation. Status, optional same-workspace
-// epic membership, and sparse sibling position are committed together. Workspace and
+// epic membership, and sparse position are committed together. Workspace and
 // ID are immutable. Moving to Open clears assignments; moving to In progress
 // assigns the caller, replacing a closed issue's historical assignees.
 func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMove,
@@ -466,19 +466,11 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			return err
 		}
 		var scopeStatus *domain.Status
-		orderingParent := destinationEpic
+		var scopeEpic *string
 		if req.Epic != nil || status != before.Status {
-			scopeStatus = &status
-		} else {
-			parent, hasParent, parentErr := tx.ParentOf(issue.ID)
-			if parentErr != nil {
-				return parentErr
-			}
-			if hasParent {
-				orderingParent = parent
-			}
+			scopeStatus, scopeEpic = &status, &destinationEpic
 		}
-		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID, req.Direction, scopeStatus, orderingParent)
+		orderChanges, err := tx.ReorderIssue(issue, beforeID, afterID, req.Direction, scopeStatus, scopeEpic)
 		if err != nil {
 			return err
 		}

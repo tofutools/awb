@@ -431,12 +431,11 @@ type OrderChange struct {
 	From, To int
 }
 
-// ReorderIssue places issue relative to an anchor among the children of one
-// parent in its immutable workspace. An empty parent selects top-level issues.
-// A board additionally supplies destination status so ranks cannot cross
-// columns.
+// ReorderIssue places issue relative to an anchor in its immutable workspace.
+// A board additionally supplies destination status and epic so ranks cannot
+// cross cells; a regular list leaves both nil and orders within the workspace.
 func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction string,
-	status *domain.Status, parent string) ([]OrderChange, error) {
+	status *domain.Status, epic *string) ([]OrderChange, error) {
 	visible, args := t.visibleClause("workspace")
 	where := "workspace = ? AND " + visible
 	args = append([]any{issue.Workspace}, args...)
@@ -444,13 +443,16 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction stri
 		where += " AND status = ?"
 		args = append(args, *status)
 	}
-	const hasParent = `EXISTS (SELECT 1 FROM relations r
-		WHERE r.subject = issues.id AND r.type = 'has-parent'`
-	if parent == "" {
-		where += " AND NOT " + hasParent + ")"
-	} else {
-		where += " AND " + hasParent + " AND r.other = ?)"
-		args = append(args, parent)
+	if epic != nil {
+		const directEpic = `EXISTS (SELECT 1 FROM relations er JOIN issues parent ON parent.id = er.other
+			WHERE er.subject = issues.id AND er.type = 'has-parent'
+			  AND parent.type = 'epic' AND parent.workspace = issues.workspace`
+		if *epic == "" {
+			where += " AND NOT " + directEpic + ")"
+		} else {
+			where += " AND " + directEpic + " AND parent.id = ?)"
+			args = append(args, *epic)
+		}
 	}
 	rows, err := t.q.QueryContext(t.ctx, `SELECT id, issue_order, updated_at FROM issues
 		WHERE `+where+
