@@ -165,21 +165,21 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
   await expect(page.locator(".relation-section")).not.toContainText(createdID);
-  const createdChild = childIssues.locator(`li[data-issue='${createdID}']`);
+  const createdChild = childIssues.locator(`tr[data-issue='${createdID}']`);
   await expect(createdChild).toHaveJSProperty("draggable", true);
-  const reorderTarget = childIssues.locator(`li:has(.status-in_progress):not([data-issue='${createdID}'])`).first();
+  const reorderTarget = childIssues.locator(`tr:has(.status-in_progress):not([data-issue='${createdID}'])`).first();
   await expect(reorderTarget).toBeVisible();
   const reorderTargetID = await reorderTarget.getAttribute("data-issue");
   await pointerDrag(page, createdChild, reorderTarget, true);
   await expect.poll(async () => {
-    const ids = await childIssues.locator("li").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
+    const ids = await childIssues.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
     return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
   }).toBe(true);
   await page.getByRole("button", { name: "Edit issue" }).click();
   await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
   await createdChild.getByRole("button", { name: "Remove" }).click();
   await expect(page.getByRole("dialog", { name: "Remove child?" })).toContainText(`Remove ${createdID} from ${parentID}?`);
-  await page.getByRole("dialog", { name: "Remove child?" }).getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("dialog", { name: "Remove child?" }).getByRole("button", { name: "No" }).click();
   await page.getByRole("button", { name: "Hide editor" }).click();
 
   // Creation waits for every staged upload before rendering the issue. A fast

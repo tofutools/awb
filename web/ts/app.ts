@@ -1056,9 +1056,20 @@ function issueTable(
   head.append(heading);
   table.append(head);
 
+  const orderingEnabled = state.key === "order" && state.direction === "asc";
+  table.append(issueTableBody(issues, columns, orderingEnabled ? (row, issue) => {
+    configureIssueOrderRow(row, issue, () => draggedListIssue, (moving) => { draggedListIssue = moving; });
+  } : undefined));
+  return table;
+}
+
+function issueTableBody(
+  issues: Issue[],
+  columns: IssueColumn[],
+  configureRow?: (row: HTMLTableRowElement, issue: Issue) => void,
+): HTMLTableSectionElement {
   const body = document.createElement("tbody");
   const listingRows: Array<{ issue: Issue; row: HTMLTableRowElement }> = [];
-  const orderingEnabled = state.key === "order" && state.direction === "asc";
   for (const issue of issues) {
     const row = document.createElement("tr");
     row.dataset.issue = issue.id;
@@ -1075,41 +1086,7 @@ function issueTable(
       td.append(content);
       row.append(td);
     }
-    if (orderingEnabled) {
-      configureDragSurface(row, issue, () => { draggedListIssue = issue; }, () => { draggedListIssue = null; });
-      let before = issue.id;
-      let after = "";
-      row.addEventListener("dragover", (event) => {
-        if (draggedListIssue === null || draggedListIssue.id === issue.id || draggedListIssue.workspace !== issue.workspace) return;
-        event.preventDefault();
-        clearDropPositions();
-        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
-        before = below ? "" : issue.id;
-        after = below ? issue.id : "";
-        row.classList.toggle("drop-after", below);
-        row.classList.toggle("drop-before", !below);
-      });
-      row.addEventListener("drop", (event) => {
-        const moving = draggedListIssue;
-        row.classList.remove("drop-before", "drop-after");
-        if (moving === null || moving.id === issue.id) return;
-        event.preventDefault();
-        draggedListIssue = null;
-        if (moving.workspace !== issue.workspace) {
-          mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
-          return;
-        }
-        row.classList.add("moving");
-        void api.moveIssue(moving.id, {
-          status: moving.status,
-          ...(before === "" ? {} : { before }),
-          ...(after === "" ? {} : { after }),
-        }).then(() => render()).catch((error) => {
-          row.classList.remove("moving");
-          mutationError(row, error);
-        });
-      });
-    }
+    configureRow?.(row, issue);
     body.append(row);
     listingRows.push({ issue, row });
   }
@@ -1151,8 +1128,7 @@ function issueTable(
     link.addEventListener("focus", refreshFamily);
     link.addEventListener("blur", refreshFamily);
   }
-  table.append(body);
-  return table;
+  return body;
 }
 
 function listingFilter(
@@ -1554,6 +1530,48 @@ function configureDragSurface(
     surface.classList.remove("dragging");
     clearDragFeedback();
     end();
+  });
+}
+
+function configureIssueOrderRow(
+  row: HTMLTableRowElement,
+  issue: Issue,
+  dragged: () => Issue | null,
+  setDragged: (issue: Issue | null) => void,
+): void {
+  configureDragSurface(row, issue, () => setDragged(issue), () => setDragged(null));
+  let before = issue.id;
+  let after = "";
+  row.addEventListener("dragover", (event) => {
+    const moving = dragged();
+    if (moving === null || moving.id === issue.id || moving.workspace !== issue.workspace) return;
+    event.preventDefault();
+    clearDropPositions();
+    const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+    before = below ? "" : issue.id;
+    after = below ? issue.id : "";
+    row.classList.toggle("drop-after", below);
+    row.classList.toggle("drop-before", !below);
+  });
+  row.addEventListener("drop", (event) => {
+    const moving = dragged();
+    row.classList.remove("drop-before", "drop-after");
+    if (moving === null || moving.id === issue.id) return;
+    event.preventDefault();
+    setDragged(null);
+    if (moving.workspace !== issue.workspace) {
+      mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
+      return;
+    }
+    row.classList.add("moving");
+    void api.moveIssue(moving.id, {
+      status: moving.status,
+      ...(before === "" ? {} : { before }),
+      ...(after === "" ? {} : { after }),
+    }).then(() => render()).catch((error) => {
+      row.classList.remove("moving");
+      mutationError(row, error);
+    });
   });
 }
 
@@ -3432,58 +3450,47 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   section.append(element("h2", "", "Child issues"));
-  const list = element("ul", "child-issues resource-list");
-  let draggedChild: Issue | null = null;
-  for (const child of children) {
-    const row = element("li");
-    row.dataset.issue = child.id;
-    row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
-    if (mutable) {
-      const remove = button("Remove", "inline-button danger-button resource-remove");
-      remove.addEventListener("click", async () => {
-        const confirmed = await confirmMutation(
-          "Remove child?",
-          `Remove ${child.id} from ${parent}?`,
-          remove,
-          true,
-        );
-        if (!confirmed) return;
-        void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
-      });
-      row.append(remove);
-      configureDragSurface(row, child, () => { draggedChild = child; }, () => { draggedChild = null; });
-      let before = child.id;
-      let after = "";
-      row.addEventListener("dragover", (event) => {
-        if (draggedChild === null || draggedChild.id === child.id) return;
-        event.preventDefault();
-        clearDropPositions();
-        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
-        before = below ? "" : child.id;
-        after = below ? child.id : "";
-        row.classList.toggle("drop-after", below);
-        row.classList.toggle("drop-before", !below);
-      });
-      row.addEventListener("drop", (event) => {
-        const moving = draggedChild;
-        row.classList.remove("drop-before", "drop-after");
-        if (moving === null || moving.id === child.id) return;
-        event.preventDefault();
-        draggedChild = null;
-        row.classList.add("moving");
-        void api.moveIssue(moving.id, {
-          status: moving.status,
-          ...(before === "" ? {} : { before }),
-          ...(after === "" ? {} : { after }),
-        }).then(() => render()).catch((error) => {
-          row.classList.remove("moving");
-          mutationError(row, error);
+  const columns = issueColumns("issues").filter((column) =>
+    ["id", "type", "priority", "status", "assignee"].includes(column.key));
+  if (mutable) {
+    columns.push({
+      key: "actions",
+      label: "",
+      sortable: false,
+      render: (child) => {
+        const remove = button("Remove", "inline-button danger-button resource-remove");
+        remove.addEventListener("click", async () => {
+          const confirmed = await confirmMutation(
+            "Remove child?",
+            `Remove ${child.id} from ${parent}?`,
+            remove,
+            true,
+          );
+          if (!confirmed) return;
+          const row = remove.closest("tr") ?? remove;
+          void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
         });
-      });
-    }
-    list.append(row);
+        return remove;
+      },
+    });
   }
-  section.append(list);
+  const table = element("table", "listing-table issue-table child-issues-table") as HTMLTableElement;
+  const head = document.createElement("thead");
+  const heading = document.createElement("tr");
+  for (const column of columns) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.classList.add(`listing-col-${column.key}`);
+    th.append(element("span", "column-label", column.label));
+    heading.append(th);
+  }
+  head.append(heading);
+  table.append(head);
+  let draggedChild: Issue | null = null;
+  table.append(issueTableBody(children, columns, mutable ? (row, child) => {
+    configureIssueOrderRow(row, child, () => draggedChild, (moving) => { draggedChild = moving; });
+  } : undefined));
+  section.append(table);
   return section;
 }
 
