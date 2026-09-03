@@ -16,7 +16,7 @@ highest priority first. That is the "what can I work on now" question.
 awb ready --compact                    # what to pick up
 awb claim <id>                         # take it (sets in_progress)
 awb close <id> --reason "what you did" # finish it
-awb release <id>                       # give it back untouched
+awb release <id>                       # give it back untouched (--as <name> for somebody else)
 ```
 
 **Create and record what you find:**
@@ -80,7 +80,10 @@ awb attach delete <id> trace.txt --force
 - priority: `0` (highest) to `4` (lowest), default `2`
 - relations: `blocked-by` `has-parent` `discovered-from` `related`, each read
   "subject — relation — other". Only `blocked-by` affects readiness.
-- labels and assignees: lowercase letters, digits, `-_./` only
+- labels and assignees: lowercase letters, digits, `-_./` only. Once the
+  tracker holds any user, an assignee has to be one of them (`awb user list`);
+  on the database file `awb claim <id> --as <name> --force` records one that is
+  not, and `awb release <id> --as <name>` removes one either way.
 
 **Output modes.** `--compact` is one line per issue and costs the least context:
 `<id> P<priority> <status> <type> "<title>" [@assignee...] [#label...] [!blocked]`

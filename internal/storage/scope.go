@@ -11,8 +11,8 @@ import "strings"
 // is running in, is what keeps a listing added later from being the one that
 // forgets.
 //
-// The zero value is unrestricted, which is direct mode and a server whose
-// database holds no user: there is nothing there to scope by, and the CLI on a
+// The zero value is unrestricted, which is direct mode and a server that
+// authenticates nobody: there is nothing there to scope by, and the CLI on a
 // file could read around any check anyway.
 type Scope struct {
 	user       string

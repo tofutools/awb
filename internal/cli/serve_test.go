@@ -562,6 +562,102 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 		"--no-auth means it: the users are simply not consulted")
 }
 
+// A password is what turns authentication on, not an account. A user without
+// one is an assignee the tracker knows about, and a server over a database
+// holding only such users is still the open one — so adding an agent to the
+// directory cannot lock everybody out of an installation that never had a
+// password.
+func TestOnlyAPasswordTurnsAuthenticationOn(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "claude-1"})
+	require.NoError(t, err)
+
+	users, err := readUserState(t.Context(), be.DB())
+	require.NoError(t, err)
+	assert.Equal(t, userState{}, users, "an assignee is not an account to authenticate")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, users),
+		"still the local tracker's open server")
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
+		"and still refused where being reachable would be the accident")
+
+	resp, _ := get(t, h, http.MethodGet, "/api/workspaces")
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "no credentials are asked for")
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", "")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "and none are checked")
+
+	// Giving that same account a password closes the door on the next request,
+	// with no restart, exactly as creating one with a password does.
+	password := "hunter2"
+	_, err = be.UpdateUser(t.Context(), "claude-1", backend.UserPatch{Password: &password}, "")
+	require.NoError(t, err)
+
+	users, err = readUserState(t.Context(), be.DB())
+	require.NoError(t, err)
+	assert.Equal(t, userState{any: true, existed: true}, users)
+
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	resp, _ = get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", "hunter2")...)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// The bypass that lets the command line record an assignee the user directory
+// does not know is the file's, not the API's. This runs it through the real
+// server that serve builds, because what decides it is which backend a request
+// is given — an assertion against local.Backend alone would not see a wiring
+// mistake here.
+func TestForceCannotRecordANameThatIsNoUserThroughTheAPI(t *testing.T) {
+	for _, authenticates := range []bool{true, false} {
+		name := "an authenticating server"
+		if !authenticates {
+			name = "an open server"
+		}
+		t.Run(name, func(t *testing.T) {
+			h, be := newServeHandlerAuthenticating(t,
+				serveOptions{addr: "127.0.0.1", port: 7777}, authenticates)
+			_, err := be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
+			require.NoError(t, err)
+			issue, err := be.CreateIssue(t.Context(),
+				backend.IssueCreate{Workspace: "awb", Title: "t"})
+			require.NoError(t, err)
+			_, err = be.CreateUser(t.Context(), backend.UserCreate{
+				Name: "mikael", Password: "hunter2", WorkspaceAdmin: true})
+			require.NoError(t, err)
+
+			headers := []string{"Content-Type", "application/json"}
+			if authenticates {
+				headers = append(headers, basicAuth("mikael", "hunter2")...)
+			}
+			resp, payload := send(t, h, http.MethodPost, "/api/issues/"+issue.ID+"/claim",
+				`{"assignee":"nobody","force":true}`, headers...)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+			assert.Contains(t, payload, "no such user: nobody")
+
+			// The same request on the file, where whoever holds it could write
+			// the row anyway, is what --force is for.
+			claimed, err := be.Claim(t.Context(), issue.ID,
+				backend.ClaimRequest{Assignee: "nobody", Force: true}, "")
+			require.NoError(t, err)
+			assert.Equal(t, []string{"nobody"}, claimed.Assignees)
+		})
+	}
+}
+
+// An account with no password is not a login with an empty one, on a server
+// that authenticates: it is a name nothing can be presented for.
+func TestAPasswordlessAccountCannotAuthenticate(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	_, err = be.CreateUser(t.Context(), backend.UserCreate{Name: "claude-1"})
+	require.NoError(t, err)
+
+	for _, password := range []string{"", "hunter2"} {
+		resp, _ := get(t, h, http.MethodGet, "/api/workspaces", basicAuth("claude-1", password)...)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, password)
+	}
+}
+
 func TestNoAuthServerDoesNotUseAStoredIdentityPreference(t *testing.T) {
 	h, be := newServeHandlerAuthenticating(t, serveOptions{
 		addr: "127.0.0.1", port: 7777, noAuth: true,

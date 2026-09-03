@@ -498,7 +498,7 @@ func TestListingsPage(t *testing.T) {
 		h.create("tied", "--workspace", "awb")
 	}
 	for _, name := range []string{"carol", "alice", "dan", "bob"} {
-		h.mustRunStdin("hunter2\n", "user", "add", name)
+		h.mustRunStdin("hunter2\n", "user", "add", name, "--password")
 	}
 
 	// The first field of a --compact line is the record's identifier on all
@@ -617,8 +617,8 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 	h.mustRun("workspace", "restore", "old")
 	h.mustRun("workspace", "archive", "old")
 
-	h.mustRunStdin("hunter2\n", "user", "add", "alice")
-	h.mustRunStdin("hunter2\n", "user", "add", "bob")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password")
+	h.mustRunStdin("hunter2\n", "user", "add", "bob", "--password")
 	h.mustRun("workspace", "grant", "awb", "bob")
 	h.mustRun("workspace", "grant", "awb", "alice")
 	h.mustRun("workspace", "grant", "web", "alice")

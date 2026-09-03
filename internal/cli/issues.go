@@ -493,7 +493,7 @@ func labelCommand(use, short string, run func(*cobra.Command, string, string) er
 type claimParams struct {
 	ID    string  `positional:"true" required:"true"`
 	As    *string `long:"as" help:"claim for this name instead of your identity"`
-	Force bool    `long:"force" optional:"true" help:"override a blocked or closed issue"`
+	Force bool    `long:"force" optional:"true" help:"override a blocked or closed issue, and, on the database file, an assignee who is not a user"`
 }
 
 func newClaimCommand(e *env) *cobra.Command {
@@ -503,7 +503,11 @@ func newClaimCommand(e *env) *cobra.Command {
 		Long: "Claim an issue.\n\n" +
 			"Claiming one you already hold succeeds, and another claimant joins without\n" +
 			"replacing anyone. It fails if blocked or closed; --force overrides both. A close\n" +
-			"reason remains in the issue's activity history.",
+			"reason remains in the issue's activity history.\n\n" +
+			"On a database that holds any user, the assignee has to be one of them. On the\n" +
+			"database file --force overrides that too, so \"claim --as nobody --force\" is\n" +
+			"how a name the directory does not know is recorded; through a server it\n" +
+			"stands.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *claimParams, cmd *cobra.Command, _ []string) error {
 			assignee := ""
@@ -538,22 +542,34 @@ type forceParams struct {
 	Force bool   `long:"force" optional:"true"`
 }
 
+type releaseParams struct {
+	ID    string  `positional:"true" required:"true"`
+	As    *string `long:"as" help:"remove this assignee instead of your identity"`
+	Force bool    `long:"force" optional:"true"`
+}
+
 func newReleaseCommand(e *env) *cobra.Command {
-	return boa.CmdT[forceParams]{
+	return boa.CmdT[releaseParams]{
 		Use:   "release",
 		Short: "Leave the assignees, reopening the issue when the last one leaves",
 		Long: "Release an issue.\n\n" +
 			"Releasing removes your identity and leaves any other assignees working. It\n" +
 			"fails on a closed issue, or when you are not assigned, unless --force; a\n" +
-			"forced release removes every assignee.",
+			"forced release removes every assignee.\n\n" +
+			"--as removes somebody else's assignment instead of your own, whether or not\n" +
+			"that name is one of the tracker's users: it is how a name that no longer\n" +
+			"belongs to anybody is taken off an issue.",
 		ParamEnrich: boaParams,
-		InitFuncCtx: func(ctx *boa.HookContext, p *forceParams, _ *cobra.Command) error {
+		InitFuncCtx: func(ctx *boa.HookContext, p *releaseParams, _ *cobra.Command) error {
 			boa.GetParamT(ctx, &p.Force).SetDescription("remove every assignee, including from a closed issue")
 			return nil
 		},
-		RunFuncE: func(p *forceParams, cmd *cobra.Command, _ []string) error {
+		RunFuncE: func(p *releaseParams, cmd *cobra.Command, _ []string) error {
 			req := backend.ReleaseRequest{Force: p.Force}
-			if !p.Force {
+			switch {
+			case p.As != nil:
+				req.Assignee = *p.As
+			case !p.Force:
 				// The identity serves only the "assigned to someone else" refusal, so it
 				// is needed only when that refusal applies.
 				identity, err := e.identity()
@@ -561,8 +577,10 @@ func newReleaseCommand(e *env) *cobra.Command {
 					return err
 				}
 				req.Assignee = identity
-			} else if cfg, err := e.config(); err == nil {
-				req.Assignee = cfg.Identity
+			default:
+				if cfg, err := e.config(); err == nil {
+					req.Assignee = cfg.Identity
+				}
 			}
 
 			be, err := e.backend(cmd.Context())

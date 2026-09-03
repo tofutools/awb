@@ -28,10 +28,10 @@ Exit status is the machine-readable error class:
 | `5` | Forbidden |
 
 Work commands do not prompt. Destructive operations require an explicit
-`--force`. Password entry for `user add` and `user update --password` is the
-intentional exception: a terminal prompts with echo disabled, while scripts
-pipe the password through standard input or supply a bcrypt hash where the
-command supports one.
+`--force`. Password entry for `user add --password` and `user update
+--password` is the intentional exception: a terminal prompts with echo
+disabled, while scripts pipe the password through standard input or supply a
+bcrypt hash where the command supports one.
 
 The full-screen interaction is always requested with `--interactive`. It is
 available on issue list, ready, blocked, search, workspace list, and user list,
@@ -80,10 +80,18 @@ The transitions preserve a few deliberate invariants:
 
 - creating with one or more `--assignee` values also starts the issue;
 - claiming adds an assignee and changes the status to `in_progress` atomically;
-- releasing removes one assignee, reopening the issue when the last leaves;
+- releasing removes one assignee — your own, or the one `--as` names — and
+  reopens the issue when the last leaves;
 - closing preserves the assignee list;
 - reopening clears every assignee;
 - a close reason is one typed activity entry committed with the transition.
+
+Once the database holds any user, an assignee has to be one of them; a database
+that holds none takes any name. The account need not have a password: one
+created without a password is an assignee and nothing logs in as it. Two things
+are exempt, both on the database file rather than through a server:
+`awb claim --as <name> --force` records a name the directory does not know, and
+`awb release --as <name>` removes one whether or not it is a user.
 
 `awb move` is the lower-level board operation. It changes status, optional epic
 parent, and optional manual position atomically. Most agents should prefer the

@@ -20,20 +20,25 @@ import (
 // users table rather than against a file.
 //
 // Whether it authenticates at all is a property of the database and is asked
-// on every request: a database holding no user is an open server, exactly as
-// version 1 was, and one holding at least one requires credentials. Asking per
-// request rather than at startup is what makes adding the first user close the
-// door immediately, and it costs one indexed lookup.
+// on every request: a database holding no user with a password is an open
+// server, exactly as version 1 was, and one holding at least one requires
+// credentials. Asking per request rather than at startup is what makes giving
+// the first user a password close the door immediately, and it costs one
+// indexed lookup.
 //
-// It does not open the other way. Deleting the last user leaves the server
-// answering nothing until one is added again, rather than reverting to the
-// open server: a deletion says who may no longer act, and reading it as
-// "everybody may act" turns an administrative mistake into an unguarded
-// database that nobody was told about.
+// A user without a password does not count, and cannot: they exist so that the
+// tracker knows who its assignees are, and an account nobody can log in as is
+// not what a server would be authenticating.
 //
-// That the database has had users is a stored fact rather than something this
-// server remembers, because the users are added and deleted by a command line
-// holding the file and a server learns of either only by looking. A server
+// It does not open the other way. Deleting the last user who could log in
+// leaves the server answering nothing until another exists, rather than
+// reverting to the open server: a deletion says who may no longer act, and
+// reading it as "everybody may act" turns an administrative mistake into an
+// unguarded database that nobody was told about.
+//
+// That the database has had such users is a stored fact rather than something
+// this server remembers, because the users are added and deleted by a command
+// line holding the file and a server learns of either only by looking. A server
 // that looked before the first was added and again after the last was deleted
 // would see the same empty table twice, and nothing it held in memory could
 // tell the two apart; see schemaV6.
@@ -51,13 +56,14 @@ type authenticator struct {
 type authState int
 
 const (
-	// authOpen: this database has never held a user. Everything is let
-	// through, and the server's fixed identity stands in for the caller.
+	// authOpen: this database has never held a user with a password. Everything
+	// is let through, and the server's fixed identity stands in for the caller.
 	authOpen authState = iota
-	// authRequired: the database holds a user, so credentials decide.
+	// authRequired: the database holds a user with a password, so credentials
+	// decide.
 	authRequired
-	// authLocked: it has held users and holds none now. Nothing is let through
-	// until one is added again.
+	// authLocked: it has held users with passwords and holds none now. Nothing
+	// is let through until one exists again.
 	authLocked
 )
 
@@ -101,12 +107,12 @@ var dummyHash = sync.OnceValue(func() string {
 func (a *authenticator) check(ctx context.Context, username, password string) (
 	state authState, ok bool, err error) {
 	err = a.db.Read(ctx, func(tx *storage.Tx) error {
-		any, err := tx.AnyUsers()
+		any, err := tx.AnyUsersWithPassword()
 		if err != nil {
 			return err
 		}
 		if !any {
-			existed, err := tx.UsersHaveExisted()
+			existed, err := tx.UsersWithPasswordHaveExisted()
 			if err != nil {
 				return err
 			}
@@ -124,8 +130,10 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 		}
 		if !found {
 			// Compared anyway, against a hash nothing matches, so that an
-			// unknown username costs bcrypt work rather than returning at
-			// once; see dummyHash for what that does and does not equalise.
+			// unknown username — or one belonging to an account with no
+			// password, which PasswordHash reports as the same thing — costs
+			// bcrypt work rather than returning at once; see dummyHash for
+			// what that does and does not equalise.
 			domain.CheckPassword(dummyHash(), password)
 			return nil
 		}
@@ -135,8 +143,9 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 	return state, ok, err
 }
 
-// Middleware requires credentials whenever the database holds a user, and lets
-// everything through when it holds none.
+// Middleware requires credentials while the database holds a user with a
+// password, lets everything through before it has ever held one, and refuses
+// everything after the last is gone. Those are the three states above.
 //
 // A request that passes reaches the rest of the server with its authenticated
 // username in the request context, which is what gives it its identity and its
@@ -180,14 +189,15 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 				next.ServeHTTP(w, r)
 				return
 			case state == authLocked:
-				// No credentials can open a server with no accounts, so this is
-				// not a challenge: it is the server saying it cannot serve
-				// anybody until one exists. Adding a user makes the next
-				// request work, with no restart, exactly as the first one did.
-				logger.Printf("refusing %s %s from %s: this database has no users",
+				// No credentials can open a server with no account that has one,
+				// so this is not a challenge: it is the server saying it cannot
+				// serve anybody until one exists. Adding a password makes the
+				// next request work, with no restart, exactly as the first one
+				// did.
+				logger.Printf("refusing %s %s from %s: this database has no user with a password",
 					r.Method, r.URL.Path, r.RemoteAddr)
 				writeAuthError(w, http.StatusServiceUnavailable,
-					"no users: this server answers nothing until a user is added")
+					"no user with a password: this server answers nothing until one is added")
 				return
 			case !given || !ok:
 				logger.Printf("authentication failed: %s %s from %s",

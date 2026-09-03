@@ -16,13 +16,36 @@ import (
 func TestUserAddReadsThePasswordFromStdin(t *testing.T) {
 	h := newHarness(t)
 
-	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--compact")
+	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password", "--compact")
 	assert.Equal(t, "alice\n", out)
 
-	// A password is never an argument, so there is no flag to give it as.
-	_, stderr, code := h.run("user", "add", "bob", "--password", "hunter2")
+	// --password takes no value, so a password written after it is a second
+	// positional argument rather than a credential: one on the command line is
+	// in the process listing and in the shell history.
+	_, _, code := h.run("user", "add", "bob", "--password", "hunter2")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, stderr, "unknown flag")
+	_, _, code = h.run("user", "show", "bob")
+	assert.Equal(t, 3, code, "nothing was created")
+}
+
+// Without either credential flag the account exists to be an assignee and
+// nothing can log in as it, which is what a tracker with no server wants.
+func TestUserAddWithoutAPasswordMakesAnAssignee(t *testing.T) {
+	h := newHarness(t)
+	assert.Equal(t, "alice\n", h.mustRun("user", "add", "alice", "--compact"))
+
+	id := h.create("t", "--workspace", "awb", "--assignee", "alice")
+	assert.Contains(t, h.mustRun("show", id, "--compact"), "@alice")
+
+	// It authenticates nobody, so a server over it is still the open one that
+	// refuses to start where being reachable would be a mistake.
+	_, stderr, code := h.run("serve", "--public-url", "https://example.com/")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "no user with a password")
+
+	// Giving it one is what closes that door; the state behind that refusal is
+	// pinned in TestOnlyAPasswordTurnsAuthenticationOn.
+	h.mustRunStdin("hunter2\n", "user", "update", "alice", "--password")
 }
 
 func TestUserFullName(t *testing.T) {
@@ -30,7 +53,7 @@ func TestUserFullName(t *testing.T) {
 
 	// Compact output stays compatible: free text is available in JSON and the
 	// human-readable views, but does not introduce a new compact token shape.
-	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--full-name", "Alice Andersson", "--compact")
+	out := h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password", "--full-name", "Alice Andersson", "--compact")
 	assert.Equal(t, "alice\n", out)
 	assert.Contains(t, h.mustRun("user", "show", "alice"), "Alice Andersson")
 	assert.Contains(t, h.mustRun("user", "list"), "Alice Andersson")
@@ -48,11 +71,37 @@ func TestUserFullName(t *testing.T) {
 	assert.Empty(t, user.FullName)
 }
 
+// An assignee is a user once the tracker has any, and the two escape hatches
+// from that rule are on the file: claiming a name the directory does not know
+// with --force, and releasing one whatever it is.
+func TestClaimAndReleaseAgainstTheUserDirectory(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("t", "--workspace", "awb")
+	h.mustRun("user", "add", "alice")
+
+	_, stderr, code := h.run("claim", id, "--as", "nobody")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "no such user: nobody")
+
+	h.mustRun("claim", id, "--as", "nobody", "--force")
+	h.mustRun("claim", id, "--as", "alice")
+	assert.Contains(t, h.mustRun("show", id, "--compact"), "@nobody @alice")
+
+	// --as releases somebody other than the caller, which is how the name that
+	// belongs to nobody comes off again.
+	h.mustRun("release", id, "--as", "nobody")
+	assert.Contains(t, h.mustRun("show", id, "--compact"), "@alice")
+	assert.NotContains(t, h.mustRun("show", id, "--compact"), "@nobody")
+
+	h.mustRun("release", id, "-a", "alice")
+	assert.Contains(t, h.mustRun("show", id, "--compact"), "P2 open task")
+}
+
 // A password reaches the database as a hash and comes back out as nothing at
 // all: no output mode has a field it could appear in.
 func TestAUserNeverPrintsAPassword(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password")
 
 	for _, args := range [][]string{
 		{"user", "show", "alice"},
@@ -86,16 +135,21 @@ func TestUserAddTakesAPreComputedHash(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "alice")
 
-	// And nothing that is not a bcrypt hash gets in.
+	// And nothing that is not a bcrypt hash gets in, an empty one included:
+	// leaving the flag off is what says the account has no password.
 	_, stderr, code = h.run("user", "add", "dana", "--password-hash", "hunter2")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "htpasswd")
+
+	_, stderr, code = h.run("user", "add", "erin", "--password-hash", "")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "leave it off")
 }
 
 func TestUserFlagsAndMembership(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--workspace-admin", "--user-admin")
-	h.mustRunStdin("hunter2\n", "user", "add", "bob")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password", "--workspace-admin", "--user-admin")
+	h.mustRunStdin("hunter2\n", "user", "add", "bob", "--password")
 
 	assert.Equal(t, "alice +workspace-admin +user-admin\nbob\n",
 		h.mustRun("user", "list", "--compact"))
@@ -117,7 +171,7 @@ func TestUserFlagsAndMembership(t *testing.T) {
 
 func TestUserUpdate(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password")
 
 	out := h.mustRun("user", "update", "alice", "--user-admin", "--compact")
 	assert.Equal(t, "alice +user-admin\n", out)
@@ -137,7 +191,7 @@ func TestUserUpdate(t *testing.T) {
 // they are permitted to do.
 func TestUserShowDefaultsToTheCaller(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "mikael")
+	h.mustRunStdin("hunter2\n", "user", "add", "mikael", "--password")
 	h.mustRun("workspace", "grant", "awb", "mikael", "--access", "admin")
 
 	assert.Equal(t, "mikael awb:admin\n", h.mustRun("user", "show", "--compact"))
@@ -148,7 +202,7 @@ func TestUserShowDefaultsToTheCaller(t *testing.T) {
 
 func TestUserDeleteNeedsForce(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password")
 
 	_, stderr, code := h.run("user", "delete", "alice")
 	assert.Equal(t, 2, code)
@@ -164,7 +218,7 @@ func TestUserDeleteNeedsForce(t *testing.T) {
 // The --json shape is the stable one, and is the same object the API returns.
 func TestUserJSON(t *testing.T) {
 	h := newHarness(t)
-	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--workspace-admin")
+	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password", "--workspace-admin")
 	h.mustRun("workspace", "grant", "awb", "alice", "--access", "admin")
 
 	var user domain.User
@@ -195,7 +249,7 @@ func TestUsernameVocabulary(t *testing.T) {
 		assert.Equal(t, 2, code, name)
 	}
 
-	h.mustRunStdin("hunter2\n", "user", "add", "claude-1")
+	h.mustRunStdin("hunter2\n", "user", "add", "claude-1", "--password")
 	id := h.create("t", "--workspace", "awb", "--assignee", "claude-1")
 	assert.Contains(t, h.mustRun("show", id, "--compact"), "@claude-1")
 }

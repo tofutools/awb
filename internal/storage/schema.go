@@ -35,6 +35,79 @@ var migrations = [][]string{
 	schemaV16,
 	schemaV17,
 	schemaV18,
+	schemaV19,
+}
+
+// schemaV19 makes a user's password optional, so an account can exist as an
+// assignee without being able to log in.
+//
+// SQLite cannot drop the CHECK that schemaV3 put on password_hash, so the
+// table is rebuilt. Its two dependants are rebuilt with it for the reason schemaV5 and
+// schemaV7 give: dropping users while they still reference it would cascade
+// their rows away. The trigger goes with the table it is on and is recreated.
+//
+// The empty string, rather than NULL, is the absence of a password: it is what
+// every other optional text column here stores, and it keeps the column NOT
+// NULL so the one place that reads it cannot be handed a NULL to interpret.
+var schemaV19 = []string{
+	`CREATE TEMP TABLE migration_v19_members AS
+		SELECT workspace, user, access FROM workspace_members`,
+	`CREATE TEMP TABLE migration_v19_ignored AS
+		SELECT user, workspace FROM ignored_workspaces`,
+
+	`DROP TABLE workspace_members`,
+	`DROP TABLE ignored_workspaces`,
+
+	`CREATE TABLE users_new (
+		name            TEXT PRIMARY KEY,
+		full_name       TEXT NOT NULL DEFAULT '',
+		password_hash   TEXT NOT NULL DEFAULT '',
+		workspace_admin INTEGER NOT NULL DEFAULT 0,
+		user_admin      INTEGER NOT NULL DEFAULT 0,
+		created_at      TEXT NOT NULL,
+		updated_at      TEXT NOT NULL,
+		CHECK (name <> ''),
+		CHECK (workspace_admin IN (0, 1)),
+		CHECK (user_admin IN (0, 1))
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO users_new (name, full_name, password_hash, workspace_admin, user_admin,
+		created_at, updated_at)
+		SELECT name, full_name, password_hash, workspace_admin, user_admin,
+		       created_at, updated_at FROM users`,
+	`DROP TABLE users`,
+	`ALTER TABLE users_new RENAME TO users`,
+	`CREATE TRIGGER users_board_views_ad AFTER DELETE ON users BEGIN
+		DELETE FROM board_views WHERE owner = old.name;
+	END`,
+
+	`CREATE TABLE workspace_members (
+		workspace TEXT NOT NULL REFERENCES workspaces (key) ON DELETE CASCADE,
+		user      TEXT NOT NULL REFERENCES users (name) ON DELETE CASCADE,
+		access    TEXT NOT NULL,
+		PRIMARY KEY (workspace, user),
+		CHECK (access IN ('regular', 'admin'))
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO workspace_members (workspace, user, access)
+		SELECT workspace, user, access FROM migration_v19_members`,
+	`CREATE INDEX idx_workspace_members_user ON workspace_members (user)`,
+
+	`CREATE TABLE ignored_workspaces (
+		user      TEXT NOT NULL REFERENCES users (name) ON DELETE CASCADE,
+		workspace TEXT NOT NULL REFERENCES workspaces (key) ON DELETE CASCADE,
+		PRIMARY KEY (user, workspace)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO ignored_workspaces (user, workspace)
+		SELECT user, workspace FROM migration_v19_ignored`,
+
+	`DROP TABLE migration_v19_members`,
+	`DROP TABLE migration_v19_ignored`,
+
+	// user_history now records that a user with a password has existed, and
+	// before this batch every user had one. Restating it here from the rows
+	// themselves makes that true of the migrated database whatever wrote them,
+	// rather than only of one whose accounts all went through InsertUser.
+	`INSERT OR IGNORE INTO user_history (one)
+		SELECT 1 WHERE EXISTS (SELECT 1 FROM users WHERE password_hash <> '')`,
 }
 
 // schemaV18 makes the number of cards loaded per epic/status column a board
@@ -346,6 +419,9 @@ var schemaV7 = []string{
 // It is one row that exists or does not, written by the insert that creates a
 // user and never deleted. A database that already holds users is marked as the
 // migration runs, because its authentication is already on.
+//
+// schemaV19 narrowed what the row records from a user to a user with a
+// password, passwords having become optional; the mechanism is unchanged.
 var schemaV6 = []string{
 	`CREATE TABLE user_history (
 		one INTEGER PRIMARY KEY CHECK (one = 1)

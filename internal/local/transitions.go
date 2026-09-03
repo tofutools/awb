@@ -14,11 +14,48 @@ import (
 // Keeping them out of update is what stops in_progress and the assignment set
 // from drifting apart and stops a claim being taken silently.
 
+// checkAssignees refuses a name that is not a user, which is what keeps the
+// assignee vocabulary and the user directory one vocabulary.
+//
+// It is not a foreign key, and deliberately not: an assignee is stored as the
+// text it always was, so deleting an account leaves the record of who did the
+// work exactly as it stands. The rule is applied where an assignment is made
+// instead, inside the same transaction as the write.
+//
+// A database holding no user at all has no directory to check against, and
+// keeps the version 1 behaviour of taking any assignee. Adding the first user
+// turns the rule on, whether or not that user has a password — an account that
+// exists only to be assigned work is exactly what a passwordless one is for.
+func checkAssignees(tx *storage.Tx, assignees ...string) error {
+	if len(assignees) == 0 {
+		return nil
+	}
+	any, err := tx.AnyUsers()
+	if err != nil || !any {
+		return err
+	}
+	for _, assignee := range assignees {
+		exists, err := tx.UserExists(assignee)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return awberr.Usagef("no such user: %s", assignee)
+		}
+	}
+	return nil
+}
+
 // Claim atomically adds an assignee and sets status to in_progress.
 //
 // Claiming an issue you already hold succeeds; if it is already in_progress
 // nothing changes. Another claimant joins without replacing anyone. A blocked
 // or closed issue conflicts, and --force overrides those two refusals.
+//
+// The assignee has to be a user; see checkAssignees. --force overrides that
+// too, but only on the command line over the database file, where the check is
+// a convenience rather than a control. Through the API it stands whatever the
+// request asks for.
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
 	assignee, err := domain.ValidateAssignee(req.Assignee)
@@ -32,6 +69,11 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 			}
 			if issue.Blocked {
 				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
+			}
+		}
+		if b.served || !req.Force {
+			if err := checkAssignees(tx, assignee); err != nil {
+				return err
 			}
 		}
 
@@ -49,8 +91,12 @@ func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimReques
 	})
 }
 
-// Release removes the caller from the assignees. The issue returns to open
-// only when no assignees remain; --force clears every assignee.
+// Release removes one named assignee. The issue returns to open only when no
+// assignees remain; --force clears every assignee.
+//
+// The name is not checked against the user directory: releasing is how an
+// assignment that names nobody is taken off an issue, so refusing it because
+// the name is not a user would leave it stuck there.
 //
 // Releasing an issue that is already open and unassigned succeeds and changes
 // nothing. It fails on a closed issue, or on one assigned to someone else,

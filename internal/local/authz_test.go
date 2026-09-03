@@ -707,11 +707,7 @@ func TestAUserMayChangeTheirOwnProfileAndPassword(t *testing.T) {
 func TestAPasswordOrAHashButNeverBoth(t *testing.T) {
 	root, ctx := newInstance(t)
 
-	_, err := root.CreateUser(ctx, backend.UserCreate{Name: "alice"})
-	require.Error(t, err, "an account nobody can log in to")
-	assert.Equal(t, 2, awberr.ExitCode(err))
-
-	_, err = root.CreateUser(ctx, backend.UserCreate{
+	_, err := root.CreateUser(ctx, backend.UserCreate{
 		Name: "alice", Password: "hunter2",
 		PasswordHash: "$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by",
 	})
@@ -814,6 +810,7 @@ func TestFacetsAreScoped(t *testing.T) {
 	_, err := root.CreateIssue(ctx, backend.IssueCreate{
 		Workspace: "awb", Title: "Parser crashes", Labels: []string{"parser"}, Assignees: []string{"bob"}})
 	require.NoError(t, err)
+	addUser(t, root, ctx, "carol", false, false)
 	_, err = root.CreateIssue(ctx, backend.IssueCreate{
 		Workspace: "web", Title: "Button drifts", Labels: []string{"css"}, Assignees: []string{"carol"}})
 	require.NoError(t, err)

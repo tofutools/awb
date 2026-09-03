@@ -154,9 +154,10 @@ func (o serveOptions) validate() error {
 // Each of the four is a statement about a deployment: a public URL and TLS
 // termination describe a reverse proxy publishing it, a realm is the name it
 // authenticates in, and a binding that is not loopback lets other machines
-// reach the port. On a database that holds no user, any of them is a server
-// that would hand full read and write access to whoever arrives, which is
-// close enough to a mistake that it is refused rather than served.
+// reach the port. On a database that holds no user with a password, any of
+// them is a server that would hand full read and write access to whoever
+// arrives, which is close enough to a mistake that it is refused rather than
+// served.
 func (o serveOptions) exposure() string {
 	switch {
 	case o.publicURL != "":
@@ -219,7 +220,7 @@ type serveParams struct {
 	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
-	Identity       *string  `long:"identity" help:"the identity a server with no users attributes every request to"`
+	Identity       *string  `long:"identity" help:"the identity a server that authenticates nobody attributes every request to"`
 	BasicAuthRealm *string  `long:"basic-auth-realm" help:"realm presented to clients that supply no credentials (default awb)"`
 	NoAuth         bool     `long:"no-auth" optional:"true" help:"authenticate nobody, whatever the database holds; every client that reaches the port has full access"`
 	ProxyTo        string   `long:"proxy-to" optional:"true" help:"serve the bundled UI while proxying API requests to this awb server"`
@@ -248,21 +249,23 @@ func newServeCommand(e *env) *cobra.Command {
 			"database, and proxy its API requests to another awb server. This is intended\n" +
 			"for testing a locally built UI against an existing installation.\n\n" +
 			"Authentication and authorization come from the database. A database that\n" +
-			"holds at least one user — see awb user — asks every request for a username\n" +
-			"and password and answers it with that user's permissions. One that holds no\n" +
-			"user at all authenticates nobody, and any client that can reach the port has\n" +
-			"full read and write access, which is why the default binds loopback.\n\n" +
+			"holds at least one user with a password — see awb user — asks every request\n" +
+			"for a username and password and answers it with that user's permissions. One\n" +
+			"that holds none authenticates nobody, and any client that can reach the port\n" +
+			"has full read and write access, which is why the default binds loopback. A\n" +
+			"user without a password is an assignee, not an account: it never turns\n" +
+			"authentication on.\n\n" +
 			"Which of the two it is, is decided per request rather than at startup, so\n" +
-			"adding the first user closes the door without a restart. The door does not\n" +
-			"open again by itself: deleting the last user leaves the server answering\n" +
-			"nothing until a user is added again, rather than serving everybody.\n\n" +
-			"A server over a database whose users are all gone starts, and refuses every\n" +
-			"request until one is added; it is recovered without a restart, exactly as a\n" +
-			"running one is. What refuses to start is a server that would authenticate\n" +
-			"nobody where that looks like a mistake: one over a database that never held\n" +
-			"a user, bound to anything but loopback, or given --public-url, --https or\n" +
-			"--basic-auth-realm, each of which describes a deployment published beyond\n" +
-			"this machine.\n\n" +
+			"adding the first password closes the door without a restart. The door does\n" +
+			"not open again by itself: deleting the last such user leaves the server\n" +
+			"answering nothing until another exists, rather than serving everybody.\n\n" +
+			"A server over a database whose accounts are all gone starts, and refuses\n" +
+			"every request until one is added; it is recovered without a restart, exactly\n" +
+			"as a running one is. What refuses to start is a server that would\n" +
+			"authenticate nobody where that looks like a mistake: one over a database that\n" +
+			"never held a user with a password, bound to anything but loopback, or given\n" +
+			"--public-url, --https or --basic-auth-realm, each of which describes a\n" +
+			"deployment published beyond this machine.\n\n" +
 			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
 			"no users at all, so adding one does not close the door either. Taking it\n" +
 			"back is a restart without the flag.\n\n" +
@@ -336,8 +339,8 @@ func newServeCommand(e *env) *cobra.Command {
 
 			// The fixed identity is what an unauthenticated request is
 			// attributed to, and is therefore only required on a server that
-			// would answer one: one over a database that has never held a user,
-			// or one told to authenticate nobody. A server that authenticates
+			// would answer one: one over a database that has never held a user
+			// with a password, or one told to authenticate nobody. A server that authenticates
 			// every request never uses the value, and neither does a locked one,
 			// which answers none; demanding one there would be asking the
 			// operator to name somebody who stands for nobody.
@@ -379,8 +382,8 @@ func newServeCommand(e *env) *cobra.Command {
 						"has full read and write access")
 			case !users.any && users.existed:
 				logger.Printf(
-					"this database has had users and holds none: every request is refused " +
-						"until one is added with \"awb user add\"")
+					"this database has had users with passwords and holds none: every request " +
+						"is refused until one is added with \"awb user add --password\"")
 			}
 
 			return runServer(cmd.Context(), logger, opts, httpHandler)
@@ -391,37 +394,40 @@ func newServeCommand(e *env) *cobra.Command {
 // checkAuthentication decides whether a server that would authenticate nobody
 // may be started.
 //
-// Only one server would: the one over a database that has never held a user,
-// which serves everybody who can reach the port. That is the right answer for
-// a local tracker on loopback and the wrong one everywhere else, so a flag
-// saying this deployment is somewhere else refuses to start rather than
-// opening the door. --no-auth is the operator saying it was meant.
+// Only one server would: the one over a database that has never held a user
+// with a password, which serves everybody who can reach the port. That is the
+// right answer for a local tracker on loopback and the wrong one everywhere
+// else, so a flag saying this deployment is somewhere else refuses to start
+// rather than opening the door. --no-auth is the operator saying it was meant.
 //
-// A database that has had users and holds none is not that server. It is a
-// locked one, which answers nothing to anybody and so exposes nothing wherever
-// it is bound, and it starts: refusing would only move the same state from the
-// port into a command that failed, and would take the recovery with it. A
-// running server recovers from the next "awb user add" without a restart, and
-// so must one that was restarted in that state — an operator whose service is
-// supervised should not have to time account creation against a restart. The
-// state is announced in the log instead; see runServer.
+// A database that has had such users and holds none is not that server. It is
+// a locked one, which answers nothing to anybody and so exposes nothing
+// wherever it is bound, and it starts: refusing would only move the same state
+// from the port into a command that failed, and would take the recovery with
+// it. A running server recovers from the next "awb user add --password"
+// without a restart, and so must one that was restarted in that state — an
+// operator whose service is supervised should not have to time account
+// creation against a restart. The state is announced in the log instead; see
+// runServer.
 func checkAuthentication(opts serveOptions, users userState) error {
 	if opts.noAuth || users.any || users.existed {
 		return nil
 	}
 	if why := opts.exposure(); why != "" {
 		return awberr.Usagef(
-			"%s, and this database holds no user: the server would authenticate nobody, "+
-				"and every client that reached it would have full read and write access; "+
-				"add a user with \"awb user add\", or pass --no-auth to serve without "+
-				"authentication anyway", why)
+			"%s, and this database holds no user with a password: the server would "+
+				"authenticate nobody, and every client that reached it would have full read "+
+				"and write access; add one with \"awb user add --password\", or pass "+
+				"--no-auth to serve without authentication anyway", why)
 	}
 	return nil
 }
 
-// userState is what the database says about users at startup: whether it holds
-// any, and whether it ever has. The second is what tells a local tracker apart
-// from a server whose accounts have all been deleted.
+// userState is what the database says at startup about the users a server
+// could authenticate: whether it holds any, and whether it ever has. The
+// second is what tells a local tracker apart from a server whose credentials
+// have all been deleted. A user with no password is neither, being an assignee
+// rather than an account anybody logs in to.
 type userState struct {
 	any     bool
 	existed bool
@@ -432,11 +438,11 @@ type userState struct {
 func readUserState(ctx context.Context, db *storage.DB) (userState, error) {
 	var users userState
 	err := db.Read(ctx, func(tx *storage.Tx) error {
-		any, err := tx.AnyUsers()
+		any, err := tx.AnyUsersWithPassword()
 		if err != nil {
 			return err
 		}
-		existed, err := tx.UsersHaveExisted()
+		existed, err := tx.UsersWithPasswordHaveExisted()
 		if err != nil {
 			return err
 		}
@@ -605,11 +611,12 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	//
 	// An authenticated request is also an authorized one: it acts as that user
 	// and may do exactly what that user may. A request that authenticated
-	// nobody, on a database that holds no user, acts as the server's fixed
-	// identity with no authorization at all — which is what version 1 was.
-	// A fixed server identity attributes anonymous work; it is not a user. In
-	// particular, --no-auth must not start consulting or changing a stored
-	// account's preferences just because the two names happen to match.
+	// nobody, on a database that holds no user with a password, acts as the
+	// server's fixed identity with no authorization at all — which is what
+	// version 1 was. A fixed server identity attributes anonymous work; it is
+	// not a user. In particular, --no-auth must not start consulting or
+	// changing a stored account's preferences just because the two names
+	// happen to match.
 	withoutUser := base.WithoutUserPreferences()
 	backendFor := func(ctx context.Context) backend.Backend {
 		if username, ok := auth.UsernameFromContext(ctx); ok {

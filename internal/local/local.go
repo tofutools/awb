@@ -41,6 +41,16 @@ type Backend struct {
 	// HTTP server deliberately does not: --no-auth means its fixed identity is
 	// attribution only and the users table is never consulted on its behalf.
 	userPreferences bool
+	// served says this backend is answering an HTTP request rather than a
+	// command line on the database file, which is what decides whether --force
+	// may override the rule that an assignee is a user.
+	//
+	// Direct mode may override it, because whoever holds the file can write any
+	// assignee into it anyway and a check there is a convenience rather than a
+	// control; see the assignee rule in transitions.go. An API request may not,
+	// however the server authenticates, so that a client cannot put a name into
+	// the tracker that its own directory does not know.
+	served bool
 }
 
 // New wraps an open database and the directory its attachment content lives
@@ -61,7 +71,7 @@ func (b *Backend) WithIdentity(identity string) *Backend {
 // a request. Its fixed identity remains useful for activity attribution, but
 // cannot acquire per-user meaning merely because an account has the same name.
 func (b *Backend) WithoutUserPreferences() *Backend {
-	return &Backend{db: b.db, blobs: b.blobs, identity: b.identity}
+	return &Backend{db: b.db, blobs: b.blobs, identity: b.identity, served: true}
 }
 
 // WithUser returns a copy acting as an authenticated user: attributing actions
@@ -70,7 +80,7 @@ func (b *Backend) WithoutUserPreferences() *Backend {
 func (b *Backend) WithUser(username string) *Backend {
 	return &Backend{
 		db: b.db, blobs: b.blobs, identity: username,
-		authorized: true, userPreferences: true,
+		authorized: true, userPreferences: true, served: true,
 	}
 }
 

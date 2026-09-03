@@ -11,7 +11,8 @@ import (
 
 // Snapshot is the stored state the existing read API exposes. Users and
 // memberships are deliberately absent: a server never exposes password hashes,
-// and a database with no users is an unauthenticated local server.
+// and a database with no user with a password is an unauthenticated local
+// server.
 type Snapshot struct {
 	Workspaces        []domain.Workspace
 	Issues            []domain.Issue

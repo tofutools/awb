@@ -24,9 +24,14 @@ func newUserCommand(e *env) *cobra.Command {
 			"already read and write every byte of it. That is also how the first user\n"+
 			"is created, and how an instance whose last administrator is gone is\n"+
 			"recovered.\n\n"+
-			"A database holding no user is a server without authentication. Adding the\n"+
-			"first one turns it on, from the next request onwards, and deleting them all\n"+
-			"does not turn it off again: that takes awb serve --no-auth.",
+			"A user's password is optional. One without a password is an assignee and\n"+
+			"nothing else: the tracker knows the name, and nobody can log in as it. That\n"+
+			"is what a database with no server at all wants, and what an agent working\n"+
+			"through the command line is.\n\n"+
+			"A database holding no user with a password is a server without\n"+
+			"authentication. Adding the first password turns it on, from the next request\n"+
+			"onwards, and deleting them all does not turn it off again: that takes\n"+
+			"awb serve --no-auth.",
 		newUserAddCommand(e),
 		newUserUpdateCommand(e),
 		newUserShowCommand(e),
@@ -44,37 +49,33 @@ func newUserCommand(e *env) *cobra.Command {
 // type at, and piped in when there is not — or does not arrive at all, the
 // caller having hashed it themselves.
 //
-// --password says to read one, and is therefore only meaningful where taking a
-// new password is a choice: awb user add always needs one and hides the flag,
-// exactly as the listings that fix a status set for themselves hide --status.
+// --password says to read one, and means the same thing on both commands that
+// take a credential: neither flag is a user who cannot log in, which is an
+// account that exists to be an assignee.
 type PasswordFlags struct {
-	Password     bool    `long:"password" optional:"true" help:"read a new password from stdin, as awb user add does"`
+	Password     bool    `long:"password" optional:"true" help:"read a password from stdin; without it the user cannot log in"`
 	PasswordHash *string `long:"password-hash" help:"a bcrypt hash, as \"htpasswd -Bn <name>\" writes one, instead of a password"`
 }
 
-// alwaysReadsAPassword hides --password on a command that takes one either
-// way.
-func alwaysReadsAPassword() func(*boa.HookContext, *PasswordFlags, *cobra.Command) error {
-	return func(ctx *boa.HookContext, f *PasswordFlags, _ *cobra.Command) error {
-		boa.GetParamT(ctx, &f.Password).SetIgnored(true)
-		return nil
-	}
-}
-
 // value returns the two ways of stating the credential, at most one of which
-// is non-empty. It reads stdin when it has to, which is why it is called
-// before anything is sent.
-//
-// required is set where an account is being made, which cannot be made without
-// one.
-func (f *PasswordFlags) value(e *env, username string, required bool) (password, hash string, err error) {
+// is non-empty; both are empty when neither flag was given. It reads stdin
+// when it has to, which is why it is called before anything is sent.
+func (f *PasswordFlags) value(e *env, username string) (password, hash string, err error) {
 	if f.PasswordHash != nil {
 		if f.Password {
 			return "", "", awberr.Usagef("--password and --password-hash are mutually exclusive")
 		}
+		if *f.PasswordHash == "" {
+			// Absence is what says "no password", and it is said by leaving both
+			// flags off. An empty --password-hash is somebody's shell expanding to
+			// nothing, and silently making an account nobody can log in to is the
+			// wrong reading of it.
+			return "", "", awberr.Usagef(
+				"--password-hash is empty: leave it off to create a user without a password")
+		}
 		return "", *f.PasswordHash, nil
 	}
-	if !f.Password && !required {
+	if !f.Password {
 		return "", "", nil
 	}
 	password, err = readPassword(e, username)
@@ -150,23 +151,23 @@ func newUserAddCommand(e *env) *cobra.Command {
 	return boa.CmdT[userAddParams]{
 		Use:   "add",
 		Short: "Create a user",
-		Long: "Create a user, reading their password from stdin.\n\n" +
-			"At a terminal the password is prompted for and typed without echo, and\n" +
-			"asked for twice; otherwise it is read from stdin, so\n" +
-			"\"echo secret | awb user add alice\" works in a script. It is never a flag:\n" +
-			"a password on the command line is in the process listing and in the shell\n" +
-			"history.\n\n" +
+		Long: "Create a user.\n\n" +
+			"Without --password or --password-hash the account has no password: it can be\n" +
+			"an assignee and nobody can log in as it, which is what a tracker with no\n" +
+			"server, and an agent working through the command line, wants.\n\n" +
+			"--password reads one from stdin. At a terminal it is prompted for and typed\n" +
+			"without echo, and asked for twice; otherwise it is read from stdin, so\n" +
+			"\"echo secret | awb user add alice --password\" works in a script. It is never\n" +
+			"a flag value: a password on the command line is in the process listing and in\n" +
+			"the shell history.\n\n" +
 			"--password-hash takes a bcrypt hash computed elsewhere instead, so the\n" +
 			"plaintext never reaches awb at all. It is what \"htpasswd -Bn <name>\"\n" +
 			"writes, and either that whole line or the hash alone is accepted.\n\n" +
 			"The name is the assignee the user's issues will record, and is immutable.\n" +
 			"A new user has access to no workspace: grant it with awb workspace grant.",
 		ParamEnrich: boaParams,
-		InitFuncCtx: func(ctx *boa.HookContext, p *userAddParams, cmd *cobra.Command) error {
-			return alwaysReadsAPassword()(ctx, &p.PasswordFlags, cmd)
-		},
 		RunFuncE: func(p *userAddParams, cmd *cobra.Command, _ []string) error {
-			password, hash, err := p.value(e, p.Name, true)
+			password, hash, err := p.value(e, p.Name)
 			if err != nil {
 				return err
 			}
@@ -207,7 +208,8 @@ func newUserUpdateCommand(e *env) *cobra.Command {
 		Short: "Change a user's full name, password or what they may do",
 		Long: "Change a user's full name, password or either of their two flags. The username itself is\n" +
 			"immutable: it is the assignee their issues record.\n\n" +
-			"--password reads a new password exactly as awb user add does.\n\n" +
+			"--password reads a new password exactly as awb user add does, and is how an\n" +
+			"account created without one is given the ability to log in.\n\n" +
 			"Through a server the two halves are permitted separately: the flags are a\n" +
 			"user administrator's, and the full name and password are theirs or the account\n" +
 			"holder's own, so anybody may change their own profile without being able to grant\n" +
@@ -215,7 +217,7 @@ func newUserUpdateCommand(e *env) *cobra.Command {
 			"Access to a workspace is not changed here; that is awb workspace grant.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userUpdateParams, cmd *cobra.Command, _ []string) error {
-			password, hash, err := p.value(e, p.Name, false)
+			password, hash, err := p.value(e, p.Name)
 			if err != nil {
 				return err
 			}
@@ -334,10 +336,12 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
-			"Deleting the last user does not turn a server's authentication off again:\n" +
-			"the server answers nothing until a user is added back, rather than serving\n" +
-			"everybody, and one started afterwards starts in that state rather than\n" +
-			"open. Serving such a database openly is awb serve --no-auth.",
+			"Deleting the last user with a password does not turn a server's\n" +
+			"authentication off again: the server answers nothing until another user\n" +
+			"with a password exists, rather than serving everybody, and one started\n" +
+			"afterwards starts in that state rather than open. A user with no password\n" +
+			"cannot unlock it, never having been one it authenticated. Serving such a\n" +
+			"database openly is awb serve --no-auth.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {

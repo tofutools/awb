@@ -47,7 +47,7 @@ func TestV6RecordsUsersThatAlreadyExist(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 
 			require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
-				existed, err := tx.UsersHaveExisted()
+				existed, err := tx.UsersWithPasswordHaveExisted()
 				require.NoError(t, err)
 				assert.Equal(t, tc.existed, existed)
 				return nil
@@ -456,4 +456,112 @@ func TestV13RenamesWorkspaceSchemaWithoutLosingData(t *testing.T) {
 		assert.Failf(t, "legacy schema name remains", "%s: %s", name, statement)
 	}
 	require.NoError(t, rows.Err())
+}
+
+// Rebuilding the users table is the only way to lose the CHECK that made a
+// password mandatory, and a rebuild is the one migration shape that can take
+// its dependants with it: both reference users and cascade on delete, and the
+// board-view trigger lives on the table itself. What must survive is every row
+// on both sides and the cascade that ties them together.
+func TestV19MakesThePasswordOptionalWithoutLosingWhatDependsOnAUser(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 18)
+	const timestamp = "2026-08-31T12:00:00.000000Z"
+	for _, statement := range []string{
+		`INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
+		 VALUES ('awb', 'AWB', '', 'active', '', '', '` + timestamp + `', '` + timestamp + `')`,
+		`INSERT INTO users (name, full_name, password_hash, workspace_admin, user_admin, created_at, updated_at)
+		 VALUES ('alice', 'Alice', 'hash', 1, 0, '` + timestamp + `', '` + timestamp + `')`,
+		`INSERT INTO workspace_members (workspace, user, access) VALUES ('awb', 'alice', 'admin')`,
+		`INSERT INTO ignored_workspaces (user, workspace) VALUES ('alice', 'awb')`,
+		`INSERT INTO board_views (id, name, owner, shared, all_workspaces, priority_max,
+			created_at, updated_at, all_epics, include_no_epic, card_limit)
+		 VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Release', 'alice', 1, 1, 3,
+			'` + timestamp + `', '` + timestamp + `', 1, 1, 8)`,
+	} {
+		_, err := raw.ExecContext(t.Context(), statement)
+		require.NoError(t, err, statement)
+	}
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// The existing account is untouched, and still one a server authenticates.
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		user, readErr := tx.GetUser("alice")
+		require.NoError(t, readErr)
+		assert.Equal(t, "Alice", user.FullName)
+		assert.True(t, user.WorkspaceAdmin)
+		require.Len(t, user.Workspaces, 1)
+		assert.Equal(t, domain.AccessAdmin, user.Workspaces[0].Access)
+
+		any, readErr := tx.AnyUsersWithPassword()
+		require.NoError(t, readErr)
+		assert.True(t, any)
+		return nil
+	}))
+
+	for query, want := range map[string]int{
+		`SELECT count(*) FROM workspace_members WHERE user = 'alice'`:  1,
+		`SELECT count(*) FROM ignored_workspaces WHERE user = 'alice'`: 1,
+		`SELECT count(*) FROM board_views WHERE owner = 'alice'`:       1,
+	} {
+		var got int
+		require.NoError(t, db.SQL().QueryRowContext(t.Context(), query).Scan(&got), query)
+		assert.Equal(t, want, got, query)
+	}
+
+	// A password is now optional, and such an account is not one a server
+	// authenticates.
+	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
+		require.NoError(t, tx.InsertUser("claude-1", "", "", false, false))
+		any, readErr := tx.AnyUsersWithPassword()
+		require.NoError(t, readErr)
+		assert.True(t, any, "alice still has one")
+		return nil
+	}))
+
+	// And the cascades the rebuild recreated still fire. What is left is a
+	// directory with a name in it and nothing to authenticate.
+	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
+		return tx.DeleteUser("alice")
+	}))
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		any, readErr := tx.AnyUsers()
+		require.NoError(t, readErr)
+		assert.True(t, any, "claude-1 is still an assignee")
+
+		withPassword, readErr := tx.AnyUsersWithPassword()
+		require.NoError(t, readErr)
+		assert.False(t, withPassword)
+
+		existed, readErr := tx.UsersWithPasswordHaveExisted()
+		require.NoError(t, readErr)
+		assert.True(t, existed, "the server locks rather than falling open")
+		return nil
+	}))
+	for _, query := range []string{
+		`SELECT count(*) FROM workspace_members WHERE user = 'alice'`,
+		`SELECT count(*) FROM ignored_workspaces WHERE user = 'alice'`,
+		`SELECT count(*) FROM board_views WHERE owner = 'alice'`,
+	} {
+		var got int
+		require.NoError(t, db.SQL().QueryRowContext(t.Context(), query).Scan(&got), query)
+		assert.Zero(t, got, query)
+	}
+
+	var check string
+	require.NoError(t, db.SQL().QueryRowContext(t.Context(),
+		`PRAGMA integrity_check`).Scan(&check))
+	assert.Equal(t, "ok", check)
+
+	// The rebuilt tables reference the rebuilt users by name, so a copy that
+	// dropped or renamed a row would leave a key pointing at nothing.
+	violations, err := db.SQL().QueryContext(t.Context(), `PRAGMA foreign_key_check`)
+	require.NoError(t, err)
+	defer violations.Close() //nolint:errcheck
+	assert.False(t, violations.Next(), "a foreign key survived the rebuild pointing at nothing")
+	require.NoError(t, violations.Err())
 }
