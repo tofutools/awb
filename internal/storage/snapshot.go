@@ -71,9 +71,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				return err
 			}
 			if _, err := tx.q.ExecContext(ctx, `INSERT INTO issues (`+issueColumns+`)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL, issue.Type,
-				issue.Status, issue.Priority, issue.Order, issue.BoardHidden,
+				issue.Status, issue.Priority, issue.Order,
 				issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt); err != nil {
 				return restoreError(err, "issue %s", issue.ID)
 			}

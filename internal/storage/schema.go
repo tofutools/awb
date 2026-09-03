@@ -36,6 +36,17 @@ var migrations = [][]string{
 	schemaV17,
 	schemaV18,
 	schemaV19,
+	schemaV20,
+}
+
+// schemaV20 generalizes the sparse position beyond boards and removes the
+// board-only visibility flag. The public representation already called the
+// position "order"; only its storage name was board-specific.
+var schemaV20 = []string{
+	`DROP INDEX idx_issues_board_order`,
+	`ALTER TABLE issues RENAME COLUMN board_order TO issue_order`,
+	`ALTER TABLE issues DROP COLUMN board_hidden`,
+	`CREATE INDEX idx_issues_issue_order ON issues (issue_order, priority, updated_at, id)`,
 }
 
 // schemaV19 makes a user's password optional, so an account can exist as an

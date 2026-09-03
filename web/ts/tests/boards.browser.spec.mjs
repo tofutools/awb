@@ -484,7 +484,6 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(hideableEpicID).toBeTruthy();
   await hideableLane.getByRole("button", { name: `Hide ${hideableEpicID} from this view` }).click();
   await expect(page.locator(".board-lane", { has: page.getByRole("heading", { name: hideableHeading, exact: true }) })).toHaveCount(0);
-  await expect.poll(() => page.evaluate(async (id) => (await (await fetch(`api/issues/${id}`)).json()).board_hidden, hideableEpicID)).toBe(false);
   const hiddenEpicReads = [];
   const recordHiddenEpicRead = (request) => {
     if (new URL(request.url()).pathname.endsWith(`/api/issues/${hideableEpicID}`)) hiddenEpicReads.push(request.url());

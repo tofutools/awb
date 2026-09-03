@@ -643,7 +643,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			for _, status := range statuses {
 				filter := &domain.Filter{Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
-					Offset: query.CardOffset, Sort: domain.DefaultSort, BoardOnly: true}
+					Offset: query.CardOffset, Sort: domain.DefaultSort}
 				if status == domain.StatusClosed {
 					filter.ClosedAfter = closedAfter
 				}
@@ -677,7 +677,7 @@ func boardClosedAfter(days int) string {
 // its independent cutoff controls the whole lane. A zero-day window becomes a
 // future cutoff and therefore removes every closed epic immediately.
 func boardEpicVisible(issue *domain.Issue, closedAfter string) bool {
-	return issue.Type == domain.TypeEpic && !issue.BoardHidden &&
+	return issue.Type == domain.TypeEpic &&
 		(issue.Status != domain.StatusClosed || issue.ClosedAt >= closedAfter)
 }
 
