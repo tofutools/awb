@@ -15,6 +15,16 @@ export interface SortState {
 // on an error page without its clear control.
 export const listingFilterMaxLength = 500;
 
+// Parent titles share a deliberately narrow listing column. Keep their text
+// bounded even on wide screens; the anchor's tooltip carries the full title.
+export const listingParentTitleMaxLength = 32;
+
+export function listingParentTitle(title: string): string {
+  const characters = Array.from(title);
+  if (characters.length <= listingParentTitleMaxLength) return title;
+  return `${characters.slice(0, listingParentTitleMaxLength - 1).join("")}…`;
+}
+
 /** Runs one debounced listing request at a time. Aborting saves backend work;
  * the generation guard also rejects a stale transport completion. */
 export class BackendListingFilter<T> {

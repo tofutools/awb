@@ -198,8 +198,6 @@ type Filter struct {
 	// IncludeArchived is reserved for explicit history/export paths. Ordinary
 	// listings and every target picker leave it false.
 	IncludeArchived bool
-	// BoardOnly removes issues explicitly hidden from board projections.
-	BoardOnly bool
 	// ClosedAfter keeps closed issues only when their most recent close is at
 	// or after this timestamp. Empty applies no age limit.
 	ClosedAfter string

@@ -45,8 +45,16 @@ func (e *env) writeJSON(value any) error {
 // exists to name.
 type issueJSON struct {
 	*domain.Issue
-	IssueLink     string `json:"issue_link"`
-	WorkspaceLink string `json:"workspace_link"`
+	Relations     []relationJSON `json:"relations"`
+	IssueLink     string         `json:"issue_link"`
+	WorkspaceLink string         `json:"workspace_link"`
+}
+
+type relationJSON struct {
+	Type       domain.RelationType `json:"type"`
+	Other      string              `json:"other"`
+	OtherTitle string              `json:"other_title"`
+	Direction  domain.Direction    `json:"direction"`
 }
 
 type workspaceJSON struct {
@@ -60,8 +68,16 @@ type issueTreeJSON struct {
 }
 
 func (e *env) issueJSON(issue *domain.Issue) issueJSON {
+	relations := make([]relationJSON, len(issue.Relations))
+	for i, relation := range issue.Relations {
+		relations[i] = relationJSON{
+			Type: relation.Type, Other: relation.Other,
+			OtherTitle: issue.RelationTitle(relation.Other), Direction: relation.Direction,
+		}
+	}
 	return issueJSON{
 		Issue:         issue,
+		Relations:     relations,
 		IssueLink:     e.issueURL(issue.ID),
 		WorkspaceLink: e.workspaceURL(issue.Workspace),
 	}
@@ -232,12 +248,13 @@ type col struct {
 // given up has been, and never below its own heading: a heading with its end
 // cut off says nothing about what the column holds.
 const (
-	titleFloor    = 24
-	labelsFloor   = 10
-	blockersFloor = 13
-	nameFloor     = 12
-	typeFloor     = 12
-	adminFloor    = 8
+	titleFloor       = 24
+	labelsFloor      = 10
+	blockersFloor    = 13
+	nameFloor        = 12
+	typeFloor        = 12
+	adminFloor       = 8
+	parentTitleWidth = 32
 )
 
 // always paints every row of a column the same.
@@ -496,6 +513,8 @@ func (e *env) issueCols(t *theme, issues []domain.Issue, withBlockers bool) []co
 			cells: cells(statusText)},
 		{header: "TYPE", expendable: true,
 			cells: cells(func(i *domain.Issue) string { return string(i.Type) })},
+		{header: "PARENT", floor: nameFloor, expendable: true, paint: always(t.dim),
+			cells: cells(func(i *domain.Issue) string { return e.parentListingCell(t, i) })},
 		{header: "TITLE", floor: titleFloor,
 			cells: cells(func(i *domain.Issue) string { return t.listTitle(i.Title) })},
 		{header: "ASSIGNEES", expendable: true, paint: always(t.assignee),
@@ -509,6 +528,20 @@ func (e *env) issueCols(t *theme, issues []domain.Issue, withBlockers bool) []co
 			cells: cells(func(i *domain.Issue) string { return e.issueLinks(t, i.Blockers, ",") })})
 	}
 	return cols
+}
+
+func (e *env) parentListingCell(t *theme, issue *domain.Issue) string {
+	for _, relation := range issue.Relations {
+		if relation.Type != domain.RelHasParent || relation.Direction != domain.DirectionOut {
+			continue
+		}
+		text := issue.RelationTitle(relation.Other)
+		if text == "" {
+			text = relation.Other
+		}
+		return e.entityLink(t, truncate(text, parentTitleWidth), "/issues/"+url.PathEscape(relation.Other))
+	}
+	return ""
 }
 
 // entityLink makes an identifier open the bundled web UI when this invocation

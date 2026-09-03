@@ -89,25 +89,15 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.Equal(t, []string{"awb", "web"}, restored.Workspaces)
 }
 
-func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
+func TestBoardHidesExpiredClosedIssues(t *testing.T) {
 	root, ctx := newInstance(t)
 	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "visible"})
 	require.NoError(t, err)
-	hidden, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "hidden"})
-	require.NoError(t, err)
 	closed, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "closed"})
-	require.NoError(t, err)
-	hiddenEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "hidden epic", Type: domain.TypeEpic})
 	require.NoError(t, err)
 	closedEpic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "closed epic", Type: domain.TypeEpic})
 	require.NoError(t, err)
 
-	boardHidden := true
-	hidden, err = root.UpdateIssue(ctx, hidden.ID, backend.IssuePatch{BoardHidden: &boardHidden}, "")
-	require.NoError(t, err)
-	assert.True(t, hidden.BoardHidden)
-	_, err = root.UpdateIssue(ctx, hiddenEpic.ID, backend.IssuePatch{BoardHidden: &boardHidden}, "")
-	require.NoError(t, err)
 	closed, err = root.CloseIssue(ctx, closed.ID, backend.CloseRequest{}, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, closed.ClosedAt)
@@ -117,7 +107,7 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	thirty := 30
 	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty})
 	require.NoError(t, err)
-	assert.Equal(t, 1, board.LaneTotal, "closed and hidden epics disappear immediately")
+	assert.Equal(t, 1, board.LaneTotal, "closed epics disappear immediately")
 	assert.Equal(t, []string{visible.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
 	assert.Equal(t, []string{closed.ID}, issueIDs(board.Lanes[0].Columns[2].Issues))
 	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &thirty, EpicClosedDays: &thirty})
@@ -128,7 +118,7 @@ func TestBoardHidesExplicitAndExpiredClosedIssues(t *testing.T) {
 	zero := 0
 	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{ClosedDays: &zero})
 	require.NoError(t, err)
-	assert.Equal(t, 1, board.LaneTotal, "No epic is the only lane after closed and hidden epics are omitted")
+	assert.Equal(t, 1, board.LaneTotal, "No epic is the only lane after closed epics are omitted")
 	assert.Empty(t, board.Lanes[0].Columns[2].Issues)
 	assert.Zero(t, board.Lanes[0].Columns[2].Total)
 

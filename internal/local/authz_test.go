@@ -984,6 +984,11 @@ func TestTheGraphIsNotScopedAndReadinessIsTrue(t *testing.T) {
 	assert.Equal(t, []string{blocker.ID}, seen.Blockers)
 	require.Len(t, seen.Relations, 1)
 	assert.Equal(t, blocker.ID, seen.Relations[0].Other)
+	assert.Empty(t, seen.RelationTitle(blocker.ID), "the hidden issue's title is not exposed")
+
+	rootSeen, err := root.GetIssue(ctx, blocked.ID)
+	require.NoError(t, err)
+	assert.Equal(t, blocker.Title, rootSeen.RelationTitle(blocker.ID))
 
 	// A name is all of it: the issue behind it is not there for bob.
 	_, err = bob.GetIssue(ctx, blocker.ID)

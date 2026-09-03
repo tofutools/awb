@@ -10,8 +10,8 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, board_order,
-	board_hidden, created_at, updated_at, closed_at`
+const issueColumns = `id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, issue_order,
+	created_at, updated_at, closed_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -20,7 +20,7 @@ type rowScanner interface {
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
 	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.CommitHash, &i.PullRequestURL, &i.Type, &i.Status,
-		&i.Priority, &i.Order, &i.BoardHidden, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
+		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -213,19 +213,25 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 // both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
+	visibleTitleOut, visibleTitleOutArgs := t.visibleClause("counterpart.workspace")
 	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.workspace")
+	visibleTitleIn, visibleTitleInArgs := t.visibleClause("counterpart.workspace")
 	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.workspace")
-	args := append(anyArgs(ids), visibleOutArgs...)
+	args := append(visibleTitleOutArgs, anyArgs(ids)...)
+	args = append(args, visibleOutArgs...)
+	args = append(args, visibleTitleInArgs...)
 	args = append(args, anyArgs(ids)...)
 	args = append(args, visibleInArgs...)
 
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT r.subject AS viewed, r.type, r.other AS counterpart, 'out' AS direction
+		SELECT r.subject AS viewed, r.type, r.other AS counterpart, 'out' AS direction,
+		       CASE WHEN `+visibleTitleOut+` THEN counterpart.title ELSE '' END AS counterpart_title
 		  FROM relations r JOIN issues counterpart ON counterpart.id = r.other
 		 WHERE r.subject IN (`+in+`) AND `+visibleOut+`
 		UNION ALL
 		SELECT r.other AS viewed, r.type, r.subject AS counterpart,
-		       CASE WHEN r.type = 'related' THEN 'out' ELSE 'in' END AS direction
+		       CASE WHEN r.type = 'related' THEN 'out' ELSE 'in' END AS direction,
+		       CASE WHEN `+visibleTitleIn+` THEN counterpart.title ELSE '' END AS counterpart_title
 		  FROM relations r JOIN issues counterpart ON counterpart.id = r.subject
 		 WHERE r.other IN (`+in+`) AND `+visibleIn, args...)
 	if err != nil {
@@ -234,13 +240,16 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	defer rows.Close()
 
 	for rows.Next() {
-		var viewed string
+		var viewed, counterpartTitle string
 		var rel domain.Relation
-		if err := rows.Scan(&viewed, &rel.Type, &rel.Other, &rel.Direction); err != nil {
+		if err := rows.Scan(&viewed, &rel.Type, &rel.Other, &rel.Direction, &counterpartTitle); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "read relations")
 		}
 		if issue := byID[viewed]; issue != nil {
 			issue.Relations = append(issue.Relations, rel)
+			if counterpartTitle != "" {
+				issue.SetRelationTitle(rel.Other, counterpartTitle)
+			}
 		}
 	}
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read relations")
@@ -307,9 +316,9 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL, issue.Type,
-			issue.Status, issue.Priority, issue.Order, issue.BoardHidden,
+			issue.Status, issue.Priority, issue.Order,
 			issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
 		if err == nil {
 			for position, assignee := range assignees {
@@ -344,7 +353,6 @@ type IssueFields struct {
 	Status         domain.Status
 	Priority       int
 	Order          int
-	BoardHidden    bool
 	Assignees      []string
 }
 
@@ -352,7 +360,7 @@ type IssueFields struct {
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
 		Title: i.Title, Description: i.Description, CommitHash: i.CommitHash, PullRequestURL: i.PullRequestURL, Type: i.Type, Status: i.Status,
-		Priority: i.Priority, Order: i.Order, BoardHidden: i.BoardHidden,
+		Priority: i.Priority, Order: i.Order,
 		Assignees: slices.Clone(i.Assignees),
 	}
 }
@@ -368,7 +376,6 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	if before.Title == fields.Title && before.Description == fields.Description && before.CommitHash == fields.CommitHash && before.PullRequestURL == fields.PullRequestURL &&
 		before.Type == fields.Type && before.Status == fields.Status &&
 		before.Priority == fields.Priority && before.Order == fields.Order &&
-		before.BoardHidden == fields.BoardHidden &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
 	}
@@ -389,11 +396,11 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 
 	_, err := t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET title = ?, description = ?, commit_hash = ?, pull_request_url = ?, type = ?, status = ?, priority = ?, board_order = ?,
-		       board_hidden = ?, updated_at = ?, closed_at = ?
+		   SET title = ?, description = ?, commit_hash = ?, pull_request_url = ?, type = ?, status = ?, priority = ?, issue_order = ?,
+		       updated_at = ?, closed_at = ?
 		 WHERE id = ?`,
 		fields.Title, fields.Description, fields.CommitHash, fields.PullRequestURL, fields.Type, fields.Status, fields.Priority, fields.Order,
-		fields.BoardHidden, updated, closedAt, issue.ID)
+		updated, closedAt, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
@@ -419,7 +426,6 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority
 	issue.Order = fields.Order
-	issue.BoardHidden = fields.BoardHidden
 	issue.ClosedAt = closedAt
 	issue.Assignees = slices.Clone(fields.Assignees)
 	issue.UpdatedAt = updated
@@ -457,9 +463,9 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction stri
 			args = append(args, *epic)
 		}
 	}
-	rows, err := t.q.QueryContext(t.ctx, `SELECT id, board_order, updated_at FROM issues
+	rows, err := t.q.QueryContext(t.ctx, `SELECT id, issue_order, updated_at FROM issues
 		WHERE `+where+
-		` ORDER BY (board_order = 0) ASC, board_order ASC, priority ASC, updated_at DESC, id ASC`,
+		` ORDER BY (issue_order = 0) ASC, issue_order ASC, priority ASC, updated_at DESC, id ASC`,
 		args...)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "read issue order")
@@ -523,7 +529,7 @@ func (t *Tx) ReorderIssue(issue *domain.Issue, beforeID, afterID, direction stri
 			return nil
 		}
 		updated := bumpedTimestamp(row.updated, Now())
-		if _, err := t.q.ExecContext(t.ctx, `UPDATE issues SET board_order = ?, updated_at = ? WHERE id = ?`,
+		if _, err := t.q.ExecContext(t.ctx, `UPDATE issues SET issue_order = ?, updated_at = ? WHERE id = ?`,
 			want, updated, row.id); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "reorder issue %s", row.id)
 		}

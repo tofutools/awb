@@ -190,6 +190,32 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
 }
 
+func TestParentFilteredListingHonoursManualOrder(t *testing.T) {
+	b, ctx := newBackend(t)
+	parent := create(t, b, ctx, "parent")
+	child := func(title string) *domain.Issue {
+		return create(t, b, ctx, title, func(req *backend.IssueCreate) {
+			req.Relations = []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}}
+		})
+	}
+	child("first child")
+	child("second child")
+
+	page, err := b.ListIssues(ctx, &domain.Filter{Parent: parent.ID, Sort: domain.DefaultSort})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 2)
+	first, second := page.Issues[0], page.Issues[1]
+
+	_, err = b.MoveIssue(ctx, second.ID, backend.IssueMove{
+		Status: domain.StatusOpen, Before: first.ID,
+	}, "")
+	require.NoError(t, err)
+	page, err = b.ListIssues(ctx, &domain.Filter{Parent: parent.ID, Sort: domain.DefaultSort})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 2)
+	assert.Equal(t, []string{second.ID, first.ID}, []string{page.Issues[0].ID, page.Issues[1].ID})
+}
+
 func TestMoveIssueRestartsClosedWorkAndCanClearAnyAssignment(t *testing.T) {
 	b, ctx := newBackend(t)
 	closed := create(t, b, ctx, "closed", func(req *backend.IssueCreate) {

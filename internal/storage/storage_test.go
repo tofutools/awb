@@ -271,6 +271,8 @@ func TestRelationsAreShownOnBothEnds(t *testing.T) {
 	assert.Contains(t, issueB.Relations,
 		domain.Relation{Type: domain.RelRelated, Other: a, Direction: domain.DirectionOut},
 		"a symmetric relation is always out")
+	assert.Equal(t, "b", issueA.RelationTitle(b))
+	assert.Equal(t, "a", issueB.RelationTitle(a))
 }
 
 // blocked is derived, so the recorded state can never disagree with the

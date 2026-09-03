@@ -43,7 +43,6 @@ type issuePatchBody struct {
 	PullRequestURL *string      `json:"pull_request_url,omitempty"`
 	Type           *domain.Type `json:"type,omitempty"`
 	Priority       *int         `json:"priority,omitempty"`
-	BoardHidden    *bool        `json:"board_hidden,omitempty"`
 
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
@@ -263,7 +262,6 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		PullRequestURL: req.PullRequestURL,
 		Type:           req.Type,
 		Priority:       req.Priority,
-		BoardHidden:    req.BoardHidden,
 
 		Labels:    req.ExpectLabels,
 		Status:    req.ExpectStatus,

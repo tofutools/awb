@@ -130,7 +130,6 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)
 	add("order", before.Order, after.Order)
-	add("board_hidden", before.BoardHidden, after.BoardHidden)
 	if !slices.Equal(before.Assignees, after.Assignees) {
 		add("assignees", before.Assignees, after.Assignees)
 	}

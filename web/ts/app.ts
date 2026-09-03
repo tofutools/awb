@@ -35,6 +35,7 @@ import {
   emptyFacetLabel,
   lowestFacetGroup,
   listingFilterMaxLength,
+  listingParentTitle,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -852,9 +853,15 @@ function issueNameCell(issue: Issue): HTMLElement {
 function issueParentCell(issue: Issue): HTMLElement {
   const parent = inspectorParent(issue.relations);
   if (parent === undefined) return textCell("muted", "—");
-  const anchor = link(`#/issues/${parent}`, parent, "parent-link");
+  const relation = issue.relations.find((candidate) =>
+    candidate.type === "has-parent" && candidate.direction === "out");
+  const title = relation?.other_title ?? "";
+  const label = title === "" ? parent : listingParentTitle(title);
+  const fullLabel = title === "" ? parent : `${title} (${parent})`;
+  const anchor = link(`#/issues/${parent}`, label, "parent-link");
   anchor.prepend(element("span", "parent-marker", "↳"));
-  anchor.setAttribute("aria-label", `Parent ${parent}`);
+  anchor.title = fullLabel;
+  anchor.setAttribute("aria-label", `Parent ${fullLabel}`);
   return anchor;
 }
 
@@ -3458,11 +3465,6 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
     editor.submit,
   );
-  const boardVisibility = element("label", "board-view-check issue-board-visibility");
-  const showOnBoards = document.createElement("input"); showOnBoards.type = "checkbox"; showOnBoards.checked = !issue.board_hidden;
-  const boardVisibilityCopy = element("span", "board-view-check-copy");
-  boardVisibilityCopy.append(element("span", "", "Show on boards"), element("span", "board-view-help", "Turn this off to keep the issue in lists while hiding it from every board."));
-  boardVisibility.append(showOnBoards, boardVisibilityCopy); editor.actions.before(boardVisibility);
   const rememberDraft = (): void => {
     issueEditDrafts.set(issue.id, {
       title: editor.title.value,
@@ -3483,7 +3485,6 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
         description: editor.description.textarea.value,
         commit_hash: editor.commitHash.value,
         pull_request_url: editor.pullRequestURL.value,
-        board_hidden: !showOnBoards.checked,
       });
       issueEditDrafts.delete(issue.id);
       return updated;
