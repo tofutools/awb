@@ -165,6 +165,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
   await expect(page.locator(".relation-section")).not.toContainText(createdID);
+  const showClosedChildren = childIssues.getByRole("checkbox", { name: "Show closed" });
+  await expect(showClosedChildren).toBeChecked();
+  await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
+  await showClosedChildren.uncheck();
+  await expect(childIssues.locator("tbody .status-closed")).toHaveCount(0);
+  await showClosedChildren.check();
   const priorityHeading = childIssues.getByRole("columnheader", { name: "Priority" });
   await priorityHeading.getByRole("button").click();
   await expect(priorityHeading).toHaveAttribute("aria-sort", "ascending");

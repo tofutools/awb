@@ -3457,7 +3457,15 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 
 function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
-  section.append(element("h2", "", "Child issues"));
+  const heading = element("div", "child-issues-heading");
+  heading.append(element("h2", "", "Child issues"));
+  const includeClosed = element("label", "include-closed-control");
+  const includeClosedInput = document.createElement("input");
+  includeClosedInput.type = "checkbox";
+  includeClosedInput.checked = true;
+  includeClosed.append(includeClosedInput, document.createTextNode("Show closed"));
+  heading.append(includeClosed);
+  section.append(heading);
   const sortKeys = ["id", "type", "priority", "status", "assignee"];
   const naturalPosition = new Map(children.map((child, index) => [child.id, index]));
   let sortValue: string | null = null;
@@ -3465,7 +3473,7 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
 
   const renderTable = (): void => {
     const state = sortState(sortValue, sortKeys, "order");
-    const rows = [...children];
+    const rows = children.filter((child) => includeClosedInput.checked || child.status !== "closed");
     if (state.explicit) {
       const value = (issue: Issue): string | number => {
         if (state.key === "priority") return issue.priority;
@@ -3535,6 +3543,7 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
     section.querySelector(".child-issues-table")?.replaceWith(table);
     if (!section.contains(table)) section.append(table);
   };
+  includeClosedInput.addEventListener("change", renderTable);
   renderTable();
   return section;
 }

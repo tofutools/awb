@@ -1351,6 +1351,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .issue-resource-section { padding: 0.75rem 0 0; }
 .issue-resource-section h2 { margin: 0 0 0.35rem; color: var(--fg); font-size: 1rem; }
+.child-issues-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
 .resource-list { margin: 0; padding: 0; }
 .resource-list li {
   display: grid;
