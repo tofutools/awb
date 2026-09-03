@@ -130,11 +130,14 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM issue_labels l
 			            WHERE l.issue = i.id AND instr(awb_casefold(l.label), awb_casefold(?)) > 0)
+			OR EXISTS (SELECT 1 FROM relations r
+			            WHERE r.subject = i.id AND r.type = 'has-parent'
+			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM relations r JOIN issues b ON b.id = r.other
 			            WHERE r.subject = i.id AND r.type = 'blocked-by'
 			              AND i.status <> 'closed' AND b.status <> 'closed'
 			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
-		)`, word, word, word, word)
+		)`, word, word, word, word, word)
 	}
 
 	return c
