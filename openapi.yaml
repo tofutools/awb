@@ -2195,7 +2195,9 @@ components:
       required: [type, other, other_title, direction]
       properties:
         type: { $ref: '#/components/schemas/RelationType' }
-        other: { type: string, description: The issue at the other end. }
+        other:
+          type: string
+          description: The ID of the issue at the other end; the issue itself is never embedded.
         other_title:
           type: string
           description: |
