@@ -91,7 +91,7 @@ func TestV20GeneralizesIssueOrderAndDropsBoardHidden(t *testing.T) {
 		names[name] = true
 	}
 	require.NoError(t, columns.Err())
-	assert.True(t, names["issue_order"])
+	require.True(t, names["issue_order"])
 	assert.False(t, names["board_order"])
 	assert.False(t, names["board_hidden"])
 	_, err = db.SQL().ExecContext(t.Context(), `UPDATE issues SET issue_order = -1 WHERE id = 'awb-aaaaaa'`)
