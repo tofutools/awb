@@ -434,6 +434,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .id { font-family: var(--mono); font-size: 0.85em; white-space: nowrap; }
 
+/* A commit hash is far longer than an issue id, so it is the one id that is
+   allowed to break: kept on one line it overflows the details sidebar. */
+.id.commit-hash { white-space: normal; overflow-wrap: anywhere; }
+
 /* The id and the title of a row are one link, so the anchor is what the row
    lays out and the two spans lay out inside it. Only the id keeps the accent:
    colouring the title too would make every listing loud, and the hover
