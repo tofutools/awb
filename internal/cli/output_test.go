@@ -142,7 +142,7 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	issue := domain.Issue{ID: "demo-eeec94", Workspace: "demo", Title: "Release", Relations: []domain.Relation{{
 		Type: domain.RelHasParent, Other: "demo-parent", Direction: domain.DirectionOut,
 	}}}
-	issue.SetRelationTitle("demo-parent", "Parent release")
+	issue.SetRelationTitle("demo-parent", "A deliberately long parent title that remains complete")
 	issues := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
 		require.NoError(t, e.printIssues([]domain.Issue{issue}, false))
@@ -153,7 +153,8 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	assert.Equal(t, "https://example.com/awb/#/issues/demo-eeec94", issueList[0]["issue_link"])
 	assert.Equal(t, "https://example.com/awb/#/issues?workspace=demo", issueList[0]["workspace_link"])
 	relations := issueList[0]["relations"].([]any)
-	assert.Equal(t, "Parent release", relations[0].(map[string]any)["other_title"])
+	assert.Equal(t, "A deliberately long parent title that remains complete",
+		relations[0].(map[string]any)["other_title"])
 
 	workspaces := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true

@@ -14,10 +14,12 @@ func TestIssueUnmarshalsRelationTitlesWithoutPuttingThemInRelationSnapshots(t *t
 	var issue domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(`{
 		"id":"awb-child","relations":[{
-			"type":"has-parent","other":"awb-parent","other_title":"Release","direction":"out"
+			"type":"has-parent","other":"awb-parent",
+			"other_title":"A deliberately long parent title that remains complete","direction":"out"
 		}]
 	}`), &issue))
-	assert.Equal(t, "Release", issue.RelationTitle("awb-parent"))
+	assert.Equal(t, "A deliberately long parent title that remains complete",
+		issue.RelationTitle("awb-parent"))
 
 	snapshot, err := json.Marshal(issue.Relations)
 	require.NoError(t, err)
