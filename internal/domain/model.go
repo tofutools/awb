@@ -63,7 +63,24 @@ type Issue struct {
 	Relations      []Relation   `json:"relations"`
 	Links          []Link       `json:"links"`
 	Attachments    []Attachment `json:"attachments"`
+
+	// relationTitles is presentation metadata for relation counterparts the
+	// caller may see. It is not part of the CLI's stable JSON shape; the HTTP
+	// API exposes it alongside each relation for clients that render names.
+	relationTitles map[string]string
 }
+
+// SetRelationTitle records the visible title of one relation counterpart.
+func (i *Issue) SetRelationTitle(id, title string) {
+	if i.relationTitles == nil {
+		i.relationTitles = make(map[string]string)
+	}
+	i.relationTitles[id] = title
+}
+
+// RelationTitle returns the counterpart's title when it is visible to the
+// caller. A relation may still name an issue outside that visibility scope.
+func (i *Issue) RelationTitle(id string) string { return i.relationTitles[id] }
 
 // IssueTree is one Issue extended with its children, recursively. It is what
 // dep tree and GET /api/issues/{id}/tree return. No other surface carries

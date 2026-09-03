@@ -287,10 +287,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	_, _ = w.Write(bytes.TrimRight(buffer.Bytes(), "\n"))
 }
 
-// The conversions between the API's shapes and the domain's. The two carry the
-// same fields, so each of these is a rename and nothing more; anything else
-// here would be the beginning of a second representation. The remote CLI adds
-// web links as presentation metadata only after it receives one of these.
+// The conversions between the API's shapes and the domain's. The API enriches
+// a relation with its visible counterpart title for browser presentation; the
+// remote CLI otherwise receives the same domain fields and adds web links as
+// presentation metadata only after it receives one of these.
 
 func toIssue(issue *domain.Issue) api.Issue {
 	return api.Issue{
@@ -312,7 +312,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		ClosedAt:       issue.ClosedAt,
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
-		Relations:      toRelations(issue.Relations),
+		Relations:      toRelations(issue),
 		Links:          toLinks(issue.Links),
 		Attachments:    toAttachments(issue.Attachments),
 	}
@@ -417,13 +417,14 @@ func fromLabels(labels []api.Label) []string {
 	return out
 }
 
-func toRelations(relations []domain.Relation) []api.Relation {
-	out := make([]api.Relation, len(relations))
-	for i, relation := range relations {
+func toRelations(issue *domain.Issue) []api.Relation {
+	out := make([]api.Relation, len(issue.Relations))
+	for i, relation := range issue.Relations {
 		out[i] = api.Relation{
-			Type:      api.RelationType(relation.Type),
-			Other:     relation.Other,
-			Direction: api.Direction(relation.Direction),
+			Type:       api.RelationType(relation.Type),
+			Other:      relation.Other,
+			OtherTitle: issue.RelationTitle(relation.Other),
+			Direction:  api.Direction(relation.Direction),
 		}
 	}
 	return out

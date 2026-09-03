@@ -493,6 +493,14 @@ func TestMoveIssueOverHTTP(t *testing.T) {
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Positive(t, moved.Order)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic.ID, Direction: domain.DirectionOut})
+	var wire struct {
+		Relations []struct {
+			OtherTitle string `json:"other_title"`
+		} `json:"relations"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &wire))
+	require.Len(t, wire.Relations, 1)
+	assert.Equal(t, "Epic", wire.Relations[0].OtherTitle)
 
 	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
 		`{"workspace":"web","status":"open"}`)
@@ -989,7 +997,7 @@ func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
 		`{"title":"renamed","id":"awb-000000","workspace":"awb",`+
 			`"created_at":"2020-01-01T00:00:00.000Z","updated_at":"2020-01-01T00:00:00.000Z",`+
 			`"blocked":true,"blockers":["awb-000000"],`+
-			`"relations":[{"type":"related","other":"awb-000000","direction":"out"}],`+
+			`"relations":[{"type":"related","other":"awb-000000","other_title":"t","direction":"out"}],`+
 			`"links":[{"text":"a","url":"b"}]}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"title":"renamed"`)

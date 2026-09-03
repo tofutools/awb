@@ -2192,10 +2192,16 @@ components:
     Relation:
       type: object
       additionalProperties: false
-      required: [type, other, direction]
+      required: [type, other, other_title, direction]
       properties:
         type: { $ref: '#/components/schemas/RelationType' }
         other: { type: string, description: The issue at the other end. }
+        other_title:
+          type: string
+          description: |
+            The title of the issue at the other end when that issue is visible
+            to the caller. Empty when the relation names an issue outside the
+            caller's workspace visibility scope.
         direction: { $ref: '#/components/schemas/Direction' }
 
     ActivityKind:

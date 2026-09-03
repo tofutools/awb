@@ -213,19 +213,25 @@ func (t *Tx) loadLabels(ids []string, byID map[string]*domain.Issue) error {
 // both ends read the same.
 func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	in := placeholders(len(ids))
+	visibleTitleOut, visibleTitleOutArgs := t.visibleClause("counterpart.workspace")
 	visibleOut, visibleOutArgs := t.notIgnoredClause("counterpart.workspace")
+	visibleTitleIn, visibleTitleInArgs := t.visibleClause("counterpart.workspace")
 	visibleIn, visibleInArgs := t.notIgnoredClause("counterpart.workspace")
-	args := append(anyArgs(ids), visibleOutArgs...)
+	args := append(visibleTitleOutArgs, anyArgs(ids)...)
+	args = append(args, visibleOutArgs...)
+	args = append(args, visibleTitleInArgs...)
 	args = append(args, anyArgs(ids)...)
 	args = append(args, visibleInArgs...)
 
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT r.subject AS viewed, r.type, r.other AS counterpart, 'out' AS direction
+		SELECT r.subject AS viewed, r.type, r.other AS counterpart, 'out' AS direction,
+		       CASE WHEN `+visibleTitleOut+` THEN counterpart.title ELSE '' END AS counterpart_title
 		  FROM relations r JOIN issues counterpart ON counterpart.id = r.other
 		 WHERE r.subject IN (`+in+`) AND `+visibleOut+`
 		UNION ALL
 		SELECT r.other AS viewed, r.type, r.subject AS counterpart,
-		       CASE WHEN r.type = 'related' THEN 'out' ELSE 'in' END AS direction
+		       CASE WHEN r.type = 'related' THEN 'out' ELSE 'in' END AS direction,
+		       CASE WHEN `+visibleTitleIn+` THEN counterpart.title ELSE '' END AS counterpart_title
 		  FROM relations r JOIN issues counterpart ON counterpart.id = r.subject
 		 WHERE r.other IN (`+in+`) AND `+visibleIn, args...)
 	if err != nil {
@@ -234,13 +240,16 @@ func (t *Tx) loadRelations(ids []string, byID map[string]*domain.Issue) error {
 	defer rows.Close()
 
 	for rows.Next() {
-		var viewed string
+		var viewed, counterpartTitle string
 		var rel domain.Relation
-		if err := rows.Scan(&viewed, &rel.Type, &rel.Other, &rel.Direction); err != nil {
+		if err := rows.Scan(&viewed, &rel.Type, &rel.Other, &rel.Direction, &counterpartTitle); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "read relations")
 		}
 		if issue := byID[viewed]; issue != nil {
 			issue.Relations = append(issue.Relations, rel)
+			if counterpartTitle != "" {
+				issue.SetRelationTitle(rel.Other, counterpartTitle)
+			}
 		}
 	}
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read relations")

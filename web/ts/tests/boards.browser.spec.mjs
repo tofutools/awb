@@ -154,8 +154,11 @@ test("save, share and work from a responsive board", async ({ page }) => {
   expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");
   if (caller !== "") expect(created.assignees).toContain(caller);
 
-  const parentID = created.relations.find((relation) => relation.type === "has-parent")?.other;
+  const parentRelation = created.relations.find((relation) => relation.type === "has-parent");
+  const parentID = parentRelation?.other;
+  const parentTitle = parentRelation?.other_title;
   expect(parentID).toBeTruthy();
+  expect(parentTitle).toBeTruthy();
   await page.goto(`${baseURL}/#/issues/${parentID}`);
   const childIssues = page.locator(".child-issues-section");
   await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
@@ -171,10 +174,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(issueTable.getByRole("columnheader", { name: "Workspace" })).toHaveCount(0);
   const createdListRow = issueTable.locator("tbody tr", { hasText: "Created from the board" });
   await expect(createdListRow.locator(".listing-col-type")).toHaveText("feature");
-  await expect(createdListRow.getByRole("link", { name: `Parent ${parentID}` })).toHaveAttribute(
-    "href",
-    `#/issues/${parentID}`,
-  );
+  const parentLink = createdListRow.getByRole("link", { name: `Parent ${parentTitle} (${parentID})` });
+  await expect(parentLink).toHaveText(`↳${parentTitle}`);
+  await expect(parentLink).toHaveAttribute("href", `#/issues/${parentID}`);
+  await expect(parentLink).toHaveAttribute("title", `${parentTitle} (${parentID})`);
   await page.getByRole("button", { name: "New issue" }).click();
   const partialDialog = page.getByRole("dialog", { name: "New issue" });
   await partialDialog.getByLabel("Title").fill("Partially uploaded issue");
