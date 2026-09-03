@@ -957,6 +957,23 @@ function sortButton(
   defaultKey: string,
   defaultDirection: SortDirection,
 ): HTMLElement {
+  return sortableHeaderButton(column, state, () => {
+    const query = new URLSearchParams(route.query);
+    const next = nextSortValue(
+      query.get("sort"), column.key, issueSortKeys, defaultKey, defaultDirection,
+    );
+    if (next === null) query.delete("sort");
+    else query.set("sort", next);
+    query.delete("page");
+    location.hash = routeHref(route, query).slice(1);
+  });
+}
+
+function sortableHeaderButton(
+  column: IssueColumn,
+  state: SortState,
+  activate: () => void,
+): HTMLButtonElement {
   const button = element("button", "sort-button", column.label) as HTMLButtonElement;
   button.type = "button";
   const active = state.key === column.key;
@@ -973,16 +990,7 @@ function sortButton(
   button.title = active
     ? `Sorted by ${column.label}, ${state.direction === "asc" ? "ascending" : "descending"}`
     : `Sort by ${column.label}`;
-  button.addEventListener("click", () => {
-    const query = new URLSearchParams(route.query);
-    const next = nextSortValue(
-      query.get("sort"), column.key, issueSortKeys, defaultKey, defaultDirection,
-    );
-    if (next === null) query.delete("sort");
-    else query.set("sort", next);
-    query.delete("page");
-    location.hash = routeHref(route, query).slice(1);
-  });
+  button.addEventListener("click", activate);
   return button;
 }
 
@@ -1056,9 +1064,20 @@ function issueTable(
   head.append(heading);
   table.append(head);
 
+  const orderingEnabled = state.key === "order" && state.direction === "asc";
+  table.append(issueTableBody(issues, columns, orderingEnabled ? (row, issue) => {
+    configureIssueOrderRow(row, issue, () => draggedListIssue, (moving) => { draggedListIssue = moving; });
+  } : undefined));
+  return table;
+}
+
+function issueTableBody(
+  issues: Issue[],
+  columns: IssueColumn[],
+  configureRow?: (row: HTMLTableRowElement, issue: Issue) => void,
+): HTMLTableSectionElement {
   const body = document.createElement("tbody");
   const listingRows: Array<{ issue: Issue; row: HTMLTableRowElement }> = [];
-  const orderingEnabled = state.key === "order" && state.direction === "asc";
   for (const issue of issues) {
     const row = document.createElement("tr");
     row.dataset.issue = issue.id;
@@ -1075,41 +1094,7 @@ function issueTable(
       td.append(content);
       row.append(td);
     }
-    if (orderingEnabled) {
-      configureDragSurface(row, issue, () => { draggedListIssue = issue; }, () => { draggedListIssue = null; });
-      let before = issue.id;
-      let after = "";
-      row.addEventListener("dragover", (event) => {
-        if (draggedListIssue === null || draggedListIssue.id === issue.id || draggedListIssue.workspace !== issue.workspace) return;
-        event.preventDefault();
-        clearDropPositions();
-        const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
-        before = below ? "" : issue.id;
-        after = below ? issue.id : "";
-        row.classList.toggle("drop-after", below);
-        row.classList.toggle("drop-before", !below);
-      });
-      row.addEventListener("drop", (event) => {
-        const moving = draggedListIssue;
-        row.classList.remove("drop-before", "drop-after");
-        if (moving === null || moving.id === issue.id) return;
-        event.preventDefault();
-        draggedListIssue = null;
-        if (moving.workspace !== issue.workspace) {
-          mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
-          return;
-        }
-        row.classList.add("moving");
-        void api.moveIssue(moving.id, {
-          status: moving.status,
-          ...(before === "" ? {} : { before }),
-          ...(after === "" ? {} : { after }),
-        }).then(() => render()).catch((error) => {
-          row.classList.remove("moving");
-          mutationError(row, error);
-        });
-      });
-    }
+    configureRow?.(row, issue);
     body.append(row);
     listingRows.push({ issue, row });
   }
@@ -1151,8 +1136,7 @@ function issueTable(
     link.addEventListener("focus", refreshFamily);
     link.addEventListener("blur", refreshFamily);
   }
-  table.append(body);
-  return table;
+  return body;
 }
 
 function listingFilter(
@@ -1554,6 +1538,48 @@ function configureDragSurface(
     surface.classList.remove("dragging");
     clearDragFeedback();
     end();
+  });
+}
+
+function configureIssueOrderRow(
+  row: HTMLTableRowElement,
+  issue: Issue,
+  dragged: () => Issue | null,
+  setDragged: (issue: Issue | null) => void,
+): void {
+  configureDragSurface(row, issue, () => setDragged(issue), () => setDragged(null));
+  let before = issue.id;
+  let after = "";
+  row.addEventListener("dragover", (event) => {
+    const moving = dragged();
+    if (moving === null || moving.id === issue.id || moving.workspace !== issue.workspace) return;
+    event.preventDefault();
+    clearDropPositions();
+    const below = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+    before = below ? "" : issue.id;
+    after = below ? issue.id : "";
+    row.classList.toggle("drop-after", below);
+    row.classList.toggle("drop-before", !below);
+  });
+  row.addEventListener("drop", (event) => {
+    const moving = dragged();
+    row.classList.remove("drop-before", "drop-after");
+    if (moving === null || moving.id === issue.id) return;
+    event.preventDefault();
+    setDragged(null);
+    if (moving.workspace !== issue.workspace) {
+      mutationError(row, new Error(`Issues cannot be reordered across workspaces (${moving.workspace} → ${issue.workspace}).`));
+      return;
+    }
+    row.classList.add("moving");
+    void api.moveIssue(moving.id, {
+      status: moving.status,
+      ...(before === "" ? {} : { before }),
+      ...(after === "" ? {} : { after }),
+    }).then(() => render()).catch((error) => {
+      row.classList.remove("moving");
+      mutationError(row, error);
+    });
   });
 }
 
@@ -3346,7 +3372,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
     attachmentSection.editor.hidden = !show;
     attachmentSection.section.hidden = !show && issue.attachments.length === 0;
     relationSection.editor.hidden = !show;
-    relationSection.section.hidden = !show && issue.relations.length === 0;
+    relationSection.section.hidden = !show && displayedIssueRelations(issue).length === 0;
     editButton.textContent = show ? "Hide editor" : "Edit issue";
     if (show) activateMarkdownEditors(editForm);
   };
@@ -3374,7 +3400,9 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
-  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows));
+  if (children.rows.length > 0) {
+    content.append(issueChildrenSection(issue.id, children.rows, workspace.state === "active"));
+  }
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3427,22 +3455,120 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   return view;
 }
 
-function issueChildrenSection(children: Issue[]): HTMLElement {
+function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
-  section.append(element("h2", "", "Child issues"));
-  const list = element("ul", "child-issues resource-list");
-  for (const child of children) {
-    const row = element("li");
-    row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
-    list.append(row);
+  const heading = element("div", "child-issues-heading");
+  heading.append(element("h2", "", "Child issues"));
+  const includeClosed = element("label", "include-closed-control");
+  const includeClosedInput = document.createElement("input");
+  includeClosedInput.type = "checkbox";
+  const includeClosedKey = `awb.issue.${parent}.show-closed-children`;
+  try {
+    includeClosedInput.checked = localStorage.getItem(includeClosedKey) !== "false";
+  } catch {
+    includeClosedInput.checked = true;
   }
-  section.append(list);
+  includeClosed.append(includeClosedInput, document.createTextNode("Show closed"));
+  heading.append(includeClosed);
+  section.append(heading);
+  const sortKeys = ["id", "type", "priority", "status", "assignee"];
+  let sortValue: string | null = null;
+  let draggedChild: Issue | null = null;
+
+  const renderTable = (focusColumn = ""): void => {
+    const state = sortState(sortValue, sortKeys, "order");
+    const rows = children.filter((child) => includeClosedInput.checked || child.status !== "closed");
+    if (state.explicit) {
+      const value = (issue: Issue): string | number => {
+        if (state.key === "priority") return issue.priority;
+        if (state.key === "assignee") return issue.assignees.join(",");
+        if (state.key === "type") return ["epic", "feature", "bug", "task", "chore"].indexOf(issue.type);
+        if (state.key === "status") return ["open", "in_progress", "closed"].indexOf(issue.status);
+        return issue.id;
+      };
+      rows.sort((left, right) => {
+        const a = value(left);
+        const b = value(right);
+        if (state.key === "assignee" && (a === "" || b === "") && a !== b) return a === "" ? 1 : -1;
+        const compared = typeof a === "number" && typeof b === "number"
+          ? a - b
+          : String(a).localeCompare(String(b));
+        if (compared !== 0) return state.direction === "asc" ? compared : -compared;
+        return left.id.localeCompare(right.id);
+      });
+    }
+
+    const columns = issueColumns("issues").filter((column) => sortKeys.includes(column.key));
+    if (mutable) {
+      columns.push({
+        key: "actions",
+        label: "",
+        sortable: false,
+        render: (child) => {
+          const remove = button("Remove", "inline-button danger-button resource-remove");
+          remove.addEventListener("click", async () => {
+            const confirmed = await confirmMutation(
+              "Remove child?",
+              `Remove ${child.id} from ${parent}?`,
+              remove,
+              true,
+            );
+            if (!confirmed) return;
+            const row = remove.closest("tr") ?? remove;
+            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
+          });
+          return remove;
+        },
+      });
+    }
+
+    const table = element("table", "listing-table issue-table child-issues-table") as HTMLTableElement;
+    const head = document.createElement("thead");
+    const heading = document.createElement("tr");
+    for (const column of columns) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.classList.add(`listing-col-${column.key}`);
+      if (state.explicit && state.key === column.key) {
+        th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
+      }
+      th.append(column.sortable === false
+        ? element("span", "column-label", column.label)
+        : sortableHeaderButton(column, state, () => {
+          sortValue = nextSortValue(sortValue, column.key, sortKeys, "order");
+          renderTable(column.key);
+        }));
+      heading.append(th);
+    }
+    head.append(heading);
+    table.append(head);
+    table.append(issueTableBody(rows, columns, mutable && !state.explicit ? (row, child) => {
+      configureIssueOrderRow(row, child, () => draggedChild, (moving) => { draggedChild = moving; });
+    } : undefined));
+    section.querySelector(".child-issues-table")?.replaceWith(table);
+    if (!section.contains(table)) section.append(table);
+    if (focusColumn !== "") {
+      table.querySelector<HTMLButtonElement>(`.listing-col-${focusColumn} .sort-button`)?.focus();
+    }
+  };
+  includeClosedInput.addEventListener("change", () => {
+    try { localStorage.setItem(includeClosedKey, String(includeClosedInput.checked)); } catch { /* preference is best-effort */ }
+    renderTable();
+  });
+  renderTable();
   return section;
 }
 
 interface IssueResourceSection {
   section: HTMLElement;
   editor: HTMLFormElement;
+}
+
+function displayedIssueRelations(issue: Issue): Issue["relations"] {
+  // Incoming has-parent edges are the children rendered in their richer,
+  // reorderable section. Keep the issue's own outgoing parent visible.
+  return issue.relations.filter((relation) =>
+    relation.type !== "has-parent" || relation.direction !== "in");
 }
 
 function issueAttachmentSection(issue: Issue): IssueResourceSection {
@@ -3463,9 +3589,10 @@ function issueAttachmentSection(issue: Issue): IssueResourceSection {
 function issueRelationSection(issue: Issue): IssueResourceSection {
   const section = element("section", "issue-resource-section relation-section");
   section.append(element("h2", "", "Relations"));
-  if (issue.relations.length > 0) {
+  const relations = displayedIssueRelations(issue);
+  if (relations.length > 0) {
     const list = element("ul", "relations resource-list");
-    for (const relation of issue.relations) {
+    for (const relation of relations) {
       // Every relation reads "subject — type — other", whichever end is
       // viewed.
       const [subject, other] =
@@ -3495,7 +3622,7 @@ function issueRelationSection(issue: Issue): IssueResourceSection {
   const editor = relationEditor(issue.id);
   editor.hidden = true;
   section.append(editor);
-  section.hidden = issue.relations.length === 0;
+  section.hidden = relations.length === 0;
   return { section, editor };
 }
 

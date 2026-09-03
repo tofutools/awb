@@ -164,6 +164,52 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
+  await expect(page.locator(".relation-section")).not.toContainText(createdID);
+  const showClosedChildren = childIssues.getByRole("checkbox", { name: "Show closed" });
+  await expect(showClosedChildren).toBeChecked();
+  await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
+  await showClosedChildren.uncheck();
+  await expect(childIssues.locator("tbody .status-closed")).toHaveCount(0);
+  await page.reload();
+  await expect(showClosedChildren).not.toBeChecked();
+  await showClosedChildren.check();
+  await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
+  const priorityHeading = childIssues.getByRole("columnheader", { name: "Priority" });
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).toHaveAttribute("aria-sort", "ascending");
+  await expect(priorityHeading.getByRole("button")).toBeFocused();
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).toHaveAttribute("aria-sort", "descending");
+  await expect(priorityHeading.getByRole("button")).toBeFocused();
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).not.toHaveAttribute("aria-sort");
+  const statusHeading = childIssues.getByRole("columnheader", { name: "Status" });
+  await statusHeading.getByRole("button").click();
+  await expect(childIssues.locator("tbody .listing-col-status").first()).toHaveText("open");
+  await expect(childIssues.locator("tbody .listing-col-status").last()).toHaveText("closed");
+  await statusHeading.getByRole("button").click();
+  await statusHeading.getByRole("button").click();
+  const assigneeHeading = childIssues.getByRole("columnheader", { name: "Assignees" });
+  await assigneeHeading.getByRole("button").click();
+  await expect(childIssues.locator("tbody .listing-col-assignee").last()).toHaveText("—");
+  await assigneeHeading.getByRole("button").click();
+  await assigneeHeading.getByRole("button").click();
+  const createdChild = childIssues.locator(`tr[data-issue='${createdID}']`);
+  await expect(createdChild).toHaveJSProperty("draggable", true);
+  const reorderTarget = childIssues.locator(`tr:has(.status-in_progress):not([data-issue='${createdID}'])`).first();
+  await expect(reorderTarget).toBeVisible();
+  const reorderTargetID = await reorderTarget.getAttribute("data-issue");
+  await pointerDrag(page, createdChild, reorderTarget, true);
+  await expect.poll(async () => {
+    const ids = await childIssues.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
+    return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
+  }).toBe(true);
+  await page.getByRole("button", { name: "Edit issue" }).click();
+  await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
+  await createdChild.getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByRole("dialog", { name: "Remove child?" })).toContainText(`Remove ${createdID} from ${parentID}?`);
+  await page.getByRole("dialog", { name: "Remove child?" }).getByRole("button", { name: "No" }).click();
+  await page.getByRole("button", { name: "Hide editor" }).click();
 
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.
