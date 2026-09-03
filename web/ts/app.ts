@@ -3635,7 +3635,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   };
   add("ID", element("span", "id", issue.id));
   add("Workspace", link(`#/workspaces/${encodeURIComponent(issue.workspace)}`, issue.workspace));
-  if (issue.commit_hash !== "") add("Commit", element("span", "id", issue.commit_hash));
+  if (issue.commit_hash !== "") add("Commit", element("span", "id commit-hash", issue.commit_hash));
   if (issue.pull_request_url !== "") add("Pull request", link(issue.pull_request_url, issue.pull_request_url));
   const [parent, parentPopover] = parentInspector(issue);
   add("Parent", parent, parentPopover);
