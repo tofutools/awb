@@ -2204,6 +2204,20 @@ components:
             caller's workspace visibility scope.
         direction: { $ref: '#/components/schemas/Direction' }
 
+    IssuePatchRelation:
+      type: object
+      description: |
+        A relation carried back in an IssuePatch as ignored, read-only state.
+        `other_title` is accepted when the caller echoes a current response but
+        remains optional so an older relation representation is still valid.
+      additionalProperties: false
+      required: [type, other, direction]
+      properties:
+        type: { $ref: '#/components/schemas/RelationType' }
+        other: { type: string, description: The issue at the other end. }
+        other_title: { type: string }
+        direction: { $ref: '#/components/schemas/Direction' }
+
     ActivityKind:
       type: string
       enum: [comment, change]
@@ -2671,7 +2685,7 @@ components:
         closed_at: { type: string }
         blocked: { type: boolean }
         blockers: { type: array, items: { type: string } }
-        relations: { type: array, items: { $ref: '#/components/schemas/Relation' } }
+        relations: { type: array, items: { $ref: '#/components/schemas/IssuePatchRelation' } }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
         attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
 

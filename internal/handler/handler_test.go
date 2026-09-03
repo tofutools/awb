@@ -997,13 +997,18 @@ func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
 		`{"title":"renamed","id":"awb-000000","workspace":"awb",`+
 			`"created_at":"2020-01-01T00:00:00.000Z","updated_at":"2020-01-01T00:00:00.000Z",`+
 			`"blocked":true,"blockers":["awb-000000"],`+
-			`"relations":[{"type":"related","other":"awb-000000","other_title":"t","direction":"out"}],`+
+			`"relations":[{"type":"related","other":"awb-000000","direction":"out"}],`+
 			`"links":[{"text":"a","url":"b"}]}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"title":"renamed"`)
 	assert.Contains(t, payload, `"id":"`+issue.ID+`"`)
 	assert.Contains(t, payload, `"blocked":false`)
 	assert.NotContains(t, payload, "2020-01-01")
+
+	// The enriched response shape may also be echoed whole.
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"relations":[{"type":"related","other":"awb-000000","other_title":"t","direction":"out"}]}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	// Values no caller could have read are refused.
 	for _, body := range []string{
