@@ -135,6 +135,12 @@ stored canonically and has no direction. Relations may cross workspace
 boundaries because dependencies and provenance do not stop at an organizational
 label.
 
+Issue representations carry each relation as its type, direction, and the
+other issue's ID, not as a nested issue. A `related` graph may therefore contain
+cycles without making its JSON representation recursive. The separate issue
+tree representation recursively follows only `has-parent`, whose graph is
+acyclic.
+
 Blocked state is computed from the live graph. It is not stored on the issue,
 so it cannot drift from its blockers. An issue is ready when it is open and has
 no non-closed `blocked-by` target. The ready listing additionally selects
