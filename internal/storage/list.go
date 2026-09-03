@@ -118,10 +118,11 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 			anyArgs(f.Labels)...)
 	}
 
-	// The web listing filter mirrors the values hydrated into an issue row. Each
-	// word may match any displayed value, but every word must match. Keeping the
-	// predicate in this scoped selection makes totals, facets and pagination all
-	// describe the same authorized result set.
+	// The web listing filter matches an issue row's displayed values and the
+	// stable IDs behind its parent and blocker links. Each word may match any
+	// such value, but every word must match. Keeping the predicate in this scoped
+	// selection makes totals, facets and pagination all describe the same
+	// authorized result set.
 	for _, word := range strings.Fields(f.ListingFilter) {
 		c.add(`(
 			instr(awb_casefold(i.id || ' ' || i.workspace || ' ' || i.title || ' ' ||
