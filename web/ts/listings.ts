@@ -42,6 +42,21 @@ export function listingRelationshipRole(
   return null;
 }
 
+export interface ListingFamilyActivation {
+  hovered: boolean;
+  focused: boolean;
+}
+
+/** activeListingFamily selects the relationship a listing should show. A
+ * pointer hover temporarily takes precedence over keyboard focus; when it
+ * leaves, the still-focused link becomes active again. */
+export function activeListingFamily(states: readonly ListingFamilyActivation[]): number | null {
+  const hovered = states.findIndex((state) => state.hovered);
+  if (hovered !== -1) return hovered;
+  const focused = states.findIndex((state) => state.focused);
+  return focused === -1 ? null : focused;
+}
+
 /** Runs one debounced listing request at a time. Aborting saves backend work;
  * the generation guard also rejects a stale transport completion. */
 export class BackendListingFilter<T> {

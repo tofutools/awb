@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  activeListingFamily,
   BackendListingFilter,
   emptyFacetLabel,
   listingFilterMaxLength,
@@ -41,6 +42,21 @@ test("listing family markers identify the visible parent and siblings", () => {
   assert.equal(listingRelationshipRole("awb-sibling", "awb-parent", "awb-child", "awb-parent"), "sibling");
   assert.equal(listingRelationshipRole("awb-child", "awb-parent", "awb-child", "awb-parent"), null);
   assert.equal(listingRelationshipRole("awb-unrelated", "awb-other", "awb-child", "awb-parent"), null);
+});
+
+test("listing family hover temporarily takes precedence over keyboard focus", () => {
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: true },
+    { hovered: true, focused: false },
+  ]), 1);
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: true },
+    { hovered: false, focused: false },
+  ]), 0, "the focused family returns when the pointer leaves");
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: false },
+    { hovered: false, focused: false },
+  ]), null);
 });
 
 test("empty applicable facet groups remain visible", () => {

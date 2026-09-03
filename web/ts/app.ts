@@ -32,6 +32,7 @@ import {
 } from "./api.js";
 import {
   BackendListingFilter,
+  activeListingFamily,
   emptyFacetLabel,
   lowestFacetGroup,
   listingFilterMaxLength,
@@ -1116,29 +1117,39 @@ function issueTable(
   const clearFamily = (): void => {
     for (const { row } of listingRows) row.classList.remove("listing-family-parent", "listing-family-sibling");
   };
+  const familyLinks: Array<{ issue: Issue; parentID: string; link: HTMLAnchorElement }> = [];
   for (const { issue, row } of listingRows) {
     const parentID = inspectorParent(issue.relations);
     const parentLink = row.querySelector<HTMLAnchorElement>(".parent-link");
     if (parentID === undefined || parentLink === null) continue;
-    const showFamily = (): void => {
-      for (const candidate of listingRows) {
-        const role = listingRelationshipRole(
-          candidate.issue.id,
-          inspectorParent(candidate.issue.relations),
-          issue.id,
-          parentID,
-        );
-        candidate.row.classList.toggle("listing-family-parent", role === "parent");
-        candidate.row.classList.toggle("listing-family-sibling", role === "sibling");
-      }
-    };
-    const clearWhenInactive = (): void => {
-      if (document.activeElement !== parentLink && !parentLink.matches(":hover")) clearFamily();
-    };
-    parentLink.addEventListener("pointerenter", showFamily);
-    parentLink.addEventListener("pointerleave", clearWhenInactive);
-    parentLink.addEventListener("focus", showFamily);
-    parentLink.addEventListener("blur", clearWhenInactive);
+    familyLinks.push({ issue, parentID, link: parentLink });
+  }
+  const refreshFamily = (): void => {
+    const active = activeListingFamily(familyLinks.map(({ link }) => ({
+      hovered: link.matches(":hover"),
+      focused: document.activeElement === link,
+    })));
+    if (active === null) {
+      clearFamily();
+      return;
+    }
+    const family = familyLinks[active];
+    for (const candidate of listingRows) {
+      const role = listingRelationshipRole(
+        candidate.issue.id,
+        inspectorParent(candidate.issue.relations),
+        family.issue.id,
+        family.parentID,
+      );
+      candidate.row.classList.toggle("listing-family-parent", role === "parent");
+      candidate.row.classList.toggle("listing-family-sibling", role === "sibling");
+    }
+  };
+  for (const { link } of familyLinks) {
+    link.addEventListener("pointerenter", refreshFamily);
+    link.addEventListener("pointerleave", refreshFamily);
+    link.addEventListener("focus", refreshFamily);
+    link.addEventListener("blur", refreshFamily);
   }
   table.append(body);
   return table;
