@@ -65,6 +65,14 @@ func (f *PasswordFlags) value(e *env, username string) (password, hash string, e
 		if f.Password {
 			return "", "", awberr.Usagef("--password and --password-hash are mutually exclusive")
 		}
+		if *f.PasswordHash == "" {
+			// Absence is what says "no password", and it is said by leaving both
+			// flags off. An empty --password-hash is somebody's shell expanding to
+			// nothing, and silently making an account nobody can log in to is the
+			// wrong reading of it.
+			return "", "", awberr.Usagef(
+				"--password-hash is empty: leave it off to create a user without a password")
+		}
 		return "", *f.PasswordHash, nil
 	}
 	if !f.Password {
@@ -328,10 +336,12 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
-			"Deleting the last user does not turn a server's authentication off again:\n" +
-			"the server answers nothing until a user is added back, rather than serving\n" +
-			"everybody, and one started afterwards starts in that state rather than\n" +
-			"open. Serving such a database openly is awb serve --no-auth.",
+			"Deleting the last user with a password does not turn a server's\n" +
+			"authentication off again: the server answers nothing until another user\n" +
+			"with a password exists, rather than serving everybody, and one started\n" +
+			"afterwards starts in that state rather than open. A user with no password\n" +
+			"cannot unlock it, never having been one it authenticated. Serving such a\n" +
+			"database openly is awb serve --no-auth.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
 			if !p.Force {

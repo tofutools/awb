@@ -556,4 +556,12 @@ func TestV19MakesThePasswordOptionalWithoutLosingWhatDependsOnAUser(t *testing.T
 	require.NoError(t, db.SQL().QueryRowContext(t.Context(),
 		`PRAGMA integrity_check`).Scan(&check))
 	assert.Equal(t, "ok", check)
+
+	// The rebuilt tables reference the rebuilt users by name, so a copy that
+	// dropped or renamed a row would leave a key pointing at nothing.
+	violations, err := db.SQL().QueryContext(t.Context(), `PRAGMA foreign_key_check`)
+	require.NoError(t, err)
+	defer violations.Close() //nolint:errcheck
+	assert.False(t, violations.Next(), "a foreign key survived the rebuild pointing at nothing")
+	require.NoError(t, violations.Err())
 }

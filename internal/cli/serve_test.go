@@ -601,6 +601,48 @@ func TestOnlyAPasswordTurnsAuthenticationOn(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// The bypass that lets the command line record an assignee the user directory
+// does not know is the file's, not the API's. This runs it through the real
+// server that serve builds, because what decides it is which backend a request
+// is given — an assertion against local.Backend alone would not see a wiring
+// mistake here.
+func TestForceCannotRecordANameThatIsNoUserThroughTheAPI(t *testing.T) {
+	for _, authenticates := range []bool{true, false} {
+		name := "an authenticating server"
+		if !authenticates {
+			name = "an open server"
+		}
+		t.Run(name, func(t *testing.T) {
+			h, be := newServeHandlerAuthenticating(t,
+				serveOptions{addr: "127.0.0.1", port: 7777}, authenticates)
+			_, err := be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
+			require.NoError(t, err)
+			issue, err := be.CreateIssue(t.Context(),
+				backend.IssueCreate{Workspace: "awb", Title: "t"})
+			require.NoError(t, err)
+			_, err = be.CreateUser(t.Context(), backend.UserCreate{
+				Name: "mikael", Password: "hunter2", WorkspaceAdmin: true})
+			require.NoError(t, err)
+
+			headers := []string{"Content-Type", "application/json"}
+			if authenticates {
+				headers = append(headers, basicAuth("mikael", "hunter2")...)
+			}
+			resp, payload := send(t, h, http.MethodPost, "/api/issues/"+issue.ID+"/claim",
+				`{"assignee":"nobody","force":true}`, headers...)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+			assert.Contains(t, payload, "no such user: nobody")
+
+			// The same request on the file, where whoever holds it could write
+			// the row anyway, is what --force is for.
+			claimed, err := be.Claim(t.Context(), issue.ID,
+				backend.ClaimRequest{Assignee: "nobody", Force: true}, "")
+			require.NoError(t, err)
+			assert.Equal(t, []string{"nobody"}, claimed.Assignees)
+		})
+	}
+}
+
 // An account with no password is not a login with an empty one, on a server
 // that authenticates: it is a name nothing can be presented for.
 func TestAPasswordlessAccountCannotAuthenticate(t *testing.T) {

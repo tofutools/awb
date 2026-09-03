@@ -47,16 +47,28 @@ info:
     are therefore stored byte for byte; a close reason is trimmed first, which
     is that field's own rule rather than the gate's.
 
-    **Authorization.** A server whose database holds at least one user
-    authenticates every request and answers it with that user's permissions. A
+    **Authorization.** A server whose database holds at least one user with a
+    password authenticates every request and answers it with that user's
+    permissions. A
     user works in the workspaces they are a member of and sees nothing else: a
     workspace they hold no access to, and every issue in it, is answered `404`
     rather than `403`, and is absent from every listing, search, facet and
     tree, unpaged totals included. `403` is for something they can see and may
     not do. The user directory is the narrow exception: it includes current
     accounts that participated in visible workspaces, but not their memberships
-    in any other workspace. A database holding no user at all is a server without
-    authentication, exactly as version 1 was, and applies none of this.
+    in any other workspace. A database holding no user with a password is a
+    server without authentication, exactly as version 1 was, and applies none
+    of this.
+
+    **Assignment.** An issue's assignee is a username. On a database that holds
+    any user it has to name one of them, wherever an assignment is made:
+    creating with assignees, claiming, and moving a card into `in_progress`. A
+    database that holds none takes any name, as version 1 did. It is not a
+    foreign key — the assignee is stored as text, so deleting an account leaves
+    the record of who did the work standing, and releasing a name is never
+    refused because the name is no longer a user. The command line on the
+    database file may override the check with `force`, whoever holds the file
+    being able to write the row anyway; this API never does.
 
     Two flags stand outside the workspaces: `workspace_admin`
     creates, changes and deletes workspaces and holds `admin` access in every one, and
@@ -1251,7 +1263,10 @@ paths:
         somebody's access was withdrawn would lose the only record of who did
         it.
 
-        Deleting the last user of a database turns authentication off again.
+        Deleting the last user with a password does not turn authentication
+        off again: the server locks and answers `503` to everybody until an
+        account with a password exists, rather than falling open. Direct
+        database access is the recovery path.
       parameters:
         - $ref: '#/components/parameters/ifMatch'
       responses:

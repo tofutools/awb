@@ -135,10 +135,15 @@ func TestUserAddTakesAPreComputedHash(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "alice")
 
-	// And nothing that is not a bcrypt hash gets in.
+	// And nothing that is not a bcrypt hash gets in, an empty one included:
+	// leaving the flag off is what says the account has no password.
 	_, stderr, code = h.run("user", "add", "dana", "--password-hash", "hunter2")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "htpasswd")
+
+	_, stderr, code = h.run("user", "add", "erin", "--password-hash", "")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "leave it off")
 }
 
 func TestUserFlagsAndMembership(t *testing.T) {

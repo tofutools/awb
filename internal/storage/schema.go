@@ -419,6 +419,9 @@ var schemaV7 = []string{
 // It is one row that exists or does not, written by the insert that creates a
 // user and never deleted. A database that already holds users is marked as the
 // migration runs, because its authentication is already on.
+//
+// schemaV19 narrowed what the row records from a user to a user with a
+// password, passwords having become optional; the mechanism is unchanged.
 var schemaV6 = []string{
 	`CREATE TABLE user_history (
 		one INTEGER PRIMARY KEY CHECK (one = 1)

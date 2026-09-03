@@ -180,7 +180,7 @@ type Caller struct {
 	// applies no authorization at all, because whoever can open the file can
 	// already read and write every byte of it, and a check there would be a
 	// suggestion rather than a control. A server whose database holds no user
-	// is the same case.
+	// with a password, and so authenticates nobody, is the same case.
 	Unrestricted bool
 
 	// WorkspaceAdmin may create, change and delete workspaces, and holds

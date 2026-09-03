@@ -143,8 +143,8 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 	return state, ok, err
 }
 
-// Middleware requires credentials whenever the database holds a user, and lets
-// everything through when it holds none.
+// Middleware requires credentials whenever the database holds a user with a
+// password, and lets everything through when it holds none.
 //
 // A request that passes reaches the rest of the server with its authenticated
 // username in the request context, which is what gives it its identity and its
