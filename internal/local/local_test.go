@@ -190,7 +190,7 @@ func TestMoveIssueAcrossBoardAndSparseReorder(t *testing.T) {
 	assert.Equal(t, 2, exitOf(err), "manual order cannot cross workspace boundaries")
 }
 
-func TestMoveOrdersChildrenWithinTheirParent(t *testing.T) {
+func TestParentFilteredListingHonoursManualOrder(t *testing.T) {
 	b, ctx := newBackend(t)
 	parent := create(t, b, ctx, "parent")
 	child := func(title string) *domain.Issue {
