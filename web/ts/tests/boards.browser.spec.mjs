@@ -175,6 +175,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
     const ids = await childIssues.locator("li").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
     return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
   }).toBe(true);
+  await page.getByRole("button", { name: "Edit issue" }).click();
+  await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
+  await createdChild.getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByRole("dialog", { name: "Remove child?" })).toContainText(`Remove ${createdID} from ${parentID}?`);
+  await page.getByRole("dialog", { name: "Remove child?" }).getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Hide editor" }).click();
 
   // Creation waits for every staged upload before rendering the issue. A fast
   // failure must not race navigation ahead of a slower successful upload.

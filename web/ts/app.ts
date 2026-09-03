@@ -3374,7 +3374,9 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
-  if (children.rows.length > 0) content.append(issueChildrenSection(children.rows, workspace.state === "active"));
+  if (children.rows.length > 0) {
+    content.append(issueChildrenSection(issue.id, children.rows, workspace.state === "active"));
+  }
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3427,7 +3429,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   return view;
 }
 
-function issueChildrenSection(children: Issue[], mutable: boolean): HTMLElement {
+function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   section.append(element("h2", "", "Child issues"));
   const list = element("ul", "child-issues resource-list");
@@ -3437,6 +3439,18 @@ function issueChildrenSection(children: Issue[], mutable: boolean): HTMLElement 
     row.dataset.issue = child.id;
     row.append(nameLink(`#/issues/${child.id}`, child.id, child.title), issueBadges(child));
     if (mutable) {
+      const remove = button("Remove", "inline-button danger-button resource-remove");
+      remove.addEventListener("click", async () => {
+        const confirmed = await confirmMutation(
+          "Remove child?",
+          `Remove ${child.id} from ${parent}?`,
+          remove,
+          true,
+        );
+        if (!confirmed) return;
+        void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
+      });
+      row.append(remove);
       configureDragSurface(row, child, () => { draggedChild = child; }, () => { draggedChild = null; });
       let before = child.id;
       let after = "";
