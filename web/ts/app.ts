@@ -35,6 +35,7 @@ import {
   emptyFacetLabel,
   lowestFacetGroup,
   listingFilterMaxLength,
+  listingParentTitle,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -852,9 +853,15 @@ function issueNameCell(issue: Issue): HTMLElement {
 function issueParentCell(issue: Issue): HTMLElement {
   const parent = inspectorParent(issue.relations);
   if (parent === undefined) return textCell("muted", "—");
-  const anchor = link(`#/issues/${parent}`, parent, "parent-link");
+  const relation = issue.relations.find((candidate) =>
+    candidate.type === "has-parent" && candidate.direction === "out");
+  const title = relation?.other_title ?? "";
+  const label = title === "" ? parent : listingParentTitle(title);
+  const fullLabel = title === "" ? parent : `${title} (${parent})`;
+  const anchor = link(`#/issues/${parent}`, label, "parent-link");
   anchor.prepend(element("span", "parent-marker", "↳"));
-  anchor.setAttribute("aria-label", `Parent ${parent}`);
+  anchor.title = fullLabel;
+  anchor.setAttribute("aria-label", `Parent ${fullLabel}`);
   return anchor;
 }
 

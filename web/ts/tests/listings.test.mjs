@@ -5,6 +5,8 @@ import {
   BackendListingFilter,
   emptyFacetLabel,
   listingFilterMaxLength,
+  listingParentTitle,
+  listingParentTitleMaxLength,
   lowestFacetGroup,
   nextSortValue,
   pageNumber,
@@ -24,6 +26,13 @@ const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration
 
 test("listing filter length mirrors the OpenAPI contract", () => {
   assert.equal(listingFilterMaxLength, 500);
+});
+
+test("parent titles are bounded for their narrow listing column", () => {
+  assert.equal(listingParentTitle("Short epic"), "Short epic");
+  assert.equal(listingParentTitle("A title that is deliberately longer than the parent column"),
+    "A title that is deliberately lo…");
+  assert.equal(Array.from(listingParentTitle("x".repeat(100))).length, listingParentTitleMaxLength);
 });
 
 test("empty applicable facet groups remain visible", () => {

@@ -493,6 +493,14 @@ func TestMoveIssueOverHTTP(t *testing.T) {
 	assert.Equal(t, domain.StatusInProgress, moved.Status)
 	assert.Positive(t, moved.Order)
 	assert.Contains(t, moved.Relations, domain.Relation{Type: domain.RelHasParent, Other: epic.ID, Direction: domain.DirectionOut})
+	var wire struct {
+		Relations []struct {
+			OtherTitle string `json:"other_title"`
+		} `json:"relations"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(payload), &wire))
+	require.Len(t, wire.Relations, 1)
+	assert.Equal(t, "Epic", wire.Relations[0].OtherTitle)
 
 	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/move",
 		`{"workspace":"web","status":"open"}`)
@@ -996,6 +1004,11 @@ func TestIgnoredFieldsAreIgnoredButStillChecked(t *testing.T) {
 	assert.Contains(t, payload, `"id":"`+issue.ID+`"`)
 	assert.Contains(t, payload, `"blocked":false`)
 	assert.NotContains(t, payload, "2020-01-01")
+
+	// The enriched response shape may also be echoed whole.
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"relations":[{"type":"related","other":"awb-000000","other_title":"t","direction":"out"}]}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	// Values no caller could have read are refused.
 	for _, body := range []string{

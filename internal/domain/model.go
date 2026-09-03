@@ -2,6 +2,7 @@ package domain
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"time"
 )
@@ -63,7 +64,51 @@ type Issue struct {
 	Relations      []Relation   `json:"relations"`
 	Links          []Link       `json:"links"`
 	Attachments    []Attachment `json:"attachments"`
+
+	// relationTitles is presentation metadata for relation counterparts the
+	// caller may see. It stays out of Relation's own JSON so stored activity
+	// snapshots cannot capture a title outside a future reader's scope. The
+	// complete Issue API and CLI presentation shapes add it at their boundary.
+	relationTitles map[string]string
 }
+
+// UnmarshalJSON reads the complete HTTP issue shape, including relation title
+// metadata, so a remote backend carries the same information as a direct one.
+func (i *Issue) UnmarshalJSON(data []byte) error {
+	type issueWire Issue
+	var decoded issueWire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var metadata struct {
+		Relations []struct {
+			Other      string `json:"other"`
+			OtherTitle string `json:"other_title"`
+		} `json:"relations"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return err
+	}
+	*i = Issue(decoded)
+	for _, relation := range metadata.Relations {
+		if relation.OtherTitle != "" {
+			i.SetRelationTitle(relation.Other, relation.OtherTitle)
+		}
+	}
+	return nil
+}
+
+// SetRelationTitle records the visible title of one relation counterpart.
+func (i *Issue) SetRelationTitle(id, title string) {
+	if i.relationTitles == nil {
+		i.relationTitles = make(map[string]string)
+	}
+	i.relationTitles[id] = title
+}
+
+// RelationTitle returns the counterpart's title when it is visible to the
+// caller. A relation may still name an issue outside that visibility scope.
+func (i *Issue) RelationTitle(id string) string { return i.relationTitles[id] }
 
 // IssueTree is one Issue extended with its children, recursively. It is what
 // dep tree and GET /api/issues/{id}/tree return. No other surface carries
@@ -71,6 +116,24 @@ type Issue struct {
 type IssueTree struct {
 	Issue
 	Children []IssueTree `json:"children"`
+}
+
+// UnmarshalJSON keeps children when Issue's custom decoder is promoted through
+// the anonymous embedding. Each child uses this same decoder recursively.
+func (t *IssueTree) UnmarshalJSON(data []byte) error {
+	var issue Issue
+	if err := json.Unmarshal(data, &issue); err != nil {
+		return err
+	}
+	var tree struct {
+		Children []IssueTree `json:"children"`
+	}
+	if err := json.Unmarshal(data, &tree); err != nil {
+		return err
+	}
+	t.Issue = issue
+	t.Children = tree.Children
+	return nil
 }
 
 // Workspace is the top-level organising unit. ActiveIssues counts the issues
