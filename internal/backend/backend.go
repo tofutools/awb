@@ -338,7 +338,6 @@ type IssuePatch struct {
 	PullRequestURL *string
 	Type           *domain.Type
 	Priority       *int
-	BoardHidden    *bool
 
 	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,
@@ -357,7 +356,7 @@ type IssuePatch struct {
 }
 
 // IssueMove atomically changes workflow status, optional direct epic
-// membership, and sparse position. Workspace and issue ID are immutable. A nil
+// membership, and sparse sibling position. Workspace and issue ID are immutable. A nil
 // Epic preserves membership; a pointer to empty clears it. Open clears
 // assignees, while In progress assigns the caller when restarting closed work.
 type IssueMove struct {

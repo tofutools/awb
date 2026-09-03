@@ -20,7 +20,7 @@ func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter
 		Workspaces: workspaces, ExcludeIDs: hiddenEpics, Types: []domain.Type{domain.TypeEpic},
 		IDs:   epics,
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
-		BoardOnly: true, IncludeClosed: true, ClosedAfter: closedAfter,
+		IncludeClosed: true, ClosedAfter: closedAfter,
 	})
 }
 

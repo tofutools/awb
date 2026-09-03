@@ -3458,11 +3458,6 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
     element("span", "edit-shortcut-hint", "Esc to hide · Ctrl/⌘+Enter to save"),
     editor.submit,
   );
-  const boardVisibility = element("label", "board-view-check issue-board-visibility");
-  const showOnBoards = document.createElement("input"); showOnBoards.type = "checkbox"; showOnBoards.checked = !issue.board_hidden;
-  const boardVisibilityCopy = element("span", "board-view-check-copy");
-  boardVisibilityCopy.append(element("span", "", "Show on boards"), element("span", "board-view-help", "Turn this off to keep the issue in lists while hiding it from every board."));
-  boardVisibility.append(showOnBoards, boardVisibilityCopy); editor.actions.before(boardVisibility);
   const rememberDraft = (): void => {
     issueEditDrafts.set(issue.id, {
       title: editor.title.value,
@@ -3483,7 +3478,6 @@ function issueEditForm(issue: Issue, draft?: IssueEditDraft): HTMLFormElement {
         description: editor.description.textarea.value,
         commit_hash: editor.commitHash.value,
         pull_request_url: editor.pullRequestURL.value,
-        board_hidden: !showOnBoards.checked,
       });
       issueEditDrafts.delete(issue.id);
       return updated;

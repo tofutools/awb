@@ -185,10 +185,12 @@ epic” is a derived lane rather than a special issue. Board pages and each colu
 are bounded independently so a large installation cannot create an unbounded
 response.
 
-Manual ordering is sparse. Moving between a predecessor and successor normally
-chooses a value between them instead of rewriting every card; storage can
-rebalance when no gap remains. Natural issue lists use the same order when no
-explicit sort overrides it.
+Manual ordering is sparse and scoped to siblings: top-level issues share one
+sequence and each parent owns a sequence for its direct children. Moving
+between a predecessor and successor normally chooses a value between them
+instead of rewriting every issue; storage can rebalance when no gap remains.
+Boards narrow that sibling sequence further by status column. Natural issue
+lists use the same order when no explicit sort overrides it.
 
 A saved board view belongs to one user and stores configuration, not a materialized
 issue set. It may be shared by link, but every reader's current authorization
@@ -196,8 +198,7 @@ and ignored-workspace preferences still apply. Empty selected scope and “all�
 are distinct states so disappearing access cannot silently widen a saved view.
 Each saved view owns its filter scope, per-column card page size, and closed-card retention window. The
 default board accepts the same fields as request preferences, which the web UI
-keeps locally for that browser and identity. Board-hidden issues never enter
-the projection. Closed epic lanes and closed non-epic cards have independent
+keeps locally for that browser and identity. Closed epic lanes and closed non-epic cards have independent
 retention windows; each remains until its most recent close is older than its
 window, and a zero-day window hides it immediately.
 Epic lanes may also be hidden as viewer-local presentation state for one board

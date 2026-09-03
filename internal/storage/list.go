@@ -54,9 +54,6 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	if !f.IncludeArchived {
 		c.add(`EXISTS (SELECT 1 FROM workspaces p WHERE p.key = i.workspace AND p.state = 'active')`)
 	}
-	if f.BoardOnly {
-		c.add("i.board_hidden = 0")
-	}
 	if f.ClosedAfter != "" {
 		c.add("(i.status <> 'closed' OR i.closed_at >= ?)", f.ClosedAfter)
 	}
@@ -205,7 +202,7 @@ func orderBy(sort domain.Sort) string {
 
 	switch sort.Key {
 	case domain.SortOrder:
-		return " ORDER BY (i.board_order = 0) ASC, i.board_order " + direction +
+		return " ORDER BY (i.issue_order = 0) ASC, i.issue_order " + direction +
 			", i.priority ASC, i.updated_at DESC, i.id ASC"
 	case domain.SortPriority:
 		// Explicit priority keeps the historical oldest-first tiebreak; the natural
@@ -241,7 +238,7 @@ func orderBy(sort domain.Sort) string {
 		}
 		return " ORDER BY relevance ASC, i.id ASC"
 	default:
-		return " ORDER BY (i.board_order = 0) ASC, i.board_order ASC, i.priority ASC, i.updated_at DESC, i.id ASC"
+		return " ORDER BY (i.issue_order = 0) ASC, i.issue_order ASC, i.priority ASC, i.updated_at DESC, i.id ASC"
 	}
 }
 

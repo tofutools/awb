@@ -1491,8 +1491,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .board-view-filter-grid > .edit-field, .board-view-retention-grid > .edit-field { align-content: start; }
 .board-view-retention-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; align-items: start; }
 .board-default-settings { width: min(28rem, calc(100vw - 2rem)); }
-.issue-board-visibility { padding: 0.1rem 0; }
-.edit-panel .issue-board-visibility > input { min-width: auto; margin-top: 0.3rem; padding: 0; border: 0; accent-color: var(--accent); }
 .board-view-dialog-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; padding: 0.85rem 1.25rem; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 35%, var(--panel)); }
 .board-view-selection-summary { margin-left: auto; color: var(--muted); font-size: 0.78rem; }
 .board-view-delete { margin-right: auto; }
