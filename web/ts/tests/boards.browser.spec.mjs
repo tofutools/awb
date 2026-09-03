@@ -165,6 +165,13 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
   await expect(page.locator(".relation-section")).not.toContainText(createdID);
+  const priorityHeading = childIssues.getByRole("columnheader", { name: "Priority" });
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).toHaveAttribute("aria-sort", "ascending");
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).toHaveAttribute("aria-sort", "descending");
+  await priorityHeading.getByRole("button").click();
+  await expect(priorityHeading).not.toHaveAttribute("aria-sort");
   const createdChild = childIssues.locator(`tr[data-issue='${createdID}']`);
   await expect(createdChild).toHaveJSProperty("draggable", true);
   const reorderTarget = childIssues.locator(`tr:has(.status-in_progress):not([data-issue='${createdID}'])`).first();

@@ -957,6 +957,23 @@ function sortButton(
   defaultKey: string,
   defaultDirection: SortDirection,
 ): HTMLElement {
+  return sortableHeaderButton(column, state, () => {
+    const query = new URLSearchParams(route.query);
+    const next = nextSortValue(
+      query.get("sort"), column.key, issueSortKeys, defaultKey, defaultDirection,
+    );
+    if (next === null) query.delete("sort");
+    else query.set("sort", next);
+    query.delete("page");
+    location.hash = routeHref(route, query).slice(1);
+  });
+}
+
+function sortableHeaderButton(
+  column: IssueColumn,
+  state: SortState,
+  activate: () => void,
+): HTMLButtonElement {
   const button = element("button", "sort-button", column.label) as HTMLButtonElement;
   button.type = "button";
   const active = state.key === column.key;
@@ -973,16 +990,7 @@ function sortButton(
   button.title = active
     ? `Sorted by ${column.label}, ${state.direction === "asc" ? "ascending" : "descending"}`
     : `Sort by ${column.label}`;
-  button.addEventListener("click", () => {
-    const query = new URLSearchParams(route.query);
-    const next = nextSortValue(
-      query.get("sort"), column.key, issueSortKeys, defaultKey, defaultDirection,
-    );
-    if (next === null) query.delete("sort");
-    else query.set("sort", next);
-    query.delete("page");
-    location.hash = routeHref(route, query).slice(1);
-  });
+  button.addEventListener("click", activate);
   return button;
 }
 
@@ -3450,47 +3458,84 @@ async function viewIssue(id: string): Promise<HTMLElement> {
 function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   section.append(element("h2", "", "Child issues"));
-  const columns = issueColumns("issues").filter((column) =>
-    ["id", "type", "priority", "status", "assignee"].includes(column.key));
-  if (mutable) {
-    columns.push({
-      key: "actions",
-      label: "",
-      sortable: false,
-      render: (child) => {
-        const remove = button("Remove", "inline-button danger-button resource-remove");
-        remove.addEventListener("click", async () => {
-          const confirmed = await confirmMutation(
-            "Remove child?",
-            `Remove ${child.id} from ${parent}?`,
-            remove,
-            true,
-          );
-          if (!confirmed) return;
-          const row = remove.closest("tr") ?? remove;
-          void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
-        });
-        return remove;
-      },
-    });
-  }
-  const table = element("table", "listing-table issue-table child-issues-table") as HTMLTableElement;
-  const head = document.createElement("thead");
-  const heading = document.createElement("tr");
-  for (const column of columns) {
-    const th = document.createElement("th");
-    th.scope = "col";
-    th.classList.add(`listing-col-${column.key}`);
-    th.append(element("span", "column-label", column.label));
-    heading.append(th);
-  }
-  head.append(heading);
-  table.append(head);
+  const sortKeys = ["id", "type", "priority", "status", "assignee"];
+  const naturalPosition = new Map(children.map((child, index) => [child.id, index]));
+  let sortValue: string | null = null;
   let draggedChild: Issue | null = null;
-  table.append(issueTableBody(children, columns, mutable ? (row, child) => {
-    configureIssueOrderRow(row, child, () => draggedChild, (moving) => { draggedChild = moving; });
-  } : undefined));
-  section.append(table);
+
+  const renderTable = (): void => {
+    const state = sortState(sortValue, sortKeys, "order");
+    const rows = [...children];
+    if (state.explicit) {
+      const value = (issue: Issue): string | number => {
+        if (state.key === "priority") return issue.priority;
+        if (state.key === "assignee") return issue.assignees.join("\u0000");
+        if (state.key === "type") return issue.type;
+        if (state.key === "status") return issue.status;
+        return issue.id;
+      };
+      rows.sort((left, right) => {
+        const a = value(left);
+        const b = value(right);
+        const compared = typeof a === "number" && typeof b === "number"
+          ? a - b
+          : String(a).localeCompare(String(b));
+        if (compared !== 0) return state.direction === "asc" ? compared : -compared;
+        return (naturalPosition.get(left.id) ?? 0) - (naturalPosition.get(right.id) ?? 0);
+      });
+    }
+
+    const columns = issueColumns("issues").filter((column) => sortKeys.includes(column.key));
+    if (mutable) {
+      columns.push({
+        key: "actions",
+        label: "",
+        sortable: false,
+        render: (child) => {
+          const remove = button("Remove", "inline-button danger-button resource-remove");
+          remove.addEventListener("click", async () => {
+            const confirmed = await confirmMutation(
+              "Remove child?",
+              `Remove ${child.id} from ${parent}?`,
+              remove,
+              true,
+            );
+            if (!confirmed) return;
+            const row = remove.closest("tr") ?? remove;
+            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
+          });
+          return remove;
+        },
+      });
+    }
+
+    const table = element("table", "listing-table issue-table child-issues-table") as HTMLTableElement;
+    const head = document.createElement("thead");
+    const heading = document.createElement("tr");
+    for (const column of columns) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.classList.add(`listing-col-${column.key}`);
+      if (state.explicit && state.key === column.key) {
+        th.setAttribute("aria-sort", state.direction === "asc" ? "ascending" : "descending");
+      }
+      th.append(column.sortable === false
+        ? element("span", "column-label", column.label)
+        : sortableHeaderButton(column, state, () => {
+          sortValue = nextSortValue(sortValue, column.key, sortKeys, "order");
+          renderTable();
+        }));
+      heading.append(th);
+    }
+    head.append(heading);
+    table.append(head);
+    table.append(issueTableBody(rows, columns, mutable && !state.explicit ? (row, child) => {
+      configureIssueOrderRow(row, child, () => draggedChild, (moving) => { draggedChild = moving; });
+    } : undefined));
+    section.querySelector(".child-issues-table")?.replaceWith(table);
+    if (!section.contains(table)) section.append(table);
+  };
+  renderTable();
   return section;
 }
 
