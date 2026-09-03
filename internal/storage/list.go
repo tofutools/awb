@@ -118,10 +118,11 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 			anyArgs(f.Labels)...)
 	}
 
-	// The web listing filter mirrors the values hydrated into an issue row. Each
-	// word may match any displayed value, but every word must match. Keeping the
-	// predicate in this scoped selection makes totals, facets and pagination all
-	// describe the same authorized result set.
+	// The web listing filter matches an issue row's displayed values and the
+	// stable IDs behind its parent and blocker links. Each word may match any
+	// such value, but every word must match. Keeping the predicate in this scoped
+	// selection makes totals, facets and pagination all describe the same
+	// authorized result set.
 	for _, word := range strings.Fields(f.ListingFilter) {
 		c.add(`(
 			instr(awb_casefold(i.id || ' ' || i.workspace || ' ' || i.title || ' ' ||
@@ -130,11 +131,14 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 			            WHERE a.issue = i.id AND instr(awb_casefold(a.assignee), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM issue_labels l
 			            WHERE l.issue = i.id AND instr(awb_casefold(l.label), awb_casefold(?)) > 0)
+			OR EXISTS (SELECT 1 FROM relations r
+			            WHERE r.subject = i.id AND r.type = 'has-parent'
+			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
 			OR EXISTS (SELECT 1 FROM relations r JOIN issues b ON b.id = r.other
 			            WHERE r.subject = i.id AND r.type = 'blocked-by'
 			              AND i.status <> 'closed' AND b.status <> 'closed'
 			              AND instr(awb_casefold(r.other), awb_casefold(?)) > 0)
-		)`, word, word, word, word)
+		)`, word, word, word, word, word)
 	}
 
 	return c

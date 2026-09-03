@@ -617,6 +617,30 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 	assert.Equal(t, 13, total, "clearing restores the complete result set")
 }
 
+func TestListingFilterMatchesChildrenByParentID(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	parent := add("parent")
+	firstChild := add("first child")
+	secondChild := add("second child")
+	add("unrelated")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(firstChild, domain.RelHasParent, parent); err != nil {
+			return err
+		}
+		return tx.InsertRelation(secondChild, domain.RelHasParent, parent)
+	}))
+
+	filter := &domain.Filter{ListingFilter: parent[1:], Sort: domain.DefaultSort}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 3)
+
+	assert.ElementsMatch(t, []string{parent, firstChild, secondChild},
+		[]string{issues[0].ID, issues[1].ID, issues[2].ID})
+	assert.Equal(t, 3, total)
+}
+
 func TestSuggestIssuesByIDAndTitle(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
