@@ -23,7 +23,7 @@ import (
 // sample is a listing wide enough that every column cannot fit any ordinary
 // window, so what the layout gives up is visible.
 func sample() []domain.Issue {
-	return []domain.Issue{
+	issues := []domain.Issue{
 		{ID: "demo-eeec94", Priority: 0, Status: domain.StatusOpen, Type: "epic",
 			Title:  "Ship the 1.0 release of the widget catalogue",
 			Labels: []string{"release"}},
@@ -33,8 +33,12 @@ func sample() []domain.Issue {
 		{ID: "demo-bff7dc", Priority: 2, Status: domain.StatusOpen, Type: "feature",
 			Title: "Search the catalogue by name and tag", Blocked: true,
 			Blockers: []string{"demo-bbd9d3"},
-			Labels:   []string{"catalogue", "frontend", "search"}},
+			Labels:   []string{"catalogue", "frontend", "search"},
+			Relations: []domain.Relation{{Type: domain.RelHasParent, Other: "demo-eeec94",
+				Direction: domain.DirectionOut}}},
 	}
+	issues[2].SetRelationTitle("demo-eeec94", "Ship the 1.0 release of the widget catalogue")
+	return issues
 }
 
 // render prints a listing to a window of the given width, or to no window at
@@ -80,13 +84,14 @@ func TestListingWithoutATerminalIsPlainColumns(t *testing.T) {
 	}
 
 	head := lines(out)[0]
-	for _, header := range []string{"ID", "P", "STATUS", "TYPE", "TITLE", "ASSIGNEES", "LABELS"} {
+	for _, header := range []string{"ID", "P", "STATUS", "TYPE", "PARENT", "TITLE", "ASSIGNEES", "LABELS"} {
 		assert.Contains(t, head, header)
 	}
 	assert.Contains(t, out, "bob,carol")
 	// Every column is separated from the next, which is what was wrong before.
 	assert.NotContains(t, out, "demo-eeec94P0")
 	assert.Contains(t, lines(out)[1], "demo-eeec94  P0  open")
+	assert.Contains(t, out, "Ship the 1.0 release of the wid…")
 }
 
 // On a terminal the same listing is a box, and no line of it is wider than the
@@ -134,7 +139,10 @@ func TestRemoteListingIdentifiersAreClickable(t *testing.T) {
 // explicitly. Both fields are part of the CLI shape even in direct mode; an
 // empty value says that the local database has no associated web address.
 func TestJSONIncludesWebLinks(t *testing.T) {
-	issue := domain.Issue{ID: "demo-eeec94", Workspace: "demo", Title: "Release"}
+	issue := domain.Issue{ID: "demo-eeec94", Workspace: "demo", Title: "Release", Relations: []domain.Relation{{
+		Type: domain.RelHasParent, Other: "demo-parent", Direction: domain.DirectionOut,
+	}}}
+	issue.SetRelationTitle("demo-parent", "Parent release")
 	issues := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
 		require.NoError(t, e.printIssues([]domain.Issue{issue}, false))
@@ -144,6 +152,8 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	require.Len(t, issueList, 1)
 	assert.Equal(t, "https://example.com/awb/#/issues/demo-eeec94", issueList[0]["issue_link"])
 	assert.Equal(t, "https://example.com/awb/#/issues?workspace=demo", issueList[0]["workspace_link"])
+	relations := issueList[0]["relations"].([]any)
+	assert.Equal(t, "Parent release", relations[0].(map[string]any)["other_title"])
 
 	workspaces := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
@@ -263,7 +273,7 @@ func TestNarrowListingGivesUpColumnsFromTheRight(t *testing.T) {
 	assert.Contains(t, wide, "ASSIGNEE")
 
 	// Labels are the first to go, and the assignee and the type still fit.
-	narrower := lines(render(90, func(e *env) { e.printIssueTable(sample(), false) }))[1]
+	narrower := lines(render(100, func(e *env) { e.printIssueTable(sample(), false) }))[1]
 	assert.NotContains(t, narrower, "LABELS")
 	assert.Contains(t, narrower, "ASSIGNEE")
 	assert.Contains(t, narrower, "TYPE")

@@ -287,10 +287,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	_, _ = w.Write(bytes.TrimRight(buffer.Bytes(), "\n"))
 }
 
-// The conversions between the API's shapes and the domain's. The API enriches
-// a relation with its visible counterpart title for browser presentation; the
-// remote CLI otherwise receives the same domain fields and adds web links as
-// presentation metadata only after it receives one of these.
+// The conversions between the API's shapes and the domain's. Relation titles
+// are visibility-scoped presentation metadata carried by both implementations
+// of the shared backend; the remote CLI adds web links after receiving one of
+// these responses.
 
 func toIssue(issue *domain.Issue) api.Issue {
 	return api.Issue{

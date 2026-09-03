@@ -2,6 +2,7 @@ package domain
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"time"
 )
@@ -65,9 +66,36 @@ type Issue struct {
 	Attachments    []Attachment `json:"attachments"`
 
 	// relationTitles is presentation metadata for relation counterparts the
-	// caller may see. It is not part of the CLI's stable JSON shape; the HTTP
-	// API exposes it alongside each relation for clients that render names.
+	// caller may see. It stays out of Relation's own JSON so stored activity
+	// snapshots cannot capture a title outside a future reader's scope. The
+	// complete Issue API and CLI presentation shapes add it at their boundary.
 	relationTitles map[string]string
+}
+
+// UnmarshalJSON reads the complete HTTP issue shape, including relation title
+// metadata, so a remote backend carries the same information as a direct one.
+func (i *Issue) UnmarshalJSON(data []byte) error {
+	type issueWire Issue
+	var decoded issueWire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var metadata struct {
+		Relations []struct {
+			Other      string `json:"other"`
+			OtherTitle string `json:"other_title"`
+		} `json:"relations"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return err
+	}
+	*i = Issue(decoded)
+	for _, relation := range metadata.Relations {
+		if relation.OtherTitle != "" {
+			i.SetRelationTitle(relation.Other, relation.OtherTitle)
+		}
+	}
+	return nil
 }
 
 // SetRelationTitle records the visible title of one relation counterpart.
