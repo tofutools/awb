@@ -3462,34 +3462,39 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
   const includeClosed = element("label", "include-closed-control");
   const includeClosedInput = document.createElement("input");
   includeClosedInput.type = "checkbox";
-  includeClosedInput.checked = true;
+  const includeClosedKey = `awb.issue.${parent}.show-closed-children`;
+  try {
+    includeClosedInput.checked = localStorage.getItem(includeClosedKey) !== "false";
+  } catch {
+    includeClosedInput.checked = true;
+  }
   includeClosed.append(includeClosedInput, document.createTextNode("Show closed"));
   heading.append(includeClosed);
   section.append(heading);
   const sortKeys = ["id", "type", "priority", "status", "assignee"];
-  const naturalPosition = new Map(children.map((child, index) => [child.id, index]));
   let sortValue: string | null = null;
   let draggedChild: Issue | null = null;
 
-  const renderTable = (): void => {
+  const renderTable = (focusColumn = ""): void => {
     const state = sortState(sortValue, sortKeys, "order");
     const rows = children.filter((child) => includeClosedInput.checked || child.status !== "closed");
     if (state.explicit) {
       const value = (issue: Issue): string | number => {
         if (state.key === "priority") return issue.priority;
-        if (state.key === "assignee") return issue.assignees.join("\u0000");
-        if (state.key === "type") return issue.type;
-        if (state.key === "status") return issue.status;
+        if (state.key === "assignee") return issue.assignees.join(",");
+        if (state.key === "type") return ["epic", "feature", "bug", "task", "chore"].indexOf(issue.type);
+        if (state.key === "status") return ["open", "in_progress", "closed"].indexOf(issue.status);
         return issue.id;
       };
       rows.sort((left, right) => {
         const a = value(left);
         const b = value(right);
+        if (state.key === "assignee" && (a === "" || b === "") && a !== b) return a === "" ? 1 : -1;
         const compared = typeof a === "number" && typeof b === "number"
           ? a - b
           : String(a).localeCompare(String(b));
         if (compared !== 0) return state.direction === "asc" ? compared : -compared;
-        return (naturalPosition.get(left.id) ?? 0) - (naturalPosition.get(right.id) ?? 0);
+        return left.id.localeCompare(right.id);
       });
     }
 
@@ -3531,7 +3536,7 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
         ? element("span", "column-label", column.label)
         : sortableHeaderButton(column, state, () => {
           sortValue = nextSortValue(sortValue, column.key, sortKeys, "order");
-          renderTable();
+          renderTable(column.key);
         }));
       heading.append(th);
     }
@@ -3542,8 +3547,14 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
     } : undefined));
     section.querySelector(".child-issues-table")?.replaceWith(table);
     if (!section.contains(table)) section.append(table);
+    if (focusColumn !== "") {
+      table.querySelector<HTMLButtonElement>(`.listing-col-${focusColumn} .sort-button`)?.focus();
+    }
   };
-  includeClosedInput.addEventListener("change", renderTable);
+  includeClosedInput.addEventListener("change", () => {
+    try { localStorage.setItem(includeClosedKey, String(includeClosedInput.checked)); } catch { /* preference is best-effort */ }
+    renderTable();
+  });
   renderTable();
   return section;
 }
