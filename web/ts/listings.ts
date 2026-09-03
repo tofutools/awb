@@ -25,6 +25,38 @@ export function listingParentTitle(title: string): string {
   return `${characters.slice(0, listingParentTitleMaxLength - 1).join("")}…`;
 }
 
+export type ListingRelationshipRole = "parent" | "sibling" | null;
+
+/** listingRelationshipRole classifies one visible row while a child's parent
+ * link is active. The child itself stays unmarked: the active link already
+ * identifies it, while the overlays point out its family elsewhere on the
+ * current page. */
+export function listingRelationshipRole(
+  issueID: string,
+  issueParentID: string | undefined,
+  childID: string,
+  parentID: string,
+): ListingRelationshipRole {
+  if (issueID === parentID) return "parent";
+  if (issueID !== childID && issueParentID === parentID) return "sibling";
+  return null;
+}
+
+export interface ListingFamilyActivation {
+  hovered: boolean;
+  focused: boolean;
+}
+
+/** activeListingFamily selects the relationship a listing should show. A
+ * pointer hover temporarily takes precedence over keyboard focus; when it
+ * leaves, the still-focused link becomes active again. */
+export function activeListingFamily(states: readonly ListingFamilyActivation[]): number | null {
+  const hovered = states.findIndex((state) => state.hovered);
+  if (hovered !== -1) return hovered;
+  const focused = states.findIndex((state) => state.focused);
+  return focused === -1 ? null : focused;
+}
+
 /** Runs one debounced listing request at a time. Aborting saves backend work;
  * the generation guard also rejects a stale transport completion. */
 export class BackendListingFilter<T> {

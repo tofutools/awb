@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  activeListingFamily,
   BackendListingFilter,
   emptyFacetLabel,
   listingFilterMaxLength,
   listingParentTitle,
   listingParentTitleMaxLength,
+  listingRelationshipRole,
   lowestFacetGroup,
   nextSortValue,
   pageNumber,
@@ -33,6 +35,28 @@ test("parent titles are bounded for their narrow listing column", () => {
   assert.equal(listingParentTitle("A title that is deliberately longer than the parent column"),
     "A title that is deliberately lo…");
   assert.equal(Array.from(listingParentTitle("x".repeat(100))).length, listingParentTitleMaxLength);
+});
+
+test("listing family markers identify the visible parent and siblings", () => {
+  assert.equal(listingRelationshipRole("awb-parent", undefined, "awb-child", "awb-parent"), "parent");
+  assert.equal(listingRelationshipRole("awb-sibling", "awb-parent", "awb-child", "awb-parent"), "sibling");
+  assert.equal(listingRelationshipRole("awb-child", "awb-parent", "awb-child", "awb-parent"), null);
+  assert.equal(listingRelationshipRole("awb-unrelated", "awb-other", "awb-child", "awb-parent"), null);
+});
+
+test("listing family hover temporarily takes precedence over keyboard focus", () => {
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: true },
+    { hovered: true, focused: false },
+  ]), 1);
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: true },
+    { hovered: false, focused: false },
+  ]), 0, "the focused family returns when the pointer leaves");
+  assert.equal(activeListingFamily([
+    { hovered: false, focused: false },
+    { hovered: false, focused: false },
+  ]), null);
 });
 
 test("empty applicable facet groups remain visible", () => {

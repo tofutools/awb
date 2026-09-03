@@ -32,10 +32,12 @@ import {
 } from "./api.js";
 import {
   BackendListingFilter,
+  activeListingFamily,
   emptyFacetLabel,
   lowestFacetGroup,
   listingFilterMaxLength,
   listingParentTitle,
+  listingRelationshipRole,
   nextSortValue,
   pageNumber,
   pageSizeFrom,
@@ -1055,6 +1057,7 @@ function issueTable(
   table.append(head);
 
   const body = document.createElement("tbody");
+  const listingRows: Array<{ issue: Issue; row: HTMLTableRowElement }> = [];
   const orderingEnabled = state.key === "order" && state.direction === "asc";
   for (const issue of issues) {
     const row = document.createElement("tr");
@@ -1063,7 +1066,13 @@ function issueTable(
       const td = document.createElement("td");
       td.dataset.label = column.label;
       td.classList.add(`listing-col-${column.key}`);
-      td.append(column.render(issue));
+      const content = column.render(issue);
+      if (column.key === "id") {
+        const marker = element("span", "listing-family-marker");
+        marker.setAttribute("aria-hidden", "true");
+        content.append(marker);
+      }
+      td.append(content);
       row.append(td);
     }
     if (orderingEnabled) {
@@ -1102,6 +1111,45 @@ function issueTable(
       });
     }
     body.append(row);
+    listingRows.push({ issue, row });
+  }
+
+  const clearFamily = (): void => {
+    for (const { row } of listingRows) row.classList.remove("listing-family-parent", "listing-family-sibling");
+  };
+  const familyLinks: Array<{ issue: Issue; parentID: string; link: HTMLAnchorElement }> = [];
+  for (const { issue, row } of listingRows) {
+    const parentID = inspectorParent(issue.relations);
+    const parentLink = row.querySelector<HTMLAnchorElement>(".parent-link");
+    if (parentID === undefined || parentLink === null) continue;
+    familyLinks.push({ issue, parentID, link: parentLink });
+  }
+  const refreshFamily = (): void => {
+    const active = activeListingFamily(familyLinks.map(({ link }) => ({
+      hovered: link.matches(":hover"),
+      focused: document.activeElement === link,
+    })));
+    if (active === null) {
+      clearFamily();
+      return;
+    }
+    const family = familyLinks[active];
+    for (const candidate of listingRows) {
+      const role = listingRelationshipRole(
+        candidate.issue.id,
+        inspectorParent(candidate.issue.relations),
+        family.issue.id,
+        family.parentID,
+      );
+      candidate.row.classList.toggle("listing-family-parent", role === "parent");
+      candidate.row.classList.toggle("listing-family-sibling", role === "sibling");
+    }
+  };
+  for (const { link } of familyLinks) {
+    link.addEventListener("pointerenter", refreshFamily);
+    link.addEventListener("pointerleave", refreshFamily);
+    link.addEventListener("focus", refreshFamily);
+    link.addEventListener("blur", refreshFamily);
   }
   table.append(body);
   return table;

@@ -697,8 +697,27 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-table.listing-blocked th.listing-col-type { width: 9%; }
 .issue-table.listing-blocked th.listing-col-parent { width: 13%; }
 .issue-table.listing-blocked th.listing-col-blockers { width: 20%; }
-.issue-name-cell { display: block; min-width: 0; }
+.issue-name-cell { position: relative; display: block; min-width: 0; }
 .issue-name-cell a.name { display: inline-flex; max-width: 100%; }
+.listing-family-marker {
+  position: absolute;
+  z-index: 1;
+  top: -0.32rem;
+  left: -0.34rem;
+  display: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #26312e;
+  font: 700 0.58rem/1 var(--mono);
+  pointer-events: none;
+}
+.listing-family-parent .listing-family-marker { display: inline-flex; background: #f6c85f; }
+.listing-family-parent .listing-family-marker::before { content: "↑"; }
+.listing-family-sibling .listing-family-marker { display: inline-flex; background: #62d6c5; }
+.listing-family-sibling .listing-family-marker::before { content: "↔"; }
 .row-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.12rem; }
 .row-label { color: var(--muted); font: 0.7em var(--mono); }
 .listing-badge {
