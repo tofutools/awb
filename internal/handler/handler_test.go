@@ -1573,3 +1573,53 @@ func TestMarkdownGateOverHTTP(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, good, a.createIssue(string(body)).Description)
 }
+
+// parent names the issue an issue has-parent, of which there is at most one,
+// and is "" when there is none, like every other unset string in the shape. It
+// is derived: it appears and disappears with the relation, without the issue's
+// own version moving.
+func TestParentNamesTheHasParentRelation(t *testing.T) {
+	a := newAPI(t)
+	epic := a.createIssue(`{"workspace":"awb","title":"Epic","type":"epic"}`)
+	child := a.createIssue(`{"workspace":"awb","title":"Child","relations":[` +
+		`{"type":"has-parent","other":"` + epic.ID + `"}]}`)
+
+	assert.Equal(t, epic.ID, child.Parent)
+
+	// The parent of an issue with none is empty, and the parent of an issue
+	// that only has children is too: has-parent read the other way is a child.
+	_, payload := a.do(http.MethodGet, "/api/issues/"+epic.ID, "")
+	assert.Contains(t, payload, `"parent":""`)
+
+	// The tree carries it on every node, the root included.
+	_, payload = a.do(http.MethodGet, "/api/issues/"+epic.ID+"/tree", "")
+	assert.Contains(t, payload, `"parent":""`)
+	assert.Contains(t, payload, `"parent":"`+epic.ID+`"`)
+
+	// Removing the relation removes the parent, in the same breath.
+	resp, payload := a.do(http.MethodDelete,
+		"/api/issues/"+child.ID+"/relations/has-parent/"+epic.ID, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	_, payload = a.do(http.MethodGet, "/api/issues/"+child.ID, "")
+	assert.Contains(t, payload, `"parent":""`)
+}
+
+// parent is derived, so a PATCH may carry it and have it ignored — that is
+// what lets a UI send back the object it read. Ignored is still not unchecked.
+func TestPatchIgnoresParentButStillChecksIt(t *testing.T) {
+	a := newAPI(t)
+	epic := a.createIssue(`{"workspace":"awb","title":"Epic","type":"epic"}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
+
+	for _, body := range []string{
+		`{"title":"renamed","parent":""}`,
+		`{"title":"renamed","parent":"` + epic.ID + `"}`,
+	} {
+		resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
+		require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+		assert.Contains(t, payload, `"parent":""`, body)
+	}
+
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"parent":7}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+}

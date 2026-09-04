@@ -18,9 +18,10 @@ import (
 //
 // Any further fields are optional and identified by their prefix rather than
 // their position, and appear in this fixed order when present: @<assignee>,
-// one #<label> per label in sorted order, !blocked and, when withBlockers is
-// set, one blocked-by:<id> per entry of Blockers, in sorted order. That last
-// group is for awb blocked, which is the listing whose point is the blockers.
+// one #<label> per label in sorted order, parent:<id> when the issue has a
+// parent the caller may see, !blocked and, when withBlockers is set, one
+// blocked-by:<id> per entry of Blockers, in sorted order. That last group is
+// for awb blocked, which is the listing whose point is the blockers.
 //
 // The character restrictions on labels and assignees keep those tokens free of
 // spaces, so a line is parseable by splitting on whitespace outside the quoted
@@ -46,6 +47,10 @@ func CompactLine(issue *Issue, withBlockers bool) string {
 	for _, label := range issue.Labels {
 		b.WriteString(" #")
 		b.WriteString(label)
+	}
+	if issue.Parent != "" {
+		b.WriteString(" parent:")
+		b.WriteString(issue.Parent)
 	}
 	if issue.Blocked {
 		b.WriteString(" !blocked")

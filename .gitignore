@@ -11,5 +11,10 @@
 /internal/api/*_gen.go
 /web/ts/api-types.ts
 
+# What ogen leaves behind when it cannot format what it generated. It writes
+# these beside its working directory rather than into --target, so the rule
+# above does not cover them.
+/internal/*_gen.go.dump
+
 # Throwaway install tree for web/ts/vendor/rebuild.sh; never part of a build
 /web/ts/vendor/node_modules/

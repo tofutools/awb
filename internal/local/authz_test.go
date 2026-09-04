@@ -217,6 +217,42 @@ func TestIgnoredWorkspacesAreScopedAndRecoverable(t *testing.T) {
 		"re-enabling restores the historical relation snapshot")
 }
 
+// An issue's parent is read out of its relations, so it is named on exactly
+// the terms they are. Authorization keeps a graph name visible, because what
+// an issue is part of is part of it; the ignore preference removes the
+// connection from presentation, and the parent goes with it.
+func TestParentIsNamedOnTheSameTermsAsTheRelationItComesFrom(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	parent, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "web", Title: "Parent nobody granted", Type: domain.TypeEpic,
+	})
+	require.NoError(t, err)
+	child, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Child",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: parent.ID}},
+	})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	seen, err := bob.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Equal(t, parent.ID, seen.Parent, "a parent outside the caller's workspaces is still named")
+	_, err = bob.GetIssue(ctx, parent.ID)
+	notFound(t, err, "naming it is not being able to read it")
+
+	grant(t, root, ctx, "web", "bob", domain.AccessRegular)
+	_, err = bob.SetWorkspaceIgnored(ctx, "web", true)
+	require.NoError(t, err)
+
+	seen, err = bob.GetIssue(ctx, child.ID)
+	require.NoError(t, err)
+	assert.Empty(t, seen.Relations, "the ignored connection is not presented")
+	assert.Empty(t, seen.Parent, "and neither is the parent it named")
+}
+
 func TestBoardMoveCannotSeeOrSelectAnInaccessibleEpic(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)

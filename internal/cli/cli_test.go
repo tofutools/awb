@@ -789,6 +789,60 @@ func TestDepTreeCompact(t *testing.T) {
 	assert.Equal(t, "    "+grandchild, lines[2][:4+len(grandchild)])
 }
 
+// Under --json every issue names its parent directly, so a consumer does not
+// have to look for the has-parent relation. It is "" when there is none, in a
+// listing and in a tree alike.
+func TestJSONNamesTheParent(t *testing.T) {
+	h := newHarness(t)
+	root := h.create("root", "--workspace", "awb")
+	child := h.create("child", "--workspace", "awb", "--has-parent", root)
+
+	var shown domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", child, "--json")), &shown))
+	assert.Equal(t, root, shown.Parent)
+
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", root, "--json")), &shown))
+	assert.Empty(t, shown.Parent)
+	assert.Contains(t, h.mustRun("show", root, "--json"), `"parent": ""`)
+
+	var listed []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("list", "--json")), &listed))
+	byID := map[string]string{}
+	for _, issue := range listed {
+		byID[issue.ID] = issue.Parent
+	}
+	assert.Equal(t, root, byID[child])
+	assert.Empty(t, byID[root])
+
+	var tree domain.IssueTree
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("dep", "tree", root, "--json")), &tree))
+	assert.Empty(t, tree.Parent)
+	require.Len(t, tree.Children, 1)
+	assert.Equal(t, root, tree.Children[0].Parent)
+}
+
+// The two human-facing modes name the parent too, and say nothing at all when
+// there is none: a compact line gains a parent:<id> token only where there is
+// one, and the detail view's Parent line is simply absent.
+func TestShowNamesTheParentInBothHumanModes(t *testing.T) {
+	h := newHarness(t)
+	root := h.create("root", "--workspace", "awb")
+	child := h.create("child", "--workspace", "awb", "--has-parent", root)
+
+	assert.Equal(t, child+` P2 open task "child" parent:`+root+"\n",
+		h.mustRun("show", child, "--compact"))
+	assert.Equal(t, root+` P2 open task "root"`+"\n",
+		h.mustRun("show", root, "--compact"))
+
+	detail := h.mustRun("show", child)
+	assert.Contains(t, detail, "Parent:")
+	assert.Contains(t, detail, root)
+	assert.NotContains(t, h.mustRun("show", root), "Parent:")
+
+	// The token is the shared compact line's, so a listing carries it too.
+	assert.Contains(t, h.mustRun("list", "--compact"), " parent:"+root)
+}
+
 // Errors go to stderr as a single line, and as {"error": "..."} under --json.
 func TestErrorOutput(t *testing.T) {
 	h := newHarness(t)

@@ -2302,7 +2302,7 @@ components:
       required:
         [id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, order, labels,
          assignees, created_at, updated_at, closed_at, blocked, blockers,
-         relations, links, attachments]
+         relations, parent, links, attachments]
       properties:
         id:
           type: string
@@ -2380,6 +2380,18 @@ components:
             caller has no access to: this issue is theirs to see and what it is
             related to is part of it.
           items: { $ref: '#/components/schemas/Relation' }
+        parent:
+          type: string
+          description: |
+            Derived and read-only: the ID of the issue this one is
+            `has-parent`, or `""` when it has none. An issue has at most one
+            parent, so this is the single relation named directly rather than
+            left to be looked for in `relations`.
+
+            It is read out of `relations` and so shares their visibility: a
+            parent in a workspace the caller has chosen to ignore is `""` here
+            exactly as its relation is absent there.
+          examples: [awb-5c1d84]
         links:
           type: array
           description: Derived and read-only; see Link.
@@ -2657,10 +2669,10 @@ components:
         change: each is ignored when it equals what is stored and rejected when
         it differs, because labels are mutated individually and the transitions
         are their own endpoints. The derived and immutable fields — `id`,
-        `workspace`, `order`, the timestamps, `blocked`, `blockers`, `relations`, `links`
-        and `attachments` — are accepted and their values ignored. Together those rules
-        let a UI send back the object it read with only the fields it edited
-        changed.
+        `workspace`, `order`, the timestamps, `blocked`, `blockers`, `relations`,
+        `parent`, `links` and `attachments` — are accepted and their values
+        ignored. Together those rules let a UI send back the object it read
+        with only the fields it edited changed.
 
         Ignored is not unchecked: every field is validated against the schema
         declared for it, so a `created_at` that is not a timestamp is a 400
@@ -2693,6 +2705,7 @@ components:
         blocked: { type: boolean }
         blockers: { type: array, items: { type: string } }
         relations: { type: array, items: { $ref: '#/components/schemas/IssuePatchRelation' } }
+        parent: { type: string }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
         attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
 

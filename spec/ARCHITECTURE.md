@@ -91,8 +91,8 @@ An issue belongs to exactly one workspace and carries:
 
 The complete issue representation is shared by both surfaces. Collections are
 normalized and deterministic, and absent collections are empty arrays rather
-than null. Blocked state, blockers, relations, links, and attachments are
-read-only derived fields; their own operations change them.
+than null. Blocked state, blockers, relations, parent, links, and attachments
+are read-only derived fields; their own operations change them.
 
 IDs have the form `<workspace>-<hash>`. The hash is derived from creation data
 rather than a global sequence, allowing a local caller to mint an ID without a
@@ -140,6 +140,13 @@ other issue's ID, not as a nested issue. A `related` graph may therefore contain
 cycles without making its JSON representation recursive. The separate issue
 tree representation recursively follows only `has-parent`, whose graph is
 acyclic.
+
+The one `has-parent` an issue may be the subject of is additionally named on
+its own as `parent`, read back out of those same relations so the two cannot
+disagree. Like every other unset string it is empty rather than null when there
+is none, and the two human-facing output modes then omit it entirely: a compact
+line carries a `parent:<id>` token only where there is a parent, and the detail
+view prints no `Parent` line at all.
 
 Blocked state is computed from the live graph. It is not stored on the issue,
 so it cannot drift from its blockers. An issue is ready when it is open and has

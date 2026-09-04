@@ -312,6 +312,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
 		Relations:      toRelations(issue),
+		Parent:         issue.Parent,
 		Links:          toLinks(issue.Links),
 		Attachments:    toAttachments(issue.Attachments),
 	}
@@ -348,6 +349,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
 		Relations:      issue.Relations,
+		Parent:         issue.Parent,
 		Links:          issue.Links,
 		Attachments:    issue.Attachments,
 		Children:       children,
