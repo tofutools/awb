@@ -1855,8 +1855,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Assignee' }
         priority_max:
-          $ref: '#/components/schemas/Priority'
+          type: integer
+          minimum: 0
+          maximum: 4
           default: 4
+          description: 0 is the highest priority and 4 the lowest.
         card_limit:
           type: integer
           minimum: 1
@@ -2611,7 +2614,8 @@ components:
         An omitted `type` is `task` and an omitted `priority` is `2`. Those
         two defaults are stated here in prose rather than as a schema
         `default`, which is inherited by every field that references the same
-        schema: written as one, it would reach `IssuePatch` too and quietly
+        schema. Ogen also hoists a `default` beside a `$ref` onto the referenced
+        schema. Written either way, it would reach `IssuePatch` too and quietly
         rewrite the type and priority of every issue patched without them.
       additionalProperties: false
       required: [workspace, title]

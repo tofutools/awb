@@ -94,8 +94,10 @@ Three structural rules hold the design together:
 * Tests use `testify`: `require` for fatal assertions, `assert` for non-fatal.
 * Frontend tests are `node --test` over `web/ts/tests/*.test.mjs`.
 * A `default` schema value is inherited by every field that references the
-  schema. Keep them off the shared vocabulary schemas, or a generated decoder
-  fills in a `type` or a `priority` on a `PATCH` that did not send one.
+  schema. Keep them off the shared vocabulary schemas and, because ogen hoists
+  a `default` beside a `$ref` onto the referenced schema, do not put one beside
+  a reference to them either. Otherwise a generated decoder fills in a `type`
+  or a `priority` on a `PATCH` that did not send one.
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.

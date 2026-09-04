@@ -3,6 +3,7 @@ package openapi_test
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -170,12 +171,37 @@ func TestTheVocabularySchemasCarryNoDefault(t *testing.T) {
 	}
 }
 
+// Ogen hoists a default beside a reference onto the referenced schema. That
+// makes the default apply to every use of a shared schema, not just this one.
+func TestNoReferenceHasADefaultSibling(t *testing.T) {
+	var walk func(any, string)
+	walk = func(value any, path string) {
+		switch value := value.(type) {
+		case map[string]any:
+			if _, references := value["$ref"]; references {
+				assert.NotContains(t, value, "default", path)
+			}
+			for name, child := range value {
+				walk(child, path+"."+name)
+			}
+		case []any:
+			for i, child := range value {
+				walk(child, path+"["+strconv.Itoa(i)+"]")
+			}
+		}
+	}
+
+	walk(document(t), "openapi")
+}
+
 func TestBoardViewCreationDeclaresItsPriorityDefault(t *testing.T) {
 	properties, ok := schema(t, document(t), "BoardViewCreate")["properties"].(map[string]any)
 	require.True(t, ok)
 	priority, ok := properties["priority_max"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, 4, number(t, priority["default"]))
+	assert.Equal(t, domain.MinPriority, number(t, priority["minimum"]))
+	assert.Equal(t, domain.MaxPriority, number(t, priority["maximum"]))
 }
 
 // Every field of the Issue shape must be declared and required: every field is
