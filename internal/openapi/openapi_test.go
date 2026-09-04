@@ -176,6 +176,10 @@ func TestBoardViewCreationDeclaresItsPriorityDefault(t *testing.T) {
 	priority, ok := properties["priority_max"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, 4, number(t, priority["default"]))
+	assert.NotContains(t, priority, "$ref",
+		"a default beside a Priority reference is inherited by the shared schema in OpenAPI 3.1")
+	assert.Equal(t, domain.MinPriority, number(t, priority["minimum"]))
+	assert.Equal(t, domain.MaxPriority, number(t, priority["maximum"]))
 }
 
 // Every field of the Issue shape must be declared and required: every field is

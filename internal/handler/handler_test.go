@@ -118,6 +118,22 @@ func TestCreateIssue(t *testing.T) {
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
 }
 
+func TestCreateIssueUsesTheDirectModeDefaults(t *testing.T) {
+	a := newAPI(t)
+
+	httpIssue := a.createIssue(`{"workspace":"awb","title":"HTTP"}`)
+	directIssue, err := a.be.CreateIssue(t.Context(), backend.IssueCreate{
+		Workspace: "awb",
+		Title:     "Direct",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, directIssue.Type, httpIssue.Type)
+	assert.Equal(t, directIssue.Priority, httpIssue.Priority)
+	assert.Equal(t, domain.TypeTask, httpIssue.Type)
+	assert.Equal(t, domain.DefaultPriority, httpIssue.Priority)
+}
+
 func TestIssueImplementationLinks(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Linked","commit_hash":"01234567","pull_request_url":"https://example.com/issues/42"}`)
@@ -314,7 +330,7 @@ func TestMethodNotAllowed(t *testing.T) {
 // endpoints.
 func TestPatchIssue(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"workspace":"awb","title":"t","labels":["a","b"]}`)
+	issue := a.createIssue(`{"workspace":"awb","title":"t","type":"bug","priority":0,"labels":["a","b"]}`)
 
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"renamed"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
@@ -322,6 +338,8 @@ func TestPatchIssue(t *testing.T) {
 	var updated domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
 	assert.Equal(t, "renamed", updated.Title)
+	assert.Equal(t, domain.TypeBug, updated.Type)
+	assert.Equal(t, 0, updated.Priority)
 
 	// The unchangeable fields are ignored when they equal what is stored, so a UI
 	// can send back the object it read.
