@@ -211,7 +211,22 @@ test("save, share and work from a responsive board", async ({ page }) => {
     return response.ok;
   }, createdID);
   expect(externallyOpened).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 320 });
+  let releaseRefresh;
+  const refreshGate = new Promise((resolve) => { releaseRefresh = resolve; });
+  await page.route(`**/api/issues/${createdID}`, async (route) => {
+    await refreshGate;
+    await route.continue();
+  }, { times: 1 });
   await pointerDrag(page, createdChild, reorderTarget, true);
+  await page.evaluate(() => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "200vh";
+    document.querySelector("main")?.append(spacer);
+    scrollTo(0, document.documentElement.scrollHeight);
+  });
+  expect(await childIssues.evaluate((section) => section.getBoundingClientRect().bottom <= 0)).toBe(true);
+  releaseRefresh();
   await expect.poll(async () => {
     const ids = await childIssues.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
     return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
@@ -221,6 +236,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
     const bounds = section.getBoundingClientRect();
     return bounds.bottom > 0 && bounds.top < innerHeight;
   })).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "Edit issue" }).click();
   await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
   await createdChild.getByRole("button", { name: "Remove" }).click();

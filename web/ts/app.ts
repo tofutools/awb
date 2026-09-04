@@ -1573,6 +1573,8 @@ function configureIssueOrderRow(
       return;
     }
     row.classList.add("moving");
+    const dropBefore = before;
+    const dropAfter = after;
     // A natural listing reorders an issue without changing its workflow
     // state. Refresh the dragged issue first: list rows can have gone stale
     // while this page was open, and sending their old status would turn a
@@ -1580,8 +1582,8 @@ function configureIssueOrderRow(
     // the visible anchor.
     void api.issue(moving.id).then((current) => api.moveIssue(current.id, {
       status: current.status,
-      ...(before === "" ? {} : { before }),
-      ...(after === "" ? {} : { after }),
+      ...(dropBefore === "" ? {} : { before: dropBefore }),
+      ...(dropAfter === "" ? {} : { after: dropAfter }),
     })).then(async () => {
       await render();
       afterRender?.();
