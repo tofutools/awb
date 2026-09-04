@@ -2,11 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { markdownEditorKeymap } from "../../static/markdown-editor.js";
-import {
-  EditorState,
-  defaultKeymap,
-  historyKeymap,
-} from "../../static/vendor/codemirror-6.43.3.js";
+import { vendorBundle } from "./vendor.mjs";
+
+const { EditorState, defaultKeymap, historyKeymap } = await import(vendorBundle("codemirror"));
 
 test("the form save shortcut precedes CodeMirror's blank-line binding", () => {
   const bindings = markdownEditorKeymap(defaultKeymap, historyKeymap);

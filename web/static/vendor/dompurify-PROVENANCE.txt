@@ -1,0 +1,6 @@
+The dompurify-3.4.14.js ESM bundle was built by web/ts/vendor/rebuild.sh with
+esbuild, from these npm packages:
+
+dompurify 3.4.14
+
+Their license texts are in dompurify-LICENSE.txt.

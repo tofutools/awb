@@ -10,3 +10,6 @@
 # Generated from openapi.yaml by build.sh — never committed, never edited
 /internal/api/*_gen.go
 /web/ts/api-types.ts
+
+# Throwaway install tree for web/ts/vendor/rebuild.sh; never part of a build
+/web/ts/vendor/node_modules/

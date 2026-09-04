@@ -16,15 +16,28 @@ export const markdownOptions = {
   // derived `links` array does with it.
   html: false,
   // The autolink extension. Tables and strikethrough are markdown-it defaults.
+  // What `linkify: true` alone recognises is narrower than GFM's rule since
+  // markdown-it 15 turned linkify-it's fuzzy matching off by default, so
+  // createRenderer turns fuzzy matching back on. See there for what that costs.
   linkify: true,
   breaks: false,
   typographer: false,
 };
 
-/** The tags and attributes a rendered description may contain. */
+/**
+ * The tags and attributes a rendered description may contain.
+ *
+ * This is the set the renderer above actually emits, which is what makes it a
+ * gate rather than a wish: a tag the renderer produces and this list omits is
+ * not caught anywhere, it is silently deleted from what the reader sees. That
+ * is why strikethrough is `s` and not GFM's canonical `del` — markdown-it
+ * renders `~~x~~` as `<s>`, and with `html: false` a hand-written `<del>` is
+ * escaped to text long before the sanitiser sees it, so allowing `del` would
+ * allow nothing and dropping `s` loses the extension.
+ */
 export const sanitizeConfig = {
   ALLOWED_TAGS: [
-    "p", "br", "hr", "em", "strong", "del", "code", "pre", "blockquote",
+    "p", "br", "hr", "em", "strong", "s", "code", "pre", "blockquote",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "li", "a", "img", "input",
     "table", "thead", "tbody", "tr", "th", "td",
@@ -52,7 +65,13 @@ interface StateCore {
 
 interface Markdown {
   core: { ruler: { push(name: string, fn: (state: StateCore) => void): void } };
+  linkify: { set(options: LinkifyOptions): void };
   render(src: string): string;
+}
+
+interface LinkifyOptions {
+  fuzzyLink: boolean;
+  fuzzyEmail: boolean;
 }
 
 /** A markdown-it constructor, however it was imported. */
@@ -64,6 +83,21 @@ export type MarkdownConstructor = new (options: typeof markdownOptions) => Markd
  */
 export function createRenderer(MarkdownIt: MarkdownConstructor): Markdown {
   const md = new MarkdownIt(markdownOptions);
+  // GFM's autolink extension recognises a bare `www.` host and a bare email
+  // address as well as a full URL, and the API's derived `links` array is built
+  // by a GFM parser that does. linkify-it recognises neither unless its fuzzy
+  // matching is on. `fuzzyIP` stays off: GFM does not autolink a bare IP
+  // address, and neither does `links`.
+  //
+  // `fuzzyLink` is not exactly GFM's rule. It cannot be: it is one switch, and
+  // it also linkifies a bare host with no `www.`, which GFM leaves as text. So
+  // `example.com` renders as a link here and does not appear in `links`. That
+  // is the wider of the two dispositions and it is the long-standing one, which
+  // is why it is kept rather than narrowed: the issue view renders the
+  // authoritative `links` array beside the prose precisely because the two
+  // implementations disagree at the margin, and a rule that stopped linking
+  // what it has always linked would be the more surprising change.
+  md.linkify.set({ fuzzyLink: true, fuzzyEmail: true });
   md.core.ruler.push("awb_task_lists", taskLists);
   return md;
 }

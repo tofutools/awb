@@ -10,8 +10,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import MarkdownIt from "../../static/vendor/markdown-it-14.1.0.js";
 import { createRenderer, markdownOptions, sanitizeConfig } from "../../static/markdown-config.js";
+import { vendorBundle } from "./vendor.mjs";
+
+const { default: MarkdownIt } = await import(vendorBundle("markdown-it"));
 
 const md = createRenderer(MarkdownIt);
 
@@ -54,6 +56,16 @@ test("renders GFM autolinks", () => {
   assert.match(md.render("mail dev@example.com"), /<a href="mailto:dev@example\.com">/);
 });
 
+// Where linkify-it is wider than GFM, pinned so that it is a decision and not a
+// surprise. `fuzzyLink` is one switch: it cannot recognise a `www.` host, which
+// GFM autolinks, without also recognising a bare one, which GFM does not. So a
+// bare host is a link in the prose and absent from the API's `links` array,
+// which the issue view renders beside it. A bare IP address is neither.
+test("a bare host is linkified and a bare IP address is not", () => {
+  assert.match(md.render("see example.com now"), /<a href="http:\/\/example\.com">/);
+  assert.doesNotMatch(md.render("ping 127.0.0.1 now"), /<a /);
+});
+
 test("renders CommonMark autolinks", () => {
   assert.match(md.render("<https://example.com/1>"), /<a href="https:\/\/example\.com\/1">/);
 });
@@ -65,18 +77,43 @@ test("renders CommonMark autolinks", () => {
 // like markup: escaped text may well contain the characters "onclick=" without
 // any of it being live.
 
-/** The tags the renderer is ever allowed to emit. */
-const emittableTags = new Set([
-  "p", "br", "hr", "em", "strong", "s", "code", "pre", "blockquote",
-  "h1", "h2", "h3", "h4", "h5", "h6",
-  "ul", "ol", "li", "a", "img", "input",
-  "table", "thead", "tbody", "tr", "th", "td",
-]);
+// The tags the renderer is ever allowed to emit, read from the sanitiser's own
+// allow-list rather than copied beside it. The two lists are one list: a tag
+// the renderer emits and the sanitiser does not allow is deleted from what the
+// reader sees, and a second copy here could only hide that by agreeing with the
+// renderer while the sanitiser disagreed.
+const emittableTags = new Set(sanitizeConfig.ALLOWED_TAGS);
 
 /** tagsIn returns the names of the tags a rendered fragment really contains. */
 function tagsIn(html) {
   return [...html.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9]*)/g)].map((m) => m[1].toLowerCase());
 }
+
+// The gate read the other way. Above, nothing the renderer emits may fall
+// outside the allow-list; here, nothing the pinned dialect renders may be
+// missing from it. Only the first direction fails loudly — a tag the sanitiser
+// does not allow is deleted, so the reader loses the markup and no test
+// notices. Strikethrough was exactly that: the renderer emitted `<s>` and the
+// allow-list named `del`, so `~~x~~` reached the page as plain text.
+test("every tag the pinned dialect renders survives the allow-list", () => {
+  const document = [
+    "# h1", "## h2", "### h3", "#### h4", "##### h5", "###### h6",
+    "*em* **strong** ~~struck~~ `code`",
+    "a line\\\nbroken",
+    "---",
+    "> quoted",
+    "- bullet", "1. numbered", "- [x] done", "- [ ] todo",
+    "| a | b |\n| - | - |\n| 1 | 2 |",
+    "```\nfenced\n```",
+    "[link](https://example.com/1) ![image](https://example.com/i.png)",
+  ].join("\n\n");
+
+  const emitted = new Set(tagsIn(md.render(document)));
+  assert.ok(emitted.has("s"), "the document exercises strikethrough");
+  for (const tag of emitted) {
+    assert.ok(emittableTags.has(tag), `<${tag}> is rendered but the sanitiser strips it`);
+  }
+});
 
 test("emits no tag outside the allowed set", () => {
   const attacks = [
@@ -161,4 +198,44 @@ test("rendering is deterministic", () => {
   for (let i = 0; i < 5; i++) {
     assert.equal(md.render(source), first);
   }
+});
+
+// Two denial-of-service advisories, both remediated by the bundled markdown-it
+// release and each reached through a different part of linkify. A description
+// or comment is prose one workspace member writes and every other member's
+// browser renders, so either is a stored denial of service rather than
+// something a caller only does to itself.
+//
+// Both inputs are deliberately larger than the 64 KiB a single description or
+// comment may hold: one issue view renders the description and every comment on
+// it, so what a page feeds the renderer is the sum, not the cap. The bound is
+// wall-clock and the same for both, and generous — each takes on the order of a
+// hundred milliseconds here and tens of seconds on a vulnerable bundle, so the
+// two are nowhere near close enough for a loaded CI runner to confuse them.
+const redosBudgetMs = 2000;
+
+/** renderMs renders source and returns how long that took, in milliseconds. */
+function renderMs(source) {
+  const started = process.hrtime.bigint();
+  md.render(source);
+  return Number(process.hrtime.bigint() - started) / 1e6;
+}
+
+// GHSA-38c4-r59v-3vqw / CVE-2026-2327, markdown-it >=13.0.0 <14.1.1: the
+// linkify rule trimmed trailing asterisks off a matched link with /\*+$/, which
+// backtracks catastrophically on a long run of them ending in anything else.
+//
+// The asterisks have to follow something linkify actually matched — a bare run
+// of them is never handed to that regular expression at all, and costs nothing.
+test("a long asterisk run after a link renders in linear time", () => {
+  const elapsedMs = renderMs("https://example.com/" + "*".repeat(256 * 1024) + "x");
+  assert.ok(elapsedMs < redosBudgetMs, `rendering a 256 KiB asterisk run took ${elapsedMs.toFixed(0)} ms`);
+});
+
+// GHSA-v245-v573-v5vm / CVE-2026-59887, linkify-it <=5.0.1, which markdown-it
+// 14 depended on: the `mailto:` validator copied and rescanned the rest of the
+// text at every occurrence, so a run of them costs time quadratic in its length.
+test("a run of mailto prefixes renders in linear time", () => {
+  const elapsedMs = renderMs("mailto::".repeat(32 * 1024)); // 256 KiB
+  assert.ok(elapsedMs < redosBudgetMs, `rendering 256 KiB of mailto prefixes took ${elapsedMs.toFixed(0)} ms`);
 });
