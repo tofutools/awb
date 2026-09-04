@@ -6,7 +6,7 @@
 // tables, task lists, strikethrough, autolink extension and
 // disallowed-raw-HTML rule, and nothing beyond that — and requires this
 // renderer to be configured to that same set, because `links` is a specified
-// output and what the UI shows as a link must be what `links` lists.
+// output and the prose should expose the same links to a reader.
 
 /** The markdown-it options that match the pinned GFM set. */
 export const markdownOptions = {
@@ -92,11 +92,8 @@ export function createRenderer(MarkdownIt: MarkdownConstructor): Markdown {
   // `fuzzyLink` is not exactly GFM's rule. It cannot be: it is one switch, and
   // it also linkifies a bare host with no `www.`, which GFM leaves as text. So
   // `example.com` renders as a link here and does not appear in `links`. That
-  // is the wider of the two dispositions and it is the long-standing one, which
-  // is why it is kept rather than narrowed: the issue view renders the
-  // authoritative `links` array beside the prose precisely because the two
-  // implementations disagree at the margin, and a rule that stopped linking
-  // what it has always linked would be the more surprising change.
+  // is the wider of the two dispositions and it is the long-standing one, so
+  // keep it rather than unexpectedly stopping links that previously worked.
   md.linkify.set({ fuzzyLink: true, fuzzyEmail: true });
   md.core.ruler.push("awb_task_lists", taskLists);
   return md;

@@ -59,8 +59,8 @@ test("renders GFM autolinks", () => {
 // Where linkify-it is wider than GFM, pinned so that it is a decision and not a
 // surprise. `fuzzyLink` is one switch: it cannot recognise a `www.` host, which
 // GFM autolinks, without also recognising a bare one, which GFM does not. So a
-// bare host is a link in the prose and absent from the API's `links` array,
-// which the issue view renders beside it. A bare IP address is neither.
+// bare host is a link in the prose and absent from the API's `links` array. A
+// bare IP address is neither.
 test("a bare host is linkified and a bare IP address is not", () => {
   assert.match(md.render("see example.com now"), /<a href="http:\/\/example\.com">/);
   assert.doesNotMatch(md.render("ping 127.0.0.1 now"), /<a /);
@@ -160,7 +160,6 @@ test("does not linkify a javascript: URL into an anchor", () => {
 // escaped to *text*, linkify then sees the URL inside it as a bare URL and
 // links it. goldmark, which keeps the tag as a raw-HTML node, does not, so a
 // description written this way renders a link the links array does not list.
-// That is why the issue view shows the links array explicitly.
 test("a hand-written anchor is escaped, not honoured", () => {
   const html = md.render('<a href="https://example.com/1" onclick="alert(1)">raw</a>');
 

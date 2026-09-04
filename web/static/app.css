@@ -1346,13 +1346,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
 }
 
-.links li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: baseline;
-  padding: 0.3rem 0;
-}
 .issue-resource-section { padding: 0.75rem 0 0; }
 .issue-resource-section h2 { margin: 0 0 0.35rem; color: var(--fg); font-size: 1rem; }
 .child-issues-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
@@ -1370,7 +1363,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .relations li { grid-template-columns: minmax(7rem, auto) minmax(7rem, auto) minmax(7rem, 1fr) auto; }
 .resource-list .inline-button { align-self: center; }
 .relation-type { font-family: var(--mono); font-size: 0.8em; color: var(--muted); }
-.links .url { color: var(--muted); font-size: 0.8em; font-family: var(--mono); }
 .attachments .size, .attachments .content-type {
   color: var(--muted);
   font-size: 0.8em;

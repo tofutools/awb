@@ -8,9 +8,9 @@ current product. [Architecture](ARCHITECTURE.md) describes what exists.
 - **Markdown autolink boundaries can differ.** Domain link extraction and web
   rendering use different Markdown implementations. At unusual boundaries —
   most visibly an escaped hand-written HTML anchor — they may disagree about
-  where a bare URL ends. The issue page renders the derived link list explicitly
-  so its authoritative value remains visible. A shared implementation is worth
-  considering if this becomes a practical problem.
+  where a bare URL ends, so a rendered anchor's boundary may differ from the
+  API's derived link list. A shared implementation is worth considering if this
+  becomes a practical problem.
 
 ## Shared operation
 
