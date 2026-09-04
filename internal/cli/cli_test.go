@@ -789,6 +789,41 @@ func TestDepTreeCompact(t *testing.T) {
 	assert.Equal(t, "    "+grandchild, lines[2][:4+len(grandchild)])
 }
 
+// Under --json every issue names its parent directly, so a consumer does not
+// have to look for the has-parent relation. It is null when there is none, in
+// a listing and in a tree alike.
+func TestJSONNamesTheParent(t *testing.T) {
+	h := newHarness(t)
+	root := h.create("root", "--workspace", "awb")
+	child := h.create("child", "--workspace", "awb", "--has-parent", root)
+
+	var shown domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", child, "--json")), &shown))
+	require.NotNil(t, shown.Parent)
+	assert.Equal(t, root, *shown.Parent)
+
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", root, "--json")), &shown))
+	assert.Nil(t, shown.Parent)
+	assert.Contains(t, h.mustRun("show", root, "--json"), `"parent": null`)
+
+	var listed []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("list", "--json")), &listed))
+	byID := map[string]*string{}
+	for _, issue := range listed {
+		byID[issue.ID] = issue.Parent
+	}
+	require.NotNil(t, byID[child])
+	assert.Equal(t, root, *byID[child])
+	assert.Nil(t, byID[root])
+
+	var tree domain.IssueTree
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("dep", "tree", root, "--json")), &tree))
+	assert.Nil(t, tree.Parent)
+	require.Len(t, tree.Children, 1)
+	require.NotNil(t, tree.Children[0].Parent)
+	assert.Equal(t, root, *tree.Children[0].Parent)
+}
+
 // Errors go to stderr as a single line, and as {"error": "..."} under --json.
 func TestErrorOutput(t *testing.T) {
 	h := newHarness(t)

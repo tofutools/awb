@@ -38,10 +38,11 @@ type Relation struct {
 }
 
 // Issue is the one issue shape both surfaces return, always complete. Every
-// field is always present: an unset string is "", never null or absent, so
-// consumers need no absence handling.
+// field is always present: an unset string is "", never absent, so consumers
+// need no absence handling. Parent is the one field that is null when unset,
+// because an absent parent is an absent issue rather than an empty one.
 //
-// Blocked, Blockers, Relations, Links and Attachments are derived and
+// Blocked, Blockers, Relations, Parent, Links and Attachments are derived and
 // read-only; they cannot be written through update or PATCH. An attachment is
 // added and removed by its own operations, exactly as a relation is.
 type Issue struct {
@@ -63,6 +64,7 @@ type Issue struct {
 	Blocked        bool         `json:"blocked"`
 	Blockers       []string     `json:"blockers"`
 	Relations      []Relation   `json:"relations"`
+	Parent         *string      `json:"parent"`
 	Links          []Link       `json:"links"`
 	Attachments    []Attachment `json:"attachments"`
 
@@ -255,6 +257,19 @@ type APIError struct {
 	Error string `json:"error"`
 }
 
+// parentOf finds the issue an issue has-parent, of which there is at most one:
+// the has-parent relation it is the subject of. It is nil when the issue has
+// no parent, or when the parent is one the caller has chosen not to see.
+func parentOf(rels []Relation) *string {
+	for _, rel := range rels {
+		if rel.Type == RelHasParent && rel.Direction == DirectionOut {
+			parent := rel.Other
+			return &parent
+		}
+	}
+	return nil
+}
+
 // Ready reports whether an issue is ready to be picked up: it is open and it
 // is not blocked. Only blocked-by drives readiness, so a decomposed issue is
 // ready alongside its children.
@@ -277,11 +292,14 @@ func SortRelations(rels []Relation) {
 
 // Normalize puts an issue's derived arrays into their specified order and
 // replaces any nil slice with an empty one, so the JSON encoding carries []
-// and never null.
+// and never null. It also reads Parent back out of the relations, which is
+// what keeps the two from disagreeing and gives Parent the same visibility
+// the relation it names already has.
 func (i *Issue) Normalize() {
 	slices.Sort(i.Labels)
 	slices.Sort(i.Blockers)
 	SortRelations(i.Relations)
+	i.Parent = parentOf(i.Relations)
 	SortAttachments(i.Attachments)
 	if i.Assignees == nil {
 		i.Assignees = []string{}

@@ -312,9 +312,19 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
 		Relations:      toRelations(issue),
+		Parent:         toParent(issue.Parent),
 		Links:          toLinks(issue.Links),
 		Attachments:    toAttachments(issue.Attachments),
 	}
+}
+
+// toParent carries a parent that may not be there: a nil parent is the null
+// the document declares, not the empty string every other unset string is.
+func toParent(parent *string) api.NilString {
+	if parent == nil {
+		return api.NilString{Null: true}
+	}
+	return api.NewNilString(*parent)
 }
 
 func toIssues(issues []domain.Issue) []api.Issue {
@@ -348,6 +358,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
 		Relations:      issue.Relations,
+		Parent:         issue.Parent,
 		Links:          issue.Links,
 		Attachments:    issue.Attachments,
 		Children:       children,
