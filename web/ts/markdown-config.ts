@@ -24,10 +24,20 @@ export const markdownOptions = {
   typographer: false,
 };
 
-/** The tags and attributes a rendered description may contain. */
+/**
+ * The tags and attributes a rendered description may contain.
+ *
+ * This is the set the renderer above actually emits, which is what makes it a
+ * gate rather than a wish: a tag the renderer produces and this list omits is
+ * not caught anywhere, it is silently deleted from what the reader sees. That
+ * is why strikethrough is `s` and not GFM's canonical `del` — markdown-it
+ * renders `~~x~~` as `<s>`, and with `html: false` a hand-written `<del>` is
+ * escaped to text long before the sanitiser sees it, so allowing `del` would
+ * allow nothing and dropping `s` loses the extension.
+ */
 export const sanitizeConfig = {
   ALLOWED_TAGS: [
-    "p", "br", "hr", "em", "strong", "del", "code", "pre", "blockquote",
+    "p", "br", "hr", "em", "strong", "s", "code", "pre", "blockquote",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "li", "a", "img", "input",
     "table", "thead", "tbody", "tr", "th", "td",

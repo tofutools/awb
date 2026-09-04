@@ -77,18 +77,43 @@ test("renders CommonMark autolinks", () => {
 // like markup: escaped text may well contain the characters "onclick=" without
 // any of it being live.
 
-/** The tags the renderer is ever allowed to emit. */
-const emittableTags = new Set([
-  "p", "br", "hr", "em", "strong", "s", "code", "pre", "blockquote",
-  "h1", "h2", "h3", "h4", "h5", "h6",
-  "ul", "ol", "li", "a", "img", "input",
-  "table", "thead", "tbody", "tr", "th", "td",
-]);
+// The tags the renderer is ever allowed to emit, read from the sanitiser's own
+// allow-list rather than copied beside it. The two lists are one list: a tag
+// the renderer emits and the sanitiser does not allow is deleted from what the
+// reader sees, and a second copy here could only hide that by agreeing with the
+// renderer while the sanitiser disagreed.
+const emittableTags = new Set(sanitizeConfig.ALLOWED_TAGS);
 
 /** tagsIn returns the names of the tags a rendered fragment really contains. */
 function tagsIn(html) {
   return [...html.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9]*)/g)].map((m) => m[1].toLowerCase());
 }
+
+// The gate read the other way. Above, nothing the renderer emits may fall
+// outside the allow-list; here, nothing the pinned dialect renders may be
+// missing from it. Only the first direction fails loudly — a tag the sanitiser
+// does not allow is deleted, so the reader loses the markup and no test
+// notices. Strikethrough was exactly that: the renderer emitted `<s>` and the
+// allow-list named `del`, so `~~x~~` reached the page as plain text.
+test("every tag the pinned dialect renders survives the allow-list", () => {
+  const document = [
+    "# h1", "## h2", "### h3", "#### h4", "##### h5", "###### h6",
+    "*em* **strong** ~~struck~~ `code`",
+    "a line\\\nbroken",
+    "---",
+    "> quoted",
+    "- bullet", "1. numbered", "- [x] done", "- [ ] todo",
+    "| a | b |\n| - | - |\n| 1 | 2 |",
+    "```\nfenced\n```",
+    "[link](https://example.com/1) ![image](https://example.com/i.png)",
+  ].join("\n\n");
+
+  const emitted = new Set(tagsIn(md.render(document)));
+  assert.ok(emitted.has("s"), "the document exercises strikethrough");
+  for (const tag of emitted) {
+    assert.ok(emittableTags.has(tag), `<${tag}> is rendered but the sanitiser strips it`);
+  }
+});
 
 test("emits no tag outside the allowed set", () => {
   const attacks = [
