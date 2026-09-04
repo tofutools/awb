@@ -38,9 +38,8 @@ type Relation struct {
 }
 
 // Issue is the one issue shape both surfaces return, always complete. Every
-// field is always present: an unset string is "", never absent, so consumers
-// need no absence handling. Parent is the one field that is null when unset,
-// because an absent parent is an absent issue rather than an empty one.
+// field is always present: an unset string is "", never null or absent, so
+// consumers need no absence handling.
 //
 // Blocked, Blockers, Relations, Parent, Links and Attachments are derived and
 // read-only; they cannot be written through update or PATCH. An attachment is
@@ -64,7 +63,7 @@ type Issue struct {
 	Blocked        bool         `json:"blocked"`
 	Blockers       []string     `json:"blockers"`
 	Relations      []Relation   `json:"relations"`
-	Parent         *string      `json:"parent"`
+	Parent         string       `json:"parent"`
 	Links          []Link       `json:"links"`
 	Attachments    []Attachment `json:"attachments"`
 
@@ -258,16 +257,15 @@ type APIError struct {
 }
 
 // parentOf finds the issue an issue has-parent, of which there is at most one:
-// the has-parent relation it is the subject of. It is nil when the issue has
-// no parent, or when the parent is one the caller has chosen not to see.
-func parentOf(rels []Relation) *string {
+// the has-parent relation it is the subject of. It is "" when the issue has no
+// parent, or when the parent is one the caller has chosen not to see.
+func parentOf(rels []Relation) string {
 	for _, rel := range rels {
 		if rel.Type == RelHasParent && rel.Direction == DirectionOut {
-			parent := rel.Other
-			return &parent
+			return rel.Other
 		}
 	}
-	return nil
+	return ""
 }
 
 // Ready reports whether an issue is ready to be picked up: it is open and it

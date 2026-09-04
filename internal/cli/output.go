@@ -669,6 +669,13 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 
 	e.writeHeading(t, e.issueLink(t, issue.ID), issue.Title)
 	e.field(t, "Workspace", e.workspaceLink(t, issue.Workspace))
+	// An issue with no parent, or one whose parent the caller has chosen not to
+	// see, prints no Parent line at all. The emptiness is tested here rather
+	// than left to field, because a link built from an empty id is still a
+	// non-empty escape sequence wherever there is a server to link to.
+	if issue.Parent != "" {
+		e.field(t, "Parent", e.issueLink(t, issue.Parent))
+	}
 	e.field(t, "Type", string(issue.Type))
 	e.field(t, "Status", e.renderStatus(t, issue))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))

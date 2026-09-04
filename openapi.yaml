@@ -2291,9 +2291,8 @@ components:
       type: object
       description: |
         One issue, always complete. Every field is always present: an unset
-        string is `""`, never absent, so consumers need no absence handling.
-        `parent` is the one field that is `null` when unset, because an absent
-        parent is an absent issue rather than an empty one.
+        string is `""`, never `null` or absent, so consumers need no absence
+        handling.
 
         `labels` and `blockers` are sorted; `relations` is sorted by type, then
         other, then direction; `attachments` is oldest first, then by id;
@@ -2381,23 +2380,17 @@ components:
             caller has no access to: this issue is theirs to see and what it is
             related to is part of it.
           items: { $ref: '#/components/schemas/Relation' }
-        # A oneOf rather than 3.1's shorter `type: [string, 'null']`, which ogen
-        # cannot read: it takes a type as a scalar. Both generators read this
-        # spelling, which is what keeps the Go server and the TypeScript types
-        # agreeing that this one is nullable.
         parent:
-          oneOf:
-            - type: string
-            - type: 'null'
+          type: string
           description: |
             Derived and read-only: the ID of the issue this one is
-            `has-parent`, or `null` when it has none. An issue has at most one
+            `has-parent`, or `""` when it has none. An issue has at most one
             parent, so this is the single relation named directly rather than
             left to be looked for in `relations`.
 
             It is read out of `relations` and so shares their visibility: a
-            parent in a workspace the caller has chosen to ignore is `null`
-            here exactly as its relation is absent there.
+            parent in a workspace the caller has chosen to ignore is `""` here
+            exactly as its relation is absent there.
           examples: [awb-5c1d84]
         links:
           type: array
@@ -2712,7 +2705,7 @@ components:
         blocked: { type: boolean }
         blockers: { type: array, items: { type: string } }
         relations: { type: array, items: { $ref: '#/components/schemas/IssuePatchRelation' } }
-        parent: { oneOf: [{ type: string }, { type: 'null' }] }
+        parent: { type: string }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
         attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
 

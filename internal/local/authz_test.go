@@ -239,8 +239,7 @@ func TestParentIsNamedOnTheSameTermsAsTheRelationItComesFrom(t *testing.T) {
 	bob := root.WithUser("bob")
 	seen, err := bob.GetIssue(ctx, child.ID)
 	require.NoError(t, err)
-	require.NotNil(t, seen.Parent, "a parent outside the caller's workspaces is still named")
-	assert.Equal(t, parent.ID, *seen.Parent)
+	assert.Equal(t, parent.ID, seen.Parent, "a parent outside the caller's workspaces is still named")
 	_, err = bob.GetIssue(ctx, parent.ID)
 	notFound(t, err, "naming it is not being able to read it")
 
@@ -251,7 +250,7 @@ func TestParentIsNamedOnTheSameTermsAsTheRelationItComesFrom(t *testing.T) {
 	seen, err = bob.GetIssue(ctx, child.ID)
 	require.NoError(t, err)
 	assert.Empty(t, seen.Relations, "the ignored connection is not presented")
-	assert.Nil(t, seen.Parent, "and neither is the parent it named")
+	assert.Empty(t, seen.Parent, "and neither is the parent it named")
 }
 
 func TestBoardMoveCannotSeeOrSelectAnInaccessibleEpic(t *testing.T) {

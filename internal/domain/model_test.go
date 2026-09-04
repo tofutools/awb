@@ -37,34 +37,33 @@ func TestNormalizeDerivesParentFromTheRelations(t *testing.T) {
 		{Type: domain.RelBlockedBy, Other: "awb-blocker", Direction: domain.DirectionOut},
 	}}
 	child.Normalize()
-	require.NotNil(t, child.Parent)
-	assert.Equal(t, "awb-parent", *child.Parent)
+	assert.Equal(t, "awb-parent", child.Parent)
 
 	orphan := domain.Issue{Relations: []domain.Relation{
 		{Type: domain.RelHasParent, Other: "awb-child", Direction: domain.DirectionIn},
 		{Type: domain.RelRelated, Other: "awb-other", Direction: domain.DirectionOut},
 	}}
 	orphan.Normalize()
-	assert.Nil(t, orphan.Parent)
+	assert.Empty(t, orphan.Parent)
 
 	// A parent the caller may not see is absent from the relations, and so is
 	// absent here: the field never names an issue the relations do not.
-	named := "awb-parent"
-	hidden := domain.Issue{Parent: &named}
+	hidden := domain.Issue{Parent: "awb-parent"}
 	hidden.Normalize()
-	assert.Nil(t, hidden.Parent)
+	assert.Empty(t, hidden.Parent)
 }
 
-// The whole issue shape encodes parent as a JSON null when there is none,
-// which is the one field that is null rather than the empty string.
-func TestParentEncodesAsNullWhenThereIsNone(t *testing.T) {
+// parent is present and empty when there is no parent, like every other unset
+// string in the shape, rather than null or absent.
+func TestParentEncodesAsTheEmptyStringWhenThereIsNone(t *testing.T) {
 	var issue domain.Issue
 	issue.Normalize()
 	encoded, err := json.Marshal(issue)
 	require.NoError(t, err)
-	assert.Contains(t, string(encoded), `"parent":null`)
+	assert.Contains(t, string(encoded), `"parent":""`)
+	assert.NotContains(t, string(encoded), `"parent":null`)
 
 	var decoded domain.Issue
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
-	assert.Nil(t, decoded.Parent)
+	assert.Empty(t, decoded.Parent)
 }

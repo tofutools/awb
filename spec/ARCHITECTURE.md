@@ -143,8 +143,10 @@ acyclic.
 
 The one `has-parent` an issue may be the subject of is additionally named on
 its own as `parent`, read back out of those same relations so the two cannot
-disagree. It is the single field that is null when unset rather than empty,
-because an absent parent is an absent issue.
+disagree. Like every other unset string it is empty rather than null when there
+is none, and the two human-facing output modes then omit it entirely: a compact
+line carries a `parent:<id>` token only where there is a parent, and the detail
+view prints no `Parent` line at all.
 
 Blocked state is computed from the live graph. It is not stored on the issue,
 so it cannot drift from its blockers. An issue is ready when it is open and has
