@@ -2381,12 +2381,14 @@ components:
             caller has no access to: this issue is theirs to see and what it is
             related to is part of it.
           items: { $ref: '#/components/schemas/Relation' }
-        # `nullable: true` rather than 3.1's `type: [string, 'null']`, which
-        # ogen cannot read. Both generators honour this spelling, so it is what
-        # keeps the Go server and the TypeScript types agreeing on the null.
+        # A oneOf rather than 3.1's shorter `type: [string, 'null']`, which ogen
+        # cannot read: it takes a type as a scalar. Both generators read this
+        # spelling, which is what keeps the Go server and the TypeScript types
+        # agreeing that this one is nullable.
         parent:
-          type: string
-          nullable: true
+          oneOf:
+            - type: string
+            - type: 'null'
           description: |
             Derived and read-only: the ID of the issue this one is
             `has-parent`, or `null` when it has none. An issue has at most one
@@ -2710,7 +2712,7 @@ components:
         blocked: { type: boolean }
         blockers: { type: array, items: { type: string } }
         relations: { type: array, items: { $ref: '#/components/schemas/IssuePatchRelation' } }
-        parent: { type: string, nullable: true }
+        parent: { oneOf: [{ type: string }, { type: 'null' }] }
         links: { type: array, items: { $ref: '#/components/schemas/Link' } }
         attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }
 
