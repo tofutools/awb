@@ -6,7 +6,7 @@
 // tables, task lists, strikethrough, autolink extension and
 // disallowed-raw-HTML rule, and nothing beyond that — and requires this
 // renderer to be configured to that same set, because `links` is a specified
-// output and what the UI shows as a link must be what `links` lists.
+// output and the prose should expose the same links to a reader.
 
 /** The markdown-it options that match the pinned GFM set. */
 export const markdownOptions = {
