@@ -3,10 +3,11 @@
 //
 // Both are pinned to the one dialect awb accepts — CommonMark plus GFM's
 // tables, task lists, strikethrough and autolinks — because that is what
-// internal/domain's gate lets in and what markdown-config.ts renders on the
-// way out. A button that wrote anything else would compose prose the API
-// refuses, so the toolbar has no button the gate would reject and the help
-// lists nothing beyond it.
+// markdown-config.ts renders and what internal/domain's gate parses. The gate
+// is narrower than the syntax: it refuses raw HTML outright and accepts only
+// http, https and mailto destinations. So no button here composes a construct
+// the gate would refuse, and the help is where the two differ is written down.
+// The prose a button wraps stays the user's own, and so does keeping it valid.
 //
 // What a button does is a pure function of the document text and the
 // selection, computed here and handed to the editor to apply. That keeps the
@@ -52,10 +53,12 @@ function lineEnd(doc: string, pos: number): number {
 }
 
 /** lineStarts lists the start of every line the range from..to touches. An
- * empty selection touches exactly the line the cursor sits on. */
+ * empty selection touches exactly the line the cursor sits on, and one ending
+ * at a line start stops on the line before it: the line after the last
+ * selected character is not one the user selected. */
 function lineStarts(doc: string, from: number, to: number): number[] {
   const first = lineStart(doc, from);
-  const last = lineEnd(doc, to);
+  const last = lineEnd(doc, to > from ? to - 1 : to);
   const starts = [first];
   for (let i = first; i < last; i++) {
     if (doc[i] === "\n") starts.push(i + 1);
@@ -144,14 +147,30 @@ export function tableEdit(doc: string, from: number, to: number): MarkdownEdit {
   };
 }
 
+/** closingFenceLength is the longest fence in text that would close a code
+ * block: a line of nothing but backticks, indented by no more than three
+ * spaces. A run inside a line of prose closes nothing and does not count. */
+function closingFenceLength(text: string): number {
+  let longest = 0;
+  for (const line of text.split("\n")) {
+    const fence = /^ {0,3}(`+)[ \t]*$/.exec(line);
+    if (fence !== null) longest = Math.max(longest, fence[1].length);
+  }
+  return longest;
+}
+
 /** codeBlockEdit fences the selection, or opens an empty fence with the cursor
- * on the line between the fences. */
+ * on the line between the fences. The fence is longer than any fence in the
+ * selection, since a shorter one would be closed by the very content it is
+ * there to hold — which would leave what follows it outside the block, where
+ * the gate sees it as prose rather than as code. */
 export function codeBlockEdit(doc: string, from: number, to: number): MarkdownEdit {
   const selected = doc.slice(from, to);
   const { prefix, suffix } = blockPadding(doc, from, to);
-  const insert = `${prefix}\`\`\`\n${selected}\n\`\`\`${suffix}`;
+  const fence = "`".repeat(Math.max(3, closingFenceLength(selected) + 1));
+  const insert = `${prefix}${fence}\n${selected}\n${fence}${suffix}`;
   const selection = selected === ""
-    ? cursor(from + prefix.length + 4) // past the opening "```\n"
+    ? cursor(from + prefix.length + fence.length + 1) // past the opening fence
     : cursor(from + insert.length);
   return { changes: [{ from, to, insert }], selection };
 }
@@ -163,13 +182,20 @@ export function ruleEdit(doc: string, from: number, to: number): MarkdownEdit {
   return { changes: [{ from, to, insert }], selection: cursor(from + insert.length) };
 }
 
+/** escapeLinkLabel makes text safe to carry as a link label. A label ends at
+ * its first unescaped `]`, and a backslash escapes whatever follows it, so a
+ * selection holding either would otherwise cut the link short. */
+function escapeLinkLabel(text: string): string {
+  return text.replace(/[\\[\]]/g, "\\$&");
+}
+
 /** linkEdit writes a link, or an image with `image` set. The selection becomes
  * the link text and the destination is seeded and selected so it can be typed
  * over; with nothing selected the text placeholder is the one selected. */
 export function linkEdit(doc: string, from: number, to: number, image: boolean): MarkdownEdit {
   const selected = doc.slice(from, to);
   const bang = image ? "!" : "";
-  const text = selected === "" ? (image ? "alt" : "text") : selected;
+  const text = selected === "" ? (image ? "alt" : "text") : escapeLinkLabel(selected);
   const destination = "https://example.com";
   const insert = `${bang}[${text}](${destination})`;
   const textStart = from + bang.length + 1;

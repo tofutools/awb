@@ -3,8 +3,11 @@
 // form becomes visible and must be destroyed before that form leaves the DOM.
 //
 // The parser is configured to the same dialect the rest of awb is pinned to —
-// CommonMark plus GFM — so what the editor highlights is what the gate accepts
-// and the renderer shows. The toolbar above it writes that same dialect.
+// CommonMark plus GFM — so the constructs it highlights are the ones the
+// renderer will show. Highlighting is not the gate and is wider than it:
+// internal/domain refuses raw HTML and every link scheme outside http, https
+// and mailto, neither of which the colours here say anything about. The
+// toolbar above the editor writes that same dialect.
 
 import { createMarkdownToolbar } from "./markdown-toolbar.js";
 

@@ -40,6 +40,16 @@ test("a line prefix reaches every line the selection touches", () => {
   assert.equal(applied(doc, linePrefixEdit(doc, 0, 13, "- [ ] ")), "- [ ] one\n- [ ] two\n- [ ] three");
 });
 
+test("a selection ending at a line start stops on the line before it", () => {
+  const doc = "one\ntwo";
+  assert.equal(applied(doc, linePrefixEdit(doc, 0, 4, "- ")), "- one\ntwo");
+  assert.equal(applied(doc, headingEdit(doc, 0, 4, 2)), "## one\ntwo");
+  assert.equal(applied(doc, numberedListEdit(doc, 0, 4)), "1. one\ntwo");
+  // The newline itself is still part of the first line's selection, so the
+  // line the cursor sits on is unaffected by where the range ends.
+  assert.equal(applied(doc, linePrefixEdit(doc, 4, 4, "- ")), "one\n- two");
+});
+
 test("a numbered list counts from one", () => {
   const doc = "one\ntwo\nthree";
   assert.equal(applied(doc, numberedListEdit(doc, 0, 13)), "1. one\n2. two\n3. three");
@@ -84,6 +94,16 @@ test("a code block fences the selection, or opens with the cursor between the fe
   assert.deepEqual(empty.selection, { anchor: 4, head: 4 });
 });
 
+test("a code block outlasts a fence in what it is given", () => {
+  // A three-backtick fence would be closed by the selection's own fence line,
+  // leaving the rest of it outside the block.
+  const fenced = "```\ncode\n```";
+  assert.equal(applied(fenced, codeBlockEdit(fenced, 0, 12)), "````\n```\ncode\n```\n````\n");
+  // Backticks inside a line of prose close nothing, so they do not lengthen it.
+  const inline = "a `code` span";
+  assert.equal(applied(inline, codeBlockEdit(inline, 0, 13)), "```\na `code` span\n```\n");
+});
+
 test("a link keeps the selection as its text and selects the destination", () => {
   const doc = "the docs";
   const link = linkEdit(doc, 4, 8, false);
@@ -97,4 +117,14 @@ test("a link keeps the selection as its text and selects the destination", () =>
   const image = linkEdit("", 0, 0, true);
   assert.equal(applied("", image), "![alt](https://example.com)");
   assert.deepEqual(image.selection, { anchor: 2, head: 5 });
+});
+
+test("a link label survives the brackets and backslashes it is given", () => {
+  const doc = "a]b";
+  const link = linkEdit(doc, 0, 3, false);
+  assert.equal(applied(doc, link), "[a\\]b](https://example.com)");
+  // The destination is still what is selected, measured on the escaped label.
+  assert.deepEqual(link.selection, { anchor: 7, head: 26 });
+
+  assert.equal(applied("[x\\", linkEdit("[x\\", 0, 3, false)), "[\\[x\\\\](https://example.com)");
 });
