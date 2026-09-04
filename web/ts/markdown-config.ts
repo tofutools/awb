@@ -18,7 +18,7 @@ export const markdownOptions = {
   // The autolink extension. Tables and strikethrough are markdown-it defaults.
   // What `linkify: true` alone recognises is narrower than GFM's rule since
   // markdown-it 15 turned linkify-it's fuzzy matching off by default, so
-  // createRenderer turns the two halves GFM does recognise back on.
+  // createRenderer turns fuzzy matching back on. See there for what that costs.
   linkify: true,
   breaks: false,
   typographer: false,
@@ -76,8 +76,17 @@ export function createRenderer(MarkdownIt: MarkdownConstructor): Markdown {
   // GFM's autolink extension recognises a bare `www.` host and a bare email
   // address as well as a full URL, and the API's derived `links` array is built
   // by a GFM parser that does. linkify-it recognises neither unless its fuzzy
-  // matching is on, so turn on exactly those two. `fuzzyIP` stays off: GFM does
-  // not autolink a bare IP address, and neither does `links`.
+  // matching is on. `fuzzyIP` stays off: GFM does not autolink a bare IP
+  // address, and neither does `links`.
+  //
+  // `fuzzyLink` is not exactly GFM's rule. It cannot be: it is one switch, and
+  // it also linkifies a bare host with no `www.`, which GFM leaves as text. So
+  // `example.com` renders as a link here and does not appear in `links`. That
+  // is the wider of the two dispositions and it is the long-standing one, which
+  // is why it is kept rather than narrowed: the issue view renders the
+  // authoritative `links` array beside the prose precisely because the two
+  // implementations disagree at the margin, and a rule that stopped linking
+  // what it has always linked would be the more surprising change.
   md.linkify.set({ fuzzyLink: true, fuzzyEmail: true });
   md.core.ruler.push("awb_task_lists", taskLists);
   return md;

@@ -56,6 +56,16 @@ test("renders GFM autolinks", () => {
   assert.match(md.render("mail dev@example.com"), /<a href="mailto:dev@example\.com">/);
 });
 
+// Where linkify-it is wider than GFM, pinned so that it is a decision and not a
+// surprise. `fuzzyLink` is one switch: it cannot recognise a `www.` host, which
+// GFM autolinks, without also recognising a bare one, which GFM does not. So a
+// bare host is a link in the prose and absent from the API's `links` array,
+// which the issue view renders beside it. A bare IP address is neither.
+test("a bare host is linkified and a bare IP address is not", () => {
+  assert.match(md.render("see example.com now"), /<a href="http:\/\/example\.com">/);
+  assert.doesNotMatch(md.render("ping 127.0.0.1 now"), /<a /);
+});
+
 test("renders CommonMark autolinks", () => {
   assert.match(md.render("<https://example.com/1>"), /<a href="https:\/\/example\.com\/1">/);
 });
@@ -165,22 +175,42 @@ test("rendering is deterministic", () => {
   }
 });
 
-// GHSA-38c4-r59v-3vqw: markdown-it >=13.0.0 <14.1.1 rescanned the rest of the
-// paragraph for a link scheme at every candidate position, so a run of scheme
-// prefixes that never completes a link cost time quadratic in its length. A
-// description or comment is prose a workspace member writes and every other
-// member's browser renders, so that is a stored denial of service.
+// Two denial-of-service advisories, both remediated by the bundled markdown-it
+// release and each reached through a different part of linkify. A description
+// or comment is prose one workspace member writes and every other member's
+// browser renders, so either is a stored denial of service rather than
+// something a caller only does to itself.
 //
-// The input is deliberately larger than the 64 KiB a single description or
+// Both inputs are deliberately larger than the 64 KiB a single description or
 // comment may hold: one issue view renders the description and every comment on
-// it, so what one page feeds the renderer is the sum, not the cap. The bound is
-// wall-clock and generous — the fixed bundle needs tens of milliseconds and the
-// vulnerable one several seconds, so the two are not close enough for a loaded
-// CI runner to confuse them.
-test("a pathological linkify input renders in linear time", () => {
-  const source = "mailto::".repeat(32 * 1024); // 256 KiB
+// it, so what a page feeds the renderer is the sum, not the cap. The bound is
+// wall-clock and the same for both, and generous — each takes on the order of a
+// hundred milliseconds here and tens of seconds on a vulnerable bundle, so the
+// two are nowhere near close enough for a loaded CI runner to confuse them.
+const redosBudgetMs = 2000;
+
+/** renderMs renders source and returns how long that took, in milliseconds. */
+function renderMs(source) {
   const started = process.hrtime.bigint();
   md.render(source);
-  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-  assert.ok(elapsedMs < 2000, `rendering 256 KiB of scheme prefixes took ${elapsedMs.toFixed(0)} ms`);
+  return Number(process.hrtime.bigint() - started) / 1e6;
+}
+
+// GHSA-38c4-r59v-3vqw / CVE-2026-2327, markdown-it >=13.0.0 <14.1.1: the
+// linkify rule trimmed trailing asterisks off a matched link with /\*+$/, which
+// backtracks catastrophically on a long run of them ending in anything else.
+//
+// The asterisks have to follow something linkify actually matched — a bare run
+// of them is never handed to that regular expression at all, and costs nothing.
+test("a long asterisk run after a link renders in linear time", () => {
+  const elapsedMs = renderMs("https://example.com/" + "*".repeat(256 * 1024) + "x");
+  assert.ok(elapsedMs < redosBudgetMs, `rendering a 256 KiB asterisk run took ${elapsedMs.toFixed(0)} ms`);
+});
+
+// GHSA-v245-v573-v5vm / CVE-2026-59887, linkify-it <=5.0.1, which markdown-it
+// 14 depended on: the `mailto:` validator copied and rescanned the rest of the
+// text at every occurrence, so a run of them costs time quadratic in its length.
+test("a run of mailto prefixes renders in linear time", () => {
+  const elapsedMs = renderMs("mailto::".repeat(32 * 1024)); // 256 KiB
+  assert.ok(elapsedMs < redosBudgetMs, `rendering 256 KiB of mailto prefixes took ${elapsedMs.toFixed(0)} ms`);
 });

@@ -21,7 +21,9 @@
 # npm only ever touches the throwaway node_modules in this directory, installed
 # with --ignore-scripts so no install-time lifecycle script runs.
 #
-# Requires on $PATH: npm, node, esbuild.
+# Requires on $PATH: npm and node. esbuild is pinned in package.json and run
+# from the install tree rather than taken from $PATH, because the version of
+# the bundler is part of what the output bytes depend on.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -29,6 +31,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 VENDOR_DIR="$(pwd)"
 OUT_DIR="$VENDOR_DIR/../../static/vendor"
 INDEX_HTML="$VENDOR_DIR/../../static/index.html"
+ESBUILD="$VENDOR_DIR/node_modules/.bin/esbuild"
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -97,7 +100,7 @@ bundle() {
   local name="$1" version="$2"
   local meta="$WORK_DIR/$name-meta.json"
 
-  esbuild "$WORK_DIR/$name-entry.mjs" \
+  "$ESBUILD" "$WORK_DIR/$name-entry.mjs" \
     --bundle --format=esm --platform=browser --minify \
     --metafile="$meta" \
     --outfile="$OUT_DIR/$name-$version.js"

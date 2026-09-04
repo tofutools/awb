@@ -90,8 +90,11 @@ the network. Each bundle carries its upstream version in its filename, plus a
 
 `web/ts/vendor/rebuild.sh` is what produces all of that, and it is the only
 thing that may write to `web/static/vendor/`. It is deliberately not part of
-`build.sh`, `Taskfile.yml` or CI. It needs `npm`, `node` and `esbuild`, and it
-installs into a throwaway, gitignored `web/ts/vendor/node_modules/`.
+`build.sh`, `Taskfile.yml` or CI. It needs `npm` and `node`, and it installs
+into a throwaway, gitignored `web/ts/vendor/node_modules/`. The bundler is
+pinned in `package.json` like everything else it installs and is run from that
+tree rather than from `$PATH`, because the version of the bundler is part of
+what the output bytes depend on.
 
 To update a library, set its version in `web/ts/vendor/package.json`, then:
 
