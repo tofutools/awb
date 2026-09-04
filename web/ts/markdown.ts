@@ -5,11 +5,9 @@
 // The API returns the description exactly as stored, so rendering it — and
 // sanitising it — is this client's job.
 //
-// One caveat worth stating plainly. markdown-it's linkify-it and goldmark's
-// GFM autolink extension are separate implementations of the same algorithm,
-// so at the margin they can disagree about where a bare URL ends. That is why
-// the issue view also renders the API's derived `links` array explicitly: the
-// authoritative list is always on screen, whatever the prose rendering does.
+// markdown-it's linkify-it and goldmark's GFM autolink extension are separate
+// implementations of the same algorithm, so at the margin they can disagree
+// about where a bare URL ends.
 
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";

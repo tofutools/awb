@@ -3409,23 +3409,6 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   // open, so an issue with one resource does not reserve room for a form.
   content.append(attachmentSection.section, relationSection.section);
 
-  // The derived links array is rendered explicitly as well as inside the
-  // prose, so the authoritative list is always visible.
-  if (issue.links.length > 0) {
-    content.append(element("h2", "", "Links"));
-    const list = element("ul", "links");
-    for (const item of issue.links) {
-      const row = element("li");
-      const anchor = link(item.url, item.text === "" ? item.url : item.text);
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      row.append(anchor);
-      if (item.text !== "") row.append(element("span", "url", item.url));
-      list.append(row);
-    }
-    content.append(list);
-  }
-
   content.append(link(`#/tree/${issue.id}`, "Show the decomposition below this issue", "action"));
   content.append(activitySection(issue.id, activity.rows));
   const [sidebar, sidebarToggle] = issueSidebar(issue, view);
