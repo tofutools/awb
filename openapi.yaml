@@ -1977,8 +1977,11 @@ components:
     Type:
       type: string
       description: |
-        An `epic` is a large piece of work decomposed through `has-parent`;
-        nothing in the tool treats it specially.
+        Only `epic` carries behaviour, and only on the board: an epic is a
+        lane there rather than a card in a status column, and the epic an issue
+        belongs to is its `has-parent` whose parent is an epic in the same
+        workspace. The other four are interchangeable; the only thing that
+        separates them is that `task` is the default.
       enum: [epic, feature, bug, task, chore]
 
     Status:

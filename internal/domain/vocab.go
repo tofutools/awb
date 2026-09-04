@@ -46,8 +46,11 @@ func ParseWorkspaceStateFilter(s string) (WorkspaceStateFilter, error) {
 	return "", awberr.Usagef("invalid workspace state filter %q: must be active, archived or all", s)
 }
 
-// Type is an issue's kind. Nothing in awb treats any of them specially; an
-// epic is simply a large piece of work decomposed through has-parent.
+// Type is an issue's kind. Only epic carries behaviour, and only on the board:
+// an epic is a lane there rather than a card in a status column, and the epic an
+// issue belongs to is its has-parent whose parent is an epic in the same
+// workspace. The other four are interchangeable; the only thing that separates
+// them is that task is the default.
 type Type string
 
 const (
