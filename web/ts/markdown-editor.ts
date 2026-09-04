@@ -1,6 +1,15 @@
 // CodeMirror owns the visible editor, while a hidden textarea exposes its
 // current value to the existing form code. The editor is loaded only when its
 // form becomes visible and must be destroyed before that form leaves the DOM.
+//
+// The parser is configured to the same dialect the rest of awb is pinned to —
+// CommonMark plus GFM — so the constructs it highlights are the ones the
+// renderer will show. Highlighting is not the gate and is wider than it:
+// internal/domain refuses raw HTML and every link scheme outside http, https
+// and mailto, neither of which the colours here say anything about. The
+// toolbar above the editor writes that same dialect.
+
+import { createMarkdownToolbar } from "./markdown-toolbar.js";
 
 export interface MarkdownEditor {
   readonly element: HTMLElement;
@@ -58,12 +67,30 @@ export function createMarkdownEditor(
   const mount = document.createElement("div");
   mount.className = "markdown-editor-mount";
   mount.hidden = true;
-  element.append(textarea, mount);
 
   type EditorViewInstance = InstanceType<(typeof import("codemirror"))["EditorView"]>;
   let view: EditorViewInstance | undefined;
   let loading: Promise<void> | undefined;
   let disposed = false;
+
+  // The toolbar edits the document CodeMirror holds, so it stays hidden until
+  // there is one: before that the plain textarea is what the user is typing in.
+  const toolbar = createMarkdownToolbar({
+    doc: () => view === undefined ? textarea.value : view.state.doc.toString(),
+    lineAt: (pos) => view === undefined ? "" : view.state.doc.lineAt(pos).text,
+    selection: () => {
+      if (view === undefined) return { from: 0, to: 0 };
+      const { from, to } = view.state.selection.main;
+      return { from, to };
+    },
+    apply: (edit) => {
+      if (view === undefined) return;
+      view.dispatch({ changes: edit.changes, selection: edit.selection });
+      view.focus();
+    },
+  });
+  toolbar.element.hidden = true;
+  element.append(toolbar.element, textarea, mount);
 
   const editor: MarkdownEditor = {
     element,
@@ -83,6 +110,7 @@ export function createMarkdownEditor(
       }
       loading = import("codemirror").then(({
         EditorView,
+        GFM,
         classHighlighter,
         defaultKeymap,
         history,
@@ -90,6 +118,8 @@ export function createMarkdownEditor(
         keymap,
         markdown,
         syntaxHighlighting,
+        tagHighlighter,
+        tags,
       }) => {
         if (disposed) return;
         const restoreFocus = document.activeElement === textarea;
@@ -110,17 +140,28 @@ export function createMarkdownEditor(
               writingsuggestions: "true",
             }),
             syntaxHighlighting(classHighlighter),
-            markdown(),
+            // classHighlighter has no rule for tags.strikethrough, so
+            // `~~struck~~` would come out unmarked. The rest of what GFM adds
+            // inherits classes it already covers: a table header cell is
+            // tok-heading, a `|` and a `~~` are tok-meta, a `[x]` task marker
+            // is tok-atom, and an autolink is tok-url. Highlighters compose,
+            // so this rides alongside and likewise ships no colours of its own.
+            syntaxHighlighting(tagHighlighter([{ tag: tags.strikethrough, class: "tok-strikethrough" }])),
+            markdown({ extensions: [GFM] }),
             EditorView.updateListener.of((update) => {
-              if (!update.docChanged) return;
-              textarea.value = update.state.doc.toString();
-              textarea.dispatchEvent(new Event("input", { bubbles: true }));
+              if (update.docChanged) {
+                textarea.value = update.state.doc.toString();
+                textarea.dispatchEvent(new Event("input", { bubbles: true }));
+              }
+              if (update.docChanged || update.selectionSet) toolbar.sync();
             }),
           ],
           parent: mount,
         });
         textarea.hidden = true;
         mount.hidden = false;
+        toolbar.element.hidden = false;
+        toolbar.sync();
         if (restoreFocus) view.focus();
       });
       return loading;

@@ -1,11 +1,31 @@
 // Minimal declarations for the committed CodeMirror bundle. Only the surface
 // used by markdown-editor.ts is exposed here.
 declare module "codemirror" {
-  interface TextDocument { toString(): string; }
-  interface EditorState { readonly doc: TextDocument; }
+  interface DocumentLine { readonly text: string; }
+  interface TextDocument {
+    toString(): string;
+    lineAt(pos: number): DocumentLine;
+  }
+  interface SelectionRange { readonly from: number; readonly to: number; }
+  interface EditorSelection { readonly main: SelectionRange; }
+  interface EditorState {
+    readonly doc: TextDocument;
+    readonly selection: EditorSelection;
+  }
   interface ViewUpdate {
     readonly docChanged: boolean;
+    readonly selectionSet: boolean;
     readonly state: EditorState;
+  }
+
+  interface DocumentChange {
+    readonly from: number;
+    readonly to?: number;
+    readonly insert: string;
+  }
+  interface TransactionSpec {
+    changes: readonly DocumentChange[];
+    selection?: { readonly anchor: number; readonly head: number };
   }
 
   interface EditorViewConfig {
@@ -20,7 +40,9 @@ declare module "codemirror" {
     static readonly contentAttributes: { of(attributes: Readonly<Record<string, string>>): unknown };
     static readonly updateListener: { of(listener: (update: ViewUpdate) => void): unknown };
     readonly contentDOM: HTMLElement;
+    readonly state: EditorState;
     constructor(config: EditorViewConfig);
+    dispatch(spec: TransactionSpec): void;
     focus(): void;
     destroy(): void;
   }
@@ -31,5 +53,8 @@ declare module "codemirror" {
   function history(): unknown;
   function syntaxHighlighting(highlighter: unknown): unknown;
   const classHighlighter: unknown;
-  function markdown(): unknown;
+  function tagHighlighter(specs: readonly { tag: unknown; class: string }[]): unknown;
+  const tags: { readonly strikethrough: unknown };
+  function markdown(config?: { extensions?: readonly unknown[] }): unknown;
+  const GFM: unknown;
 }

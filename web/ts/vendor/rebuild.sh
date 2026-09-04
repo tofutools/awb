@@ -60,13 +60,21 @@ DOMPURIFY_VER="$(pkgver dompurify)"
 # classHighlighter rather than @codemirror/language's defaultHighlightStyle
 # because the former only tags spans with stable `tok-*` class names and ships
 # no colours of its own, leaving the whole palette to app.css and the theme.
+# tagHighlighter and tags are how the editor fills the one gap in it, the
+# strikethrough tag classHighlighter has no rule for.
+#
+# GFM comes straight from @lezer/markdown, which is why that package is a
+# direct dependency: @codemirror/lang-markdown's markdown() parses CommonMark
+# unless it is handed the extension, and its own GFM-enabled markdownLanguage
+# also carries Emoji and sub/superscript, which awb's dialect does not have.
 cat > "$WORK_DIR/codemirror-entry.mjs" <<'EOF'
 export { EditorView, keymap } from "@codemirror/view";
 export { EditorState } from "@codemirror/state";
 export { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 export { syntaxHighlighting } from "@codemirror/language";
-export { classHighlighter } from "@lezer/highlight";
+export { classHighlighter, tagHighlighter, tags } from "@lezer/highlight";
 export { markdown } from "@codemirror/lang-markdown";
+export { GFM } from "@lezer/markdown";
 EOF
 
 cat > "$WORK_DIR/markdown-it-entry.mjs" <<'EOF'
