@@ -1546,6 +1546,7 @@ function configureIssueOrderRow(
   issue: Issue,
   dragged: () => Issue | null,
   setDragged: (issue: Issue | null) => void,
+  afterRender?: () => void,
 ): void {
   configureDragSurface(row, issue, () => setDragged(issue), () => setDragged(null));
   let before = issue.id;
@@ -1572,11 +1573,19 @@ function configureIssueOrderRow(
       return;
     }
     row.classList.add("moving");
-    void api.moveIssue(moving.id, {
-      status: moving.status,
+    // A natural listing reorders an issue without changing its workflow
+    // state. Refresh the dragged issue first: list rows can have gone stale
+    // while this page was open, and sending their old status would turn a
+    // reorder into a status transition whose destination scope may not contain
+    // the visible anchor.
+    void api.issue(moving.id).then((current) => api.moveIssue(current.id, {
+      status: current.status,
       ...(before === "" ? {} : { before }),
       ...(after === "" ? {} : { after }),
-    }).then(() => render()).catch((error) => {
+    })).then(async () => {
+      await render();
+      afterRender?.();
+    }).catch((error) => {
       row.classList.remove("moving");
       mutationError(row, error);
     });
@@ -3543,7 +3552,13 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
     head.append(heading);
     table.append(head);
     table.append(issueTableBody(rows, columns, mutable && !state.explicit ? (row, child) => {
-      configureIssueOrderRow(row, child, () => draggedChild, (moving) => { draggedChild = moving; });
+      configureIssueOrderRow(
+        row,
+        child,
+        () => draggedChild,
+        (moving) => { draggedChild = moving; },
+        () => document.querySelector<HTMLElement>(".child-issues-section")?.scrollIntoView({ block: "start" }),
+      );
     } : undefined));
     section.querySelector(".child-issues-table")?.replaceWith(table);
     if (!section.contains(table)) section.append(table);

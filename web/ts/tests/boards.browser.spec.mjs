@@ -196,14 +196,31 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await assigneeHeading.getByRole("button").click();
   const createdChild = childIssues.locator(`tr[data-issue='${createdID}']`);
   await expect(createdChild).toHaveJSProperty("draggable", true);
-  const reorderTarget = childIssues.locator(`tr:has(.status-in_progress):not([data-issue='${createdID}'])`).first();
+  const reorderTarget = childIssues.locator(`tr:has(.status-open):not([data-issue='${createdID}'])`).first();
   await expect(reorderTarget).toBeVisible();
   const reorderTargetID = await reorderTarget.getAttribute("data-issue");
+  // Another agent can change a child after the parent listing was loaded.
+  // Reordering is not a workflow operation and must preserve that newer
+  // status instead of submitting the stale row's status back to the server.
+  const externallyOpened = await page.evaluate(async (id) => {
+    const response = await fetch(`api/issues/${id}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "open" }),
+    });
+    return response.ok;
+  }, createdID);
+  expect(externallyOpened).toBe(true);
   await pointerDrag(page, createdChild, reorderTarget, true);
   await expect.poll(async () => {
     const ids = await childIssues.locator("tbody tr").evaluateAll((rows) => rows.map((row) => row.dataset.issue));
     return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
   }).toBe(true);
+  await expect(createdChild.locator(".listing-col-status")).toHaveText("open");
+  expect(await childIssues.evaluate((section) => {
+    const bounds = section.getBoundingClientRect();
+    return bounds.bottom > 0 && bounds.top < innerHeight;
+  })).toBe(true);
   await page.getByRole("button", { name: "Edit issue" }).click();
   await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
   await createdChild.getByRole("button", { name: "Remove" }).click();
