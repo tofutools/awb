@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   codeBlockEdit,
   headingEdit,
-  headingLevelAt,
+  headingLevel,
   linePrefixEdit,
   linkEdit,
   numberedListEdit,
@@ -63,12 +63,22 @@ test("a heading replaces the marker already on the line rather than stacking", (
   assert.equal(applied(doc, headingEdit(doc, 0, 12, 2)), "## Title\n## body");
 });
 
-test("the heading level of the cursor's line is what the control shows", () => {
-  const doc = "### Title\nbody\n####### seven";
-  assert.equal(headingLevelAt(doc, 4), 3);
-  assert.equal(headingLevelAt(doc, 12), 0);
-  assert.equal(headingLevelAt(doc, 20), 0);
-  assert.equal(headingLevelAt("#no space", 2), 0);
+test("the heading level of a line is what the control shows", () => {
+  assert.equal(headingLevel("### Title"), 3);
+  assert.equal(headingLevel("body"), 0);
+  // Three spaces of indentation still leaves a heading; a fourth makes it code.
+  assert.equal(headingLevel("   ## Indented"), 2);
+  assert.equal(headingLevel("    ## Code"), 0);
+  // A line ending right after the marker is an empty heading; seven is none.
+  assert.equal(headingLevel("###"), 3);
+  assert.equal(headingLevel("####### seven"), 0);
+  assert.equal(headingLevel("#no space"), 0);
+});
+
+test("a heading keeps the indentation it was written with", () => {
+  assert.equal(applied("  ## Title", headingEdit("  ## Title", 0, 0, 1)), "  # Title");
+  assert.equal(applied("  ## Title", headingEdit("  ## Title", 0, 0, 0)), "  Title");
+  assert.equal(applied("###", headingEdit("###", 0, 0, 0)), "");
 });
 
 test("a block construct is padded onto lines of its own", () => {

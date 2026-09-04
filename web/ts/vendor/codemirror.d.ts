@@ -1,7 +1,11 @@
 // Minimal declarations for the committed CodeMirror bundle. Only the surface
 // used by markdown-editor.ts is exposed here.
 declare module "codemirror" {
-  interface TextDocument { toString(): string; }
+  interface DocumentLine { readonly text: string; }
+  interface TextDocument {
+    toString(): string;
+    lineAt(pos: number): DocumentLine;
+  }
   interface SelectionRange { readonly from: number; readonly to: number; }
   interface EditorSelection { readonly main: SelectionRange; }
   interface EditorState {

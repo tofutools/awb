@@ -77,6 +77,7 @@ export function createMarkdownEditor(
   // there is one: before that the plain textarea is what the user is typing in.
   const toolbar = createMarkdownToolbar({
     doc: () => view === undefined ? textarea.value : view.state.doc.toString(),
+    lineAt: (pos) => view === undefined ? "" : view.state.doc.lineAt(pos).text,
     selection: () => {
       if (view === undefined) return { from: 0, to: 0 };
       const { from, to } = view.state.selection.main;

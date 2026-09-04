@@ -28,9 +28,13 @@ export interface MarkdownEdit {
   readonly selection?: { readonly anchor: number; readonly head: number };
 }
 
-/** The editor a toolbar drives, so the toolbar needs nothing of CodeMirror. */
+/** The editor a toolbar drives, so the toolbar needs nothing of CodeMirror.
+ * lineAt is here rather than a slice of doc() because the toolbar reads a line
+ * on every cursor movement, and materialising the whole document to answer
+ * that would copy up to a description's 64 KiB each time. */
 export interface EditorHost {
   doc(): string;
+  lineAt(pos: number): string;
   selection(): { from: number; to: number };
   apply(edit: MarkdownEdit): void;
 }
@@ -41,7 +45,10 @@ export interface MarkdownToolbar {
   sync(): void;
 }
 
-const headingMarker = /^#{1,6}[ \t]+/;
+// An ATX heading: up to three spaces of indentation, one to six `#`, and then
+// either whitespace or the end of the line — `###` on its own is an empty
+// heading, and a fourth space of indentation would make the line code instead.
+const headingMarker = /^( {0,3})(#{1,6})(?:[ \t]+|$)/;
 
 function lineStart(doc: string, pos: number): number {
   return doc.lastIndexOf("\n", pos - 1) + 1;
@@ -114,24 +121,25 @@ export function numberedListEdit(doc: string, from: number, to: number): Markdow
 }
 
 /** headingEdit sets — or with level 0 clears — the ATX marker on every line
- * the selection touches. Any marker already there is replaced rather than
- * added to, so changing level does not stack `#`s. */
+ * the selection touches. A marker already there is replaced rather than added
+ * to, so changing level does not stack `#`s, and the indentation it was
+ * written with is left alone. */
 export function headingEdit(doc: string, from: number, to: number, level: number): MarkdownEdit {
   const insert = level > 0 ? `${"#".repeat(level)} ` : "";
   return {
     changes: lineStarts(doc, from, to).map((start) => {
       const existing = headingMarker.exec(doc.slice(start, lineEnd(doc, start)));
-      return { from: start, to: start + (existing === null ? 0 : existing[0].length), insert };
+      if (existing === null) return { from: start, to: start, insert };
+      return { from: start + existing[1].length, to: start + existing[0].length, insert };
     }),
   };
 }
 
-/** headingLevelAt reports the heading level of the line holding pos, or 0 when
- * it is not a heading. It is what the toolbar's heading control displays. */
-export function headingLevelAt(doc: string, pos: number): number {
-  const start = lineStart(doc, pos);
-  const existing = headingMarker.exec(doc.slice(start, lineEnd(doc, start)));
-  return existing === null ? 0 : existing[0].trimEnd().length;
+/** headingLevel reports the heading level of one line, or 0 when it is not a
+ * heading. It is what the toolbar's heading control displays. */
+export function headingLevel(line: string): number {
+  const existing = headingMarker.exec(line);
+  return existing === null ? 0 : existing[2].length;
 }
 
 /** tableEdit seeds a GFM table and selects its first header label so it can be
@@ -321,7 +329,7 @@ export function createMarkdownToolbar(host: EditorHost): MarkdownToolbar {
   return {
     element,
     sync(): void {
-      heading.value = String(headingLevelAt(host.doc(), host.selection().from));
+      heading.value = String(headingLevel(host.lineAt(host.selection().from)));
     },
   };
 }
