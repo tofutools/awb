@@ -23,7 +23,8 @@ mise install
 
 No package manager is used during the build. Browser dependencies under
 `web/static/vendor/` are committed pre-built artifacts with license and
-provenance files.
+provenance files. See [Vendored browser
+dependencies](#vendored-browser-dependencies) for how to update them.
 
 ## Build and test
 
@@ -74,10 +75,39 @@ fresh checkout therefore needs generation before Go or TypeScript compilation.
 | `internal/awberr` | Shared error taxonomy |
 | `web/ts` | Frontend source and tests |
 | `web/static` | HTML, CSS, compiled frontend, and vendored browser dependencies |
+| `web/ts/vendor` | Type stubs for the vendored bundles, and the script that rebuilds them |
 | `openapi.yaml` | HTTP API source of truth |
 
 See [Architecture](../spec/ARCHITECTURE.md) for the boundaries that this layout
 enforces.
+
+## Vendored browser dependencies
+
+CodeMirror, markdown-it and DOMPurify are committed to `web/static/vendor/` as
+single-file ESM bundles, so neither the build nor CI needs a package manager or
+the network. Each bundle carries its upstream version in its filename, plus a
+`-LICENSE.txt` and a `-PROVENANCE.txt` naming every package that went into it.
+
+`web/ts/vendor/rebuild.sh` is what produces all of that, and it is the only
+thing that may write to `web/static/vendor/`. It is deliberately not part of
+`build.sh`, `Taskfile.yml` or CI. It needs `npm`, `node` and `esbuild`, and it
+installs into a throwaway, gitignored `web/ts/vendor/node_modules/`.
+
+To update a library, set its version in `web/ts/vendor/package.json`, then:
+
+```console
+./web/ts/vendor/rebuild.sh
+./build.sh
+```
+
+The script rewrites the import map in `web/static/index.html` to the new
+filenames. Nothing else references a version: the frontend and Go tests resolve
+each bundle by prefix. Commit the regenerated bundles together with
+`package.json` and `package-lock.json`.
+
+If a bundle gains or drops an export, update the matching declarations in
+`web/ts/vendor/*.d.ts` as well — they are hand-written and cover only the
+surface awb uses.
 
 ## Changing behavior
 

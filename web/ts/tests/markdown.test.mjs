@@ -10,8 +10,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import MarkdownIt from "../../static/vendor/markdown-it-14.1.0.js";
 import { createRenderer, markdownOptions, sanitizeConfig } from "../../static/markdown-config.js";
+import { vendorBundle } from "./vendor.mjs";
+
+const { default: MarkdownIt } = await import(vendorBundle("markdown-it"));
 
 const md = createRenderer(MarkdownIt);
 
@@ -161,4 +163,24 @@ test("rendering is deterministic", () => {
   for (let i = 0; i < 5; i++) {
     assert.equal(md.render(source), first);
   }
+});
+
+// GHSA-38c4-r59v-3vqw: markdown-it >=13.0.0 <14.1.1 rescanned the rest of the
+// paragraph for a link scheme at every candidate position, so a run of scheme
+// prefixes that never completes a link cost time quadratic in its length. A
+// description or comment is prose a workspace member writes and every other
+// member's browser renders, so that is a stored denial of service.
+//
+// The input is deliberately larger than the 64 KiB a single description or
+// comment may hold: one issue view renders the description and every comment on
+// it, so what one page feeds the renderer is the sum, not the cap. The bound is
+// wall-clock and generous — the fixed bundle needs tens of milliseconds and the
+// vulnerable one several seconds, so the two are not close enough for a loaded
+// CI runner to confuse them.
+test("a pathological linkify input renders in linear time", () => {
+  const source = "mailto::".repeat(32 * 1024); // 256 KiB
+  const started = process.hrtime.bigint();
+  md.render(source);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(elapsedMs < 2000, `rendering 256 KiB of scheme prefixes took ${elapsedMs.toFixed(0)} ms`);
 });

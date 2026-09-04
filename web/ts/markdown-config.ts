@@ -16,6 +16,9 @@ export const markdownOptions = {
   // derived `links` array does with it.
   html: false,
   // The autolink extension. Tables and strikethrough are markdown-it defaults.
+  // What `linkify: true` alone recognises is narrower than GFM's rule since
+  // markdown-it 15 turned linkify-it's fuzzy matching off by default, so
+  // createRenderer turns the two halves GFM does recognise back on.
   linkify: true,
   breaks: false,
   typographer: false,
@@ -52,7 +55,13 @@ interface StateCore {
 
 interface Markdown {
   core: { ruler: { push(name: string, fn: (state: StateCore) => void): void } };
+  linkify: { set(options: LinkifyOptions): void };
   render(src: string): string;
+}
+
+interface LinkifyOptions {
+  fuzzyLink: boolean;
+  fuzzyEmail: boolean;
 }
 
 /** A markdown-it constructor, however it was imported. */
@@ -64,6 +73,12 @@ export type MarkdownConstructor = new (options: typeof markdownOptions) => Markd
  */
 export function createRenderer(MarkdownIt: MarkdownConstructor): Markdown {
   const md = new MarkdownIt(markdownOptions);
+  // GFM's autolink extension recognises a bare `www.` host and a bare email
+  // address as well as a full URL, and the API's derived `links` array is built
+  // by a GFM parser that does. linkify-it recognises neither unless its fuzzy
+  // matching is on, so turn on exactly those two. `fuzzyIP` stays off: GFM does
+  // not autolink a bare IP address, and neither does `links`.
+  md.linkify.set({ fuzzyLink: true, fuzzyEmail: true });
   md.core.ruler.push("awb_task_lists", taskLists);
   return md;
 }

@@ -28,6 +28,16 @@ declare module "markdown-it" {
     Token: TokenConstructor;
   }
 
+  export interface LinkifyOptions {
+    fuzzyLink?: boolean;
+    fuzzyEmail?: boolean;
+    fuzzyIP?: boolean;
+  }
+
+  export interface Linkify {
+    set(options: LinkifyOptions): void;
+  }
+
   export interface Core {
     ruler: {
       push(name: string, fn: (state: StateCore) => void): void;
@@ -37,6 +47,7 @@ declare module "markdown-it" {
   export default class MarkdownIt {
     constructor(options?: Options);
     core: Core;
+    linkify: Linkify;
     render(src: string): string;
   }
 }

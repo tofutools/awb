@@ -26,7 +26,9 @@ on failure. `-o DIR` sets where the binary goes.
 Prerequisites on `$PATH`: `go` (1.26.6 or later), `ogen`,
 `openapi-typescript`, `tsc`, `golangci-lint`, `node`. No package manager is
 ever invoked: the browser bundles under `web/static/vendor/` are pre-built
-committed artifacts.
+committed artifacts, rebuilt by hand with `web/ts/vendor/rebuild.sh` — the one
+thing here that does need `npm` and the network, and which for that reason no
+build or CI job may call.
 
 Neither generated output is committed, so a fresh checkout does not compile
 until the generators have run — `./build.sh`, or `task generate`.
@@ -54,7 +56,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/awberr` | The error taxonomy both surfaces report. |
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
 | `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
-| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `static/` build output, `embed.go`. |
+| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `ts/vendor/` the vendoring script and its type stubs, `static/` build output and the committed browser bundles, `embed.go`. |
 
 Three structural rules hold the design together:
 

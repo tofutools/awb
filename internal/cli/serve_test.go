@@ -160,6 +160,20 @@ func TestResponsesAreCompressedOnce(t *testing.T) {
 	}
 }
 
+// vendorBundle returns the embedded filename of the vendored bundle called
+// name, which is version-stamped. Exactly one must be present: a superseded
+// bundle left beside its replacement is a packaging mistake, not something to
+// pick between.
+func vendorBundle(t *testing.T, name string) string {
+	t.Helper()
+	staticFS, err := web.StaticFS()
+	require.NoError(t, err)
+	matches, err := fs.Glob(staticFS, "vendor/"+name+"-*.js")
+	require.NoError(t, err)
+	require.Len(t, matches, 1, "vendor/%s-*.js", name)
+	return strings.TrimPrefix(matches[0], "vendor/")
+}
+
 func TestStaticAssetsAreServed(t *testing.T) {
 	h := newServeHandler(t)
 
@@ -167,14 +181,21 @@ func TestStaticAssetsAreServed(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, body, "<!doctype html>")
 	assert.Contains(t, body, `type="importmap"`)
+	shell := body
 
-	// The vendored browser bundles are committed and embedded.
-	resp, body = get(t, h, http.MethodGet, "/vendor/markdown-it-14.1.0.js")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.NotEmpty(t, body)
-	resp, body = get(t, h, http.MethodGet, "/vendor/codemirror-6.43.3.js")
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.NotEmpty(t, body)
+	// The vendored browser bundles are committed and embedded. Their filenames
+	// carry the upstream version, so they are looked up by prefix: an upgrade
+	// changes the name, and web/ts/vendor/rebuild.sh does not edit Go tests.
+	for _, bundle := range []string{"codemirror", "dompurify", "markdown-it"} {
+		name := vendorBundle(t, bundle)
+		resp, body = get(t, h, http.MethodGet, "/vendor/"+name)
+		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
+		assert.NotEmpty(t, body, name)
+
+		// The import map is what makes the bundle reachable from the UI, so a
+		// bundle whose name it does not carry would be embedded but unused.
+		assert.Contains(t, shell, "./vendor/"+name)
+	}
 
 	// A deep link falls back to the shell, so client-side routing works.
 	resp, body = get(t, h, http.MethodGet, "/issues/awb-a1b2c3")
