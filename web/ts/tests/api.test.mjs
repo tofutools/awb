@@ -120,6 +120,7 @@ test("issue creation posts the complete atomic create body", async (t) => {
     type: "feature",
     priority: 1,
     assignees: ["alex"],
+    labels: ["frontend", "release/1.0"],
     relations: [{ type: "has-parent", other: "awb-epic" }],
   };
   await api.createIssue(body);
