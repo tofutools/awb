@@ -128,6 +128,9 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await createDialog.getByLabel("Title").fill("Created from the board");
   await createDialog.locator("select[name='type']").selectOption("feature");
   await createDialog.getByLabel("Priority").selectOption("1");
+  await createDialog.getByLabel("Label").fill("frontend");
+  await createDialog.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(createDialog.locator(".issue-create-label-list")).toContainText("frontend");
   await createDialog.getByRole("button", { name: /Add relation/ }).click();
   await createDialog.getByLabel("Relation type").selectOption("related");
   await createDialog.getByLabel("Other issue ID").fill(relatedID);
@@ -149,6 +152,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const caller = await page.evaluate(async () => (await (await fetch("api/identity")).json()).identity);
   expect(created.type).toBe("feature");
   expect(created.priority).toBe(1);
+  expect(created.labels).toContain("frontend");
   expect(created.relations.some((relation) => relation.type === "has-parent")).toBe(true);
   expect(created.relations.some((relation) => relation.type === "related" && relation.other === relatedID)).toBe(true);
   expect(created.attachments.map((attachment) => attachment.name)).toContain("release-notes.txt");

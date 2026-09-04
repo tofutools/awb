@@ -187,6 +187,7 @@ type NewIssueRelation = NonNullable<IssueCreate["relations"]>[number];
 
 interface StagedIssueResources {
   element: HTMLElement;
+  labels: string[];
   relations: NewIssueRelation[];
   attachments: Map<string, File>;
 }
@@ -540,10 +541,66 @@ function issueForm(
 
 function stagedIssueResources(epic?: Issue): StagedIssueResources {
   const resources = element("div", "issue-create-resources");
+  const labels: string[] = [];
   const relations: NewIssueRelation[] = epic === undefined
     ? []
     : [{ type: "has-parent", other: epic.id }];
   const attachments = new Map<string, File>();
+
+  const labelSection = element("section", "issue-create-resource issue-create-labels");
+  labelSection.append(element("h3", "", "Labels"));
+  const labelList = element("div", "issue-create-label-list");
+  const labelInput = document.createElement("input");
+  labelInput.placeholder = "Add label";
+  labelInput.setAttribute("aria-label", "Label");
+  labelInput.pattern = "[a-z0-9._/-]+";
+  labelInput.maxLength = 64;
+  const labelAutocomplete = attachAutocomplete(labelInput, async (query, signal) => {
+    const page = await api.labels({}, signal);
+    return matchingValues(page.rows.map((facet) => facet.value), query, labels);
+  });
+  const addLabel = button("Add", "quiet-action");
+  const renderLabels = (): void => {
+    labelList.replaceChildren();
+    for (const label of labels) {
+      const chip = element("span", "editable-chip");
+      chip.append(badge("label", label));
+      const remove = button("×", "chip-remove");
+      remove.title = `Remove label ${label}`;
+      remove.setAttribute("aria-label", remove.title);
+      remove.addEventListener("click", () => {
+        labels.splice(labels.indexOf(label), 1);
+        renderLabels();
+      });
+      chip.append(remove);
+      labelList.append(chip);
+    }
+  };
+  const stageLabel = (): void => {
+    labelSection.querySelector(".edit-error")?.remove();
+    const label = labelInput.value.trim();
+    if (label === "" || !labelInput.checkValidity()) {
+      mutationError(labelSection, new Error("Use lowercase letters, digits, hyphens, underscores, dots or slashes (64 characters maximum)."));
+      return;
+    }
+    if (labels.includes(label)) {
+      mutationError(labelSection, new Error("That label is already staged."));
+      return;
+    }
+    labels.push(label);
+    labelInput.value = "";
+    renderLabels();
+    labelInput.focus();
+  };
+  addLabel.addEventListener("click", stageLabel);
+  labelInput.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.key !== "Enter") return;
+    event.preventDefault();
+    stageLabel();
+  });
+  const labelEditor = element("div", "compact-editor issue-create-label-editor");
+  labelEditor.append(labelAutocomplete, addLabel);
+  labelSection.append(labelList, labelEditor);
 
   const relationSection = element("section", "issue-create-resource");
   relationSection.append(element("h3", "", "Relations"));
@@ -670,8 +727,8 @@ function stagedIssueResources(epic?: Issue): StagedIssueResources {
   });
   renderAttachments();
   attachmentSection.append(attachmentList, attachmentEditor);
-  resources.append(relationSection, attachmentSection);
-  return { element: resources, relations, attachments };
+  resources.append(labelSection, relationSection, attachmentSection);
+  return { element: resources, labels, relations, attachments };
 }
 
 async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promise<void> {
@@ -739,6 +796,7 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
       type: type.value as IssueCreate["type"],
       priority: Number(priority.value) as IssueCreate["priority"],
       ...(assign.checked && identity !== "" ? { assignees: [identity] } : {}),
+      ...(staged.labels.length === 0 ? {} : { labels: staged.labels }),
       ...(staged.relations.length === 0 ? {} : { relations: staged.relations }),
     };
     void api.createIssue(body).then(async (created) => {
