@@ -6,38 +6,56 @@
 // transitive dependency that appears or disappears upstream therefore shows up
 // in the committed attribution the next time rebuild.sh runs.
 //
+// A package is identified by the directory it was loaded from rather than by
+// its name. npm hoists what it can, but a conflicting requirement leaves a
+// second copy nested under its dependent, and that copy is a different release
+// under a different copyright year. Keying on the name alone would collapse the
+// two and then attribute one of them to the other's version and license.
+//
 // Invoked only by rebuild.sh. Reads and writes files; no network.
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 
-const [metaFile, modulesDir, bundleName, provenanceOut, licenseOut] = process.argv.slice(2);
+const [metaFile, baseDir, bundleName, provenanceOut, licenseOut] = process.argv.slice(2);
 
 const meta = JSON.parse(readFileSync(metaFile, "utf8"));
 
-/** packageOf maps an esbuild input path to the npm package that owns it. */
-function packageOf(input) {
+/**
+ * packageRootOf maps an esbuild input path to the directory of the package that
+ * owns it, relative to the directory esbuild ran in, or null when the input is
+ * not from a package at all — which is what the generated entry file is.
+ */
+function packageRootOf(input) {
   const marker = "node_modules/";
   const at = input.lastIndexOf(marker);
   if (at < 0) return null;
-  const rest = input.slice(at + marker.length).split("/");
-  return rest[0].startsWith("@") ? `${rest[0]}/${rest[1]}` : rest[0];
+  const start = at + marker.length;
+  const segments = input.slice(start).split("/");
+  const depth = segments[0].startsWith("@") ? 2 : 1;
+  if (segments.length <= depth) return null;
+  return input.slice(0, start) + segments.slice(0, depth).join("/");
 }
 
-const packages = [...new Set(Object.keys(meta.inputs).map(packageOf).filter((p) => p !== null))]
-  .sort();
-if (packages.length === 0) {
+const roots = [...new Set(Object.keys(meta.inputs).map(packageRootOf).filter((root) => root !== null))];
+if (roots.length === 0) {
   throw new Error(`${metaFile}: no node_modules inputs — nothing to attribute`);
 }
 
-const versions = new Map(
-  packages.map((p) => [p, JSON.parse(readFileSync(`${modulesDir}/${p}/package.json`, "utf8")).version]),
-);
+// Sorted by name and then version so the generated files are stable across
+// rebuilds; the root path is the tiebreaker for the same release reached two
+// ways, which reads as one entry either way.
+const packages = roots
+  .map((root) => {
+    const manifest = JSON.parse(readFileSync(`${baseDir}/${root}/package.json`, "utf8"));
+    return { root, name: manifest.name, version: manifest.version };
+  })
+  .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 
 writeFileSync(
   provenanceOut,
   `The ${bundleName} ESM bundle was built by web/ts/vendor/rebuild.sh with\n` +
     `esbuild, from these npm packages:\n\n` +
-    packages.map((p) => `${p} ${versions.get(p)}\n`).join("") +
+    packages.map((pkg) => `${pkg.name} ${pkg.version}\n`).join("") +
     `\nTheir license texts are in ${licenseOut.split("/").pop()}.\n`,
 );
 
@@ -46,14 +64,14 @@ writeFileSync(
 // attached to the copyright holder it was granted by.
 const sections = [];
 for (const pkg of packages) {
-  const dir = `${modulesDir}/${pkg}`;
-  const files = readdirSync(dir).filter((f) => /^(LICENSE|LICENCE|COPYING)/i.test(f)).sort();
+  const dir = `${baseDir}/${pkg.root}`;
+  const files = readdirSync(dir).filter((file) => /^(LICENSE|LICENCE|COPYING)/i.test(file)).sort();
   if (files.length === 0) {
-    throw new Error(`${pkg} ships no license file — vendoring it would drop its terms`);
+    throw new Error(`${pkg.name} ${pkg.version} ships no license file — vendoring it would drop its terms`);
   }
   for (const file of files) {
     sections.push(
-      `${pkg} ${versions.get(pkg)} (${file})\n` +
+      `${pkg.name} ${pkg.version} (${file})\n` +
         "=".repeat(72) + "\n\n" +
         readFileSync(`${dir}/${file}`, "utf8").trimEnd() + "\n",
     );

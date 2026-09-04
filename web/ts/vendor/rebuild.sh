@@ -103,7 +103,7 @@ bundle() {
     --outfile="$OUT_DIR/$name-$version.js"
 
   node "$VENDOR_DIR/gen-attribution.mjs" \
-    "$meta" "$VENDOR_DIR/node_modules" \
+    "$meta" "$VENDOR_DIR" \
     "$name-$version.js" \
     "$OUT_DIR/$name-PROVENANCE.txt" \
     "$OUT_DIR/$name-LICENSE.txt"
