@@ -106,7 +106,7 @@ var dummyHash = sync.OnceValue(func() string {
 // Every question is answered inside one read transaction, so a request cannot
 // see a database that holds no user and a user's hash at the same time, nor
 // one that has never had users and the record of one at the same time.
-func (a *authenticator) check(ctx context.Context, username, password string) (
+func (a *authenticator) check(ctx context.Context, username, password string, preflight bool) (
 	state authState, ok bool, err error) {
 	err = a.db.Read(ctx, func(tx *storage.Tx) error {
 		any, err := tx.AnyUsersWithPassword()
@@ -125,6 +125,11 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 			return nil
 		}
 		state = authRequired
+		// Preflights carry no credentials and need only the database state.
+		// They must not spend bcrypt work or clear a peer's failure history.
+		if preflight {
+			return nil
+		}
 
 		hash, found, err := tx.PasswordHash(username)
 		if err != nil {
@@ -170,10 +175,16 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 			state, ok, err := func() (state authState, ok bool, err error) {
 				// Release before serving the route, including on panic.
 				defer func() {
-					failed := err == nil && state == authRequired && (!given || !ok) && !isPreflight(r)
-					a.guard.finish(peer, failed, time.Now())
+					result := authUnchecked
+					if err == nil && state == authRequired && !isPreflight(r) {
+						result = authFailed
+						if given && ok {
+							result = authSucceeded
+						}
+					}
+					a.guard.finish(peer, result, time.Now())
 				}()
-				return a.check(r.Context(), username, password)
+				return a.check(r.Context(), username, password, isPreflight(r))
 			}()
 
 			// A browser never puts credentials on a preflight — the CORS

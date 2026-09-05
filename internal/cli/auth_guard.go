@@ -14,6 +14,14 @@ const (
 	authCooldown     = time.Second
 )
 
+type authResult int
+
+const (
+	authUnchecked authResult = iota
+	authFailed
+	authSucceeded
+)
+
 type authPeer struct {
 	active   int
 	failures int
@@ -81,13 +89,13 @@ func (g *authGuard) begin(peer string, now time.Time) bool {
 	return true
 }
 
-func (g *authGuard) finish(peer string, failed bool, now time.Time) {
+func (g *authGuard) finish(peer string, result authResult, now time.Time) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	p := g.peers[peer]
 	g.active--
 	p.active--
-	if failed {
+	if result == authFailed {
 		if !now.Before(p.retryAt) {
 			p.failures = 0
 			p.retryAt = now.Add(authCooldown)
@@ -96,7 +104,7 @@ func (g *authGuard) finish(peer string, failed bool, now time.Time) {
 		if p.failures >= authFailureBurst {
 			p.retryAt = now.Add(authCooldown)
 		}
-	} else {
+	} else if result == authSucceeded {
 		p.failures = 0
 		p.retryAt = time.Time{}
 	}

@@ -35,7 +35,7 @@ func TestAuthGuardConcurrentFlood(t *testing.T) {
 			attempted.Done()
 			if ok {
 				<-release
-				g.finish(peer, true, now)
+				g.finish(peer, authFailed, now)
 			}
 		}()
 	}
@@ -44,7 +44,7 @@ func TestAuthGuardConcurrentFlood(t *testing.T) {
 	close(release)
 	finished.Wait()
 	require.True(t, g.begin("healthy", now))
-	g.finish("healthy", false, now)
+	g.finish("healthy", authSucceeded, now)
 	assert.Zero(t, g.active)
 }
 
@@ -53,23 +53,23 @@ func TestAuthGuardCooldownAndRecovery(t *testing.T) {
 	now := time.Now()
 	for range authFailureBurst {
 		require.True(t, g.begin("peer", now))
-		g.finish("peer", true, now)
+		g.finish("peer", authFailed, now)
 	}
 	for range 100 {
 		assert.False(t, g.begin("peer", now.Add(authCooldown/2)))
 	}
 	require.True(t, g.begin("other", now))
-	g.finish("other", false, now)
+	g.finish("other", authSucceeded, now)
 	require.True(t, g.begin("peer", now.Add(authCooldown)))
-	g.finish("peer", false, now.Add(authCooldown))
+	g.finish("peer", authSucceeded, now.Add(authCooldown))
 	assert.Empty(t, g.peers)
 	// Successful checks reset a partial failure burst immediately.
 	for range authFailureBurst - 1 {
 		require.True(t, g.begin("peer", now))
-		g.finish("peer", true, now)
+		g.finish("peer", authFailed, now)
 	}
 	require.True(t, g.begin("peer", now))
-	g.finish("peer", false, now)
+	g.finish("peer", authSucceeded, now)
 	assert.Empty(t, g.peers)
 }
 
@@ -79,14 +79,14 @@ func TestAuthGuardBoundsPeerMemoryWithoutEvictingFailures(t *testing.T) {
 	for i := range authPeerCapacity {
 		peer := fmt.Sprint(i)
 		require.True(t, g.begin(peer, now))
-		g.finish(peer, true, now)
+		g.finish(peer, authFailed, now)
 	}
 	for i := range 100 {
 		assert.False(t, g.begin(fmt.Sprintf("new-%d", i), now))
 	}
 	assert.Len(t, g.peers, authPeerCapacity)
 	require.True(t, g.begin("new", now.Add(authCooldown)))
-	g.finish("new", false, now.Add(authCooldown))
+	g.finish("new", authSucceeded, now.Add(authCooldown))
 	assert.Empty(t, g.peers)
 }
 
@@ -130,11 +130,11 @@ func TestAuthFailedRequestsThrottleAndRecover(t *testing.T) {
 		h.ServeHTTP(w, req)
 		return w
 	}
-	// Seed seven failures without spending most of the window in bcrypt on slow CI.
-	now := time.Now()
+	// Keep the seeded window alive while bcrypt runs, including under -race.
+	now := time.Now().Add(time.Hour)
 	for range authFailureBurst - 1 {
 		require.True(t, a.guard.begin("192.0.2.1", now))
-		a.guard.finish("192.0.2.1", true, now)
+		a.guard.finish("192.0.2.1", authFailed, now)
 	}
 	failed := request("missing", "wrong", "192.0.2.1:123")
 	require.Equal(t, http.StatusUnauthorized, failed.Code)
@@ -147,4 +147,39 @@ func TestAuthFailedRequestsThrottleAndRecover(t *testing.T) {
 	time.Sleep(authCooldown)
 	assert.Equal(t, http.StatusNoContent, request("alice", "hunter2", "192.0.2.1:789").Code)
 	assert.Empty(t, a.guard.peers)
+}
+
+func TestAuthUncheckedRequestsPreserveFailures(t *testing.T) {
+	var g authGuard
+	now := time.Now()
+	for range authFailureBurst - 1 {
+		require.True(t, g.begin("peer", now))
+		g.finish("peer", authFailed, now)
+	}
+	require.True(t, g.begin("peer", now))
+	g.finish("peer", authUnchecked, now)
+	require.True(t, g.begin("peer", now))
+	g.finish("peer", authFailed, now)
+	assert.False(t, g.begin("peer", now))
+}
+
+func TestAuthPreflightPreservesFailures(t *testing.T) {
+	_, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	a := &authenticator{db: be.DB(), realm: "awb"}
+	now := time.Now().Add(time.Hour)
+	for range authFailureBurst - 1 {
+		require.True(t, a.guard.begin("192.0.2.1", now))
+		a.guard.finish("192.0.2.1", authFailed, now)
+	}
+	h := a.Middleware(log.New(io.Discard, "", 0))(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.RemoteAddr = "192.0.2.1:123"
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	require.Contains(t, a.guard.peers, "192.0.2.1")
+	assert.Equal(t, authFailureBurst-1, a.guard.peers["192.0.2.1"].failures)
 }
