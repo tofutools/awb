@@ -99,7 +99,7 @@ import {
 } from "./inspector.js";
 import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
 import { attachSearchClear } from "./search-control.js";
-import { stagedLabel } from "./issue-create.js";
+import { inlineChildIssueCreate, stagedLabel } from "./issue-create.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -181,6 +181,7 @@ interface IssueForm {
 interface IssueCreateDefaults {
   workspace?: string;
   epic?: Issue;
+  parent?: Issue;
   assignToMe?: boolean;
 }
 
@@ -748,7 +749,8 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   const editor = issueForm("New issue", "Create issue", "", "", "", "", "issue-create-form");
   editor.form.querySelector("h2")!.id = "issue-create-heading";
 
-  const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? defaults.epic?.workspace ?? workspaces[0].key);
+  const parent = defaults.parent ?? defaults.epic;
+  const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? parent?.workspace ?? workspaces[0].key);
   workspace.name = "workspace";
   const type = select(["task", "feature", "bug", "epic", "chore"], "task");
   type.name = "type";
@@ -758,14 +760,18 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   const metadata = element("div", "edit-field-row");
   metadata.append(field("Workspace", workspace), field("Type", type), field("Priority", priority));
   editor.form.insertBefore(metadata, editor.form.children[1]);
-  const staged = stagedIssueResources(workspace, defaults.epic);
+  const staged = stagedIssueResources(workspace, parent);
   editor.form.insertBefore(staged.element, editor.actions);
 
-  if (defaults.epic !== undefined) {
-    workspace.value = defaults.epic.workspace;
+  if (parent !== undefined) {
+    workspace.value = parent.workspace;
     workspace.disabled = true;
     editor.form.insertBefore(
-      element("p", "issue-create-context", `Epic: ${defaults.epic.id} · ${defaults.epic.title}`),
+      element(
+        "p",
+        "issue-create-context",
+        `${defaults.parent === undefined ? "Epic" : "Parent"}: ${parent.id} · ${parent.title}`,
+      ),
       editor.form.children[1],
     );
   }
@@ -3418,8 +3424,11 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const heading = element("div", "issue-heading");
   const headingText = element("div", "issue-heading-text");
   headingText.append(element("div", "issue-key", issue.id), element("h1", "", issue.title));
+  const headingActions = element("div", "issue-heading-actions");
+  const newChildButton = issueCreateButton("New child issue", { parent: issue }, "secondary-button");
   const editButton = button("Edit issue");
-  heading.append(headingText, editButton);
+  headingActions.append(newChildButton, editButton);
+  heading.append(headingText, headingActions);
   content.append(heading);
 
   const existingDraft = issueEditDrafts.get(issue.id);
@@ -3477,9 +3486,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
-  if (children.rows.length > 0) {
-    content.append(issueChildrenSection(issue.id, children.rows, workspace.state === "active"));
-  }
+  content.append(issueChildrenSection(issue, children.rows, workspace.state === "active"));
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3499,6 +3506,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       document.createTextNode(`Workspace ${workspace.key} is archived.`),
     );
     content.prepend(banner);
+    newChildButton.disabled = true;
     editButton.remove();
     for (const control of view.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
       "form button, form input, form select, form textarea, .issue-sidebar button, .issue-sidebar input, .issue-sidebar select",
@@ -3515,25 +3523,63 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   return view;
 }
 
-function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
+function issueChildrenSection(parent: Issue, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   const heading = element("div", "child-issues-heading");
   heading.append(element("h2", "", "Child issues"));
+  const headingActions = element("div", "child-issues-actions");
+  const addInline = button("Add child inline", "quiet-action");
+  addInline.disabled = !mutable;
   const includeClosed = element("label", "include-closed-control");
   const includeClosedInput = document.createElement("input");
   includeClosedInput.type = "checkbox";
-  const includeClosedKey = `awb.issue.${parent}.show-closed-children`;
+  const includeClosedKey = `awb.issue.${parent.id}.show-closed-children`;
   try {
     includeClosedInput.checked = localStorage.getItem(includeClosedKey) !== "false";
   } catch {
     includeClosedInput.checked = true;
   }
   includeClosed.append(includeClosedInput, document.createTextNode("Show closed"));
-  heading.append(includeClosed);
+  headingActions.append(addInline, includeClosed);
+  heading.append(headingActions);
   section.append(heading);
   const sortKeys = ["id", "type", "priority", "status", "assignee"];
   let sortValue: string | null = null;
   let draggedChild: Issue | null = null;
+
+  const inlineForm = element("form", "child-inline-create") as HTMLFormElement;
+  inlineForm.hidden = true;
+  const inlineTitle = document.createElement("input");
+  inlineTitle.name = "title";
+  inlineTitle.maxLength = 500;
+  inlineTitle.placeholder = "Add another child…";
+  inlineTitle.setAttribute("aria-label", "Child issue title");
+  const inlineSubmit = element("button", "primary-button", "Add") as HTMLButtonElement;
+  inlineSubmit.type = "submit";
+  inlineSubmit.disabled = true;
+  const inlineCancel = button("Cancel", "quiet-action");
+  const inlineHint = element("span", "child-inline-hint", "Enter to create · Esc to cancel");
+  inlineForm.append(inlineTitle, inlineSubmit, inlineCancel, inlineHint);
+
+  const leaveInlineMode = (): void => {
+    inlineForm.hidden = true;
+    inlineForm.querySelector(".edit-error")?.remove();
+    addInline.focus();
+  };
+  addInline.addEventListener("click", () => {
+    inlineForm.hidden = false;
+    inlineTitle.focus();
+  });
+  inlineCancel.addEventListener("click", leaveInlineMode);
+  inlineTitle.addEventListener("input", () => {
+    inlineSubmit.disabled = inlineTitle.value.trim() === "";
+    inlineForm.querySelector(".edit-error")?.remove();
+  });
+  inlineForm.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    leaveInlineMode();
+  });
 
   const renderTable = (focusColumn = ""): void => {
     const state = sortState(sortValue, sortKeys, "order");
@@ -3569,13 +3615,13 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
           remove.addEventListener("click", async () => {
             const confirmed = await confirmMutation(
               "Remove child?",
-              `Remove ${child.id} from ${parent}?`,
+              `Remove ${child.id} from ${parent.id}?`,
               remove,
               true,
             );
             if (!confirmed) return;
             const row = remove.closest("tr") ?? remove;
-            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
+            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent.id));
           });
           return remove;
         },
@@ -3617,11 +3663,33 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
       table.querySelector<HTMLButtonElement>(`.listing-col-${focusColumn} .sort-button`)?.focus();
     }
   };
+  inlineForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const body = inlineChildIssueCreate(parent.workspace, parent.id, inlineTitle.value);
+    if (body === undefined || inlineSubmit.disabled) return;
+    inlineSubmit.disabled = true;
+    inlineTitle.disabled = true;
+    inlineCancel.disabled = true;
+    void api.createIssue(body).then((created) => {
+      children.push(created);
+      inlineTitle.value = "";
+      inlineForm.querySelector(".edit-error")?.remove();
+      renderTable();
+    }).catch((error) => {
+      mutationError(inlineForm, error);
+    }).finally(() => {
+      inlineTitle.disabled = false;
+      inlineCancel.disabled = false;
+      inlineSubmit.disabled = inlineTitle.value.trim() === "";
+      inlineTitle.focus();
+    });
+  });
   includeClosedInput.addEventListener("change", () => {
     try { localStorage.setItem(includeClosedKey, String(includeClosedInput.checked)); } catch { /* preference is best-effort */ }
     renderTable();
   });
   renderTable();
+  section.append(inlineForm);
   return section;
 }
 
