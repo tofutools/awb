@@ -2724,7 +2724,9 @@ components:
         and sparse manual position. The issue's workspace and ID are
         immutable. When `epic` is present, an empty value clears direct epic
         membership; a non-empty value must name an epic in the same workspace.
-        Moving to `open` clears assignees. Moving from `closed` to `in_progress`
+        Moving to `open` or `backlog` clears assignees. Backlog and its descendants
+        are excluded from ready and default boards; moving to `open` or claiming
+        explicitly activates parked work. Moving from `closed` to `in_progress`
         assigns the request identity and replaces the historical assignee set.
       required: [status]
       properties:
