@@ -1441,6 +1441,8 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .child-inline-create input { min-width: 0; padding: 0.45rem 0.55rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); font: inherit; }
 .child-inline-create input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
 .child-inline-hint { grid-column: 1 / -1; color: var(--muted); font-size: 0.8em; }
+.child-inline-status { grid-column: 1 / -1; color: var(--accent); font-size: 0.8em; }
+.child-inline-status:empty { display: none; }
 .child-inline-create .edit-error { grid-column: 1 / -1; }
 .resource-list { margin: 0; padding: 0; }
 .resource-list li {

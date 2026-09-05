@@ -3559,7 +3559,10 @@ function issueChildrenSection(parent: Issue, children: Issue[], mutable: boolean
   inlineSubmit.disabled = true;
   const inlineCancel = button("Cancel", "quiet-action");
   const inlineHint = element("span", "child-inline-hint", "Enter to create · Esc to cancel");
-  inlineForm.append(inlineTitle, inlineSubmit, inlineCancel, inlineHint);
+  const inlineStatus = element("span", "child-inline-status");
+  inlineStatus.setAttribute("role", "status");
+  inlineStatus.setAttribute("aria-live", "polite");
+  inlineForm.append(inlineTitle, inlineSubmit, inlineCancel, inlineHint, inlineStatus);
 
   const leaveInlineMode = (): void => {
     inlineForm.hidden = true;
@@ -3568,6 +3571,7 @@ function issueChildrenSection(parent: Issue, children: Issue[], mutable: boolean
   };
   addInline.addEventListener("click", () => {
     inlineForm.hidden = false;
+    inlineStatus.textContent = "";
     inlineTitle.focus();
   });
   inlineCancel.addEventListener("click", leaveInlineMode);
@@ -3675,7 +3679,9 @@ function issueChildrenSection(parent: Issue, children: Issue[], mutable: boolean
       inlineTitle.value = "";
       inlineForm.querySelector(".edit-error")?.remove();
       renderTable();
+      inlineStatus.textContent = `Child ${created.id} was created. Add another child.`;
     }).catch((error) => {
+      inlineStatus.textContent = "";
       mutationError(inlineForm, error);
     }).finally(() => {
       inlineTitle.disabled = false;
