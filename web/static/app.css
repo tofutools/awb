@@ -582,6 +582,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .status-filter-popover {
   position: fixed;
   width: min(17rem, calc(100vw - 1rem));
+  max-height: calc(100vh - 1rem);
   margin: 0;
   padding: 0;
   border: 1px solid var(--line);
@@ -589,6 +590,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   background: var(--panel);
   color: var(--fg);
   box-shadow: 0 10px 30px color-mix(in srgb, #000 20%, transparent);
+  overflow-y: auto;
 }
 .status-filter-title { display: block; padding: 0.75rem 0.8rem 0.35rem; font-size: 0.85em; }
 .status-filter-choices { display: grid; padding: 0.25rem 0.8rem; }

@@ -140,6 +140,16 @@ test("share a responsive multi-status issue filter", async ({ page }) => {
   await picker.getByRole("button", { name: "Reset" }).click();
   await picker.getByRole("button", { name: "Done" }).click();
   await expect(page).not.toHaveURL(/status=/);
+
+  await page.setViewportSize({ width: 390, height: 260 });
+  await trigger.click();
+  const shortBounds = await picker.boundingBox();
+  expect(shortBounds).not.toBeNull();
+  expect(shortBounds.y).toBeGreaterThanOrEqual(0);
+  expect(shortBounds.y + shortBounds.height).toBeLessThanOrEqual(260);
+  const done = picker.getByRole("button", { name: "Done" });
+  await done.scrollIntoViewIfNeeded();
+  await expect(done).toBeVisible();
 });
 
 test("save, share and work from a responsive board", async ({ page }) => {
