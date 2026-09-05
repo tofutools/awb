@@ -1,10 +1,17 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 const interactive =
   "a, button, input, select, textarea, label, [contenteditable], [role='button']";
 /** Native dragging must not steal link activation or text selection. */
 export function useDragSurface() {
-  const [interacting, setInteracting] = useState(false);
+  const [wide, setWide] = useState(() => matchMedia("(min-width: 701px)").matches);
   useEffect(() => {
+    const media = matchMedia("(min-width: 701px)");
+    const update = () => setWide(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const [interacting, setInteracting] = useState(false);
+  useLayoutEffect(() => {
     if (!interacting) return;
     const release = () => setInteracting(false);
     window.addEventListener("pointerup", release);
@@ -17,7 +24,7 @@ export function useDragSurface() {
     };
   }, [interacting]);
   return {
-    draggable: !interacting,
+    draggable: wide && !interacting,
     onPointerDown: (event: PointerEvent) =>
       setInteracting((event.target as Element).closest(interactive) !== null),
   };

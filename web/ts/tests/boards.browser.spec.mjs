@@ -522,8 +522,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
   await expect(page.getByRole("button", { name: "New issue" })).toBeVisible();
-  const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Browse the widget catalogue" });
-  const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
+  const sourceRow = page.locator(".issue-table tbody tr", { has: page.locator(".name .title", { hasText: /^Browse the widget catalogue$/ }) });
+  const targetRow = page.locator(".issue-table tbody tr", { has: page.locator(".name .title", { hasText: /^Build the full text search index$/ }) });
   await expect(sourceRow).toBeVisible();
   await expect(targetRow).toBeVisible();
   await pointerDrag(page, sourceRow, targetRow);
