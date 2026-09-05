@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/mikaelstaldal/go-server-common/auth"
 
@@ -49,6 +50,7 @@ import (
 type authenticator struct {
 	db    *storage.DB
 	realm string
+	guard authGuard
 }
 
 // authState is what the database says about a request before any credentials
@@ -104,7 +106,7 @@ var dummyHash = sync.OnceValue(func() string {
 // Every question is answered inside one read transaction, so a request cannot
 // see a database that holds no user and a user's hash at the same time, nor
 // one that has never had users and the record of one at the same time.
-func (a *authenticator) check(ctx context.Context, username, password string) (
+func (a *authenticator) check(ctx context.Context, username, password string, preflight bool) (
 	state authState, ok bool, err error) {
 	err = a.db.Read(ctx, func(tx *storage.Tx) error {
 		any, err := tx.AnyUsersWithPassword()
@@ -123,6 +125,11 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 			return nil
 		}
 		state = authRequired
+		// Preflights carry no credentials and need only the database state.
+		// They must not spend bcrypt work or clear a peer's failure history.
+		if preflight {
+			return nil
+		}
 
 		hash, found, err := tx.PasswordHash(username)
 		if err != nil {
@@ -152,13 +159,33 @@ func (a *authenticator) check(ctx context.Context, username, password string) (
 // permissions. A request that passed because there was nobody to authenticate
 // carries none, and the server's fixed identity stands in for it.
 //
-// The client address of every 401 is logged, so an external tool such as
-// fail2ban can watch for brute-force attempts.
+// Admission is bounded before reading the database or computing bcrypt; see
+// authGuard. Overload and cooldown use the same challenge as bad credentials.
+// Actual credential failures are logged for tools such as fail2ban; admission
+// refusals are not logged individually, to avoid turning a flood into log I/O.
 func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			peer := authPeerKey(r.RemoteAddr)
+			if !a.guard.begin(peer, time.Now()) {
+				a.challenge(w)
+				return
+			}
 			username, password, given := r.BasicAuth()
-			state, ok, err := a.check(r.Context(), username, password)
+			state, ok, err := func() (state authState, ok bool, err error) {
+				// Release before serving the route, including on panic.
+				defer func() {
+					result := authUnchecked
+					if err == nil && state == authRequired && !isPreflight(r) {
+						result = authFailed
+						if given && ok {
+							result = authSucceeded
+						}
+					}
+					a.guard.finish(peer, result, time.Now())
+				}()
+				return a.check(r.Context(), username, password, isPreflight(r))
+			}()
 
 			// A browser never puts credentials on a preflight — the CORS
 			// specification forbids it — so requiring them here would refuse
@@ -202,13 +229,17 @@ func (a *authenticator) Middleware(logger *log.Logger) func(http.Handler) http.H
 			case !given || !ok:
 				logger.Printf("authentication failed: %s %s from %s",
 					r.Method, r.URL.Path, r.RemoteAddr)
-				w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=%q", a.realm))
-				writeAuthError(w, http.StatusUnauthorized, "unauthorized")
+				a.challenge(w)
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(auth.ContextWithUsername(r.Context(), username)))
 		})
 	}
+}
+
+func (a *authenticator) challenge(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=%q", a.realm))
+	writeAuthError(w, http.StatusUnauthorized, "unauthorized")
 }
 
 // isPreflight recognises a CORS preflight: an OPTIONS request asking what a

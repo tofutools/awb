@@ -324,6 +324,19 @@ Adding the first password enables Basic Authentication on the next request.
 Removing the last leaves the server locked instead of falling open. Direct
 access is the recovery path.
 
+Authentication admits at most four concurrent database/password checks, with
+no waiting queue. Eight failed checks from one socket peer IP within a second
+trigger a one-second cooldown; rejected requests do not extend it and a
+successful check clears failures. At most 1024 peers are retained; when full,
+new peers are refused until an entry expires. Admission refusals use the same
+401 challenge as invalid credentials and do not generate per-request logs.
+These limits also apply before the database can identify an open or locked
+server. They bound authentication work, not all HTTP connections or route work.
+Forwarded-address headers are ignored: users behind the same reverse proxy or
+NAT share the peer limit. A reverse proxy should additionally limit requests
+using its own trusted client-address configuration. Sustained traffic can
+still occupy all admission slots; the guard does not guarantee fair service.
+
 Workspace access is either regular or admin. Regular members work with issues;
 admins also manage membership. Account-wide workspace administrators manage
 workspace entities and implicitly administer all of them. User administrators
