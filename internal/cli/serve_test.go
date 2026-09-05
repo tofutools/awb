@@ -323,6 +323,9 @@ func TestEveryEmbeddedAssetIsReachable(t *testing.T) {
 		}
 		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
 		assert.NotEmpty(t, body, path)
+		if path == "manifest.json" {
+			assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+		}
 		return nil
 	}))
 	assert.NotZero(t, assets, "the frontend is not embedded")
