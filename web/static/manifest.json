@@ -1,5 +1,4 @@
 {
-  "id": ".",
   "name": "Agent Work Board",
   "short_name": "AWB",
   "description": "Track and coordinate work from the same shared issue board as AWB's CLI.",

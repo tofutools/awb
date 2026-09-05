@@ -19,11 +19,11 @@ func TestMobileWebAppManifest(t *testing.T) {
 	body, err := fs.ReadFile(static, "manifest.json")
 	require.NoError(t, err)
 	var manifest struct {
-		Name     string `json:"name"`
-		ID       string `json:"id"`
-		StartURL string `json:"start_url"`
-		Scope    string `json:"scope"`
-		Display  string `json:"display"`
+		Name     string  `json:"name"`
+		ID       *string `json:"id"`
+		StartURL string  `json:"start_url"`
+		Scope    string  `json:"scope"`
+		Display  string  `json:"display"`
 		Icons    []struct {
 			Source string `json:"src"`
 			Sizes  string `json:"sizes"`
@@ -32,7 +32,9 @@ func TestMobileWebAppManifest(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(body, &manifest))
 	assert.Equal(t, "Agent Work Board", manifest.Name)
-	assert.Equal(t, ".", manifest.ID)
+	// An omitted id defaults to the processed start URL. A relative id would
+	// instead resolve from the origin and collapse distinct base-path installs.
+	assert.Nil(t, manifest.ID)
 	assert.Equal(t, ".", manifest.StartURL)
 	assert.Equal(t, ".", manifest.Scope)
 	assert.Equal(t, "standalone", manifest.Display)
