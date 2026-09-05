@@ -50,6 +50,7 @@ pkgver() { node -p "require('$VENDOR_DIR/node_modules/$1/package.json').version"
 CODEMIRROR_VER="$(pkgver @codemirror/view)"
 MARKDOWNIT_VER="$(pkgver markdown-it)"
 DOMPURIFY_VER="$(pkgver dompurify)"
+PREACT_VER="$(pkgver preact)"
 
 # The symbol surface of each bundle. Keep these minimal: what is exported here
 # is what ends up in the shipped file, and the matching web/ts/vendor/*.d.ts is
@@ -87,6 +88,21 @@ import DOMPurify from "dompurify";
 export default DOMPurify;
 EOF
 
+# One bundle owns the runtime, hooks and JSX entry points so there is only
+# one Preact options object and component scheduler in the browser.
+cat > "$WORK_DIR/preact-entry.mjs" <<'EOF'
+export * from "preact";
+export * from "preact/hooks";
+export { jsx, jsxs, jsxDEV } from "preact/jsx-runtime";
+EOF
+
+# Keep upstream declarations with the committed runtime. Normal builds never
+# need node_modules; these files are covered by preact-LICENSE.txt.
+mkdir -p "$VENDOR_DIR/preact"
+cp node_modules/preact/src/index.d.ts node_modules/preact/src/jsx.d.ts node_modules/preact/src/dom.d.ts "$VENDOR_DIR/preact/"
+sed "s|'preact'|'./index'|g" node_modules/preact/hooks/src/index.d.ts > "$VENDOR_DIR/preact/hooks.d.ts"
+sed "s|../../src/jsx|./jsx|g" node_modules/preact/jsx-runtime/src/index.d.ts > "$VENDOR_DIR/preact/jsx-runtime.d.ts"
+
 # The entry files live in $WORK_DIR, so esbuild's upward search for node_modules
 # never reaches the install tree in this directory. Point it there explicitly.
 export NODE_PATH="$VENDOR_DIR/node_modules"
@@ -95,7 +111,7 @@ mkdir -p "$OUT_DIR"
 
 # Drop the previously vendored bundles, whatever they were stamped with, so a
 # superseded version cannot linger in the tree next to its replacement.
-rm -f "$OUT_DIR"/{codemirror,markdown-it,dompurify}-*.js
+rm -f "$OUT_DIR"/{codemirror,markdown-it,dompurify,preact}-*.js
 
 # bundle NAME VERSION — build one ESM bundle and write the LICENSE and
 # PROVENANCE that go with it.
@@ -123,6 +139,7 @@ bundle() {
 bundle codemirror  "$CODEMIRROR_VER"
 bundle markdown-it "$MARKDOWNIT_VER"
 bundle dompurify   "$DOMPURIFY_VER"
+bundle preact      "$PREACT_VER"
 
 # The import map is the one place the version-stamped filenames are referenced
 # by name, so rewrite it here rather than leaving a bump half-applied. The
@@ -131,7 +148,10 @@ bundle dompurify   "$DOMPURIFY_VER"
 node "$VENDOR_DIR/gen-importmap.mjs" "$INDEX_HTML" \
   "codemirror=./vendor/codemirror-$CODEMIRROR_VER.js" \
   "markdown-it=./vendor/markdown-it-$MARKDOWNIT_VER.js" \
-  "dompurify=./vendor/dompurify-$DOMPURIFY_VER.js"
+  "dompurify=./vendor/dompurify-$DOMPURIFY_VER.js" \
+  "preact=./vendor/preact-$PREACT_VER.js" \
+  "preact/hooks=./vendor/preact-$PREACT_VER.js" \
+  "preact/jsx-runtime=./vendor/preact-$PREACT_VER.js"
 
 cat <<EOF
 
@@ -139,6 +159,7 @@ Wrote to web/static/vendor/:
   codemirror-$CODEMIRROR_VER.js
   markdown-it-$MARKDOWNIT_VER.js
   dompurify-$DOMPURIFY_VER.js
+  preact-$PREACT_VER.js
 plus each one's -LICENSE.txt and -PROVENANCE.txt, and the import map in
 web/static/index.html. Run ./build.sh, then commit.
 EOF

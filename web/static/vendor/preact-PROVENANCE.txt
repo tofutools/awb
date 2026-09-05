@@ -1,0 +1,6 @@
+The preact-10.29.8.js ESM bundle was built by web/ts/vendor/rebuild.sh with
+esbuild, from these npm packages:
+
+preact 10.29.8
+
+Their license texts are in preact-LICENSE.txt.
