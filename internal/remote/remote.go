@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,16 +51,42 @@ type Backend struct {
 }
 
 // New builds a client for the server at base, which may carry a path that the
-// API paths hang under.
-func New(base *url.URL, user, password, identity string) *Backend {
+// API paths hang under. insecureTransport is the explicit invocation-scoped
+// permission to carry Basic credentials over non-loopback HTTP, including a
+// redirect hop that was not visible in the configured base URL.
+func New(base *url.URL, user, password, identity string, insecureTransport bool) *Backend {
 	return &Backend{
 		base:     base,
 		user:     user,
 		password: password,
 		identity: identity,
-		client:   &http.Client{Timeout: requestTimeout},
+		client: &http.Client{
+			Timeout:       requestTimeout,
+			CheckRedirect: redirectPolicy(insecureTransport),
+		},
 
-		contentClient: &http.Client{Timeout: contentTimeout},
+		contentClient: &http.Client{
+			Timeout:       contentTimeout,
+			CheckRedirect: redirectPolicy(insecureTransport),
+		},
+	}
+}
+
+// redirectPolicy preserves net/http's ten-hop limit and adds the transport
+// boundary that its default policy lacks: Go may copy Authorization to a
+// same-host redirect even when HTTPS downgrades to HTTP.
+func redirectPolicy(insecureTransport bool) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if insecureTransport || req.Header.Get("Authorization") == "" ||
+			req.URL.Scheme != "http" || domain.IsLoopbackHost(req.URL.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf(
+			"refusing redirect with Basic credentials to %s over cleartext HTTP; "+
+				"pass --insecure-transport to accept credential exposure", req.URL.Host)
 	}
 }
 

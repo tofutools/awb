@@ -37,7 +37,7 @@ func TestRemoteWorkspaceLifecycleParity(t *testing.T) {
 	t.Cleanup(server.Close)
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "operator")
+	client := remote.New(base, "", "", "operator", false)
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
 	workspace, err := client.ArchiveWorkspace(t.Context(), "awb", `"v1"`)

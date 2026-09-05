@@ -155,7 +155,9 @@ awb serve --proxy-to https://example.com/awb/
 
 Only `/api/` requests are proxied. Authentication challenges pass through, and
 local browser writes still have to satisfy cross-site request checks. The
-default loopback binding keeps this development proxy local.
+default loopback binding keeps this development proxy local. Because the proxy
+forwards Basic credentials, both its browser-facing listener and its upstream
+connection enforce the same transport boundary as the server and remote CLI.
 
 ## Backups and copies
 

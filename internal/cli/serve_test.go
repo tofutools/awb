@@ -592,11 +592,33 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 }
 
 func TestProxyRequiresSecureTransportBeforeForwardingCredentials(t *testing.T) {
-	assert.NoError(t, serveOptions{port: 7777, proxyTo: "http://127.0.0.1:7777"}.validate())
-	assert.NoError(t, serveOptions{port: 7777, proxyTo: "https://example.com/awb/"}.validate())
-	assert.Error(t, serveOptions{port: 7777, proxyTo: "http://example.com/awb/"}.validate())
 	assert.NoError(t, serveOptions{
-		port: 7777, proxyTo: "http://example.com/awb/", insecureTransport: true,
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://127.0.0.1:7777",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "https://example.com/awb/",
+	}.validate())
+	assert.Error(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://example.com/awb/",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://example.com/awb/",
+		insecureTransport: true,
+	}.validate())
+
+	assert.Error(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+	}.validate(), "the browser-to-proxy hop also carries the credentials")
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/", https: true,
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+		publicURL: "https://ui.example.com/",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+		insecureTransport: true,
 	}.validate())
 }
 
@@ -1047,7 +1069,7 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "mikael")
+	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	before := totalAlloc()
@@ -1167,7 +1189,7 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 
 	base, err := url.Parse(server.URL + "/awb")
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "mikael")
+	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	for _, name := range []string{

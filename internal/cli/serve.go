@@ -124,6 +124,14 @@ func (o serveOptions) validate() error {
 				"use HTTPS, a loopback URL, or pass --insecure-transport to accept credential exposure",
 			proxyURL.Host)
 	}
+	if proxyURL != nil {
+		if why := o.cleartextCredentialExposure(); why != "" {
+			return awberr.Usagef(
+				"%s, and this UI proxy may forward reusable Basic credentials over its "+
+					"cleartext listener; use a TLS-terminating reverse proxy, bind loopback, or "+
+					"pass --insecure-transport to accept credential exposure", why)
+		}
+	}
 	// --addr used to carry the port too, so an address that looks like
 	// host:port is somebody carrying the old form forward. Refuse it rather
 	// than binding a host named "127.0.0.1:7777". An IPv6 address is full of
@@ -417,7 +425,7 @@ func newServeCommand(e *env) *cobra.Command {
 // runServer.
 func checkAuthentication(opts serveOptions, users userState) error {
 	if !opts.noAuth && (users.any || users.existed) {
-		if why := opts.insecureAuthenticationExposure(); why != "" {
+		if why := opts.cleartextCredentialExposure(); why != "" {
 			return awberr.Usagef(
 				"%s, and this database authenticates with reusable Basic credentials over "+
 					"cleartext HTTP; use a TLS-terminating reverse proxy, bind loopback, or pass "+
@@ -438,10 +446,10 @@ func checkAuthentication(opts serveOptions, users userState) error {
 	return nil
 }
 
-// insecureAuthenticationExposure reports a published cleartext route to a
-// server that uses Basic credentials. --https and an HTTPS public URL are the
-// existing signals that clients reach it through a TLS-terminating proxy.
-func (o serveOptions) insecureAuthenticationExposure() string {
+// cleartextCredentialExposure reports a published cleartext route to a server
+// that receives or forwards Basic credentials. --https and an HTTPS public URL
+// are the existing signals that clients reach it through a TLS proxy.
+func (o serveOptions) cleartextCredentialExposure() string {
 	if o.insecureTransport || o.https {
 		return ""
 	}

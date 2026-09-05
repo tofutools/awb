@@ -295,7 +295,8 @@ func (e *env) backend(ctx context.Context) (backend.Backend, error) {
 	}
 
 	if cfg.Remote() {
-		e.be = remote.New(cfg.RemoteURL, cfg.User, cfg.Password, cfg.Identity)
+		e.be = remote.New(
+			cfg.RemoteURL, cfg.User, cfg.Password, cfg.Identity, cfg.InsecureTransport)
 		return e.be, nil
 	}
 

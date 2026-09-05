@@ -108,6 +108,9 @@ type Config struct {
 	// PasswordSet distinguishes an explicitly configured empty password from
 	// no password setting. The empty value is valid for a server account.
 	PasswordSet bool
+	// InsecureTransport records the invocation-scoped escape hatch after the
+	// remote URL and credentials have been validated together.
+	InsecureTransport bool
 
 	// Identity is the default assignee: what --mine resolves to and what claim
 	// uses without --as. It may be empty, in which case the commands that need
@@ -190,6 +193,7 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 // disclose reusable credentials on the network. Plain HTTP remains useful on
 // loopback, and a remote URL without credentials sends no Authorization header.
 func validateRemoteTransport(cfg *Config, insecureTransport bool) error {
+	cfg.InsecureTransport = insecureTransport
 	if cfg.RemoteURL == nil || cfg.RemoteURL.Scheme != "http" ||
 		domain.IsLoopbackHost(cfg.RemoteURL.Hostname()) || insecureTransport ||
 		(cfg.User == "" && cfg.Password == "") {

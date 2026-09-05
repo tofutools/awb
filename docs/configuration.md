@@ -113,3 +113,5 @@ a non-loopback `http://` URL, where anybody able to observe the connection could
 reuse it. Use HTTPS for a shared server; loopback HTTP remains available for
 local development. `--insecure-transport` accepts the exposure for one explicit
 invocation when a separately protected cleartext connection is unavoidable.
+The same rule is checked again on redirects, so an HTTPS server cannot silently
+downgrade a credential-bearing request to non-loopback HTTP.
