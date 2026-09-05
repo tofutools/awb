@@ -471,12 +471,11 @@ func TestTreeCarriesNoETag(t *testing.T) {
 }
 
 // A tree node is the issue's own document extended with children, so the two
-// endpoints may not disagree about any field of the same issue. toTree copies
-// api.IssueTree field by field — the document says allOf, and ogen flattens
-// that into a struct rather than an embedding — and a field left out of that
-// list is not a decoding error but a zero value on the wire, which is how
-// order and closed_at were once silently dropped from every node.
-func TestTreeNodesCarryEveryIssueField(t *testing.T) {
+// endpoints may not disagree about the same issue. order and closed_at were
+// once dropped from every node, so this reads them back through the real
+// server on an issue that has both — TestToTreeCarriesEveryIssueField is what
+// covers the rest of the shape, one layer down.
+func TestTreeNodesAgreeWithTheIssueEndpoint(t *testing.T) {
 	a := newAPI(t)
 	epic := a.createIssue(`{"workspace":"awb","title":"Epic","type":"epic"}`)
 	child := a.createIssue(`{"workspace":"awb","title":"Child","type":"bug","priority":1,` +

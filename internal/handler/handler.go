@@ -330,7 +330,7 @@ func toIssues(issues []domain.Issue) []api.Issue {
 // that repeats every Issue field rather than embedding one, and a node has to
 // be copied across field by field. A field left out here is not a decoding
 // error, only a zero value on the wire, so what guards the list is
-// TestTreeNodesCarryEveryIssueField rather than the compiler.
+// TestToTreeCarriesEveryIssueField rather than the compiler.
 func toTree(tree *domain.IssueTree) api.IssueTree {
 	issue := toIssue(&tree.Issue)
 	children := make([]api.IssueTree, len(tree.Children))
