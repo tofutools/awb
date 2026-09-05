@@ -49,10 +49,18 @@ import {
   sortState,
   withPage,
   withPageSize,
-  withClosedIssues,
   type SortDirection,
   type SortState,
 } from "./listings.js";
+import {
+  defaultIssueStatuses,
+  hasEmptyStatusSelection,
+  issueStatusLabel,
+  issueStatusVocabulary,
+  selectedIssueStatuses,
+  withIssueStatuses,
+  type IssueStatusValue,
+} from "./status-filter.js";
 import { commentSubmitShortcut, confirmationDecision, issueEditorShortcut } from "./keyboard.js";
 import {
   CommandPalette,
@@ -132,6 +140,7 @@ let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
 let confirmationDialogID = 0;
+let statusFilterID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -1266,17 +1275,91 @@ function listingFilter(
   return bar;
 }
 
-/** includeClosedControl widens an issue listing without losing its filters. */
-function includeClosedControl(route: Route): HTMLElement {
-  const label = element("label", "include-closed-control");
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = route.query.get("include-closed") === "true";
-  input.addEventListener("change", () => {
-    location.hash = routeHref(route, withClosedIssues(route.query, input.checked)).slice(1);
+/** The Issues status picker stages independent choices and applies them as a
+ * repeated backend status filter. Native popover behavior supplies Escape,
+ * outside-click dismissal, and predictable keyboard focus. */
+function issueStatusFilter(route: Route): HTMLElement {
+  const id = `status-filter-${statusFilterID++}`;
+  const control = element("span", "status-filter-control");
+  const trigger = button("", "status-filter-button");
+  trigger.setAttribute("aria-controls", id);
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-haspopup", "dialog");
+  trigger.setAttribute("aria-label", "Choose visible issue statuses");
+
+  const selected = selectedIssueStatuses(route.query);
+  trigger.textContent = `Statuses · ${selected.length} ▾`;
+
+  const popover = element("div", "status-filter-popover");
+  popover.id = id;
+  popover.setAttribute("popover", "auto");
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", "Visible issue statuses");
+  popover.append(element("strong", "status-filter-title", "Visible statuses"));
+
+  const choices = element("div", "status-filter-choices");
+  const inputs = new Map<IssueStatusValue, HTMLInputElement>();
+  for (const status of issueStatusVocabulary) {
+    const option = element("label", "status-filter-option");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = status;
+    input.checked = selected.includes(status);
+    input.dataset.status = status;
+    inputs.set(status, input);
+    option.append(input, document.createTextNode(issueStatusLabel(status)));
+    choices.append(option);
+  }
+
+  const help = element("p", "status-filter-help");
+  help.setAttribute("aria-live", "polite");
+  const updateHelp = (): void => {
+    const count = [...inputs.values()].filter((input) => input.checked).length;
+    help.textContent = count === 0
+      ? "No statuses selected; the list will be empty."
+      : `${count} status${count === 1 ? "" : "es"} selected.`;
+  };
+  for (const input of inputs.values()) input.addEventListener("change", updateHelp);
+  updateHelp();
+
+  const actions = element("div", "status-filter-actions");
+  const reset = button("Reset", "secondary-button");
+  reset.addEventListener("click", () => {
+    for (const [status, input] of inputs) input.checked = defaultIssueStatuses.includes(status);
+    updateHelp();
+    inputs.get(defaultIssueStatuses[0])?.focus();
   });
-  label.append(input, document.createTextNode("Show closed"));
-  return label;
+  const done = button("Done", "primary-button");
+  done.addEventListener("click", () => {
+    const statuses = [...inputs].filter(([, input]) => input.checked).map(([status]) => status);
+    const next = withIssueStatuses(route.query, statuses);
+    popover.hidePopover();
+    const href = routeHref(route, next);
+    if (href === location.hash) return;
+    location.hash = href.slice(1);
+  });
+  actions.append(reset, done);
+  popover.append(choices, help, actions);
+
+  trigger.addEventListener("click", () => {
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    popover.showPopover();
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = popover.getBoundingClientRect();
+    const gap = 6;
+    popover.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+    const below = anchor.bottom + gap;
+    popover.style.top = `${below + bounds.height <= innerHeight - 8 ? below : Math.max(8, anchor.top - bounds.height - gap)}px`;
+    inputs.get(issueStatusVocabulary[0])?.focus();
+  });
+  popover.addEventListener("toggle", () => {
+    trigger.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+  });
+  control.append(trigger, popover);
+  return control;
 }
 
 /** pagination renders links over the backend page. Sorting and selection stay
@@ -1384,7 +1467,7 @@ function issueList(
     "issue",
     total,
     listingActions,
-    kind === "issues" ? includeClosedControl(route) : null,
+    kind === "issues" ? issueStatusFilter(route) : null,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -1396,10 +1479,23 @@ function filtersFrom(query: URLSearchParams): Filters {
   const filters: Filters = {};
   const workspace = query.getAll("workspace");
   if (workspace.length > 0) filters.workspace = workspace;
+  const issueTypes = query.getAll("type").filter((value) =>
+    ["epic", "feature", "bug", "task", "chore"].includes(value));
+  if (issueTypes.length > 0) filters.type = issueTypes as Filters["type"];
+  const priorities = query.getAll("priority")
+    .filter((value) => /^[0-4]$/.test(value))
+    .map(Number);
+  if (priorities.length > 0) filters.priority = priorities as Filters["priority"];
+  const priorityMax = query.get("priority-max");
+  if (priorityMax !== null && /^[0-4]$/.test(priorityMax)) {
+    filters["priority-max"] = Number(priorityMax) as Filters["priority-max"];
+  }
   const label = query.getAll("label");
   if (label.length > 0) filters.label = label;
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
+  const statuses = selectedIssueStatuses(query);
+  if (query.has("status") && statuses.length > 0) filters.status = statuses as Filters["status"];
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
   if (query.get("include-archived") === "true") filters["include-archived"] = true;
   const listingFilter = query.get("filter");
@@ -1504,7 +1600,9 @@ async function viewListing(
 ): Promise<HTMLElement> {
   const filters = filtersFrom(route.query);
 
-  const load = () => kind === "ready"
+  const load = () => kind === "issues" && hasEmptyStatusSelection(route.query)
+    ? Promise.resolve({ rows: [], total: 0 })
+    : kind === "ready"
     ? api.ready(readyFilters(filters), signal)
     : kind === "blocked"
       ? api.blocked(blockedFilters(filters), signal)
@@ -1532,7 +1630,7 @@ async function viewListing(
     route,
     page.rows,
     page.total,
-    emptyFor(kind),
+    kind === "issues" && hasEmptyStatusSelection(route.query) ? "No statuses selected." : emptyFor(kind),
     kind,
     facetBar(
       route,
