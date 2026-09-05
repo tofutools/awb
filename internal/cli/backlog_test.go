@@ -7,6 +7,7 @@ import (
 
 func TestBacklogCLI(t *testing.T) {
 	h := newHarness(t)
+	t.Setenv("AWB_WORKSPACE", "awb")
 	epic := h.create("Future", "--type", "epic", "--backlog")
 	child := h.create("Child", "--has-parent", epic)
 	assert.Contains(t, h.mustRun("list", "--status", "backlog", "--compact"), epic)

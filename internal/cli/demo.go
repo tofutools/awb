@@ -87,147 +87,151 @@ var demoUsers = []struct{ name, fullName string }{
 }
 
 // demoIssues is the demo data set, in creation order.
-var demoIssues = []demoIssue{
-	{key: "future", title: "Plan the next catalogue generation", issueType: domain.TypeEpic, priority: 3, backlog: true},
-	{key: "future-child", title: "Explore catalogue import formats", issueType: domain.TypeTask, priority: 3, hasParent: "future"},
-	{key: "future-grandchild", title: "Collect sample import files", issueType: domain.TypeTask, priority: 3, hasParent: "future-child"},
-	{key: "parked", title: "Explore offline catalogue browsing", issueType: domain.TypeFeature, priority: 3, backlog: true}, {
-		key:       "release",
-		title:     "Ship the 1.0 release of the widget catalogue",
-		issueType: domain.TypeEpic,
-		priority:  0,
-		labels:    []string{"release"},
-		description: "Everything that must be true before the catalogue goes out.\n\n" +
-			"The scope is fixed; see the [release checklist](https://example.com/widgets/checklist)\n" +
-			"for what each item below has to satisfy.\n",
+var demoIssues = []demoIssue{{
+	key:       "release",
+	title:     "Ship the 1.0 release of the widget catalogue",
+	issueType: domain.TypeEpic,
+	priority:  0,
+	labels:    []string{"release"},
+	description: "Everything that must be true before the catalogue goes out.\n\n" +
+		"The scope is fixed; see the [release checklist](https://example.com/widgets/checklist)\n" +
+		"for what each item below has to satisfy.\n",
+}, {
+	key:         "schema",
+	title:       "Design the catalogue database schema",
+	issueType:   domain.TypeTask,
+	priority:    1,
+	labels:      []string{"backend"},
+	assignees:   []string{"alice"},
+	closeReason: "Schema reviewed and migrated",
+	description: "Tables for widgets, tags and the join between them.\n",
+	hasParent:   "release",
+}, {
+	key:         "catalogue",
+	title:       "Browse the widget catalogue",
+	issueType:   domain.TypeFeature,
+	priority:    1,
+	labels:      []string{"catalogue", "frontend"},
+	assignees:   []string{"alice", "bob"},
+	description: "A paged list of widgets, newest first, with a detail page for each.\n",
+	hasParent:   "release",
+	// The blocker is already closed, so this shows a dependency that no longer
+	// holds anything up.
+	blockedBy: []string{"schema"},
+}, {
+	key:         "thumbnails",
+	title:       "Show thumbnails in the catalogue list",
+	issueType:   domain.TypeTask,
+	priority:    3,
+	labels:      []string{"catalogue", "frontend"},
+	assignees:   []string{"carol"},
+	description: "Serve a 96×96 thumbnail per widget and lay the list out around it.\n",
+	// One level below a child of the epic, so the decomposition is two deep.
+	hasParent: "catalogue",
+}, {
+	key:         "index",
+	title:       "Build the full text search index",
+	issueType:   domain.TypeTask,
+	priority:    2,
+	labels:      []string{"backend", "search"},
+	description: "Index widget names and tags, and keep the index up to date on write.\n",
+	hasParent:   "release",
+}, {
+	key:         "search",
+	title:       "Search the catalogue by name and tag",
+	issueType:   domain.TypeFeature,
+	priority:    2,
+	labels:      []string{"catalogue", "frontend", "search"},
+	description: "A single search box over the index, with the tag filters beside it.\n",
+	hasParent:   "release",
+	blockedBy:   []string{"index"},
+	related:     []string{"catalogue"},
+}, {
+	key:         "pagination",
+	title:       "Paginate the catalogue beyond fifty widgets",
+	issueType:   domain.TypeFeature,
+	priority:    3,
+	labels:      []string{"catalogue", "frontend"},
+	description: "Keyset pagination, so the page does not shift as widgets are added.\n",
+	hasParent:   "release",
+	// Two blockers, so the blocked listing has something to show in its column.
+	blockedBy: []string{"index", "search"},
+}, {
+	key:         "empty-crash",
+	title:       "Catalogue page crashes on an empty result set",
+	issueType:   domain.TypeBug,
+	priority:    0,
+	labels:      []string{"catalogue", "frontend"},
+	assignees:   []string{"bob"},
+	description: "Opening the catalogue with every widget filtered out renders a nil row.\n",
+	// Found while working on the feature, which is what discovered-from records.
+	discoveredFrom: []string{"catalogue"},
+	// A bug is where an attachment earns its place: the evidence is a file
+	// rather than something to paste into the description.
+	attachments: []demoAttachment{{
+		name: "stack-trace.txt",
+		content: "panic: runtime error: invalid memory address or nil pointer dereference\n" +
+			"\tcatalogue/render.go:118 renderRow(nil)\n" +
+			"\tcatalogue/render.go:74  renderList\n",
 	}, {
-		key:         "schema",
-		title:       "Design the catalogue database schema",
-		issueType:   domain.TypeTask,
-		priority:    1,
-		labels:      []string{"backend"},
-		assignees:   []string{"alice"},
-		closeReason: "Schema reviewed and migrated",
-		description: "Tables for widgets, tags and the join between them.\n",
-		hasParent:   "release",
-	}, {
-		key:         "catalogue",
-		title:       "Browse the widget catalogue",
-		issueType:   domain.TypeFeature,
-		priority:    1,
-		labels:      []string{"catalogue", "frontend"},
-		assignees:   []string{"alice", "bob"},
-		description: "A paged list of widgets, newest first, with a detail page for each.\n",
-		hasParent:   "release",
-		// The blocker is already closed, so this shows a dependency that no longer
-		// holds anything up.
-		blockedBy: []string{"schema"},
-	}, {
-		key:         "thumbnails",
-		title:       "Show thumbnails in the catalogue list",
-		issueType:   domain.TypeTask,
-		priority:    3,
-		labels:      []string{"catalogue", "frontend"},
-		assignees:   []string{"carol"},
-		description: "Serve a 96×96 thumbnail per widget and lay the list out around it.\n",
-		// One level below a child of the epic, so the decomposition is two deep.
-		hasParent: "catalogue",
-	}, {
-		key:         "index",
-		title:       "Build the full text search index",
-		issueType:   domain.TypeTask,
-		priority:    2,
-		labels:      []string{"backend", "search"},
-		description: "Index widget names and tags, and keep the index up to date on write.\n",
-		hasParent:   "release",
-	}, {
-		key:         "search",
-		title:       "Search the catalogue by name and tag",
-		issueType:   domain.TypeFeature,
-		priority:    2,
-		labels:      []string{"catalogue", "frontend", "search"},
-		description: "A single search box over the index, with the tag filters beside it.\n",
-		hasParent:   "release",
-		blockedBy:   []string{"index"},
-		related:     []string{"catalogue"},
-	}, {
-		key:         "pagination",
-		title:       "Paginate the catalogue beyond fifty widgets",
-		issueType:   domain.TypeFeature,
-		priority:    3,
-		labels:      []string{"catalogue", "frontend"},
-		description: "Keyset pagination, so the page does not shift as widgets are added.\n",
-		hasParent:   "release",
-		// Two blockers, so the blocked listing has something to show in its column.
-		blockedBy: []string{"index", "search"},
-	}, {
-		key:         "empty-crash",
-		title:       "Catalogue page crashes on an empty result set",
-		issueType:   domain.TypeBug,
-		priority:    0,
-		labels:      []string{"catalogue", "frontend"},
-		assignees:   []string{"bob"},
-		description: "Opening the catalogue with every widget filtered out renders a nil row.\n",
-		// Found while working on the feature, which is what discovered-from records.
-		discoveredFrom: []string{"catalogue"},
-		// A bug is where an attachment earns its place: the evidence is a file
-		// rather than something to paste into the description.
-		attachments: []demoAttachment{{
-			name: "stack-trace.txt",
-			content: "panic: runtime error: invalid memory address or nil pointer dereference\n" +
-				"\tcatalogue/render.go:118 renderRow(nil)\n" +
-				"\tcatalogue/render.go:74  renderList\n",
-		}, {
-			name: "steps-to-reproduce.md",
-			content: "# Steps to reproduce\n\n" +
-				"1. Open the catalogue.\n" +
-				"2. Filter by a tag no widget carries.\n" +
-				"3. The page renders an empty row and the server logs the trace above.\n",
-		}},
-	}, {
-		key:       "docs",
-		title:     "Write the operator documentation",
-		issueType: domain.TypeTask,
-		priority:  2,
-		labels:    []string{"docs"},
-		// The one description written as more than a paragraph, so that the Markdown
-		// a terminal and the web UI draw — headings, emphasis, a list, code, links —
-		// has somewhere to be seen.
-		description: "## What the operator needs\n\n" +
-			"How to **install**, configure and *back the service up*, in that order.\n\n" +
-			"- Follow the [documentation style guide](https://example.com/widgets/style).\n" +
-			"- Keep the [configuration reference](https://example.com/widgets/config)\n" +
-			"  generated rather than hand-written.\n" +
-			"- Every example runs as written; `awb demo` is the fixture behind them.\n",
-		hasParent: "release",
-	}, {
-		key:         "test-runner",
-		title:       "Upgrade the test runner to the current major version",
-		issueType:   domain.TypeChore,
-		priority:    4,
-		labels:      []string{"maintenance"},
-		description: "The version in use is two majors behind and no longer gets fixes.\n",
-		related:     []string{"index"},
-	}, {
-		key:         "flaky-import",
-		title:       "Flaky test in the widget import suite",
-		issueType:   domain.TypeBug,
-		priority:    2,
-		labels:      []string{"maintenance", "tests"},
-		closeReason: "The suite depended on map iteration order",
-		description: "Fails about one run in twenty, always in the same assertion.\n",
-		// Found while doing the upgrade, and closed without anybody claiming it.
-		discoveredFrom: []string{"test-runner"},
-	}, {
-		key:         "legacy-importer",
-		title:       "Remove the legacy widget importer",
-		issueType:   domain.TypeChore,
-		priority:    3,
-		labels:      []string{"backend", "cleanup"},
-		description: "Nothing has called it since the new schema landed.\n",
-		// Top-level: not everything belongs to the epic.
-		discoveredFrom: []string{"schema"},
-	}}
+		name: "steps-to-reproduce.md",
+		content: "# Steps to reproduce\n\n" +
+			"1. Open the catalogue.\n" +
+			"2. Filter by a tag no widget carries.\n" +
+			"3. The page renders an empty row and the server logs the trace above.\n",
+	}},
+}, {
+	key:       "docs",
+	title:     "Write the operator documentation",
+	issueType: domain.TypeTask,
+	priority:  2,
+	labels:    []string{"docs"},
+	// The one description written as more than a paragraph, so that the Markdown
+	// a terminal and the web UI draw — headings, emphasis, a list, code, links —
+	// has somewhere to be seen.
+	description: "## What the operator needs\n\n" +
+		"How to **install**, configure and *back the service up*, in that order.\n\n" +
+		"- Follow the [documentation style guide](https://example.com/widgets/style).\n" +
+		"- Keep the [configuration reference](https://example.com/widgets/config)\n" +
+		"  generated rather than hand-written.\n" +
+		"- Every example runs as written; `awb demo` is the fixture behind them.\n",
+	hasParent: "release",
+}, {
+	key:         "test-runner",
+	title:       "Upgrade the test runner to the current major version",
+	issueType:   domain.TypeChore,
+	priority:    4,
+	labels:      []string{"maintenance"},
+	description: "The version in use is two majors behind and no longer gets fixes.\n",
+	related:     []string{"index"},
+}, {
+	key:         "flaky-import",
+	title:       "Flaky test in the widget import suite",
+	issueType:   domain.TypeBug,
+	priority:    2,
+	labels:      []string{"maintenance", "tests"},
+	closeReason: "The suite depended on map iteration order",
+	description: "Fails about one run in twenty, always in the same assertion.\n",
+	// Found while doing the upgrade, and closed without anybody claiming it.
+	discoveredFrom: []string{"test-runner"},
+}, {
+	key:         "legacy-importer",
+	title:       "Remove the legacy widget importer",
+	issueType:   domain.TypeChore,
+	priority:    3,
+	labels:      []string{"backend", "cleanup"},
+	description: "Nothing has called it since the new schema landed.\n",
+	// Top-level: not everything belongs to the epic.
+	discoveredFrom: []string{"schema"},
+}, {
+	key: "future", title: "Plan the next catalogue generation", issueType: domain.TypeEpic, priority: 3, backlog: true,
+}, {
+	key: "future-child", title: "Explore catalogue import formats", issueType: domain.TypeTask, priority: 3, hasParent: "future",
+}, {
+	key: "future-grandchild", title: "Collect sample import files", issueType: domain.TypeTask, priority: 3, hasParent: "future-child",
+}, {
+	key: "parked", title: "Explore offline catalogue browsing", issueType: domain.TypeFeature, priority: 3, backlog: true,
+}}
 
 type demoParams struct {
 	Force bool `long:"force" optional:"true" help:"replace the demo workspace, deleting everything in it"`

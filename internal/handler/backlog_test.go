@@ -40,14 +40,14 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 			active := create("Active", domain.TypeChore, false, "")
 			_, err := be.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "ambiguous", Backlog: true, Assignees: []string{"mikael"}})
 			require.Error(t, err)
-			rows, _, err := be.ListIssues(ctx, &domain.Filter{Statuses: []domain.Status{domain.StatusBacklog}})
+			rows, err := be.ListIssues(ctx, &domain.Filter{Statuses: []domain.Status{domain.StatusBacklog}})
 			require.NoError(t, err)
-			assert.Len(t, rows, 2)
+			assert.Len(t, rows.Issues, 2)
 			ready := func() []string {
-				rows, _, err := be.ListIssues(ctx, &domain.Filter{Statuses: []domain.Status{domain.StatusOpen}, Readiness: domain.ReadinessReady, Unassigned: true})
+				rows, err := be.ListIssues(ctx, &domain.Filter{Statuses: []domain.Status{domain.StatusOpen}, Readiness: domain.ReadinessReady, Unassigned: true})
 				require.NoError(t, err)
 				ids := []string{}
-				for _, i := range rows {
+				for _, i := range rows.Issues {
 					ids = append(ids, i.ID)
 				}
 				return ids
