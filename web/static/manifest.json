@@ -1,0 +1,22 @@
+{
+  "name": "Agent Work Board",
+  "short_name": "AWB",
+  "description": "Track and coordinate work from the same shared issue board as AWB's CLI.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#fbfbfa",
+  "theme_color": "#2f6f5e",
+  "icons": [
+    {
+      "src": "awb-mark-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "awb-mark-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
