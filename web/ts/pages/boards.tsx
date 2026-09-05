@@ -1,0 +1,1147 @@
+import { Fragment } from "preact";
+import { useDragSurface } from "../components/drag.js";
+import { useEffect, useState } from "preact/hooks";
+import {
+  api,
+  type Board,
+  type BoardView,
+  type BoardViewCreate,
+  type BoardFilters,
+  type Issue,
+} from "../api.js";
+import { type Route } from "../routing/route.js";
+import {
+  legalBoardTargets,
+  splitBoardFilter,
+  type BoardStatus,
+} from "../boards.js";
+import {
+  defaultBoardView,
+  effectiveDefaultBoardView,
+  defaultBoardPreferences,
+  saveDefaultBoardPreferences,
+  collapsedBoardLanes,
+  saveCollapsedBoardLanes,
+  hiddenBoardEpicEntries,
+  hiddenBoardEpics,
+  saveHiddenBoardEpics,
+} from "../state/board-preferences.js";
+import {
+  Button,
+  Field,
+  ErrorMessage,
+  Loading,
+  Modal,
+  NameLink,
+  useResource,
+  useMutation,
+  useApp,
+  confirmMutation,
+} from "../components/ui.js";
+import { IssueCreateButton } from "../components/issue-form.js";
+import { IssueBadges } from "../components/issues.js";
+type Lane = Board["lanes"][number];
+type Column = Lane["columns"][number];
+type Drop = {
+  lane: string;
+  status: BoardStatus;
+  before?: string;
+  after?: string;
+};
+const statusLabel = (status: BoardStatus) =>
+  status === "in_progress"
+    ? "In progress"
+    : status[0].toUpperCase() + status.slice(1);
+export function BoardsPage({ route }: { route: Route }) {
+  const { identity } = useApp();
+  const ref = route.path[1] ?? "default";
+  const [laneLimit, setLaneLimit] = useState(10);
+  const [revision, setRevision] = useState(0);
+  const [editor, setEditor] = useState<{
+    source: BoardView;
+    mode: "default" | "edit" | "new" | "duplicate" | "presentation";
+  } | null>(null);
+  const [drag, setDrag] = useState<Issue | null>(null);
+  const [moveError, setMoveError] = useState<{
+    id: string;
+    error: unknown;
+  } | null>(null);
+  const [drop, setDrop] = useState<Drop | null>(null);
+  const mutation = useMutation();
+  const [copied, setCopied] = useState(false);
+  const preferences = defaultBoardPreferences(identity);
+  const filters: BoardFilters = { "lane-limit": laneLimit };
+  if (ref === "default") {
+    const workspaces = route.query.getAll("workspace");
+    Object.assign(filters, {
+      "card-limit": preferences.card_limit,
+      "all-workspaces": preferences.all_workspaces,
+      "all-epics": preferences.all_epics,
+      "include-no-epic": preferences.include_no_epic,
+      "priority-max": preferences.priority_max,
+      "closed-days": preferences.closed_days,
+      "epic-closed-days": preferences.epic_closed_days,
+    });
+    if (workspaces.length) filters.workspace = workspaces;
+    else if (!preferences.all_workspaces)
+      filters.workspace = preferences.workspaces;
+    if (!preferences.all_epics) filters["selected-epic"] = preferences.epics;
+    if (preferences.labels.length) filters.label = preferences.labels;
+    if (preferences.assignees.length) filters.assignee = preferences.assignees;
+  }
+  const hidden = [...hiddenBoardEpics(identity, ref)];
+  if (hidden.length) filters["hidden-epic"] = hidden;
+  const resource = useResource(async () => {
+    const [board, views] = await Promise.all([
+      loadBoardLanes(ref, filters, laneLimit),
+      api.boardViews(),
+    ]);
+    return { board, views };
+  }, [ref, route.query.toString(), laneLimit, revision]);
+  const reload = async () => {
+    await resource.reload();
+  };
+  const move = async (issue: Issue, target: Drop) => {
+    setDrag(null);
+    setDrop(null);
+    setMoveError(null);
+    if (target.before === issue.id || target.after === issue.id) return;
+    if (
+      target.status === "open" &&
+      issue.assignees.length &&
+      !(await confirmMutation(
+        "Move issue to Open?",
+        `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+      ))
+    )
+      return;
+    if (
+      target.status === "closed" &&
+      issue.status !== "closed" &&
+      !(await confirmMutation(
+        "Close issue?",
+        `Close ${issue.id}? This can be reopened later.`,
+        undefined,
+        true,
+      ))
+    )
+      return;
+    await mutation.run(async () => {
+      try {
+        await api.issue(issue.id);
+        await api.moveIssue(issue.id, {
+          status: target.status,
+          epic: target.lane,
+          ...(target.before ? { before: target.before } : {}),
+          ...(target.after ? { after: target.after } : {}),
+        });
+        await reload();
+      } catch (error) {
+        setMoveError({ id: target.before ?? target.after ?? issue.id, error });
+        throw error;
+      }
+    });
+  };
+  const data = resource.data;
+  const saved = data?.board.view;
+  if (saved) filters["card-limit"] = saved.card_limit;
+  const views = data?.views ?? [];
+  return (
+    <div class="board-page">
+      <div class="board-heading">
+        <div>
+          <h1>Boards</h1>
+          <p class="lede">Move work through the existing awb workflow.</p>
+        </div>
+        <div class="board-view-actions">
+          <IssueCreateButton
+            workspace={
+              filters.workspace?.length === 1 ? filters.workspace[0] : undefined
+            }
+            onCreated={reload}
+          />
+          <label>
+            <span>View</span>
+            <select
+              aria-label="Board view"
+              value={ref}
+              onChange={(e) => {
+                location.hash =
+                  e.currentTarget.value === "default"
+                    ? "#/boards"
+                    : `#/boards/${e.currentTarget.value}`;
+              }}
+            >
+              <option value="default">Default board</option>
+              {views.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+              {saved && !views.some((v) => v.id === saved.id) && (
+                <option value={saved.id}>{saved.name}</option>
+              )}
+            </select>
+          </label>
+          {!saved ? (
+            <>
+              <Button
+                onClick={() =>
+                  setEditor({
+                    source: effectiveDefaultBoardView(identity, route),
+                    mode: "new",
+                  })
+                }
+              >
+                Save as view
+              </Button>
+              <Button
+                onClick={() =>
+                  setEditor({
+                    source: defaultBoardView(identity),
+                    mode: "default",
+                  })
+                }
+              >
+                Edit view
+              </Button>
+            </>
+          ) : saved.owner === identity ? (
+            <Button
+              onClick={() =>
+                void mutation.run(async () =>
+                  setEditor({
+                    source: await api.boardView(saved.id),
+                    mode: "edit",
+                  }),
+                )
+              }
+            >
+              Edit view
+            </Button>
+          ) : (
+            <>
+              <Button
+                onClick={() => setEditor({ source: saved, mode: "duplicate" })}
+              >
+                Duplicate
+              </Button>
+              <Button
+                onClick={() =>
+                  setEditor({ source: saved, mode: "presentation" })
+                }
+              >
+                View settings
+              </Button>
+            </>
+          )}
+          {saved?.shared && (
+            <Button
+              class="primary-button"
+              onClick={() =>
+                void mutation.run(async () => {
+                  if (!navigator.clipboard)
+                    throw new Error("Copy is unavailable in this browser.");
+                  await navigator.clipboard.writeText(location.href);
+                  setCopied(true);
+                })
+              }
+            >
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+          )}
+        </div>
+      </div>
+      <ErrorMessage error={resource.error ?? mutation.error} />
+      {data ? (
+        <>
+          {saved && (
+            <section class="board-summary">
+              <div>
+                <strong>{saved.name}</strong>
+                <span>
+                  {saved.shared ? "Shared" : "Private"} · owned by @
+                  {saved.owner}
+                </span>
+              </div>
+              <div class="board-filter-chips">
+                <span>
+                  {saved.all_workspaces
+                    ? "All workspaces"
+                    : `${saved.workspaces.length} workspaces`}
+                </span>
+                <span>
+                  {saved.all_epics
+                    ? "All epic lanes"
+                    : `${saved.epics.length + (saved.include_no_epic ? 1 : 0)} lane selections`}
+                </span>
+                {saved.labels.map((l) => (
+                  <span key={l}>#{l}</span>
+                ))}
+                {saved.assignees.map((a) => (
+                  <span key={a}>@{a}</span>
+                ))}
+                <span>P0–P{saved.priority_max}</span>
+                <span>{saved.card_limit} cards per column</span>
+                <span>Closed cards: {saved.closed_days} days</span>
+                <span>Closed epics: {saved.epic_closed_days} days</span>
+              </div>
+            </section>
+          )}
+          <p
+            class={`board-scope-note ${data.board.workspaces_omitted ? "warning" : ""}`}
+          >
+            {data.board.workspaces_omitted
+              ? "Some workspaces are archived or hidden by your access or ignored-workspace settings."
+              : `Workspace access and ignored-workspace settings apply. Each epic/status column loads up to ${filters["card-limit"]} cards independently.`}
+          </p>
+          <div class="board-lanes">
+            {data.board.lanes.map((lane) => (
+              <BoardLane
+                key={lane.epic?.id ?? "no-epic"}
+                lane={lane}
+                boardRef={ref}
+                filters={filters}
+                reload={reload}
+                hide={() => {
+                  const next = hiddenBoardEpics(identity, ref);
+                  next.add(lane.epic!.id);
+                  saveHiddenBoardEpics(identity, ref, next, lane.epic);
+                  setRevision(revision + 1);
+                }}
+                drag={drag}
+                setDrag={setDrag}
+                drop={drop}
+                setDrop={setDrop}
+                move={move}
+                moveError={moveError}
+              />
+            ))}
+            {data.board.lane_total === 0 && (
+              <p class="empty">No epic lanes match this view.</p>
+            )}
+          </div>
+          {data.board.lanes.length < data.board.lane_total && (
+            <Button
+              class="secondary-button board-lanes-more"
+              onClick={() => setLaneLimit(laneLimit + 10)}
+            >
+              Load up to 10 more epics · {data.board.lanes.length} of{" "}
+              {data.board.lane_total}
+            </Button>
+          )}
+        </>
+      ) : (
+        !resource.error && <Loading />
+      )}
+      {editor && (
+        <BoardEditor
+          source={editor.source}
+          mode={editor.mode}
+          onClose={() => setEditor(null)}
+          onSaved={async () => {
+            setRevision(revision + 1);
+            setEditor(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+interface LaneProps {
+  moveError: { id: string; error: unknown } | null;
+  lane: Lane;
+  boardRef: string;
+  filters: BoardFilters;
+  reload: () => Promise<void>;
+  hide: () => void;
+  drag: Issue | null;
+  setDrag: (i: Issue | null) => void;
+  drop: Drop | null;
+  setDrop: (d: Drop | null) => void;
+  move: (issue: Issue, target: Drop) => Promise<void>;
+}
+function BoardLane(props: LaneProps) {
+  const { lane, boardRef, hide } = props;
+  const key = lane.epic?.id ?? "no-epic";
+  const label = lane.epic?.title ?? "No epic";
+  const [collapsed, setCollapsed] = useState(() =>
+    collapsedBoardLanes(boardRef).has(key),
+  );
+  const total = lane.columns.reduce((sum, c) => sum + c.total, 0);
+  return (
+    <section
+      class={`board-lane ${collapsed ? "collapsed" : ""}`}
+      aria-labelledby={`board-lane-${key}`}
+    >
+      <header class="board-lane-heading">
+        <div class="board-lane-name">
+          <h2 id={`board-lane-${key}`}>
+            {lane.epic ? (
+              <a href={`#/issues/${lane.epic.id}`}>
+                <code>{lane.epic.workspace}</code> {lane.epic.title}
+              </a>
+            ) : (
+              "No epic"
+            )}
+          </h2>
+        </div>
+        <div class="board-lane-meta">
+          <span class="board-lane-total">
+            {total} issue{total === 1 ? "" : "s"}
+          </span>
+          {lane.epic && (
+            <Button
+              class="secondary-button board-lane-hide"
+              aria-label={`Hide ${lane.epic.id} from this view`}
+              onClick={hide}
+            >
+              Hide
+            </Button>
+          )}
+          <Button
+            class="secondary-button board-lane-toggle"
+            aria-controls={`board-lane-columns-${key}`}
+            aria-expanded={!collapsed}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${label} swimlane`}
+            onClick={() => {
+              const next = collapsedBoardLanes(boardRef);
+              if (collapsed) next.delete(key);
+              else next.add(key);
+              saveCollapsedBoardLanes(boardRef, next);
+              setCollapsed(!collapsed);
+            }}
+          >
+            {collapsed ? "▸ Expand" : "▾ Collapse"}
+          </Button>
+        </div>
+      </header>
+      <div
+        class="board-columns"
+        id={`board-lane-columns-${key}`}
+        hidden={collapsed}
+      >
+        {lane.columns.map((column) => (
+          <BoardColumn key={column.status} {...props} column={column} />
+        ))}
+      </div>
+    </section>
+  );
+}
+function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
+  const {
+    lane,
+    boardRef,
+    filters,
+    reload,
+    drag,
+    setDrag,
+    drop,
+    setDrop,
+    move,
+  } = props;
+  const epic = lane.epic?.id ?? "";
+  const key = epic || "no-epic";
+  const surface = useDragSurface();
+  const pageSize = filters["card-limit"] ?? 8;
+  const [limit, setLimit] = useState(pageSize);
+  const [extra, setExtra] = useState<Column>();
+  const mutation = useMutation();
+  useEffect(() => {
+    let alive = true;
+    if (limit <= pageSize) {
+      setExtra(undefined);
+      return;
+    }
+    void loadBoardCards(
+      boardRef,
+      {
+        ...filters,
+        epic: epic || "none",
+        status: column.status,
+        "lane-limit": 1,
+        "card-limit": pageSize,
+      },
+      limit,
+    )
+      .then((page) => {
+        if (alive) setExtra(page.lanes[0]?.columns[0]);
+      })
+      .catch((error) => {
+        if (alive)
+          void mutation.run(async () => {
+            throw error;
+          });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [limit, column]);
+  const current = extra ?? column;
+  const legal =
+    drag &&
+    (!lane.epic || drag.workspace === lane.epic.workspace) &&
+    legalBoardTargets().includes(column.status);
+  const target =
+    drop?.lane === epic && drop.status === column.status ? drop : null;
+  const card = (issue: Issue) => (
+    <article
+      key={issue.id}
+      data-issue={issue.id}
+      class={`board-card ${issue.status === "closed" ? "closed" : ""} ${drag?.id === issue.id ? "dragging" : ""} ${target?.before === issue.id ? "drop-before" : ""} ${target?.after === issue.id ? "drop-after" : ""}`}
+      {...surface}
+      onDragStart={(e) => {
+        setDrag(issue);
+        e.dataTransfer?.setData("text/plain", issue.id);
+      }}
+      onDragEnd={() => {
+        setDrag(null);
+        setDrop(null);
+      }}
+      onDragOver={(e) => {
+        if (
+          legal &&
+          drag.id !== issue.id &&
+          drag.workspace === issue.workspace
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          const bounds = e.currentTarget.getBoundingClientRect();
+          setDrop({
+            lane: epic,
+            status: column.status,
+            ...(e.clientY >= bounds.top + bounds.height / 2
+              ? { after: issue.id }
+              : { before: issue.id }),
+          });
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (drag)
+          void move(
+            drag,
+            target ?? { lane: epic, status: column.status, before: issue.id },
+          );
+      }}
+    >
+      <div class="board-card-top">
+        <NameLink
+          href={`#/issues/${issue.id}`}
+          id={issue.id}
+          title={issue.title}
+        />
+      </div>
+      <IssueBadges issue={issue} />
+      {props.moveError?.id === issue.id && (
+        <ErrorMessage error={props.moveError.error} />
+      )}
+    </article>
+  );
+  return (
+    <section
+      class={`board-column ${target ? "drop-target" : ""} ${target && !target.before && !target.after ? "drop-empty" : ""}`}
+      data-status={column.status}
+      aria-labelledby={`board-column-${key}-${column.status}`}
+      onDragOver={(e) => {
+        if (!legal) return;
+        e.preventDefault();
+        const candidates = Array.from(
+          e.currentTarget.querySelectorAll<HTMLElement>(".board-card"),
+        ).filter((c) => c.dataset.issue !== drag.id);
+        const next = candidates.find((c) => {
+          const b = c.getBoundingClientRect();
+          return e.clientY < b.top + b.height / 2;
+        });
+        const last = candidates.at(-1);
+        setDrop({
+          lane: epic,
+          status: column.status,
+          ...(next
+            ? { before: next.dataset.issue }
+            : last
+              ? { after: last.dataset.issue }
+              : {}),
+        });
+      }}
+      onDragLeave={(e) => {
+        if (
+          !(e.relatedTarget instanceof Node) ||
+          !e.currentTarget.contains(e.relatedTarget)
+        )
+          setDrop(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (drag)
+          void move(drag, target ?? { lane: epic, status: column.status });
+      }}
+    >
+      <header>
+        <h3 id={`board-column-${key}-${column.status}`}>
+          {statusLabel(column.status)}
+        </h3>
+        <div class="board-column-actions">
+          <span class="board-column-count">{current.total}</span>
+          {column.status !== "closed" && (
+            <IssueCreateButton
+              label="+"
+              ariaLabel={`Create ${statusLabel(column.status).toLowerCase()} issue in ${lane.epic?.title ?? "No epic"}`}
+              className="board-column-create"
+              workspace={
+                lane.epic?.workspace ??
+                (filters.workspace?.length === 1
+                  ? filters.workspace[0]
+                  : undefined)
+              }
+              epic={lane.epic}
+              assignToMe={column.status === "in_progress"}
+              onCreated={reload}
+            />
+          )}
+        </div>
+      </header>
+      <div class="board-cards">
+        {current.issues.map((issue) => (
+          <Fragment key={issue.id}>
+            {target?.before === issue.id && (
+              <div class="board-drop-indicator" aria-hidden="true" />
+            )}
+            {card(issue)}
+            {target?.after === issue.id && (
+              <div class="board-drop-indicator" aria-hidden="true" />
+            )}
+          </Fragment>
+        ))}
+        {current.total === 0 && (
+          <>
+            <p class="board-column-empty">No issues.</p>
+            {target && <div class="board-drop-indicator" aria-hidden="true" />}
+          </>
+        )}
+      </div>
+      <ErrorMessage error={mutation.error} />
+      {current.issues.length < current.total && (
+        <Button
+          class="secondary-button board-column-more"
+          onClick={() => setLimit(limit + pageSize)}
+        >
+          Load {Math.min(pageSize, current.total - current.issues.length)} more
+          · {current.issues.length} of {current.total}
+        </Button>
+      )}
+    </section>
+  );
+}
+function BoardEditor({
+  source,
+  mode,
+  onClose,
+  onSaved,
+}: {
+  source: BoardView;
+  mode: "default" | "edit" | "new" | "duplicate" | "presentation";
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const { identity } = useApp();
+  const mutation = useMutation();
+  const editDefault = mode === "default";
+  const presentation = mode === "presentation";
+  const resource = useResource(async () => {
+    const [preferences, epics] = await Promise.all([
+      api.workspacePreferences().catch(async () =>
+        (await api.workspaces()).rows.map((workspace) => ({
+          workspace,
+          ignored: false,
+        })),
+      ),
+      api.issues({ type: ["epic"], "include-closed": true }),
+    ]);
+    return { preferences, epics: epics.rows };
+  }, []);
+  const [priority, setPriority] = useState(source.priority_max);
+  const [allWorkspaces, setAllWorkspaces] = useState(source.all_workspaces);
+  const [workspaces, setWorkspaces] = useState(source.workspaces);
+  const [allEpics, setAllEpics] = useState(source.all_epics);
+  const [epics, setEpics] = useState(source.epics);
+  const [noEpic, setNoEpic] = useState(source.include_no_epic);
+  const [query, setQuery] = useState("");
+  const hiddenEntries = hiddenBoardEpicEntries(identity, source.id);
+  const [hidden, setHidden] = useState(hiddenEntries.map((e) => e.id));
+  const toggle = (values: string[], value: string) =>
+    values.includes(value)
+      ? values.filter((v) => v !== value)
+      : [...values, value];
+  const title = editDefault
+    ? "Edit default board"
+    : presentation
+      ? "View settings"
+      : mode === "new"
+        ? "Save board view"
+        : mode === "duplicate"
+          ? "Duplicate board view"
+          : "Edit board view";
+  const hiddenEditor = (
+    <div class="board-hidden-epics">
+      <h3>Hidden epic lanes</h3>
+      <p class="board-view-help">
+        Uncheck a lane to show it again in this view and browser.
+      </p>
+      {hiddenEntries.length ? (
+        <div class="board-view-choices">
+          {hiddenEntries.map((entry) => (
+            <label class="board-view-choice" key={entry.id}>
+              <input
+                type="checkbox"
+                checked={hidden.includes(entry.id)}
+                aria-label={`Hide ${entry.id} in this view`}
+                onChange={() => setHidden(toggle(hidden, entry.id))}
+              />
+              <span>
+                <code>{entry.id}</code>
+                <span>{entry.title || "Title not cached"}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <p class="muted">No epic lanes are hidden.</p>
+      )}
+    </div>
+  );
+  const scopeMode = (name: string, all: boolean, set: (v: boolean) => void) => (
+    <div class="board-view-mode">
+      {[true, false].map((value) => (
+        <label key={String(value)}>
+          <input
+            type="radio"
+            name={name}
+            checked={all === value}
+            onChange={() => set(value)}
+          />
+          <span>{value ? "All" : "Selected"}</span>
+        </label>
+      ))}
+    </div>
+  );
+  return (
+    <Modal title={title} className="board-view-dialog" onClose={onClose}>
+      <ErrorMessage error={resource.error} />
+      {resource.data || presentation ? (
+        <form
+          class="board-view-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            void mutation.run(async () => {
+              if (presentation) {
+                saveHiddenBoardEpics(identity, source.id, new Set(hidden));
+                await onSaved();
+                return;
+              }
+              const labels = splitBoardFilter(String(form.get("labels")));
+              const assignees = splitBoardFilter(String(form.get("assignees")));
+              for (const [kind, values] of [
+                ["Label", labels],
+                ["Assignee", assignees],
+              ] as const) {
+                const invalid = values.find(
+                  (value) =>
+                    value.length > 64 || !/^[a-z0-9._/-]+$/.test(value),
+                );
+                if (invalid)
+                  throw new Error(
+                    `${kind} “${invalid}” must use at most 64 lowercase letters, digits, hyphens, underscores, dots, or slashes.`,
+                  );
+              }
+              if (!allEpics && !epics.length && !noEpic)
+                throw new Error(
+                  "Select at least one epic lane or include No epic.",
+                );
+              const body: BoardViewCreate = {
+                name: editDefault ? source.name : String(form.get("name")),
+                shared: form.has("shared"),
+                all_workspaces: allWorkspaces,
+                workspaces: allWorkspaces ? [] : [...workspaces].sort(),
+                all_epics: allEpics,
+                epics: allEpics ? [] : [...epics].sort(),
+                include_no_epic: noEpic,
+                labels,
+                assignees,
+                priority_max: Number(form.get("priority")),
+                card_limit: Number(form.get("card-limit")),
+                closed_days: Number(form.get("closed-days")),
+                epic_closed_days: Number(form.get("epic-closed-days")),
+              };
+              if (editDefault) {
+                saveDefaultBoardPreferences(identity, { ...source, ...body });
+                saveHiddenBoardEpics(identity, "default", new Set(hidden));
+                await onSaved();
+                return;
+              }
+              const saved =
+                mode === "edit"
+                  ? await api.updateBoardView(source.id, body)
+                  : await api.createBoardView(body);
+              saveHiddenBoardEpics(identity, saved.id, new Set(hidden));
+              await onSaved();
+              location.hash = `#/boards/${saved.id}`;
+            });
+          }}
+        >
+          <header class="board-view-dialog-header">
+            <p class="muted">
+              {editDefault || presentation
+                ? "These settings apply only to you in this browser."
+                : "Keep this board scope and its filters for later."}
+            </p>
+          </header>
+          {!presentation && (
+            <>
+              {!editDefault && (
+                <section class="board-view-section">
+                  <h3>Basics</h3>
+                  <Field label="Name">
+                    <input
+                      name="name"
+                      required
+                      maxLength={100}
+                      defaultValue={
+                        mode === "new"
+                          ? ""
+                          : `${source.name}${mode === "duplicate" ? " copy" : ""}`
+                      }
+                      autofocus
+                    />
+                  </Field>
+                  <label class="board-view-check">
+                    <input
+                      name="shared"
+                      type="checkbox"
+                      defaultChecked={mode === "edit" && source.shared}
+                    />
+                    <span class="board-view-check-copy">
+                      <span>Anyone with the link can open this view</span>
+                      <span class="board-view-help">
+                        Only issues they already have access to will be shown.
+                      </span>
+                    </span>
+                  </label>
+                </section>
+              )}
+              <section class="board-view-section">
+                <h3>Scope</h3>
+                <div class="board-view-scope-grid">
+                  <article class="board-view-scope-card">
+                    <header>
+                      <div>
+                        <strong>Workspaces</strong>
+                        <span class="board-view-help">
+                          {resource.data!.preferences.length} available
+                        </span>
+                      </div>
+                      {scopeMode(
+                        "board-view-workspace-mode",
+                        allWorkspaces,
+                        setAllWorkspaces,
+                      )}
+                    </header>
+                    <div class="board-view-choices" hidden={allWorkspaces}>
+                      {resource.data!.preferences.map((p) => (
+                        <label class="board-view-choice" key={p.workspace.key}>
+                          <input
+                            type="checkbox"
+                            value={p.workspace.key}
+                            checked={workspaces.includes(p.workspace.key)}
+                            onChange={() => {
+                              const next = toggle(workspaces, p.workspace.key);
+                              setWorkspaces(next);
+                              setEpics(
+                                epics.filter((id) =>
+                                  next.includes(
+                                    id.slice(0, id.lastIndexOf("-")),
+                                  ),
+                                ),
+                              );
+                            }}
+                          />
+                          <span>
+                            <code>{p.workspace.key}</code>
+                            <span>
+                              {p.workspace.name}
+                              {p.ignored ? " (ignored)" : ""}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </article>
+                  <article class="board-view-scope-card">
+                    <header>
+                      <div>
+                        <strong>Epic lanes</strong>
+                        <span class="board-view-help">
+                          Within selected workspaces
+                        </span>
+                      </div>
+                      {scopeMode("board-view-epic-mode", allEpics, setAllEpics)}
+                    </header>
+                    <div class="board-view-epic-picker" hidden={allEpics}>
+                      <input
+                        type="search"
+                        value={query}
+                        onInput={(e) => setQuery(e.currentTarget.value)}
+                        aria-label="Filter epics"
+                        placeholder="Filter epics…"
+                      />
+                      <div class="board-view-choices">
+                        {[
+                          ...resource.data!.epics,
+                          ...source.epics
+                            .filter(
+                              (id) =>
+                                !resource.data!.epics.some((e) => e.id === id),
+                            )
+                            .map((id) => ({
+                              id,
+                              title: "Ignored or unavailable epic",
+                              workspace: id.slice(0, id.lastIndexOf("-")),
+                              status: "open",
+                            })),
+                        ].map((epic) => (
+                          <label
+                            class="board-view-choice"
+                            key={epic.id}
+                            hidden={
+                              (!allWorkspaces &&
+                                !workspaces.includes(epic.workspace)) ||
+                              !`${epic.id} ${epic.title}`
+                                .toLocaleLowerCase()
+                                .includes(query.toLocaleLowerCase())
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              value={epic.id}
+                              checked={epics.includes(epic.id)}
+                              onChange={() => setEpics(toggle(epics, epic.id))}
+                            />
+                            <span>
+                              <code>{epic.id}</code>
+                              <span>
+                                {epic.title}
+                                {epic.status === "closed" ? " (closed)" : ""}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <label class="board-view-check board-view-no-epic">
+                      <input
+                        type="checkbox"
+                        checked={noEpic}
+                        onChange={(e) => setNoEpic(e.currentTarget.checked)}
+                      />
+                      <span class="board-view-check-copy">
+                        <span>No epic</span>
+                        <span class="board-view-help">
+                          Include the lane for unassigned issues.
+                        </span>
+                      </span>
+                    </label>
+                  </article>
+                </div>
+              </section>
+              <section class="board-view-section">
+                <h3>Issue filters</h3>
+                <div class="board-view-filter-grid">
+                  <Field label="Labels (any)">
+                    <input
+                      name="labels"
+                      defaultValue={source.labels.join(", ")}
+                      placeholder="release, frontend"
+                    />
+                  </Field>
+                  <Field label="Assignees (any)">
+                    <input
+                      name="assignees"
+                      defaultValue={source.assignees.join(", ")}
+                      placeholder="alex, sam"
+                    />
+                  </Field>
+                  <Field label="Maximum priority">
+                    <select
+                      name="priority"
+                      value={priority}
+                      onChange={(e) =>
+                        setPriority(Number(e.currentTarget.value))
+                      }
+                    >
+                      {[0, 1, 2, 3, 4].map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div class="board-view-retention-grid">
+                  <Field label="Show closed cards for (days)">
+                    <input
+                      name="closed-days"
+                      type="number"
+                      min={0}
+                      max={3650}
+                      required
+                      defaultValue={source.closed_days}
+                    />
+                    <span class="board-view-help">
+                      Use 0 to hide closed cards immediately.
+                    </span>
+                  </Field>
+                  <Field label="Show closed epic lanes for (days)">
+                    <input
+                      name="epic-closed-days"
+                      type="number"
+                      min={0}
+                      max={3650}
+                      required
+                      defaultValue={source.epic_closed_days}
+                    />
+                    <span class="board-view-help">
+                      Use 0 to hide completed epics immediately.
+                    </span>
+                  </Field>
+                  <Field label="Cards per column">
+                    <input
+                      name="card-limit"
+                      type="number"
+                      min={1}
+                      max={50}
+                      required
+                      defaultValue={source.card_limit}
+                    />
+                    <span class="board-view-help">
+                      Load between 1 and 50 cards in each status column.
+                    </span>
+                  </Field>
+                </div>
+              </section>
+            </>
+          )}
+          {hiddenEditor}
+          <ErrorMessage error={mutation.error} />
+          <footer class="board-view-dialog-actions">
+            {mode === "edit" && source.owner === identity && (
+              <Button
+                class="danger-button board-view-delete"
+                disabled={mutation.busy}
+                onClick={async (e) => {
+                  if (
+                    await confirmMutation(
+                      "Delete board view?",
+                      `Delete “${source.name}”? Issues are not affected.`,
+                      e.currentTarget,
+                      true,
+                    )
+                  )
+                    void mutation.run(async () => {
+                      await api.deleteBoardView(source.id);
+                      onClose();
+                      location.hash = "#/boards";
+                    });
+                }}
+              >
+                Delete view
+              </Button>
+            )}
+            <span class="board-view-selection-summary">
+              {allEpics
+                ? "All epic lanes"
+                : `${epics.length + (noEpic ? 1 : 0)} lane selections configured`}
+            </span>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button
+              type="submit"
+              class="primary-button"
+              disabled={mutation.busy}
+            >
+              {editDefault || presentation
+                ? "Save settings"
+                : mode === "duplicate"
+                  ? "Duplicate"
+                  : mode === "new"
+                    ? "Save view"
+                    : "Save changes"}
+            </Button>
+          </footer>
+        </form>
+      ) : (
+        !resource.error && <Loading />
+      )}
+    </Modal>
+  );
+}
+
+/** Fetch the visible window in bounded pages. The count retained in component
+ * state may exceed the API's per-request maximum of 50. */
+async function loadBoardLanes(
+  ref: string,
+  filters: BoardFilters,
+  count: number,
+): Promise<Board> {
+  const board = await api.board(ref, {
+    ...filters,
+    "lane-limit": Math.min(count, 50),
+    "lane-offset": 0,
+  });
+  const lanes = new Map(
+    board.lanes.map((lane) => [lane.epic?.id ?? "no-epic", lane]),
+  );
+  let offset = board.lanes.length;
+  while (offset < Math.min(count, board.lane_total)) {
+    const page = await api.board(ref, {
+      ...filters,
+      "lane-limit": Math.min(count - offset, 50),
+      "lane-offset": offset,
+    });
+    if (!page.lanes.length) break;
+    offset += page.lanes.length;
+    board.lane_total = page.lane_total;
+    for (const lane of page.lanes) lanes.set(lane.epic?.id ?? "no-epic", lane);
+  }
+  return { ...board, lanes: [...lanes.values()] };
+}
+async function loadBoardCards(
+  ref: string,
+  filters: BoardFilters,
+  count: number,
+): Promise<Board> {
+  const size = Math.min(filters["card-limit"] ?? 8, 50);
+  const board = await api.board(ref, {
+    ...filters,
+    "card-limit": Math.min(count, size),
+    "card-offset": 0,
+  });
+  const column = board.lanes[0]?.columns[0];
+  if (!column) return board;
+  const issues = new Map(column.issues.map((issue) => [issue.id, issue]));
+  let offset = column.issues.length;
+  while (offset < Math.min(count, column.total)) {
+    const page = await api.board(ref, {
+      ...filters,
+      "card-limit": Math.min(count - offset, size),
+      "card-offset": offset,
+    });
+    const next = page.lanes[0]?.columns[0];
+    if (!next || !next.issues.length) break;
+    offset += next.issues.length;
+    column.total = next.total;
+    for (const issue of next.issues) issues.set(issue.id, issue);
+  }
+  column.issues = [...issues.values()];
+  return board;
+}

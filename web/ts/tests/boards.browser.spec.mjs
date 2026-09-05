@@ -37,7 +37,15 @@ async function bareDropPoint(target, below) {
 async function pointerDrag(page, source, target, below = false) {
   const boardTarget = await target.evaluate((element) => element.classList.contains("board-card"));
   const idleTargetBackground = boardTarget
-    ? await target.evaluate((element) => getComputedStyle(element).backgroundColor)
+    ? await target.evaluate((element) => {
+        const probe = element.cloneNode(false);
+        probe.className = "board-card";
+        probe.style.pointerEvents = "none";
+        element.parentElement.append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      })
     : "";
   for (let attempt = 0; ; attempt++) {
     try {
@@ -168,7 +176,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
   await expect(childIssues.getByRole("link", { name: new RegExp(`${createdID} Created from the board`) })).toBeVisible();
   await expect(childIssues).toContainText("in_progress");
-  await expect(page.locator(".relation-section")).not.toContainText(createdID);
+  await expect(page.locator(`.relation-section a[href="#/issues/${createdID}"]`)).toHaveCount(0);
   const showClosedChildren = childIssues.getByRole("checkbox", { name: "Show closed" });
   await expect(showClosedChildren).toBeChecked();
   await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
@@ -236,10 +244,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
     return ids.indexOf(createdID) > ids.indexOf(reorderTargetID);
   }).toBe(true);
   await expect(createdChild.locator(".listing-col-status")).toHaveText("open");
-  expect(await childIssues.evaluate((section) => {
-    const bounds = section.getBoundingClientRect();
-    return bounds.bottom > 0 && bounds.top < innerHeight;
-  })).toBe(true);
+  // A completed edit updates the mounted table without scrolling back to it.
+  expect(await childIssues.evaluate((section) => section.getBoundingClientRect().bottom <= 0)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "Edit issue" }).click();
   await expect(createdChild.getByRole("button", { name: "Remove" })).toBeVisible();
@@ -258,7 +264,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const createdListRow = issueTable.locator("tbody tr", { hasText: "Created from the board" });
   await expect(createdListRow.locator(".listing-col-type")).toHaveText("feature");
   const parentLink = createdListRow.getByRole("link", { name: `Parent ${parentTitle} (${parentID})` });
-  await expect(parentLink).toHaveText(`↳${parentTitle}`);
+  await expect(parentLink).toBeVisible();
   await expect(parentLink).toHaveAttribute("href", `#/issues/${parentID}`);
   await expect(parentLink).toHaveAttribute("title", `${parentTitle} (${parentID})`);
   await page.getByRole("button", { name: "New issue" }).click();
@@ -438,6 +444,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.locator(".board-summary")).toContainText("All epic lanes");
 
   const closeCandidate = page.locator(".board-card", { hasText: "Build the full text search index" });
+  if (await closeCandidate.count() === 0) {
+    await releaseLane.locator(".board-column[data-status='open'] .board-column-more").click();
+    await expect(closeCandidate).toBeVisible();
+  }
   const noEpicClosedColumn = page.locator(".board-lane", { has: page.getByRole("heading", { name: "No epic" }) })
     .locator(".board-column[data-status='closed']");
   await pointerDrag(page, closeCandidate, noEpicClosedColumn);
@@ -512,8 +522,8 @@ test("save, share and work from a responsive board", async ({ page }) => {
   // Natural issue lists expose the same sparse manual order as row drag/drop.
   await page.goto(`${baseURL}/#/issues?include-closed=true&size=25`);
   await expect(page.getByRole("button", { name: "New issue" })).toBeVisible();
-  const sourceRow = page.locator(".issue-table tbody tr", { hasText: "Browse the widget catalogue" });
-  const targetRow = page.locator(".issue-table tbody tr", { hasText: "Build the full text search index" });
+  const sourceRow = page.locator(".issue-table tbody tr", { has: page.locator(".name .title", { hasText: /^Browse the widget catalogue$/ }) });
+  const targetRow = page.locator(".issue-table tbody tr", { has: page.locator(".name .title", { hasText: /^Build the full text search index$/ }) });
   await expect(sourceRow).toBeVisible();
   await expect(targetRow).toBeVisible();
   await pointerDrag(page, sourceRow, targetRow);

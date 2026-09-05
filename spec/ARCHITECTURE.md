@@ -302,10 +302,34 @@ to the backend interface and HTTP concerns such as ETags and total counts.
 
 ### Web UI
 
-The TypeScript frontend calls only the HTTP API. Compiled assets and committed
+The TypeScript frontend uses Preact components written in TSX and calls only
+the HTTP API. Compiled assets and committed
 third-party browser bundles are embedded by the Go binary. It has no privileged
 database path and receives exactly the identity and authorization behavior any
 other client does.
+
+`web/ts/app.tsx` owns the application shell and caller context. `routing/`
+parses the existing hash URLs; page identity follows the path while query
+changes update the same component. `pages/` contains issue, listing, board,
+and administration workflows. `components/` holds shared controls, forms,
+Markdown/editor integration, and issue tables. `state/` holds persisted board
+preferences; the root TypeScript modules hold API access, generated API types,
+and pure supporting rules. The API client stays outside an `api/` directory
+because that URL prefix belongs to the HTTP API.
+
+Components retain their identity while refreshed data updates the virtual DOM.
+Mutation refreshes keep the page, focused controls, and editor drafts mounted;
+there is no partial-page replacement or post-edit scroll restoration. CodeMirror
+owns only its editor leaf and is destroyed on component unmount. Suggestion
+requests and global listeners are cancelled or removed when their component
+leaves the page.
+
+The existing `tsc` pipeline emits JSX through Preact's automatic runtime. One
+committed Preact ESM bundle contains its core, hooks, and JSX runtime so they
+share one scheduler. Upstream declarations, pinned package versions, licenses,
+and provenance accompany the bundle. Only the maintainer vendor rebuild script
+invokes a package manager; normal builds and CI need neither a vendor install
+nor a vendor rebuild.
 
 ## Authentication and authorization
 
