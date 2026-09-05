@@ -18,7 +18,6 @@ import {
   rememberedPageSize,
   rememberPageSize,
   sortState,
-  withClosedIssues,
   withPage,
   withPageSize,
 } from "../../static/listings.js";
@@ -81,15 +80,6 @@ test("sort state accepts known signed keys and otherwise uses the natural order"
   });
 });
 
-test("showing closed issues preserves the rest of the listing route", () => {
-  const query = new URLSearchParams("workspace=awb&label=frontend&sort=-updated&page=3");
-  assert.equal(
-    withClosedIssues(query, true).toString(),
-    "workspace=awb&label=frontend&sort=-updated&include-closed=true",
-  );
-  assert.equal(query.has("include-closed"), false, "the current route is not mutated");
-});
-
 test("backend pagination uses canonical one-based route state", () => {
   assert.equal(pageNumber(new URLSearchParams()), 1);
   assert.equal(pageNumber(new URLSearchParams("page=3")), 3);
@@ -137,11 +127,6 @@ test("pagination ranges are clamped to the unpaged backend total", () => {
   assert.deepEqual(pageWindow(214, 2, 25), { page: 2, pages: 9, first: 26, last: 50 });
   assert.deepEqual(pageWindow(214, 99), { page: 22, pages: 22, first: 211, last: 214 });
   assert.deepEqual(pageWindow(0, 1), { page: 1, pages: 1, first: 0, last: 0 });
-});
-
-test("hiding closed issues restores the default status set", () => {
-  const query = new URLSearchParams("workspace=awb&include-closed=true&filter=docs");
-  assert.equal(withClosedIssues(query, false).toString(), "workspace=awb&filter=docs");
 });
 
 test("sort headers cycle ascending, descending, then natural order", () => {

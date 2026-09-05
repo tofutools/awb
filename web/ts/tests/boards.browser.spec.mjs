@@ -96,6 +96,52 @@ async function columnBackgroundDrag(page, source, column, target) {
   await source.dispatchEvent("dragend", { dataTransfer: transfer });
 }
 
+test("share a responsive multi-status issue filter", async ({ page }) => {
+  test.skip(baseURL === undefined, "set AWB_BROWSER_BASE_URL to a disposable awb serve instance");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseURL}/#/issues?workspace=demo&type=task&priority=2`);
+
+  const trigger = page.getByRole("button", { name: "Choose visible issue statuses" });
+  await expect(trigger).toHaveText("Statuses · 3 ▾");
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "Visible issue statuses" });
+  await expect(picker.getByRole("checkbox", { name: "Backlog" })).toBeChecked();
+  await expect(picker.getByRole("checkbox", { name: "Open" })).toBeChecked();
+  await expect(picker.getByRole("checkbox", { name: "In progress" })).toBeChecked();
+  await expect(picker.getByRole("checkbox", { name: "Closed" })).not.toBeChecked();
+  const bounds = await picker.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+
+  await picker.getByRole("checkbox", { name: "Backlog" }).uncheck();
+  const request = page.waitForRequest((candidate) => {
+    const url = new URL(candidate.url());
+    return url.pathname.endsWith("/api/issues") && url.searchParams.has("status");
+  });
+  await picker.getByRole("button", { name: "Done" }).click();
+  const requested = new URL((await request).url()).searchParams;
+  expect(requested.getAll("status")).toEqual(["open", "in_progress"]);
+  expect(requested.getAll("workspace")).toEqual(["demo"]);
+  expect(requested.getAll("type")).toEqual(["task"]);
+  expect(requested.getAll("priority")).toEqual(["2"]);
+  await expect(page).toHaveURL(/status=open&status=in_progress/);
+
+  await page.reload();
+  await trigger.click();
+  await expect(picker.getByRole("checkbox", { name: "Backlog" })).not.toBeChecked();
+  await picker.getByRole("checkbox", { name: "Open" }).uncheck();
+  await picker.getByRole("checkbox", { name: "In progress" }).uncheck();
+  await picker.getByRole("button", { name: "Done" }).click();
+  await expect(page).toHaveURL(/status=$/);
+  await expect(page.getByText("No statuses selected.")).toBeVisible();
+
+  await trigger.click();
+  await picker.getByRole("button", { name: "Reset" }).click();
+  await picker.getByRole("button", { name: "Done" }).click();
+  await expect(page).not.toHaveURL(/status=/);
+});
+
 test("save, share and work from a responsive board", async ({ page }) => {
   test.skip(baseURL === undefined, "set AWB_BROWSER_BASE_URL to a disposable awb serve instance");
   await page.setViewportSize({ width: 1440, height: 1000 });
