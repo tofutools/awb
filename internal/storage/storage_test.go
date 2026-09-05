@@ -617,6 +617,36 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 	assert.Equal(t, 13, total, "clearing restores the complete result set")
 }
 
+func TestEpicFilterAppliesBeforePagingAndSelectsNoEpic(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	epic := add("Release epic", func(i *domain.Issue) { i.Type = domain.TypeEpic })
+	first := add("first member")
+	second := add("second member")
+	unrelated := add("unrelated")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(first, domain.RelHasParent, epic); err != nil {
+			return err
+		}
+		return tx.InsertRelation(second, domain.RelHasParent, epic)
+	}))
+
+	limit, offset := 1, 1
+	filter := &domain.Filter{Epic: &epic, Limit: &limit, Offset: &offset, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, 2, total, "epic membership is counted before paging")
+	assert.Contains(t, []string{first, second}, issues[0].ID)
+
+	noEpic := ""
+	filter = &domain.Filter{Epic: &noEpic, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	assert.ElementsMatch(t, []string{epic, unrelated}, []string{issues[0].ID, issues[1].ID})
+}
+
 func TestListingFilterMatchesChildrenByParentID(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)

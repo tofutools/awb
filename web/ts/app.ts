@@ -34,11 +34,13 @@ import {
   BackendListingFilter,
   activeListingFamily,
   emptyFacetLabel,
+  epicSelectionFrom,
   lowestFacetGroup,
   listingFilterMaxLength,
   listingParentTitle,
   listingRelationshipRole,
   nextSortValue,
+  noEpicSelection,
   pageNumber,
   pageSizeFrom,
   pageSizes,
@@ -50,6 +52,7 @@ import {
   withPage,
   withPageSize,
   withClosedIssues,
+  withEpicSelection,
   type SortDirection,
   type SortState,
 } from "./listings.js";
@@ -1279,6 +1282,36 @@ function includeClosedControl(route: Route): HTMLElement {
   return label;
 }
 
+/** epicFilterControl offers only epic rows returned through the caller's
+ * current workspace scope. It never resolves a missing URL selection by ID,
+ * so an inaccessible epic cannot disclose its title. */
+function epicFilterControl(route: Route, epics: Issue[]): HTMLElement {
+  const label = element("label", "epic-filter-control", "Epic");
+  const control = document.createElement("select");
+  control.setAttribute("aria-label", "Filter by epic");
+  const selected = epicSelectionFrom(route.query);
+  const option = (value: string, text: string): HTMLOptionElement => {
+    const item = document.createElement("option");
+    item.value = value;
+    item.textContent = text;
+    return item;
+  };
+  control.append(option("", "All"), option(noEpicSelection, "No epic"));
+  for (const epic of epics) control.append(option(epic.id, `${epic.title} (${epic.id})`));
+  if (selected !== null && selected !== noEpicSelection && !epics.some((epic) => epic.id === selected)) {
+    const unavailable = option(selected, "Unavailable epic");
+    unavailable.disabled = true;
+    control.append(unavailable);
+  }
+  control.value = selected ?? "";
+  control.addEventListener("change", () => {
+    const next = control.value === "" ? null : control.value;
+    location.hash = routeHref(route, withEpicSelection(route.query, next)).slice(1);
+  });
+  label.append(control);
+  return label;
+}
+
 /** pagination renders links over the backend page. Sorting and selection stay
  * in the URL, while page one remains the canonical form without ?page=1. */
 function pagination(route: Route, total: number): HTMLElement {
@@ -1348,6 +1381,7 @@ function issueList(
   emptyMessage: string,
   kind: ListingKind,
   facets: HTMLElement | null,
+  epics: Issue[],
 ): HTMLElement {
   const section = element("div", "listing");
   const tableHost = element("div", "listing-host");
@@ -1372,19 +1406,21 @@ function issueList(
     workspace: route.query.getAll("workspace").length === 1 ? route.query.get("workspace") ?? undefined : undefined,
   }));
   if (issues.length === 0) {
-    tableHost.append(element("p", "empty", route.query.get("filter") === null
-      ? emptyMessage : "No issues match this filter."));
+    tableHost.append(element("p", "empty", route.query.get("filter") === null && epicSelectionFrom(route.query) === null
+      ? emptyMessage : "No issues match these filters."));
   } else {
     tableHost.append(issueTable(route, issues, kind, state, defaultKey, defaultDirection));
   }
 
+  const selectionControls = kind === "issues" ? element("div", "listing-selection-controls") : null;
+  if (selectionControls !== null) selectionControls.append(epicFilterControl(route, epics), includeClosedControl(route));
   section.append(listingFilter(
     route,
     `Filter all ${kind}…`,
     "issue",
     total,
     listingActions,
-    kind === "issues" ? includeClosedControl(route) : null,
+    selectionControls,
   ));
   if (facets !== null) section.append(facets);
   section.append(tableHost);
@@ -1404,6 +1440,8 @@ function filtersFrom(query: URLSearchParams): Filters {
   if (query.get("include-archived") === "true") filters["include-archived"] = true;
   const listingFilter = query.get("filter");
   if (listingFilter !== null && listingFilter !== "") filters.filter = listingFilter;
+  const epic = epicSelectionFrom(query);
+  if (epic !== null) filters.epic = epic;
   const sort = query.get("sort");
   const apiSorts: string[] = issueSortKeys.flatMap((key) => [key, `-${key}`]);
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];
@@ -1512,11 +1550,18 @@ async function viewListing(
 
   // Each listing is asked with the filters it accepts. Ready lists only
   // unassigned issues, so there is no assignee menu to offer there either.
-  let [page, workspaces, labels, assignees] = await Promise.all([
+  let [page, workspaces, labels, assignees, epics] = await Promise.all([
     load(),
     api.workspaces(filters["include-archived"] ? { state: "all" } : {}, signal),
     api.labels(kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters), signal),
     kind === "ready" ? Promise.resolve({ rows: [], total: 0 }) : api.assignees(facetFilters(filters), signal),
+    kind === "issues" ? api.issues({
+      type: ["epic"],
+      workspace: filters.workspace,
+      "include-closed": true,
+      ...(filters["include-archived"] ? { "include-archived": true } : {}),
+      sort: "id",
+    }, signal) : Promise.resolve({ rows: [], total: 0 }),
   ]);
   const normalized = normalizePageRoute(route, page.total);
   const size = listingPageSize(route.query);
@@ -1541,6 +1586,7 @@ async function viewListing(
       kind === "ready" ? null : assignees.rows,
       pagination(route, page.total),
     ),
+    epics.rows,
   ));
   return view;
 }

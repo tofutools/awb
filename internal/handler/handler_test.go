@@ -708,6 +708,29 @@ func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	assert.Equal(t, "[]", payload)
 }
 
+func TestEpicListingFilter(t *testing.T) {
+	a := newAPI(t)
+	epic := a.createIssue(`{"workspace":"awb","title":"Release epic","type":"epic"}`)
+	member := a.createIssue(`{"workspace":"awb","title":"member","relations":[{"type":"has-parent","other":"` + epic.ID + `"}]}`)
+	unrelated := a.createIssue(`{"workspace":"awb","title":"unrelated"}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/issues?epic="+epic.ID+"&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+	var issues []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, member.ID, issues[0].ID)
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?epic=none", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	assert.ElementsMatch(t, []string{epic.ID, unrelated.ID}, []string{issues[0].ID, issues[1].ID})
+
+	resp, _ = a.do(http.MethodGet, "/api/issues?epic=not-an-id", "")
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestWorkspacePagingAppliesAfterSorting(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)

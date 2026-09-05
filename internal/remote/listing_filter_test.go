@@ -24,6 +24,9 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		assert.Equal(t, want[r.URL.Path], r.URL.Query().Get("filter"), r.URL.Path)
 		if r.URL.Path == "/api/labels" {
 			assert.Equal(t, "ready", r.URL.Query().Get("readiness"))
+			assert.Equal(t, "none", r.URL.Query().Get("epic"))
+		} else if r.URL.Path == "/api/issues" {
+			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("epic"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Total-Count", "0")
@@ -36,11 +39,13 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	client := remote.New(base, "", "", "operator")
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
-	_, err = client.ListIssues(t.Context(), &domain.Filter{ListingFilter: want["/api/issues"]})
+	epic := "awb-a1b2c3"
+	_, err = client.ListIssues(t.Context(), &domain.Filter{ListingFilter: want["/api/issues"], Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.LabelFacets(t.Context(), &domain.Filter{
 		ListingFilter: want["/api/labels"],
 		Readiness:     domain.ReadinessReady,
+		Epic:          new(string),
 	})
 	require.NoError(t, err)
 	_, err = client.ListWorkspaces(t.Context(), want["/api/workspaces"], domain.DefaultWorkspaceSort, nil, nil)
