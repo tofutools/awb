@@ -12,10 +12,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/goccy/go-yaml"
@@ -207,7 +209,7 @@ func loadUserFile() (*userFile, string, bool, error) {
 		return nil, path, false, err
 	}
 	var cfg userFile
-	found, err := readYAML(path, &cfg)
+	found, err := readUserYAML(path, &cfg)
 	if err != nil {
 		return nil, path, false, err
 	}
@@ -218,6 +220,58 @@ func loadUserFile() (*userFile, string, bool, error) {
 		return &userFile{}, path, false, nil
 	}
 	return &cfg, path, true, nil
+}
+
+// readUserYAML reads a user configuration while retaining the metadata of the
+// opened file. A password must not be loaded from a regular Unix file that is
+// readable by group or other users. Statting the open file, rather than the
+// path separately, also makes the permission check follow the same symlink
+// target that supplied the contents.
+func readUserYAML(path string, out *userFile) (bool, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, configError(path, err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return false, configError(path, err)
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return false, configError(path, err)
+	}
+	if err := yaml.Unmarshal(data, out); err != nil {
+		return false, configError(path, err)
+	}
+	if out.Password != nil {
+		if err := validatePasswordFile(info); err != nil {
+			return false, configError(path, err)
+		}
+	}
+	return true, nil
+}
+
+// validatePasswordFile enforces private permissions where Unix mode bits have
+// their usual meaning. Other platforms keep the existing configuration
+// behavior because their regular-file metadata does not provide this contract.
+func validatePasswordFile(info os.FileInfo) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("contains a password but is not a regular file")
+	}
+	if permissions := info.Mode().Perm(); permissions&0o077 != 0 {
+		return fmt.Errorf(
+			"contains a password but is readable by group or other users (mode %04o); run chmod 600",
+			permissions)
+	}
+	return nil
 }
 
 // userFilePath is the user configuration file to read, and whether it was
