@@ -22,10 +22,11 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, want[r.URL.Path], r.URL.Query().Get("filter"), r.URL.Path)
-		if r.URL.Path == "/api/labels" {
+		switch r.URL.Path {
+		case "/api/labels":
 			assert.Equal(t, "ready", r.URL.Query().Get("readiness"))
 			assert.Equal(t, "none", r.URL.Query().Get("epic"))
-		} else if r.URL.Path == "/api/issues" {
+		case "/api/issues":
 			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("epic"))
 		}
 		w.Header().Set("Content-Type", "application/json")
