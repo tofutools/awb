@@ -353,24 +353,24 @@ func TestOperations(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{
 		"status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "epic", "filter", "sort", "limit", "offset",
 	}, names("listIssues"))
 	assert.ElementsMatch(t, []string{
-		"type", "priority", "priority-max", "label", "workspace", "parent", "filter", "sort",
+		"type", "priority", "priority-max", "label", "workspace", "parent", "epic", "filter", "sort",
 		"limit", "offset",
 	}, names("listReady"))
 	assert.ElementsMatch(t, []string{
 		"type", "priority", "priority-max", "label", "assignee", "unassigned",
-		"workspace", "parent", "filter", "sort", "limit", "offset",
+		"workspace", "parent", "epic", "filter", "sort", "limit", "offset",
 	}, names("listBlocked"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "filter", "readiness", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "epic", "filter", "readiness", "limit", "offset",
 	}, names("listLabels"))
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "epic", "filter", "sort", "limit", "offset",
 	}, names("searchIssues"))
 	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listWorkspaces"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))

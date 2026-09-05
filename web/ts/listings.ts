@@ -15,6 +15,27 @@ export interface SortState {
 // on an error page without its clear control.
 export const listingFilterMaxLength = 500;
 
+export const noEpicSelection = "none";
+const issueIDPattern = /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/;
+
+/** epicSelectionFrom accepts exactly the values the listing API accepts. An
+ * invalid hand-written URL is treated as an unfiltered view rather than
+ * sending a request the API must reject. */
+export function epicSelectionFrom(query: URLSearchParams): string | null {
+  const value = query.get("epic");
+  return value === noEpicSelection || (value !== null && issueIDPattern.test(value)) ? value : null;
+}
+
+/** withEpicSelection changes the single epic selection without disturbing
+ * the other filters or sort, and returns to the first backend page. */
+export function withEpicSelection(query: URLSearchParams, epic: string | null): URLSearchParams {
+  const next = new URLSearchParams(query);
+  next.delete("page");
+  if (epic === null) next.delete("epic");
+  else next.set("epic", epic);
+  return next;
+}
+
 // Parent titles share a deliberately narrow listing column. Keep their text
 // bounded even on wide screens; the anchor's tooltip carries the full title.
 export const listingParentTitleMaxLength = 32;

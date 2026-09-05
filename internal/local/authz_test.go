@@ -138,6 +138,47 @@ func TestVisibilityIsMembership(t *testing.T) {
 	notFound(t, err)
 }
 
+func TestEpicListingFilterKeepsTheWorkspaceScope(t *testing.T) {
+	root, ctx := newInstance(t)
+	addUser(t, root, ctx, "bob", false, false)
+	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
+
+	visibleEpic, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Visible epic", Type: domain.TypeEpic,
+	})
+	require.NoError(t, err)
+	visibleMember, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Visible member",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: visibleEpic.ID}},
+	})
+	require.NoError(t, err)
+	hiddenEpic, err := root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "web", Title: "Secret epic", Type: domain.TypeEpic,
+	})
+	require.NoError(t, err)
+	_, err = root.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Cross-workspace parent",
+		Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: hiddenEpic.ID}},
+	})
+	require.NoError(t, err)
+
+	bob := root.WithUser("bob")
+	page, err := bob.ListIssues(ctx, &domain.Filter{Epic: &visibleEpic.ID})
+	require.NoError(t, err)
+	require.Len(t, page.Issues, 1)
+	assert.Equal(t, visibleMember.ID, page.Issues[0].ID)
+
+	page, err = bob.ListIssues(ctx, &domain.Filter{Epic: &hiddenEpic.ID})
+	require.NoError(t, err)
+	assert.Empty(t, page.Issues)
+	assert.Zero(t, page.Total, "a hidden cross-workspace epic never becomes list membership")
+
+	epics, err := bob.ListIssues(ctx, &domain.Filter{Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true})
+	require.NoError(t, err)
+	require.Len(t, epics.Issues, 1, "the picker query exposes only authorized epics")
+	assert.Equal(t, visibleEpic.ID, epics.Issues[0].ID)
+}
+
 func TestIgnoredWorkspacesAreScopedAndRecoverable(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)

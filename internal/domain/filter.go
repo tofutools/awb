@@ -227,8 +227,7 @@ type Filter struct {
 	// has-parent relation names it — not the whole subtree.
 	Parent string
 	// Epic selects direct same-workspace membership in one epic. A non-nil empty
-	// value selects issues without such a membership. It is board-internal and
-	// is not exposed as a general listing filter.
+	// value selects issues without such a membership.
 	Epic *string
 
 	// Terms are search's literal terms. Each is wrapped in double quotes before
