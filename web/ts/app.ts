@@ -69,6 +69,11 @@ import {
   type MarkdownEditor,
 } from "./markdown-editor.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
+import {
+  historyDiff,
+  historyDiffPreview,
+  type HistoryDiffPart,
+} from "./history-diff.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import {
   legacyIssueSearchHref,
@@ -132,6 +137,7 @@ let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
 let confirmationDialogID = 0;
+let historyDiffDialogID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -4327,18 +4333,90 @@ function activityEntry(entry: Activity): HTMLElement {
   if (entry.changes.length > 0) {
     const changes = element("ul", "activity-changes");
     for (const change of entry.changes) {
-      const [from, to] = activityValues(change.from, change.to);
       const item = element("li");
       item.append(element("span", "activity-field", change.field));
-      item.append(element("code", "", from));
-      item.append(element("span", "activity-arrow", "→"));
-      item.append(element("code", "", to));
+      if (typeof change.from === "string" && typeof change.to === "string" && change.from !== change.to) {
+        const parts = historyDiff(change.from, change.to);
+        const preview = element("button", "history-diff-preview") as HTMLButtonElement;
+        preview.type = "button";
+        preview.setAttribute("aria-label", `View full ${change.field} diff`);
+        preview.title = `View full ${change.field} diff`;
+        appendHistoryDiff(preview, historyDiffPreview(parts));
+        preview.addEventListener("click", () => showHistoryDiff(change.field, parts, preview));
+        item.append(preview);
+      } else {
+        const [from, to] = activityValues(change.from, change.to);
+        item.append(element("code", "", from));
+        item.append(element("span", "activity-arrow", "→"));
+        item.append(element("code", "", to));
+      }
       changes.append(item);
     }
     card.append(changes);
   }
   row.append(marker, card);
   return row;
+}
+
+function appendHistoryDiff(host: HTMLElement, parts: readonly HistoryDiffPart[]): void {
+  for (const part of parts) {
+    if (part.kind === "same") {
+      host.append(document.createTextNode(part.text));
+      continue;
+    }
+    if (part.kind === "omitted") {
+      const omitted = element("span", "history-diff-omitted", part.text);
+      omitted.setAttribute("aria-label", "omitted content");
+      host.append(omitted);
+      continue;
+    }
+    const changed = document.createElement(part.kind === "remove" ? "del" : "ins");
+    changed.className = `history-diff-${part.kind}`;
+    const indicator = element("span", "history-diff-indicator", part.kind === "remove" ? "−" : "+");
+    indicator.setAttribute("aria-hidden", "true");
+    changed.append(indicator, document.createTextNode(part.text === "" ? "(empty)" : part.text));
+    host.append(changed);
+  }
+}
+
+/** showHistoryDiff uses a native modal for its focus trap and Escape handling.
+ * Removing it does not redraw the timeline; focus and scroll are restored to
+ * the exact preview so returning never loses the reader's place. */
+function showHistoryDiff(field: string, parts: readonly HistoryDiffPart[], trigger: HTMLButtonElement): void {
+  const scrollLeft = window.scrollX;
+  const scrollTop = window.scrollY;
+  const dialog = element("dialog", "history-diff-dialog") as HTMLDialogElement;
+  const id = historyDiffDialogID++;
+  const headingID = `history-diff-heading-${id}`;
+  const descriptionID = `history-diff-description-${id}`;
+  dialog.setAttribute("aria-labelledby", headingID);
+  dialog.setAttribute("aria-describedby", descriptionID);
+  const header = element("header", "history-diff-dialog-header");
+  const heading = element("h2", "", `${field} change`);
+  heading.id = headingID;
+  const description = element(
+    "p",
+    "muted",
+    "Full source diff. − marks removed text, + marks added text, and unchanged text provides context.",
+  );
+  description.id = descriptionID;
+  header.append(heading, description);
+  const full = element("pre", "history-diff-full");
+  full.tabIndex = 0;
+  appendHistoryDiff(full, parts);
+  const close = button("Close", "primary-button history-diff-close");
+  const footer = element("footer", "history-diff-dialog-footer");
+  footer.append(close);
+  dialog.append(header, full, footer);
+  document.body.append(dialog);
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+    window.scrollTo(scrollLeft, scrollTop);
+  }, { once: true });
+  dialog.showModal();
+  close.focus();
 }
 
 function activityAction(action: string): string {
