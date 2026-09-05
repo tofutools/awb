@@ -1781,4 +1781,3 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 /* Preact leaves editor DOM ownership with CodeMirror and uses native groups
    for inspector controls without adding a visual fieldset frame. */
 .inspector-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
-.board-card-slot { display: contents; }
