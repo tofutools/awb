@@ -470,6 +470,44 @@ func TestTreeCarriesNoETag(t *testing.T) {
 	assert.Contains(t, payload, `"children"`)
 }
 
+// A tree node is the issue's own document extended with children, so the two
+// endpoints may not disagree about the same issue. order and closed_at were
+// once dropped from every node, so this reads them back through the real
+// server on an issue that has both — TestToTreeCarriesEveryIssueField is what
+// covers the rest of the shape, one layer down.
+func TestTreeNodesAgreeWithTheIssueEndpoint(t *testing.T) {
+	a := newAPI(t)
+	epic := a.createIssue(`{"workspace":"awb","title":"Epic","type":"epic"}`)
+	child := a.createIssue(`{"workspace":"awb","title":"Child","type":"bug","priority":1,` +
+		`"labels":["parser"],"assignees":["alice"],"commit_hash":"01234567",` +
+		`"pull_request_url":"https://example.com/pull/1"}`)
+
+	// order and closed_at are zero on a freshly created issue, so the two
+	// fields the tree used to drop are only worth comparing once the child has
+	// been given a manual rank and closed.
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+child.ID+"/move",
+		`{"epic":"`+epic.ID+`","status":"closed"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+
+	var issue map[string]any
+	_, payload = a.do(http.MethodGet, "/api/issues/"+child.ID, "")
+	require.NoError(t, json.Unmarshal([]byte(payload), &issue))
+	require.NotZero(t, issue["order"], "the fixture has to exercise order")
+	require.NotEmpty(t, issue["closed_at"], "the fixture has to exercise closed_at")
+
+	var tree struct {
+		Children []map[string]any `json:"children"`
+	}
+	_, payload = a.do(http.MethodGet, "/api/issues/"+epic.ID+"/tree", "")
+	require.NoError(t, json.Unmarshal([]byte(payload), &tree))
+	require.Len(t, tree.Children, 1)
+
+	node := tree.Children[0]
+	assert.Contains(t, node, "children", "a leaf still carries an empty array")
+	delete(node, "children")
+	assert.Equal(t, issue, node)
+}
+
 // A delete answers with the object as it was, and carries no ETag.
 func TestDeleteCarriesNoETag(t *testing.T) {
 	a := newAPI(t)

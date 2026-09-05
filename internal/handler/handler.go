@@ -326,6 +326,11 @@ func toIssues(issues []domain.Issue) []api.Issue {
 	return out
 }
 
+// IssueTree is allOf Issue in the document, so ogen flattens it into a struct
+// that repeats every Issue field rather than embedding one, and a node has to
+// be copied across field by field. A field left out here is not a decoding
+// error, only a zero value on the wire, so what guards the list is
+// TestToTreeCarriesEveryIssueField rather than the compiler.
 func toTree(tree *domain.IssueTree) api.IssueTree {
 	issue := toIssue(&tree.Issue)
 	children := make([]api.IssueTree, len(tree.Children))
@@ -342,10 +347,12 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Type:           issue.Type,
 		Status:         issue.Status,
 		Priority:       issue.Priority,
+		Order:          issue.Order,
 		Labels:         issue.Labels,
 		Assignees:      issue.Assignees,
 		CreatedAt:      issue.CreatedAt,
 		UpdatedAt:      issue.UpdatedAt,
+		ClosedAt:       issue.ClosedAt,
 		Blocked:        issue.Blocked,
 		Blockers:       issue.Blockers,
 		Relations:      issue.Relations,
