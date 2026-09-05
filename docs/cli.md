@@ -126,6 +126,38 @@ visible issue may name a related issue in a workspace the caller cannot open.
 That limited disclosure keeps its readiness truthful without exposing the
 other issue's content.
 
+### Waiting for a merge, CI, or approval
+
+When downstream work needs an implementation to be merged, keep the
+implementation issue open or in progress until it lands. Make downstream work
+`blocked-by` that issue. A `pull_request_url` records a link; awb does not check
+whether the pull request has merged or its checks have passed.
+
+For a separate wait, such as deployment approval, create an ordinary task and
+use it as the blocker. For example, with `app` as the configured workspace:
+
+```sh
+approval=$(awb create "Approve production deployment" --type task --label gate)
+deploy=$(awb create "Deploy release" --type task --blocked-by "$approval")
+awb blocked --compact
+# After the designated reviewer approves:
+awb close "$approval" --reason "Release reviewed and deployment approved"
+awb ready --compact
+```
+
+The `gate` label is only a convention. An open, unassigned approval task itself
+appears in `ready`; claim it for the person responsible for checking the
+condition to remove it from the unassigned queue. Closing it removes that
+blocker from the deployment task, which becomes ready if it is open, unassigned,
+and has no other active blockers. Reopening the approval task restores the
+blocker, but does not undo work already started.
+
+These tasks coordinate work; they do not enforce reviewer-only approval or
+prevent a forced claim or closing a blocked issue. awb has no automatic gate
+checker. A person or external automation must verify the condition and close
+the task through the normal CLI or API, ideally recording evidence in the close
+reason. A failed or unknown external condition should leave the task active.
+
 ## Descriptions, comments, and activity
 
 Descriptions and comments preserve the Markdown source exactly. At a terminal,
