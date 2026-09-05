@@ -101,7 +101,20 @@ the same issue. Ambiguity is a conflict, never an arbitrary choice.
 
 ### Assignment and workflow
 
-The workflow has three states: `open`, `in_progress`, and `closed`.
+The workflow has four states: `backlog`, `open`, `in_progress`, and `closed`.
+
+Backlog parks future work of any type. `create --backlog` creates unassigned
+parked work; it cannot be combined with assignees. `move --status backlog`
+parks existing work and clears assignments. Claim explicitly starts it; reopen
+or move to open activates it without an assignee. Release leaves backlog
+unchanged. Closing backlog works like closing any other unfinished issue.
+
+Backlog stays visible in ordinary listings, but backlog issues and their
+complete `has-parent` subtrees are excluded from readiness and boards by
+default. The board’s “Show backlog” control sets `include-backlog=true`,
+including parked epic lanes and cards without changing any issue status.
+This presentation choice travels in the board URL and applies to saved views
+as well as the default board; other view filters continue to apply.
 
 Assignment and state move together where their meaning requires it. Creating
 with assignees is create-and-claim. Claiming joins the assignee set and starts

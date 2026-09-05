@@ -66,6 +66,7 @@ func (d *DescriptionFlags) read(e *env) ([]byte, error) {
 }
 
 type createParams struct {
+	Backlog bool `long:"backlog" help:"create in backlog; cannot be combined with assignees"`
 	DescriptionFlags
 	Title          string   `positional:"true" required:"true"`
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
@@ -116,6 +117,7 @@ func newCreateCommand(e *env) *cobra.Command {
 			}
 
 			req := backend.IssueCreate{
+				Backlog:        p.Backlog,
 				Workspace:      target,
 				Title:          p.Title,
 				Assignees:      p.Assignees,
@@ -398,7 +400,7 @@ func newUpdateCommand(e *env) *cobra.Command {
 
 type moveParams struct {
 	ID        string `positional:"true" required:"true"`
-	Status    string `long:"status" required:"true" alts:"open,in_progress,closed" help:"target status"`
+	Status    string `long:"status" required:"true" alts:"backlog,open,in_progress,closed" help:"target status"`
 	Epic      string `long:"epic" optional:"true" help:"set direct membership in this same-workspace epic"`
 	NoEpic    bool   `long:"no-epic" optional:"true" help:"clear direct epic membership"`
 	Before    string `long:"before" optional:"true" help:"place immediately before this issue; omit to append"`

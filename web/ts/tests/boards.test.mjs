@@ -4,7 +4,7 @@ import test from "node:test";
 import { legalBoardTargets, splitBoardFilter } from "../../static/boards.js";
 
 test("board moves map onto safe workflow transitions", () => {
-  assert.deepEqual(legalBoardTargets(), ["open", "in_progress", "closed"]);
+  assert.deepEqual(legalBoardTargets(), ["backlog", "open", "in_progress", "closed"]);
 });
 
 test("saved-view text filters are trimmed and deduplicated", () => {

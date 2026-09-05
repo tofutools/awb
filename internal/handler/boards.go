@@ -148,7 +148,7 @@ func (h *Handler) DeleteBoardView(ctx context.Context, params api.DeleteBoardVie
 }
 
 func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api.Board, error) {
-	query := backend.BoardQuery{LaneLimit: optInt(params.LaneLimit), LaneOffset: optInt(params.LaneOffset),
+	query := backend.BoardQuery{IncludeBacklog: params.IncludeBacklog.Or(false), LaneLimit: optInt(params.LaneLimit), LaneOffset: optInt(params.LaneOffset),
 		CardLimit: optInt(params.CardLimit), CardOffset: optInt(params.CardOffset)}
 	for _, value := range params.Workspace {
 		query.Workspaces = append(query.Workspaces, string(value))

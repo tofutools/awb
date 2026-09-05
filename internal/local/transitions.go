@@ -131,6 +131,9 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 			fields.Assignees = slices.DeleteFunc(fields.Assignees,
 				func(a string) bool { return a == req.Assignee })
 		}
+		if issue.Status == domain.StatusBacklog {
+			return nil // Releasing unassigned parked work does not activate it.
+		}
 		if len(fields.Assignees) == 0 {
 			fields.Status = domain.StatusOpen
 		} else {
@@ -165,14 +168,14 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 // Reopen sets status to open and clears the assignees, so the issue returns to
 // the pool awb ready draws from. Its close-reason comment remains in history.
 //
-// It acts only on a closed issue: on an issue that is not closed it succeeds
+// It acts on closed or backlog issues: on an issue that is not closed it succeeds
 // and changes nothing, whatever its assignee, so it can never take a claim
 // away from somebody who is working. Clearing the assignee of a closed issue
 // is the point of the command and needs no force, the assignee there being a
 // record of who did the work rather than a claim on it.
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
 	return b.mutate(ctx, ref, ifMatch, "reopened", "", func(tx *storage.Tx, issue *domain.Issue) error {
-		if issue.Status != domain.StatusClosed {
+		if issue.Status != domain.StatusClosed && issue.Status != domain.StatusBacklog {
 			return nil
 		}
 		fields := storage.Fields(issue)

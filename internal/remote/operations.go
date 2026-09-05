@@ -18,6 +18,7 @@ import (
 // is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
+	Backlog        bool           `json:"backlog,omitempty"`
 	Workspace      string         `json:"workspace"`
 	Title          string         `json:"title"`
 	Description    string         `json:"description,omitempty"`
@@ -100,6 +101,7 @@ type commentBody struct {
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	body := issueCreateBody{
+		Backlog:        req.Backlog,
 		Workspace:      req.Workspace,
 		Title:          req.Title,
 		Description:    req.Description,

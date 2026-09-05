@@ -58,3 +58,10 @@ test("an inspector popover stays in the viewport and flips above its trigger", (
     { left: 200, top: 100, width: 360, height: 320 },
   ), { left: 312, top: 216 });
 });
+
+test("backlog uses explicit parking and reopening transitions", () => {
+  assert.equal(inspectorStatusAction("in_progress", "backlog"), "backlog");
+  assert.equal(inspectorStatusAction("backlog", "open"), "reopen");
+  assert.equal(inspectorStatusAction("backlog", "in_progress"), "claim");
+  assert.equal(inspectorStatusAction("backlog", "closed"), "close");
+});

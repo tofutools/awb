@@ -585,6 +585,15 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
+				if !query.IncludeBacklog {
+					_, total, err := tx.ListIssues(&domain.Filter{IDs: []string{epic.ID}, IncludeClosed: true, ExcludeBacklog: true})
+					if err != nil {
+						return err
+					}
+					if total == 0 {
+						return awberr.NotFoundf("no such board epic: %s", *query.Epic)
+					}
+				}
 				active, err := tx.ActiveWorkspaceExists(epic.Workspace)
 				if err != nil {
 					return err
@@ -612,7 +621,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if !allEpics {
 				epicSelection = selectedEpics
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, epicSelection, query.HiddenEpics, epicClosedAfter, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, epicSelection, query.HiddenEpics, epicClosedAfter, query.IncludeBacklog, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}
@@ -627,7 +636,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				laneEpics = append(laneEpics, &epics[i])
 			}
 		}
-		statuses := domain.Statuses
+		statuses := slices.DeleteFunc(slices.Clone(domain.Statuses), func(s domain.Status) bool { return s == domain.StatusBacklog && !query.IncludeBacklog })
 		if query.Status != "" {
 			statuses = []domain.Status{query.Status}
 		}
@@ -641,7 +650,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				workspaces = []string{epic.Workspace}
 			}
 			for _, status := range statuses {
-				filter := &domain.Filter{Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
+				filter := &domain.Filter{ExcludeBacklog: !query.IncludeBacklog, Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
 					Offset: query.CardOffset, Sort: domain.DefaultSort}
 				if status == domain.StatusClosed {

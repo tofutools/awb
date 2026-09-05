@@ -177,6 +177,7 @@ type BoardViewPatch struct {
 }
 
 type BoardQuery struct {
+	IncludeBacklog bool
 	LaneLimit      *int
 	LaneOffset     *int
 	CardLimit      *int
@@ -303,6 +304,7 @@ type AttachmentCreate struct {
 // but Workspace and Title may be left at its zero value and then takes its
 // documented default.
 type IssueCreate struct {
+	Backlog        bool
 	Workspace      string
 	Title          string
 	Description    string

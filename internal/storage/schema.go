@@ -37,6 +37,7 @@ var migrations = [][]string{
 	schemaV18,
 	schemaV19,
 	schemaV20,
+	schemaV21,
 }
 
 // schemaV20 generalizes the sparse position beyond boards and removes the
