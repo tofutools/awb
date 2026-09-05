@@ -29,6 +29,11 @@ test("explicit selections are canonical, unique, and ignore unknown values", () 
   assert.deepEqual(selectedIssueStatuses(query), ["open", "closed"]);
 });
 
+test("legacy include-closed widens an explicit status selection in the UI too", () => {
+  const query = new URLSearchParams("status=open&include-closed=true");
+  assert.deepEqual(selectedIssueStatuses(query), ["open", "closed"]);
+});
+
 test("status selections preserve other filters and reset pagination", () => {
   const query = new URLSearchParams(
     "workspace=awb&type=bug&priority=1&label=frontend&assignee=alex&page=3&include-closed=true",

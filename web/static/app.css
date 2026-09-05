@@ -608,6 +608,16 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   padding: 0.65rem 0.8rem;
   border-top: 1px solid var(--line);
 }
+.include-closed-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.include-closed-control input { accent-color: var(--accent); }
 .mobile-sort-control { display: none; }
 .natural-order {
   float: right;

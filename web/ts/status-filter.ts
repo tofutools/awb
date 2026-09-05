@@ -35,7 +35,11 @@ export function selectedIssueStatuses(query: URLSearchParams): IssueStatusValue[
       ? [...issueStatusVocabulary]
       : [...defaultIssueStatuses];
   }
-  return canonicalStatuses(query.getAll("status"));
+  const selected = canonicalStatuses(query.getAll("status"));
+  if (query.get("include-closed") === "true" && selected.length > 0 && !selected.includes("closed")) {
+    return issueStatusVocabulary.filter((status) => selected.includes(status) || status === "closed");
+  }
+  return selected;
 }
 
 export function hasEmptyStatusSelection(query: URLSearchParams): boolean {
