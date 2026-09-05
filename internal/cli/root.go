@@ -184,13 +184,14 @@ func (e *env) reportError(err error) {
 }
 
 type rootParams struct {
-	DB          *string `long:"db" persistent:"true" help:"database file or http(s) URL of an awb server"`
-	Attachments *string `long:"attachments" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
-	JSON        bool    `long:"json" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
-	Compact     bool    `long:"compact" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
-	NoContext   bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the workspace and label of the local configuration file"`
-	Color       string  `long:"color" persistent:"true" default:"auto" optional:"true" alts:"auto,always,never" help:"when to colour the default output: auto, always or never"`
-	NoColor     bool    `long:"no-color" persistent:"true" optional:"true" help:"alias for --color never"`
+	DB                *string `long:"db" persistent:"true" help:"database file or http(s) URL of an awb server"`
+	Attachments       *string `long:"attachments" persistent:"true" help:"directory holding attachment content; defaults to \"attachments\" beside the database"`
+	JSON              bool    `long:"json" persistent:"true" optional:"true" help:"print stable JSON, one object or array per invocation"`
+	Compact           bool    `long:"compact" persistent:"true" optional:"true" help:"print one terse line per issue, for agents"`
+	NoContext         bool    `long:"no-context" persistent:"true" optional:"true" help:"ignore the workspace and label of the local configuration file"`
+	InsecureTransport bool    `long:"insecure-transport" persistent:"true" optional:"true" help:"allow Basic credentials over non-loopback cleartext HTTP; exposes reusable passwords"`
+	Color             string  `long:"color" persistent:"true" default:"auto" optional:"true" alts:"auto,always,never" help:"when to colour the default output: auto, always or never"`
+	NoColor           bool    `long:"no-color" persistent:"true" optional:"true" help:"alias for --color never"`
 }
 
 func newRootCommand(e *env, version string) *cobra.Command {
@@ -238,6 +239,7 @@ func newRootCommand(e *env, version string) *cobra.Command {
 			e.flags.DB = p.DB
 			e.flags.Attachments = p.Attachments
 			e.flags.NoContext = p.NoContext
+			e.flags.InsecureTransport = p.InsecureTransport
 			e.flags.NoColor = p.NoColor
 			if cmd.Flags().Changed("color") {
 				e.flags.Color = &p.Color

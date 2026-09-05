@@ -28,6 +28,9 @@ func (e *env) prepareCompletion(cmd *cobra.Command) {
 	if flag := cmd.Flag("no-context"); flag != nil && flag.Changed {
 		e.flags.NoContext = flag.Value.String() == "true"
 	}
+	if flag := cmd.Flag("insecure-transport"); flag != nil && flag.Changed {
+		e.flags.InsecureTransport = flag.Value.String() == "true"
+	}
 }
 
 // queryCompletion runs an advisory backend lookup with a short deadline. A

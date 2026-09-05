@@ -90,9 +90,10 @@ type serveOptions struct {
 	basicAuthRealm string
 	// realmGiven says --basic-auth-realm was typed rather than defaulted,
 	// which is what makes it evidence of an intention to authenticate.
-	realmGiven bool
-	noAuth     bool
-	proxyTo    string
+	realmGiven        bool
+	noAuth            bool
+	proxyTo           string
+	insecureTransport bool
 }
 
 // defaultBasicAuthRealm is what a client that supplies no credentials is asked
@@ -112,8 +113,16 @@ func (o serveOptions) validate() error {
 	if o.port < 1 || o.port > 65535 {
 		return awberr.Usagef("--port: %d is not a port number", o.port)
 	}
-	if _, err := parseProxyURL(o.proxyTo); err != nil {
+	proxyURL, err := parseProxyURL(o.proxyTo)
+	if err != nil {
 		return err
+	}
+	if proxyURL != nil && proxyURL.Scheme == "http" &&
+		!domain.IsLoopbackHost(proxyURL.Hostname()) && !o.insecureTransport {
+		return awberr.Usagef(
+			"--proxy-to: refusing to forward Basic credentials to %s over cleartext HTTP: "+
+				"use HTTPS, a loopback URL, or pass --insecure-transport to accept credential exposure",
+			proxyURL.Host)
 	}
 	// --addr used to carry the port too, so an address that looks like
 	// host:port is somebody carrying the old form forward. Refuse it rather
@@ -179,11 +188,7 @@ func (o serveOptions) exposure() string {
 // on; any other name is a claim about DNS that cannot be checked here, and is
 // treated as reaching further than this machine.
 func isLoopbackAddr(addr string) bool {
-	if strings.EqualFold(addr, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(addr)
-	return ip != nil && ip.IsLoopback()
+	return domain.IsLoopbackHost(addr)
 }
 
 // serverOrigin is the origin a browser names when it reaches this server, which
@@ -276,6 +281,7 @@ func newServeCommand(e *env) *cobra.Command {
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *serveParams, cmd *cobra.Command, _ []string) error {
 			opts := p.options()
+			opts.insecureTransport = e.flags.InsecureTransport
 			// What the flags say is checked before anything is opened, so a
 			// flag that could never work is reported as the usage error it is
 			// rather than behind an unrelated failure to find a database.
@@ -410,7 +416,16 @@ func newServeCommand(e *env) *cobra.Command {
 // creation against a restart. The state is announced in the log instead; see
 // runServer.
 func checkAuthentication(opts serveOptions, users userState) error {
-	if opts.noAuth || users.any || users.existed {
+	if !opts.noAuth && (users.any || users.existed) {
+		if why := opts.insecureAuthenticationExposure(); why != "" {
+			return awberr.Usagef(
+				"%s, and this database authenticates with reusable Basic credentials over "+
+					"cleartext HTTP; use a TLS-terminating reverse proxy, bind loopback, or pass "+
+					"--insecure-transport to accept credential exposure", why)
+		}
+		return nil
+	}
+	if opts.noAuth || users.existed {
 		return nil
 	}
 	if why := opts.exposure(); why != "" {
@@ -421,6 +436,29 @@ func checkAuthentication(opts serveOptions, users userState) error {
 				"--no-auth to serve without authentication anyway", why)
 	}
 	return nil
+}
+
+// insecureAuthenticationExposure reports a published cleartext route to a
+// server that uses Basic credentials. --https and an HTTPS public URL are the
+// existing signals that clients reach it through a TLS-terminating proxy.
+func (o serveOptions) insecureAuthenticationExposure() string {
+	if o.insecureTransport || o.https {
+		return ""
+	}
+	if o.publicURL != "" {
+		publicURL, err := url.Parse(o.publicURL)
+		if err == nil && publicURL.Scheme == "https" {
+			return ""
+		}
+		return fmt.Sprintf("--public-url %s publishes this server without HTTPS", o.publicURL)
+	}
+	if o.addr == "" {
+		return "--addr is empty, which binds every interface"
+	}
+	if !isLoopbackAddr(o.addr) {
+		return fmt.Sprintf("--addr %s is not a loopback address", o.addr)
+	}
+	return ""
 }
 
 // userState is what the database says at startup about the users a server
