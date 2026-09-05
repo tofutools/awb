@@ -36,6 +36,7 @@ test("history previews open a complete diff and return focus and scroll", async 
   await page.goto(`${baseURL}/#/issues/${issue.created.id}`);
   const preview = page.getByRole("button", { name: "View full description diff" });
   await preview.scrollIntoViewIfNeeded();
+  await expect(preview).toHaveAccessibleName(/View full description diff.*Removed:.*old.*Added:.*new/s);
   await expect(preview).toContainText("old");
   await expect(preview).toContainText("new");
   await expect(preview.locator(".history-diff-omitted")).not.toHaveCount(0);

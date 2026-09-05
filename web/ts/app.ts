@@ -4339,8 +4339,8 @@ function activityEntry(entry: Activity): HTMLElement {
         const parts = historyDiff(change.from, change.to);
         const preview = element("button", "history-diff-preview") as HTMLButtonElement;
         preview.type = "button";
-        preview.setAttribute("aria-label", `View full ${change.field} diff`);
         preview.title = `View full ${change.field} diff`;
+        preview.append(element("span", "visually-hidden", `View full ${change.field} diff. `));
         appendHistoryDiff(preview, historyDiffPreview(parts));
         preview.addEventListener("click", () => showHistoryDiff(change.field, parts, preview));
         item.append(preview);
@@ -4372,9 +4372,10 @@ function appendHistoryDiff(host: HTMLElement, parts: readonly HistoryDiffPart[])
     }
     const changed = document.createElement(part.kind === "remove" ? "del" : "ins");
     changed.className = `history-diff-${part.kind}`;
+    changed.append(element("span", "visually-hidden", part.kind === "remove" ? "Removed: " : "Added: "));
     const indicator = element("span", "history-diff-indicator", part.kind === "remove" ? "−" : "+");
     indicator.setAttribute("aria-hidden", "true");
-    changed.append(indicator, document.createTextNode(part.text === "" ? "(empty)" : part.text));
+    changed.append(indicator, document.createTextNode(part.text));
     host.append(changed);
   }
 }
