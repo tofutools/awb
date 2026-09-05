@@ -612,3 +612,65 @@ func TestV19MakesThePasswordOptionalWithoutLosingWhatDependsOnAUser(t *testing.T
 	assert.False(t, violations.Next(), "a foreign key survived the rebuild pointing at nothing")
 	require.NoError(t, violations.Err())
 }
+
+func TestV21BacklogPreservesIssueDependants(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 20)
+	_, err := raw.ExecContext(t.Context(), `
+ INSERT INTO workspaces (key,name,created_at,updated_at) VALUES ('awb','AWB','2026-09-05T12:00:00.000Z','2026-09-05T12:00:00.000Z');
+ INSERT INTO issues (id,workspace,title,type,status,priority,created_at,updated_at,issue_order,closed_at,commit_hash,pull_request_url)
+ VALUES ('awb-aaaaaa','awb','Future epic','epic','closed',2,'2026-09-05T12:00:00.000Z','2026-09-05T12:00:00.000Z',1024,'2026-09-05T12:00:00.000Z','abc','https://example.com/pr/1'),
+ ('awb-bbbbbb','awb','Child','task','open',2,'2026-09-05T12:00:00.000Z','2026-09-05T12:00:00.000Z',0,'','','');
+ INSERT INTO issue_assignees VALUES ('awb-aaaaaa','alice',0),('awb-aaaaaa','bob',1);
+ INSERT INTO issue_labels VALUES ('awb-aaaaaa','future');
+ INSERT INTO relations VALUES ('awb-bbbbbb','has-parent','awb-aaaaaa');
+ INSERT INTO attachments VALUES ('awb-aaaaaa','note.txt','text/plain',1,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','2026-09-05T12:00:00.000Z');
+ INSERT INTO issue_activity (id,issue,kind,body,created_at) VALUES (123,'awb-aaaaaa','comment','Keep this history','2026-09-05T12:00:00.000Z');
+ INSERT INTO board_views (id,name,owner,shared,created_at,updated_at) VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa','Future','alice',0,'2026-09-05T12:00:00.000Z','2026-09-05T12:00:00.000Z');
+ INSERT INTO board_view_epics VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa','awb-aaaaaa');`)
+	require.NoError(t, err)
+	// Row counts alone miss lost fields; compare every persisted value, including row IDs.
+	snapshot := func(db *sql.DB) map[string][][]any {
+		result := map[string][][]any{}
+		for _, table := range []string{"issues", "issue_assignees", "issue_labels", "relations", "attachments", "issue_activity", "board_view_epics"} {
+			rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table)
+			require.NoError(t, err)
+			columns, err := rows.Columns()
+			require.NoError(t, err)
+			for rows.Next() {
+				values := make([]any, len(columns))
+				ptrs := make([]any, len(columns))
+				for i := range values {
+					ptrs[i] = &values[i]
+				}
+				require.NoError(t, rows.Scan(ptrs...))
+				result[table] = append(result[table], values)
+			}
+			require.NoError(t, rows.Err())
+			require.NoError(t, rows.Close())
+		}
+		return result
+	}
+	before := snapshot(raw)
+	require.NoError(t, raw.Close())
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	raw, err = sql.Open("sqlite", path)
+	require.NoError(t, err)
+	defer raw.Close()
+	// Columns are preserved in order by this table rebuild.
+	assert.Equal(t, before, snapshot(raw))
+	_, err = raw.ExecContext(t.Context(), "UPDATE issues SET status='backlog' WHERE id='awb-aaaaaa'")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), "UPDATE issues SET status='unknown' WHERE id='awb-aaaaaa'")
+	require.Error(t, err)
+	var count int
+	require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT count(*) FROM issues_fts WHERE issues_fts MATCH 'Future'").Scan(&count))
+	assert.Equal(t, 1, count)
+	rows, err := raw.QueryContext(t.Context(), "PRAGMA foreign_key_check")
+	require.NoError(t, err)
+	defer rows.Close()
+	assert.False(t, rows.Next())
+	require.NoError(t, rows.Err())
+}

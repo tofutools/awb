@@ -39,6 +39,7 @@ const (
 // part of the vocabulary — each type, each priority, each status, each relation
 // type — must appear in it somewhere; a test pins that down.
 type demoIssue struct {
+	backlog bool
 	// key names this issue within the set, so the relations below can refer to
 	// it before it has an ID. It is not stored anywhere, and an issue may only
 	// refer to one that comes before it.
@@ -222,6 +223,14 @@ var demoIssues = []demoIssue{{
 	description: "Nothing has called it since the new schema landed.\n",
 	// Top-level: not everything belongs to the epic.
 	discoveredFrom: []string{"schema"},
+}, {
+	key: "future", title: "Plan the next catalogue generation", issueType: domain.TypeEpic, priority: 3, backlog: true,
+}, {
+	key: "future-child", title: "Explore catalogue import formats", issueType: domain.TypeTask, priority: 3, hasParent: "future",
+}, {
+	key: "future-grandchild", title: "Collect sample import files", issueType: domain.TypeTask, priority: 3, hasParent: "future-child",
+}, {
+	key: "parked", title: "Explore offline catalogue browsing", issueType: domain.TypeFeature, priority: 3, backlog: true,
 }}
 
 type demoParams struct {
@@ -323,6 +332,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 		}
 		priority := d.priority
 		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
+			Backlog:     d.backlog,
 			Workspace:   demoWorkspaceKey,
 			Title:       d.title,
 			Description: d.description,

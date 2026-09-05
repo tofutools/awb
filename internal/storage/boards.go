@@ -12,7 +12,7 @@ import (
 // ListBoardEpics returns visible epic issues in the workspaces and optional
 // explicit epic set selected by a board. A nil set means every value allowed
 // by the transaction; a non-nil empty set means none.
-func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter string, limit, offset *int) ([]domain.Issue, int, error) {
+func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter string, includeBacklog bool, limit, offset *int) ([]domain.Issue, int, error) {
 	if (workspaces != nil && len(workspaces) == 0) || (epics != nil && len(epics) == 0) {
 		return []domain.Issue{}, 0, nil
 	}
@@ -20,7 +20,7 @@ func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter
 		Workspaces: workspaces, ExcludeIDs: hiddenEpics, Types: []domain.Type{domain.TypeEpic},
 		IDs:   epics,
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
-		IncludeClosed: true, ClosedAfter: closedAfter,
+		IncludeClosed: true, ClosedAfter: closedAfter, ExcludeBacklog: !includeBacklog,
 	})
 }
 

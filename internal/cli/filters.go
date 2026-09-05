@@ -17,7 +17,7 @@ import (
 // Status, type, priority, label, assignee and workspace repeat; every other
 // filter may occur once.
 type FilterFlags struct {
-	Statuses      []string `long:"status" collection:"array" optional:"true" alts:"open,in_progress,closed" help:"select this status; repeatable (open, in_progress, closed)"`
+	Statuses      []string `long:"status" collection:"array" optional:"true" alts:"backlog,open,in_progress,closed" help:"select this status; repeatable (backlog, open, in_progress, closed)"`
 	IncludeClosed bool     `long:"include-closed" optional:"true" help:"widen the status set to include closed issues"`
 	Types         []string `long:"type" collection:"array" optional:"true" alts:"epic,feature,bug,task,chore" help:"select this type; repeatable (epic, feature, bug, task, chore)"`
 	Priorities    []int    `long:"priority" optional:"true" alts:"0,1,2,3,4" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`

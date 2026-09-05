@@ -276,7 +276,7 @@ paths:
       operationId: reopenIssue
       summary: Set the status to open and clear every assignee
       description: |
-        Acts only on a closed issue: on one that is not closed it succeeds and
+        Acts on closed or backlog issues: on other statuses it succeeds and
         changes nothing, so it can never take a claim away from somebody who is
         working. Historical close-reason comments remain in the activity stream.
       responses:
@@ -780,6 +780,10 @@ paths:
         dormant until restored. Lane and card totals are calculated before their
         respective offsets and limits.
       parameters:
+        - name: include-backlog
+          in: query
+          description: Include backlog issues and descendants, including backlog epic lanes.
+          schema: { type: boolean, default: false }
         - name: ref
           in: path
           required: true
@@ -1560,7 +1564,7 @@ components:
         with `id` ascending as a final tiebreak, so the order is total.
 
         `status` and `type` order by the vocabulary rather than by the stored
-        text: `status` runs open, in_progress, closed, and `type` runs epic,
+        text: `status` runs backlog, open, in_progress, closed, and `type` runs epic,
         feature, bug, task, chore. `-` reverses those sequences.
       schema:
         type: string
@@ -1992,7 +1996,7 @@ components:
       description: |
         Changed only by creating with assignees and by the claim, release,
         close and reopen endpoints, so it never drifts from the assignment set.
-      enum: [open, in_progress, closed]
+      enum: [backlog, open, in_progress, closed]
 
     Priority:
       type: integer
@@ -2632,6 +2636,9 @@ components:
       additionalProperties: false
       required: [workspace, title]
       properties:
+        backlog:
+          type: boolean
+          description: Create in backlog instead of open; cannot be combined with assignees.
         workspace: { $ref: '#/components/schemas/WorkspaceKey' }
         title: { type: string, minLength: 1, maxLength: 500 }
         description: { type: string }
@@ -2717,7 +2724,9 @@ components:
         and sparse manual position. The issue's workspace and ID are
         immutable. When `epic` is present, an empty value clears direct epic
         membership; a non-empty value must name an epic in the same workspace.
-        Moving to `open` clears assignees. Moving from `closed` to `in_progress`
+        Moving to `open` or `backlog` clears assignees. Backlog and its descendants
+        are excluded from ready and default boards; moving to `open` or claiming
+        explicitly activates parked work. Moving from `closed` to `in_progress`
         assigns the request identity and replaces the historical assignee set.
       required: [status]
       properties:

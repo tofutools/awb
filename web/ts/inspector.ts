@@ -1,5 +1,5 @@
-export type InspectorStatus = "open" | "in_progress" | "closed";
-export type InspectorStatusAction = "none" | "close" | "claim" | "release" | "reopen";
+export type InspectorStatus = "backlog" | "open" | "in_progress" | "closed";
+export type InspectorStatusAction = "backlog" | "none" | "close" | "claim" | "release" | "reopen";
 
 interface InspectorRelation {
   type: string;
@@ -21,9 +21,10 @@ export function inspectorStatusAction(
   target: InspectorStatus,
 ): InspectorStatusAction {
   if (current === target) return "none";
+  if (target === "backlog") return "backlog";
   if (target === "closed") return "close";
   if (target === "in_progress") return "claim";
-  return current === "closed" ? "reopen" : "release";
+  return (current === "closed" || current === "backlog") ? "reopen" : "release";
 }
 
 export interface InspectorRect {

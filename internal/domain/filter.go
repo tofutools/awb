@@ -186,6 +186,8 @@ const (
 // Filter selects issues for a listing. Repeated values of one filter are ORed;
 // different filters are ANDed.
 type Filter struct {
+	// ExcludeBacklog omits parked issues and their complete has-parent subtree.
+	ExcludeBacklog bool
 	// Readiness selects on the derived blocked state; the zero value does not.
 	Readiness Readiness
 

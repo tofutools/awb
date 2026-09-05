@@ -75,11 +75,16 @@ awb attach delete <id> trace.txt --force
 **Vocabulary** (fixed; put anything else in labels):
 
 - type: `epic` `feature` `bug` `task` `chore` (default `task`)
-- status: `open` `in_progress` `closed` — changed only by create --assignee,
-  claim, release, close and reopen, never by `awb update`
+- status: `backlog` `open` `in_progress` `closed` — changed through create,
+  claim, release, close, reopen and move, never by `awb update`.
+  `awb create "Future work" --backlog` creates parked, unassigned work;
+  `awb move <id> --status backlog` parks existing work and clears assignees.
+  Claim starts it, reopen activates it as open, and release leaves it parked.
+  Backlog issues and their complete parent subtree are excluded from ready.
 - priority: `0` (highest) to `4` (lowest), default `2`
 - relations: `blocked-by` `has-parent` `discovered-from` `related`, each read
-  "subject — relation — other". Only `blocked-by` affects readiness.
+  "subject — relation — other". `blocked-by` determines blocking; `has-parent`
+  also excludes descendants of backlog issues from readiness.
 - labels and assignees: lowercase letters, digits, `-_./` only. Once the
   tracker holds any user, an assignee has to be one of them (`awb user list`);
   on the database file `awb claim <id> --as <name> --force` records one that is

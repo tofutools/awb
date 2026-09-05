@@ -179,6 +179,7 @@ interface IssueForm {
 }
 
 interface IssueCreateDefaults {
+  backlog?: boolean;
   workspace?: string;
   epic?: Issue;
   assignToMe?: boolean;
@@ -776,7 +777,11 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   assign.checked = defaults.assignToMe === true;
   assignLabel.append(assign, document.createTextNode(`Assign to me${identity === "" ? "" : ` (@${identity})`}`));
   const cancel = button("Cancel");
-  editor.actions.append(assignLabel, cancel, editor.submit);
+  const backlog = document.createElement("input"); backlog.type = "checkbox"; backlog.checked = defaults.backlog === true;
+  const backlogLabel = element("label", "issue-create-assign"); backlogLabel.append(backlog, document.createTextNode("Backlog"));
+  backlog.addEventListener("change", () => { if (backlog.checked) assign.checked = false; });
+  assign.addEventListener("change", () => { if (assign.checked) backlog.checked = false; });
+  editor.actions.append(backlogLabel, assignLabel, cancel, editor.submit);
   dialog.append(editor.form);
   document.body.append(dialog);
 
@@ -796,6 +801,7 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
     if (!staged.stagePendingLabel()) return;
     editor.submit.disabled = true;
     const body: IssueCreate = {
+      backlog: backlog.checked,
       workspace: workspace.value,
       title: editor.title.value,
       description: editor.description.textarea.value,
@@ -1822,11 +1828,11 @@ async function openBoardPresentationSettings(ref: string): Promise<void> {
   dialog.showModal(); save.focus();
 }
 
-function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
-  if (issue.status === "open" || issue.assignees.length === 0) return Promise.resolve(true);
+function confirmUnassigningMove(issue: Issue, host: HTMLElement, target: "open" | "backlog"): Promise<boolean> {
+  if (issue.status === target || issue.assignees.length === 0) return Promise.resolve(true);
   return confirmMutation(
-    "Move issue to Open?",
-    `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+    `Move issue to ${boardStatusLabel(target)}?`,
+    `Move ${issue.id} to ${boardStatusLabel(target)}? This will unassign ${issue.assignees.join(", ")}.`,
     host,
     true,
   );
@@ -1835,14 +1841,14 @@ function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
 async function moveBoardIssue(
   host: HTMLElement,
   issue: Issue,
-  epic: string,
+  epic: string | undefined,
   target: BoardStatus,
   before = "",
   after = "",
 ): Promise<void> {
   if (target === issue.status && (before === issue.id || after === issue.id)) return;
-  if (target === "open") {
-    const confirmed = await confirmMoveToOpen(issue, host);
+  if (target === "open" || target === "backlog") {
+    const confirmed = await confirmUnassigningMove(issue, host, target);
     if (!confirmed) return;
   }
   if (target === "closed" && issue.status !== "closed") {
@@ -1858,7 +1864,7 @@ async function moveBoardIssue(
   try {
     await api.moveIssue(issue.id, {
       status: target,
-      epic,
+      ...(epic === undefined ? {} : { epic }),
       ...(before === "" ? {} : { before }),
       ...(after === "" ? {} : { after }),
     });
@@ -1937,6 +1943,7 @@ function boardColumn(
         workspace: epic?.workspace ?? (selectedWorkspaces.length === 1 ? selectedWorkspaces[0] : undefined),
         epic: epic ?? undefined,
         assignToMe: column.status === "in_progress",
+        backlog: column.status === "backlog",
       },
       "board-column-create",
     );
@@ -2077,6 +2084,14 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
   if (lane.epic !== undefined) {
     const epic = lane.epic;
+    const epicStatus = select(legalBoardTargets(), epic.status);
+    epicStatus.setAttribute("aria-label", `Status of ${epic.id}`);
+    epicStatus.addEventListener("change", () => {
+      const target = epicStatus.value as BoardStatus;
+      epicStatus.value = epic.status;
+      void moveBoardIssue(host, epic, undefined, target);
+    });
+    meta.append(epicStatus);
     const hide = button("Hide", "secondary-button board-lane-hide");
     hide.title = "Hide this epic lane from the current view";
     hide.setAttribute("aria-label", `Hide ${epic.id} from this view`);
@@ -2089,6 +2104,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   }
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
+  columns.style.setProperty("--board-columns", String(lane.columns.length));
   for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, boardFilters));
 	let isCollapsed = collapsedBoardLanes(ref).has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
@@ -2316,7 +2332,8 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
 async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const ref = route.path[1] ?? "default";
   const defaultPreferences = defaultBoardPreferences();
-  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize };
+  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize,
+    "include-backlog": route.query.get("include-backlog") === "true" };
   if (ref === "default") {
     const preferences = defaultPreferences;
     filters["card-limit"] = preferences.card_limit;
@@ -2349,6 +2366,15 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   option("default", "Default board"); for (const item of owned) option(item.id, item.name);
   if (board.view !== undefined && !owned.some((item) => item.id === board.view?.id)) option(board.view.id, board.view.name);
   picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
+  const showBacklog = document.createElement("input"); showBacklog.type = "checkbox";
+  showBacklog.checked = filters["include-backlog"] ?? false;
+  const backlogLabel = element("label", "board-view-check"); backlogLabel.append(showBacklog, document.createTextNode("Show backlog"));
+  showBacklog.addEventListener("change", () => {
+    const query = new URLSearchParams(route.query);
+    if (showBacklog.checked) query.set("include-backlog", "true"); else query.delete("include-backlog");
+    location.hash = `#/boards/${ref}?${query}`;
+  });
+  actions.append(backlogLabel);
   const saved = board.view;
   if (saved === undefined) {
     const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(effectiveDefaultBoardView(route), false, route, false, true)); actions.append(save);
@@ -3543,7 +3569,7 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
         if (state.key === "priority") return issue.priority;
         if (state.key === "assignee") return issue.assignees.join(",");
         if (state.key === "type") return ["epic", "feature", "bug", "task", "chore"].indexOf(issue.type);
-        if (state.key === "status") return ["open", "in_progress", "closed"].indexOf(issue.status);
+        if (state.key === "status") return ["backlog", "open", "in_progress", "closed"].indexOf(issue.status);
         return issue.id;
       };
       rows.sort((left, right) => {
@@ -3889,7 +3915,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   });
   add("Type", type);
 
-  const status = select(["open", "in_progress", "closed"], issue.status);
+  const status = select(["backlog", "open", "in_progress", "closed"], issue.status);
   status.className = "sidebar-select";
   status.setAttribute("aria-label", "Status");
   const closeEditor = statusEditor(issue);
@@ -3904,13 +3930,15 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
         deferInspectorPopoverOpen(openCloseEditor);
         return;
       }
-      if (target === "open" && issue.assignees.length > 0) {
+      if ((target === "open" || target === "backlog") && issue.assignees.length > 0) {
         status.value = issue.status;
-        const confirmed = await confirmMoveToOpen(issue, aside);
+        const confirmed = await confirmUnassigningMove(issue, aside, target);
         if (!confirmed) return;
         status.value = target;
       }
-      const operation = action === "claim"
+      const operation = action === "backlog"
+        ? () => api.moveIssue(issue.id, { status: "backlog" })
+        : action === "claim"
         ? () => api.claimIssue(issue.id, { force: issue.status === "closed" })
         : action === "release"
           ? () => api.releaseIssue(issue.id, { force: true })
