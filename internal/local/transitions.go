@@ -10,7 +10,7 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// The four transitions below are the only way status or assignees ever move.
+// Status and assignees change through these transitions and the move operation.
 // Keeping them out of update is what stops in_progress and the assignment set
 // from drifting apart and stops a claim being taken silently.
 
@@ -50,7 +50,8 @@ func checkAssignees(tx *storage.Tx, assignees ...string) error {
 //
 // Claiming an issue you already hold succeeds; if it is already in_progress
 // nothing changes. Another claimant joins without replacing anyone. A blocked
-// or closed issue conflicts, and --force overrides those two refusals.
+// or closed issue conflicts, and --force overrides those two refusals. Backlog
+// is explicitly activated by claiming; parked ancestors still exclude it from ready.
 //
 // The assignee has to be a user; see checkAssignees. --force overrides that
 // too, but only on the command line over the database file, where the check is

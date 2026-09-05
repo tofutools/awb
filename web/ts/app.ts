@@ -1828,11 +1828,11 @@ async function openBoardPresentationSettings(ref: string): Promise<void> {
   dialog.showModal(); save.focus();
 }
 
-function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
-  if (issue.status === "open" || issue.assignees.length === 0) return Promise.resolve(true);
+function confirmUnassigningMove(issue: Issue, host: HTMLElement, target: "open" | "backlog"): Promise<boolean> {
+  if (issue.status === target || issue.assignees.length === 0) return Promise.resolve(true);
   return confirmMutation(
-    "Move issue to Open?",
-    `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+    `Move issue to ${boardStatusLabel(target)}?`,
+    `Move ${issue.id} to ${boardStatusLabel(target)}? This will unassign ${issue.assignees.join(", ")}.`,
     host,
     true,
   );
@@ -1841,14 +1841,14 @@ function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
 async function moveBoardIssue(
   host: HTMLElement,
   issue: Issue,
-  epic: string,
+  epic: string | undefined,
   target: BoardStatus,
   before = "",
   after = "",
 ): Promise<void> {
   if (target === issue.status && (before === issue.id || after === issue.id)) return;
-  if (target === "open") {
-    const confirmed = await confirmMoveToOpen(issue, host);
+  if (target === "open" || target === "backlog") {
+    const confirmed = await confirmUnassigningMove(issue, host, target);
     if (!confirmed) return;
   }
   if (target === "closed" && issue.status !== "closed") {
@@ -1864,7 +1864,7 @@ async function moveBoardIssue(
   try {
     await api.moveIssue(issue.id, {
       status: target,
-      epic,
+      ...(epic === undefined ? {} : { epic }),
       ...(before === "" ? {} : { before }),
       ...(after === "" ? {} : { after }),
     });
@@ -2087,7 +2087,9 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
     const epicStatus = select(legalBoardTargets(), epic.status);
     epicStatus.setAttribute("aria-label", `Status of ${epic.id}`);
     epicStatus.addEventListener("change", () => {
-      mutateInspectorSelect(host, epicStatus, epic.status, () => api.moveIssue(epic.id, { status: epicStatus.value as BoardStatus }));
+      const target = epicStatus.value as BoardStatus;
+      epicStatus.value = epic.status;
+      void moveBoardIssue(host, epic, undefined, target);
     });
     meta.append(epicStatus);
     const hide = button("Hide", "secondary-button board-lane-hide");
@@ -3928,9 +3930,9 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
         deferInspectorPopoverOpen(openCloseEditor);
         return;
       }
-      if (target === "open" && issue.assignees.length > 0) {
+      if ((target === "open" || target === "backlog") && issue.assignees.length > 0) {
         status.value = issue.status;
-        const confirmed = await confirmMoveToOpen(issue, aside);
+        const confirmed = await confirmUnassigningMove(issue, aside, target);
         if (!confirmed) return;
         status.value = target;
       }
