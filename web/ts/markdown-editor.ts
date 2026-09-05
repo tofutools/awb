@@ -33,22 +33,6 @@ export function markdownEditorKeymap(
   return [save, ...defaultBindings, ...historyBindings];
 }
 
-const editors = new WeakMap<HTMLElement, MarkdownEditor>();
-
-/** activateMarkdownEditors loads editors only after their hidden form is shown. */
-export function activateMarkdownEditors(root: ParentNode): void {
-  for (const element of root.querySelectorAll<HTMLElement>(".markdown-editor")) {
-    void editors.get(element)?.activate();
-  }
-}
-
-/** destroyMarkdownEditors releases CodeMirror's document and window listeners. */
-export function destroyMarkdownEditors(root: ParentNode): void {
-  for (const element of root.querySelectorAll<HTMLElement>(".markdown-editor")) {
-    editors.get(element)?.destroy();
-  }
-}
-
 export function createMarkdownEditor(
   value: string,
   name: string | undefined,
@@ -174,6 +158,5 @@ export function createMarkdownEditor(
     },
   };
 
-  editors.set(element, editor);
   return editor;
 }

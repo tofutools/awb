@@ -71,7 +71,7 @@ tasks:
     desc: Restart the development server when source files change
     aliases: [dev]
     cmds:
-      - watchexec --restart --exts go,ts,html,css,yaml,yml -- task run ADDR="{{.ADDR}}" PORT="{{.PORT}}" -- {{.CLI_ARGS}}
+      - watchexec --restart --exts go,ts,tsx,html,css,yaml,yml -- task run ADDR="{{.ADDR}}" PORT="{{.PORT}}" -- {{.CLI_ARGS}}
 
   be:build:
     desc: Build the awb binary

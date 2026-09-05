@@ -1,6 +1,5 @@
-// Pure listing behavior shared by the DOM renderer and its Node tests.
+// Pure listing behavior shared by Preact components and their Node tests.
 
-import { autocompleteDebounceMs } from "./autocomplete.js";
 
 export type SortDirection = "asc" | "desc";
 
@@ -55,46 +54,6 @@ export function activeListingFamily(states: readonly ListingFamilyActivation[]):
   if (hovered !== -1) return hovered;
   const focused = states.findIndex((state) => state.focused);
   return focused === -1 ? null : focused;
-}
-
-/** Runs one debounced listing request at a time. Aborting saves backend work;
- * the generation guard also rejects a stale transport completion. */
-export class BackendListingFilter<T> {
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private request: AbortController | undefined;
-  private generation = 0;
-
-  constructor(
-    private readonly load: (query: string, signal: AbortSignal) => Promise<T>,
-    private readonly update: (result: T) => void,
-    private readonly failed: (error: unknown) => void,
-  ) {}
-
-  query(query: string, immediate = false): void {
-    this.generation++;
-    const generation = this.generation;
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.request?.abort();
-    const run = (): void => {
-      const request = new AbortController();
-      this.request = request;
-      void this.load(query, request.signal).then((result) => {
-        if (generation !== this.generation || request.signal.aborted) return;
-        this.update(result);
-      }).catch((error: unknown) => {
-        if (generation !== this.generation || request.signal.aborted) return;
-        this.failed(error);
-      });
-    };
-    if (immediate) run();
-    else this.timer = setTimeout(run, autocompleteDebounceMs);
-  }
-
-  close(): void {
-    this.generation++;
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.request?.abort();
-  }
 }
 
 export const defaultPageSize = 10;

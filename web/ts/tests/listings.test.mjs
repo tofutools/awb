@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   activeListingFamily,
-  BackendListingFilter,
   emptyFacetLabel,
   listingFilterMaxLength,
   listingParentTitle,
@@ -22,7 +21,6 @@ import {
   withPage,
   withPageSize,
 } from "../../static/listings.js";
-import { autocompleteDebounceMs } from "../../static/autocomplete.js";
 
 const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
 
@@ -152,39 +150,3 @@ test("sort headers cycle ascending, descending, then natural order", () => {
   assert.equal(nextSortValue(null, "key", allowed, "key"), "-key");
 });
 
-test("listing filters debounce requests and reject stale completions", async () => {
-  const pending = [];
-  const updates = [];
-  const search = new BackendListingFilter(
-    (query, signal) => new Promise((resolve) => pending.push({ query, signal, resolve })),
-    (result) => updates.push(result),
-    assert.fail,
-  );
-
-  search.query("old");
-  await wait(autocompleteDebounceMs + 20);
-  search.query("new");
-  assert.equal(pending[0].signal.aborted, true);
-  pending[0].resolve("stale");
-  await wait(0);
-  assert.deepEqual(updates, []);
-
-  await wait(autocompleteDebounceMs + 20);
-  pending[1].resolve("current");
-  await wait(0);
-  assert.deepEqual(updates, ["current"]);
-  search.close();
-});
-
-test("clearing a listing filter can request the unfiltered page immediately", async () => {
-  const calls = [];
-  const search = new BackendListingFilter(
-    async (query) => { calls.push(query); return query; },
-    () => {},
-    assert.fail,
-  );
-  search.query("", true);
-  await wait(0);
-  assert.deepEqual(calls, [""]);
-  search.close();
-});
