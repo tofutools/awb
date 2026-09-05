@@ -95,7 +95,8 @@ func (g *authGuard) finish(peer string, result authResult, now time.Time) {
 	p := g.peers[peer]
 	g.active--
 	p.active--
-	if result == authFailed {
+	switch result {
+	case authFailed:
 		if !now.Before(p.retryAt) {
 			p.failures = 0
 			p.retryAt = now.Add(authCooldown)
@@ -104,7 +105,7 @@ func (g *authGuard) finish(peer string, result authResult, now time.Time) {
 		if p.failures >= authFailureBurst {
 			p.retryAt = now.Add(authCooldown)
 		}
-	} else if result == authSucceeded {
+	case authSucceeded:
 		p.failures = 0
 		p.retryAt = time.Time{}
 	}
