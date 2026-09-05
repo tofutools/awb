@@ -40,7 +40,7 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"Remote timeline"}`)
 	base, err := url.Parse(a.server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "mikael")
+	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	comment, err := client.AddComment(t.Context(), issue.ID, "remote comment")

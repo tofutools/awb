@@ -288,6 +288,46 @@ func TestRemoteURL(t *testing.T) {
 	}
 }
 
+// Basic authentication has no transport security of its own. A remote client
+// therefore refuses to put its reusable credentials onto a cleartext network
+// connection unless the destination cannot leave this machine or the operator
+// accepts that risk for this invocation.
+func TestRemoteBasicAuthenticationRequiresSecureTransport(t *testing.T) {
+	configDir, _ := isolate(t)
+	writeUserConfig(t, configDir, "user: alice\npassword: hunter2\n")
+
+	for _, raw := range []string{
+		"http://127.0.0.1:7777",
+		"http://[::1]:7777",
+		"http://localhost:7777",
+		"https://awb.example.com/",
+	} {
+		cfg, err := config.Load(config.Flags{DB: &raw}, t.TempDir())
+		require.NoError(t, err, raw)
+		assert.True(t, cfg.Remote(), raw)
+	}
+
+	insecure := "http://awb.example.com/"
+	_, err := config.Load(config.Flags{DB: &insecure}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 2, awberr.ExitCode(err))
+	assert.Contains(t, err.Error(), "--insecure-transport")
+
+	cfg, err := config.Load(config.Flags{DB: &insecure, InsecureTransport: true}, t.TempDir())
+	require.NoError(t, err)
+	assert.True(t, cfg.Remote())
+}
+
+// With no credentials the client emits no Authorization header, so plain HTTP
+// remains available for intentionally unauthenticated remote installations.
+func TestRemoteHTTPWithoutCredentialsIsAccepted(t *testing.T) {
+	isolate(t)
+	db := "http://awb.example.com/"
+	cfg, err := config.Load(config.Flags{DB: &db}, t.TempDir())
+	require.NoError(t, err)
+	assert.True(t, cfg.Remote())
+}
+
 func TestRemoteURLRefusals(t *testing.T) {
 	isolate(t)
 

@@ -569,18 +569,57 @@ func TestWhatMayBeStartedWithoutAuthentication(t *testing.T) {
 		"reaching other machines with nobody to authenticate is the accident")
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, none))
 
-	// A locked server answers nothing to anybody, so it exposes nothing
-	// wherever it is bound and none of those flags says anything about it. It
-	// starts, and recovers from the next "awb user add" as a running one does.
+	// A locked server answers nothing until an account is added directly. It is
+	// nevertheless held to the same transport boundary, because adding that
+	// account makes the already-running server begin accepting Basic credentials.
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1"}, deleted))
-	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, deleted))
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, deleted))
 	assert.NoError(t, checkAuthentication(serveOptions{https: true}, deleted))
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "127.0.0.1", noAuth: true}, deleted))
 
-	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
-		"a server that authenticates may be published, which is the point of it")
+	assert.Error(t, checkAuthentication(serveOptions{addr: "0.0.0.0"}, users),
+		"Basic credentials may not cross a cleartext network by default")
+	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", https: true}, users),
+		"--https says a TLS-terminating proxy protects the public connection")
+	assert.NoError(t, checkAuthentication(serveOptions{
+		addr: "0.0.0.0", publicURL: "https://example.com/awb/",
+	}, users), "an HTTPS public URL is also a TLS proxy signal")
+	assert.NoError(t, checkAuthentication(serveOptions{
+		addr: "0.0.0.0", insecureTransport: true,
+	}, users), "the explicit escape hatch accepts credential exposure")
 	assert.NoError(t, checkAuthentication(serveOptions{addr: "0.0.0.0", noAuth: true}, users),
 		"--no-auth means it: the users are simply not consulted")
+}
+
+func TestProxyRequiresSecureTransportBeforeForwardingCredentials(t *testing.T) {
+	assert.NoError(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://127.0.0.1:7777",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "https://example.com/awb/",
+	}.validate())
+	assert.Error(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://example.com/awb/",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "127.0.0.1", port: 7777, proxyTo: "http://example.com/awb/",
+		insecureTransport: true,
+	}.validate())
+
+	assert.Error(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+	}.validate(), "the browser-to-proxy hop also carries the credentials")
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/", https: true,
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+		publicURL: "https://ui.example.com/",
+	}.validate())
+	assert.NoError(t, serveOptions{
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
+		insecureTransport: true,
+	}.validate())
 }
 
 // A password is what turns authentication on, not an account. A user without
@@ -1030,7 +1069,7 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "mikael")
+	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	before := totalAlloc()
@@ -1150,7 +1189,7 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 
 	base, err := url.Parse(server.URL + "/awb")
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "mikael")
+	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	for _, name := range []string{

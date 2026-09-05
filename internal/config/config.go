@@ -82,6 +82,10 @@ type Flags struct {
 	Color       *string
 	NoColor     bool
 	NoContext   bool
+	// InsecureTransport is an invocation-scoped escape hatch for sending Basic
+	// credentials over cleartext HTTP. It deliberately has no configuration-file
+	// or environment equivalent, so accepting the risk is visible in the command.
+	InsecureTransport bool
 }
 
 // Config is everything resolved, ready to use.
@@ -104,6 +108,9 @@ type Config struct {
 	// PasswordSet distinguishes an explicitly configured empty password from
 	// no password setting. The empty value is valid for a server account.
 	PasswordSet bool
+	// InsecureTransport records the invocation-scoped escape hatch after the
+	// remote URL and credentials have been validated together.
+	InsecureTransport bool
 
 	// Identity is the default assignee: what --mine resolves to and what claim
 	// uses without --as. It may be empty, in which case the commands that need
@@ -164,6 +171,9 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 	if err := resolveCredentials(cfg, userCfg, userPath); err != nil {
 		return nil, err
 	}
+	if err := validateRemoteTransport(cfg, flags.InsecureTransport); err != nil {
+		return nil, err
+	}
 	if err := resolveIdentity(cfg, userCfg, userPath); err != nil {
 		return nil, err
 	}
@@ -177,6 +187,22 @@ func Load(flags Flags, workingDir string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// validateRemoteTransport refuses the one remote configuration that would
+// disclose reusable credentials on the network. Plain HTTP remains useful on
+// loopback, and a remote URL without credentials sends no Authorization header.
+func validateRemoteTransport(cfg *Config, insecureTransport bool) error {
+	cfg.InsecureTransport = insecureTransport
+	if cfg.RemoteURL == nil || cfg.RemoteURL.Scheme != "http" ||
+		domain.IsLoopbackHost(cfg.RemoteURL.Hostname()) || insecureTransport ||
+		(cfg.User == "" && cfg.Password == "") {
+		return nil
+	}
+	return awberr.Usagef(
+		"refusing to send Basic credentials to %s over cleartext HTTP: use HTTPS, "+
+			"a loopback URL, or pass --insecure-transport to accept credential exposure",
+		cfg.RemoteURL.Host)
 }
 
 // configError reports a problem with a configuration file. An unreadable,

@@ -350,9 +350,13 @@ directory trees as far as awb is concerned.
 
 The server binds loopback by default. It refuses to expose a never-authenticated
 database through a public-looking configuration unless `--no-auth` makes that
-choice explicit. It does not terminate TLS; a reverse proxy supplies TLS and an
-optional base path, while `--public-url` tells browser security checks which
-origin is real.
+choice explicit. Basic credentials may cross plain HTTP only on loopback unless
+`--insecure-transport` accepts their exposure for that invocation; otherwise a
+published authenticated server requires the existing TLS proxy signals and a
+remote CLI requires HTTPS. This is enforced again across remote redirects and
+on both sides of the development UI proxy. The server does not terminate TLS;
+a reverse proxy supplies TLS and an optional base path, while `--public-url`
+tells browser security checks which origin is real.
 
 Cross-site writes are checked, external CORS origins are opt-in, state-changing
 responses are not cached, and attachment downloads are always opaque

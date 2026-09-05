@@ -106,3 +106,12 @@ identity: alice
 The database URL may include a reverse proxy's base path, but not user info, a
 query string, or a fragment. Keep credentials in their dedicated settings so
 they do not appear in process listings or shell history.
+
+When `user` or a non-empty `password` is configured, awb sends an HTTP Basic
+Authorization header on every remote request. It refuses to send that header to
+a non-loopback `http://` URL, where anybody able to observe the connection could
+reuse it. Use HTTPS for a shared server; loopback HTTP remains available for
+local development. `--insecure-transport` accepts the exposure for one explicit
+invocation when a separately protected cleartext connection is unavoidable.
+The same rule is checked again on redirects, so an HTTPS server cannot silently
+downgrade a credential-bearing request to non-loopback HTTP.
