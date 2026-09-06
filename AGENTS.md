@@ -104,7 +104,7 @@ Three structural rules hold the design together:
 * A released migration batch is never edited, only followed by another.
 * Whenever the database schema changes, update `spec/schema.sql` to match. The
   build and `task schema:check` verify the document against a freshly migrated
-  database.
+  database; `task schema:update` regenerates it.
 * An attachment is keyed on `(issue, name)` and has no id of its own, as a
   label is keyed on `(issue, label)`. A name is therefore unique within an
   issue, and both surfaces address one by that pair.

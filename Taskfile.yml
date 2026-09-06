@@ -71,7 +71,12 @@ tasks:
   schema:check:
     desc: Verify spec/schema.sql matches the current database schema
     cmds:
-      - go test ./internal/storage -run '^TestSchemaDocumentIsCurrent$'
+      - go test ./internal/storage
+
+  schema:update:
+    desc: Update spec/schema.sql from the current database schema
+    cmds:
+      - env AWB_UPDATE_SCHEMA=1 go test ./internal/storage -run '^TestSchemaDocumentIsCurrent$'
 
   watch:
     desc: Restart the development server when source files change
