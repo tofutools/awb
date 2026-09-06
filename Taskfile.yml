@@ -15,6 +15,7 @@ tasks:
   check:
     desc: Build, test, and lint everything
     cmds:
+      - task: schema:check
       - task: fe:test
       - task: be:build
         vars:
@@ -66,6 +67,11 @@ tasks:
     cmds:
       - task: fe:build
       - task: be:run
+
+  schema:check:
+    desc: Verify spec/schema.sql matches the current database schema
+    cmds:
+      - go test ./internal/storage -run '^TestSchemaDocumentIsCurrent$'
 
   watch:
     desc: Restart the development server when source files change
