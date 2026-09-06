@@ -129,13 +129,11 @@ test("issue creation retains drafts, stages resources and uploads attachments", 
   await dialog
     .getByRole("button", { name: "Add relation", exact: true })
     .click();
-  await dialog
-    .getByLabel("Attachment files")
-    .setInputFiles({
-      name: "evidence.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("browser evidence\n"),
-    });
+  await dialog.getByLabel("Attachment files").setInputFiles({
+    name: "evidence.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("browser evidence\n"),
+  });
   await dialog
     .getByRole("button", { name: "Create issue", exact: true })
     .click();
@@ -254,11 +252,9 @@ test("board views retain drafts and page beyond fifty cards and epic lanes", asy
   await dialog.getByRole("button", { name: "Save view", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page).toHaveURL(/#\/boards\/[^?]+$/);
-  const lane = page
-    .locator(".board-lane")
-    .filter({
-      has: page.getByRole("heading", { name: "No epic", exact: true }),
-    });
+  const lane = page.locator(".board-lane").filter({
+    has: page.getByRole("heading", { name: "No epic", exact: true }),
+  });
   await expect(lane.locator(".board-card")).toHaveCount(50);
   await lane.getByRole("button", { name: /Load 3 more/ }).click();
   await expect(lane.locator(".board-card")).toHaveCount(53);
@@ -280,4 +276,74 @@ test("board views retain drafts and page beyond fifty cards and epic lanes", asy
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("rebased child creation and backlog workflows remain available", async ({
+  page,
+}) => {
+  const workspace = await fixture(page, "r");
+  const parent = await createIssue(page, workspace, "Parent issue", {
+    type: "epic",
+  });
+  await page.goto(`${baseURL}/#/issues/${parent.id}`);
+  await page.getByRole("button", { name: "Add child inline" }).click();
+  const title = page.getByRole("textbox", { name: "Child issue title" });
+  await title.fill("Inline child");
+  await title.press("Enter");
+  await expect(
+    page.locator(".child-issues-section .title", { hasText: "Inline child" }),
+  ).toBeVisible();
+  await expect(title).toBeFocused();
+  await expect(title).toHaveValue("");
+  await title.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Add child inline" }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "New child issue" }).click();
+  const dialog = page.getByRole("dialog", { name: "New issue", exact: true });
+  await expect(
+    dialog.getByRole("combobox", { name: "Workspace" }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("textbox", { name: "Title", exact: true })
+    .fill("Backlog child");
+  await dialog.getByRole("checkbox", { name: "Assign to me" }).check();
+  await dialog.getByRole("checkbox", { name: "Backlog", exact: true }).check();
+  await expect(
+    dialog.getByRole("checkbox", { name: "Assign to me" }),
+  ).not.toBeChecked();
+  await dialog
+    .getByRole("button", { name: "Create issue", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await page.goto(`${baseURL}/#/boards?workspace=${workspace}`);
+  await expect(
+    page.locator(".board-card", { hasText: "Backlog child" }),
+  ).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Show backlog" }).check();
+  await expect(page).toHaveURL(/include-backlog=true/);
+  const card = page.locator(".board-card", { hasText: "Backlog child" });
+  await expect(card).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("checkbox", { name: "Show backlog" }),
+  ).toBeChecked();
+  await expect(card).toBeVisible();
+  await page
+    .getByRole("combobox", { name: `Status of ${parent.id}` })
+    .selectOption("backlog");
+  await expect(
+    page.getByRole("combobox", { name: `Status of ${parent.id}` }),
+  ).toHaveValue("backlog");
+  await page.getByRole("checkbox", { name: "Show backlog" }).uncheck();
+  await expect(
+    page.locator(".board-lane", { hasText: "Parent issue" }),
+  ).toHaveCount(0);
+  await page.goto(`${baseURL}/#/issues/${parent.id}`);
+  await page
+    .getByRole("combobox", { name: "Status", exact: true })
+    .selectOption("open");
+  await expect(
+    page.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveValue("open");
 });

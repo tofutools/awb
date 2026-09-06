@@ -43,7 +43,7 @@ import { IssueBadges } from "../components/issues.js";
 type Lane = Board["lanes"][number];
 type Column = Lane["columns"][number];
 type Drop = {
-  lane: string;
+  lane?: string;
   status: BoardStatus;
   before?: string;
   after?: string;
@@ -70,7 +70,10 @@ export function BoardsPage({ route }: { route: Route }) {
   const mutation = useMutation();
   const [copied, setCopied] = useState(false);
   const preferences = defaultBoardPreferences(identity);
-  const filters: BoardFilters = { "lane-limit": laneLimit };
+  const filters: BoardFilters = {
+    "lane-limit": laneLimit,
+    "include-backlog": route.query.get("include-backlog") === "true",
+  };
   if (ref === "default") {
     const workspaces = route.query.getAll("workspace");
     Object.assign(filters, {
@@ -107,11 +110,11 @@ export function BoardsPage({ route }: { route: Route }) {
     setMoveError(null);
     if (target.before === issue.id || target.after === issue.id) return;
     if (
-      target.status === "open" &&
+      (target.status === "open" || target.status === "backlog") &&
       issue.assignees.length &&
       !(await confirmMutation(
-        "Move issue to Open?",
-        `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+        `Move issue to ${statusLabel(target.status)}?`,
+        `Move ${issue.id} to ${statusLabel(target.status)}? This will unassign ${issue.assignees.join(", ")}.`,
       ))
     )
       return;
@@ -131,7 +134,7 @@ export function BoardsPage({ route }: { route: Route }) {
         await api.issue(issue.id);
         await api.moveIssue(issue.id, {
           status: target.status,
-          epic: target.lane,
+          ...(target.lane === undefined ? {} : { epic: target.lane }),
           ...(target.before ? { before: target.before } : {}),
           ...(target.after ? { after: target.after } : {}),
         });
@@ -182,6 +185,20 @@ export function BoardsPage({ route }: { route: Route }) {
                 <option value={saved.id}>{saved.name}</option>
               )}
             </select>
+          </label>
+          <label class="board-view-check">
+            <input
+              type="checkbox"
+              checked={filters["include-backlog"] ?? false}
+              onChange={(e) => {
+                const query = new URLSearchParams(route.query);
+                if (e.currentTarget.checked)
+                  query.set("include-backlog", "true");
+                else query.delete("include-backlog");
+                location.hash = `#/boards/${ref}?${query}`;
+              }}
+            />
+            Show backlog
           </label>
           {!saved ? (
             <>
@@ -391,6 +408,23 @@ function BoardLane(props: LaneProps) {
             {total} issue{total === 1 ? "" : "s"}
           </span>
           {lane.epic && (
+            <select
+              aria-label={`Status of ${lane.epic.id}`}
+              value={lane.epic.status}
+              onChange={(e) => {
+                const status = e.currentTarget.value as BoardStatus;
+                e.currentTarget.value = lane.epic!.status;
+                void props.move(lane.epic!, { status });
+              }}
+            >
+              {legalBoardTargets().map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+          )}
+          {lane.epic && (
             <Button
               class="secondary-button board-lane-hide"
               aria-label={`Hide ${lane.epic.id} from this view`}
@@ -417,6 +451,7 @@ function BoardLane(props: LaneProps) {
         </div>
       </header>
       <div
+        style={{ "--board-columns": lane.columns.length }}
         class="board-columns"
         id={`board-lane-columns-${key}`}
         hidden={collapsed}
@@ -596,6 +631,7 @@ function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
                   : undefined)
               }
               epic={lane.epic}
+              backlog={column.status === "backlog"}
               assignToMe={column.status === "in_progress"}
               onCreated={reload}
             />

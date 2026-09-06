@@ -166,6 +166,9 @@ export function IssueCreateButton({
   label = "New issue",
   workspace,
   epic,
+  parent,
+  backlog = false,
+  disabled = false,
   assignToMe = false,
   onCreated,
   className = "primary-button",
@@ -174,6 +177,9 @@ export function IssueCreateButton({
   label?: string;
   workspace?: string;
   epic?: Issue;
+  parent?: Issue;
+  backlog?: boolean;
+  disabled?: boolean;
   assignToMe?: boolean;
   onCreated: () => void | Promise<void>;
   className?: string;
@@ -184,6 +190,7 @@ export function IssueCreateButton({
     <>
       <Button
         class={className}
+        disabled={disabled}
         aria-label={ariaLabel}
         onClick={() => setOpen(true)}
       >
@@ -193,6 +200,8 @@ export function IssueCreateButton({
         <CreateIssue
           workspace={workspace}
           epic={epic}
+          parent={parent}
+          backlog={backlog}
           assignToMe={assignToMe}
           onClose={() => setOpen(false)}
           onCreated={onCreated}
@@ -204,27 +213,36 @@ export function IssueCreateButton({
 function CreateIssue({
   workspace: initial,
   epic,
+  parent: explicitParent,
+  backlog: initialBacklog,
   assignToMe,
   onClose,
   onCreated,
 }: {
   workspace?: string;
   epic?: Issue;
+  parent?: Issue;
+  backlog: boolean;
   assignToMe: boolean;
   onClose: () => void;
   onCreated: () => void | Promise<void>;
 }) {
   const { identity, notify } = useApp();
+  const parent = explicitParent ?? epic;
+  const [backlog, setBacklog] = useState(initialBacklog);
+  const [assigned, setAssigned] = useState(assignToMe && !initialBacklog);
   const resource = useResource(() => api.workspaces(), []);
   const mutation = useMutation();
   const [type, setType] = useState("task");
   const [priority, setPriority] = useState("2");
-  const [workspace, setWorkspace] = useState(initial ?? epic?.workspace ?? "");
+  const [workspace, setWorkspace] = useState(
+    parent?.workspace ?? initial ?? "",
+  );
   const [label, setLabel] = useState("");
   const [labels, setLabels] = useState<string[]>([]);
   const [relations, setRelations] = useState<
     NonNullable<IssueCreate["relations"]>
-  >(epic ? [{ type: "has-parent", other: epic.id }] : []);
+  >(parent ? [{ type: "has-parent", other: parent.id }] : []);
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<unknown>();
   const stage = () => {
@@ -264,6 +282,7 @@ function CreateIssue({
             void mutation.run(async () => {
               const created = await api.createIssue({
                 ...issueFields(form),
+                backlog,
                 workspace: workspace || resource.data!.rows[0].key,
                 type: String(data.get("type")) as IssueCreate["type"],
                 priority: Number(data.get("priority")),
@@ -294,9 +313,9 @@ function CreateIssue({
             });
           }}
         >
-          {epic && (
+          {parent && (
             <p class="issue-create-context">
-              Epic: {epic.id} · {epic.title}
+              {explicitParent ? "Parent" : "Epic"}: {parent.id} · {parent.title}
             </p>
           )}
           <div class="edit-field-row">
@@ -304,7 +323,7 @@ function CreateIssue({
               <select
                 name="workspace"
                 value={workspace || resource.data.rows[0].key}
-                disabled={!!epic}
+                disabled={!!parent}
                 onChange={(e) => setWorkspace(e.currentTarget.value)}
               >
                 {resource.data.rows
@@ -394,7 +413,7 @@ function CreateIssue({
                     <span class="id">New issue</span>
                     <span class="relation-type">{r.type}</span>
                     <span class="id">{r.other}</span>
-                    {r.other !== epic?.id && (
+                    {r.other !== parent?.id && (
                       <Button
                         class="inline-button danger-button"
                         onClick={() =>
@@ -460,8 +479,23 @@ function CreateIssue({
             <label class="issue-create-assign">
               <input
                 type="checkbox"
+                checked={backlog}
+                onChange={(e) => {
+                  setBacklog(e.currentTarget.checked);
+                  if (e.currentTarget.checked) setAssigned(false);
+                }}
+              />
+              Backlog
+            </label>
+            <label class="issue-create-assign">
+              <input
+                type="checkbox"
                 name="assign"
-                defaultChecked={assignToMe}
+                checked={assigned}
+                onChange={(e) => {
+                  setAssigned(e.currentTarget.checked);
+                  if (e.currentTarget.checked) setBacklog(false);
+                }}
               />
               Assign to me{identity ? ` (@${identity})` : ""}
             </label>

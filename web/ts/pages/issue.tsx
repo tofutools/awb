@@ -1,5 +1,5 @@
 import { Icon } from "../components/icon.js";
-import { useRef, useState } from "preact/hooks";
+import { useRef, useState, useLayoutEffect } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, type Issue, type Activity, type IssueTree } from "../api.js";
 import { inspectorParent, inspectorStatusAction } from "../inspector.js";
@@ -9,7 +9,8 @@ import {
   issueSidebarStorage,
   rememberIssueSidebar,
 } from "../sidebar.js";
-import { activityValues } from "../presentation.js";
+import { inlineChildIssueCreate } from "../issue-create.js";
+import { HistoryChange } from "../components/history-diff.js";
 import { nextSortValue, sortState } from "../listings.js";
 import { type Route } from "../routing/route.js";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../components/ui.js";
 import { Autocomplete } from "../components/autocomplete.js";
 import {
+  IssueCreateButton,
   IssueFields,
   issueFields,
   FilePicker,
@@ -101,11 +103,23 @@ export function IssuePage({ route }: { route: Route }) {
             <div class="issue-key">{issue.id}</div>
             <h1>{issue.title}</h1>
           </div>
-          {mutable && (
-            <Button buttonRef={editButton} onClick={() => setEditing(!editing)}>
-              {editing ? "Hide editor" : "Edit issue"}
-            </Button>
-          )}
+          <div class="issue-heading-actions">
+            <IssueCreateButton
+              label="New child issue"
+              parent={issue}
+              disabled={!mutable}
+              className="secondary-button"
+              onCreated={resource.reload}
+            />
+            {mutable && (
+              <Button
+                buttonRef={editButton}
+                onClick={() => setEditing(!editing)}
+              >
+                {editing ? "Hide editor" : "Edit issue"}
+              </Button>
+            )}
+          </div>
         </div>
         <ErrorMessage error={resource.error} />
         {editing && mutable && (
@@ -122,14 +136,12 @@ export function IssuePage({ route }: { route: Route }) {
             <p class="empty">No description.</p>
           )}
         </section>
-        {children.length > 0 && (
-          <Children
-            parent={issue.id}
-            issues={children}
-            mutable={mutable}
-            reload={resource.reload}
-          />
-        )}
+        <Children
+          parent={issue}
+          issues={children}
+          mutable={mutable}
+          reload={resource.reload}
+        />
         <Resources
           issue={issue}
           editing={editing && mutable}
@@ -216,12 +228,12 @@ function Children({
   mutable,
   reload,
 }: {
-  parent: string;
+  parent: Issue;
   issues: Issue[];
   mutable: boolean;
   reload: () => Promise<void>;
 }) {
-  const key = `awb.issue.${parent}.show-closed-children`;
+  const key = `awb.issue.${parent.id}.show-closed-children`;
   const [closed, setClosed] = useState(() => {
     try {
       return localStorage.getItem(key) !== "false";
@@ -241,7 +253,7 @@ function Children({
         : state.key === "type"
           ? ["epic", "feature", "bug", "task", "chore"].indexOf(i.type)
           : state.key === "status"
-            ? ["open", "in_progress", "closed"].indexOf(i.status)
+            ? ["backlog", "open", "in_progress", "closed"].indexOf(i.status)
             : state.key === "assignee"
               ? i.assignees.join(",")
               : i.id;
@@ -279,6 +291,7 @@ function Children({
         </label>
       </div>
       <ErrorMessage error={mutation.error} />
+      <InlineChildCreate parent={parent} mutable={mutable} reload={reload} />
       <IssueTable
         issues={rows}
         children
@@ -297,7 +310,7 @@ function Children({
                     if (
                       await confirmMutation(
                         "Remove child?",
-                        `Remove ${child.id} from ${parent}?`,
+                        `Remove ${child.id} from ${parent.id}?`,
                         e.currentTarget,
                         true,
                       )
@@ -307,7 +320,7 @@ function Children({
                         await api.removeRelation(
                           child.id,
                           "has-parent",
-                          parent,
+                          parent.id,
                         );
                         await reload();
                       });
@@ -607,27 +620,29 @@ function IssueSidebar({
                     return;
                   }
                   if (
-                    target === "open" &&
+                    (target === "open" || target === "backlog") &&
                     issue.assignees.length &&
                     !(await confirmMutation(
-                      "Move to Open?",
-                      `Moving ${issue.id} to Open clears all assignees.`,
+                      `Move to ${target === "backlog" ? "Backlog" : "Open"}?`,
+                      `Moving ${issue.id} to ${target === "backlog" ? "Backlog" : "Open"} clears all assignees.`,
                     ))
                   )
                     return;
                   void change(
-                    action === "claim"
-                      ? () =>
-                          api.claimIssue(issue.id, {
-                            force: issue.status === "closed",
-                          })
-                      : action === "release"
-                        ? () => api.releaseIssue(issue.id, { force: true })
-                        : () => api.reopenIssue(issue.id),
+                    action === "backlog"
+                      ? () => api.moveIssue(issue.id, { status: "backlog" })
+                      : action === "claim"
+                        ? () =>
+                            api.claimIssue(issue.id, {
+                              force: issue.status === "closed",
+                            })
+                        : action === "release"
+                          ? () => api.releaseIssue(issue.id, { force: true })
+                          : () => api.reopenIssue(issue.id),
                   );
                 }}
               >
-                {["open", "in_progress", "closed"].map((s) => (
+                {["backlog", "open", "in_progress", "closed"].map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </select>
@@ -953,17 +968,11 @@ function ActivityEntry({ entry }: { entry: Activity }) {
         )}{" "}
         {entry.changes.length > 0 && (
           <ul class="activity-changes">
-            {entry.changes.map((change, index) => {
-              const [from, to] = activityValues(change.from, change.to);
-              return (
-                <li key={index}>
-                  <span class="activity-field">{change.field}</span>
-                  <code>{from}</code>
-                  <span class="activity-arrow">→</span>
-                  <code>{to}</code>
-                </li>
-              );
-            })}
+            {entry.changes.map((change, index) => (
+              <li key={index}>
+                <HistoryChange change={change} />
+              </li>
+            ))}
           </ul>
         )}
       </div>
@@ -1005,5 +1014,110 @@ function Tree({ node, depth = 0 }: { node: IssueTree; depth?: number }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Rapid entry retains the title field across writes so adding siblings stays in place. */
+function InlineChildCreate({
+  parent,
+  mutable,
+  reload,
+}: {
+  parent: Issue;
+  mutable: boolean;
+  reload: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  const [status, setStatus] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (open) input.current?.focus({ preventScroll: true });
+  }, [open]);
+  const close = () => {
+    setOpen(false);
+    setError(undefined);
+    trigger.current?.focus({ preventScroll: true });
+  };
+  return (
+    <>
+      <Button
+        class="quiet-action"
+        buttonRef={trigger}
+        disabled={!mutable || busy}
+        onClick={() => {
+          setOpen(true);
+          setStatus("");
+        }}
+      >
+        Add child inline
+      </Button>
+      {open && (
+        <form
+          class="child-inline-create"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !busy) {
+              e.preventDefault();
+              close();
+            }
+          }}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const body = inlineChildIssueCreate(
+              parent.workspace,
+              parent.id,
+              title,
+            );
+            if (!body || busy || !mutable) return;
+            setBusy(true);
+            setError(undefined);
+            try {
+              const created = await api.createIssue(body);
+              setTitle("");
+              setStatus(`Child ${created.id} was created. Add another child.`);
+              await reload();
+            } catch (error) {
+              setError(error);
+              setStatus("");
+            } finally {
+              setBusy(false);
+              input.current?.focus({ preventScroll: true });
+            }
+          }}
+        >
+          <input
+            ref={input}
+            name="title"
+            aria-label="Child issue title"
+            placeholder="Add another child…"
+            maxLength={500}
+            value={title}
+            readOnly={busy || !mutable}
+            onInput={(e) => {
+              setTitle(e.currentTarget.value);
+              setError(undefined);
+            }}
+          />
+          <Button
+            type="submit"
+            class="primary-button"
+            disabled={busy || !mutable || !title.trim()}
+          >
+            Add
+          </Button>
+          <Button class="quiet-action" disabled={busy} onClick={close}>
+            Cancel
+          </Button>
+          <span class="child-inline-hint">Enter to create · Esc to cancel</span>
+          <span class="child-inline-status" role="status" aria-live="polite">
+            {status}
+          </span>
+          <ErrorMessage error={error} />
+        </form>
+      )}
+    </>
   );
 }
