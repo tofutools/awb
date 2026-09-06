@@ -41,11 +41,16 @@ test("values are escaped", () => {
 });
 
 test("several filters combine", () => {
-  const query = toQuery({ workspace: ["awb"], label: ["parser"], filter: "needle docs", "include-closed": true });
+  const query = toQuery({
+    workspace: ["awb"], label: ["parser"], parent: "awb-a1b2c3", recursive: true,
+    filter: "needle docs", "include-closed": true,
+  });
   const params = new URLSearchParams(query.slice(1));
   assert.deepEqual(params.getAll("workspace"), ["awb"]);
   assert.deepEqual(params.getAll("label"), ["parser"]);
   assert.equal(params.get("filter"), "needle docs");
+  assert.equal(params.get("parent"), "awb-a1b2c3");
+  assert.equal(params.get("recursive"), "true");
   assert.equal(params.get("include-closed"), "true");
 });
 

@@ -140,6 +140,9 @@ func (b *Backend) GetIssue(ctx context.Context, ref string) (*domain.Issue, erro
 // ready and blocked are their own endpoints, so the readiness selector picks
 // the path rather than becoming a parameter.
 func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backend.IssuePage, error) {
+	if err := domain.ValidateParentFilter(filter); err != nil {
+		return backend.IssuePage{}, err
+	}
 	path := "/api/issues"
 	switch filter.Readiness {
 	case domain.ReadinessReady:
@@ -221,8 +224,18 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 	for _, workspace := range filter.Workspaces {
 		query.Add("workspace", workspace)
 	}
-	if filter.Parent != "" {
-		query.Set("parent", filter.Parent)
+	if filter.Parent != nil {
+		if *filter.Parent == "" {
+			query.Set("parent", "none")
+		} else {
+			query.Set("parent", *filter.Parent)
+		}
+	}
+	if filter.ParentType != nil {
+		query.Set("parent-type", string(*filter.ParentType))
+	}
+	if filter.Recursive {
+		query.Set("recursive", "true")
 	}
 	if filter.ListingFilter != "" {
 		query.Set("filter", filter.ListingFilter)
@@ -509,6 +522,9 @@ func (b *Backend) AssigneeFacets(ctx context.Context, filter *domain.Filter) (ba
 }
 
 func (b *Backend) facets(ctx context.Context, path string, filter *domain.Filter) (backend.FacetPage, error) {
+	if err := domain.ValidateParentFilter(filter); err != nil {
+		return backend.FacetPage{}, err
+	}
 	query := filterQuery(filter, path)
 	// sort is not accepted on a facet endpoint, the row order being fixed at
 	// value ascending.

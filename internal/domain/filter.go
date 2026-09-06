@@ -225,12 +225,16 @@ type Filter struct {
 	// named board presentation preferences use it to omit epic lanes without
 	// changing the issues or a saved view's shared filter definition.
 	ExcludeIDs []string
-	// Parent selects the direct children of that issue — the issues whose
-	// has-parent relation names it — not the whole subtree.
-	Parent string
+	// Parent selects issues below one issue through has-parent relations. A
+	// non-nil empty value instead selects issues without a parent, optionally
+	// narrowed to ParentType. Recursive widens direct children/parents to the
+	// whole descendant/ancestor chain.
+	Parent     *string
+	ParentType *Type
+	Recursive  bool
 	// Epic selects direct same-workspace membership in one epic. A non-nil empty
-	// value selects issues without such a membership. It is board-internal and
-	// is not exposed as a general listing filter.
+	// value selects issues without such a membership. It remains board-internal;
+	// general listings use Parent instead.
 	Epic *string
 
 	// Terms are search's literal terms. Each is wrapped in double quotes before
@@ -249,6 +253,22 @@ type Filter struct {
 	Offset *int
 
 	Sort Sort
+}
+
+// ValidateParentFilter checks the combinations shared by direct and remote
+// listings. Reference existence is resolved by the local backend inside the
+// same scoped read transaction as the query.
+func ValidateParentFilter(f *Filter) error {
+	if f.Parent != nil && *f.Parent == "none" {
+		return awberr.Usagef(`parent "none" is reserved for the HTTP API; use an empty value`)
+	}
+	if f.Recursive && f.Parent == nil {
+		return awberr.Usagef("recursive requires parent")
+	}
+	if f.ParentType != nil && (f.Parent == nil || *f.Parent != "") {
+		return awberr.Usagef("parent-type requires parent=none")
+	}
+	return nil
 }
 
 // EffectiveStatuses is the status set the filter selects, resolving the

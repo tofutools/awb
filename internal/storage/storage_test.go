@@ -617,6 +617,70 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 	assert.Equal(t, 13, total, "clearing restores the complete result set")
 }
 
+func TestParentFilterCanTraverseRecursivelyBeforePaging(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	epic := add("Release epic", func(i *domain.Issue) { i.Type = domain.TypeEpic })
+	child := add("direct child")
+	grandchild := add("nested descendant")
+	unrelated := add("unrelated")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(child, domain.RelHasParent, epic); err != nil {
+			return err
+		}
+		return tx.InsertRelation(grandchild, domain.RelHasParent, child)
+	}))
+
+	filter := &domain.Filter{Parent: &epic, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, child, issues[0].ID, "non-recursive ancestry selects direct children")
+	assert.Equal(t, 1, total)
+
+	limit, offset := 1, 1
+	filter = &domain.Filter{Parent: &epic, Recursive: true, Limit: &limit, Offset: &offset, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	require.Len(t, issues, 1, "recursive ancestry is counted before paging")
+	assert.Contains(t, []string{child, grandchild}, issues[0].ID)
+
+	filter = &domain.Filter{Parent: &child, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1, "an ancestor may have any issue type")
+	assert.Equal(t, grandchild, issues[0].ID)
+	assert.Equal(t, 1, total)
+
+	noParent := ""
+	epicType := domain.TypeEpic
+	filter = &domain.Filter{Parent: &noParent, ParentType: &epicType, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	assert.ElementsMatch(t, []string{epic, unrelated}, []string{issues[0].ID, issues[1].ID})
+}
+
+func TestRecursiveParentFilterExcludesItsSeedInACycle(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	first, second := add("first"), add("second")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(second, domain.RelHasParent, first); err != nil {
+			return err
+		}
+		return tx.InsertRelation(first, domain.RelHasParent, second)
+	}))
+
+	filter := &domain.Filter{Parent: &first, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, second, issues[0].ID)
+	assert.Equal(t, 1, total)
+}
+
 func TestListingFilterMatchesChildrenByParentID(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)

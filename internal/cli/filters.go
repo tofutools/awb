@@ -205,7 +205,10 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 		filter.Offset = &offset
 	}
 
-	filter.Parent = f.Parent
+	if f.Parent != "" {
+		parent := f.Parent
+		filter.Parent = &parent
+	}
 
 	sort := domain.DefaultSort
 	if opts.relevance {

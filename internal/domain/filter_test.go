@@ -29,3 +29,13 @@ func TestWorkspaceSortVocabulary(t *testing.T) {
 	_, err = domain.ParseWorkspaceSort("name")
 	assert.Error(t, err)
 }
+
+func TestParentFilterUsesAnEmptyValueForNoParent(t *testing.T) {
+	none := ""
+	require.NoError(t, domain.ValidateParentFilter(&domain.Filter{Parent: &none}))
+
+	wireSentinel := "none"
+	err := domain.ValidateParentFilter(&domain.Filter{Parent: &wireSentinel})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reserved for the HTTP API")
+}

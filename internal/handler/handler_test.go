@@ -708,6 +708,49 @@ func TestPagingAppliesAfterIssueSorting(t *testing.T) {
 	assert.Equal(t, "[]", payload)
 }
 
+func TestParentListingFilterCanBeRecursive(t *testing.T) {
+	a := newAPI(t)
+	epic := a.createIssue(`{"workspace":"awb","title":"Release epic","type":"epic"}`)
+	member := a.createIssue(`{"workspace":"awb","title":"member","relations":[{"type":"has-parent","other":"` + epic.ID + `"}]}`)
+	nested := a.createIssue(`{"workspace":"awb","title":"nested","relations":[{"type":"has-parent","other":"` + member.ID + `"}]}`)
+	unrelated := a.createIssue(`{"workspace":"awb","title":"unrelated"}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/issues?parent="+epic.ID, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+	var issues []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Equal(t, member.ID, issues[0].ID)
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?parent="+epic.ID+"&recursive=true&limit=1", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "2", resp.Header.Get("X-Total-Count"), "recursive ancestry is filtered before paging")
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	require.Len(t, issues, 1)
+	assert.Contains(t, []string{member.ID, nested.ID}, issues[0].ID)
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?parent=none&parent-type=epic", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	assert.ElementsMatch(t, []string{epic.ID, nested.ID, unrelated.ID}, []string{issues[0].ID, issues[1].ID, issues[2].ID})
+
+	resp, payload = a.do(http.MethodGet, "/api/issues?parent=none&parent-type=epic&recursive=true", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	assert.ElementsMatch(t, []string{epic.ID, unrelated.ID}, []string{issues[0].ID, issues[1].ID})
+
+	for _, query := range []string{
+		"parent=not-an-id",
+		"recursive=true",
+		"parent-type=epic",
+		"parent=" + epic.ID + "&parent-type=epic",
+	} {
+		resp, _ = a.do(http.MethodGet, "/api/issues?"+query, "")
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, query)
+	}
+}
+
 func TestWorkspacePagingAppliesAfterSorting(t *testing.T) {
 	a := newAPI(t)
 	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)

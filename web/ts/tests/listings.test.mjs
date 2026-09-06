@@ -5,12 +5,15 @@ import {
   activeListingFamily,
   BackendListingFilter,
   emptyFacetLabel,
+  epicParentFilter,
+  epicSelectionFrom,
   listingFilterMaxLength,
   listingParentTitle,
   listingParentTitleMaxLength,
   listingRelationshipRole,
   lowestFacetGroup,
   nextSortValue,
+  noEpicSelection,
   pageNumber,
   pageSizeFrom,
   pageSizeStorage,
@@ -18,6 +21,7 @@ import {
   rememberedPageSize,
   rememberPageSize,
   sortState,
+  withEpicSelection,
   withPage,
   withPageSize,
 } from "../../static/listings.js";
@@ -27,6 +31,21 @@ const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration
 
 test("listing filter length mirrors the OpenAPI contract", () => {
   assert.equal(listingFilterMaxLength, 500);
+});
+
+test("epic selection is shareable, single-valued, and resets pagination", () => {
+  const query = new URLSearchParams("workspace=awb&label=frontend&sort=-updated&page=3");
+  const selected = withEpicSelection(query, "awb-a1b2c3");
+  assert.equal(selected.toString(), "workspace=awb&label=frontend&sort=-updated&epic=awb-a1b2c3");
+  assert.equal(epicSelectionFrom(selected), "awb-a1b2c3");
+  assert.equal(withEpicSelection(selected, noEpicSelection).get("epic"), "none");
+  assert.equal(withEpicSelection(selected, null).has("epic"), false);
+  assert.equal(epicSelectionFrom(new URLSearchParams("epic=not-an-id")), null);
+  assert.deepEqual(epicParentFilter(selected), { parent: "awb-a1b2c3", recursive: true });
+  assert.deepEqual(epicParentFilter(new URLSearchParams("epic=none")), {
+    parent: "none", "parent-type": "epic", recursive: true,
+  });
+  assert.deepEqual(epicParentFilter(new URLSearchParams()), {});
 });
 
 test("parent titles are bounded for their narrow listing column", () => {
