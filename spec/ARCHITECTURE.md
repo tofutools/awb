@@ -279,7 +279,8 @@ not client-side sequences.
 ### Storage: persistence and scoped reads
 
 `internal/storage` owns schema, migrations, SQL, transaction helpers, and the
-blob store. Released migration batches are immutable and new versions append a
+blob store. `spec/schema.sql` records the current schema those migrations
+produce. Released migration batches are immutable and new versions append a
 batch, preserving the ability to upgrade every released database.
 
 SQLite runs in WAL mode. Mutations begin immediate transactions, taking the

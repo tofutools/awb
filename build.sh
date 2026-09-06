@@ -32,25 +32,28 @@ run() {
   fi
 }
 
-# 1. Generate the Go server from openapi.yaml into internal/api/ (the directive
+# 1. Verify that the documented SQLite schema matches the migrations.
+run go test ./internal/storage
+
+# 2. Generate the Go server from openapi.yaml into internal/api/ (the directive
 #    is in internal/generate.go).
 run go generate ./...
 
-# 2. Generate the TypeScript types from the same document.
+# 3. Generate the TypeScript types from the same document.
 run openapi-typescript openapi.yaml -o web/ts/api-types.ts
 
-# 3. Compile the TypeScript frontend into web/static/.
+# 4. Compile the TypeScript frontend into web/static/.
 run tsc --project web/ts/tsconfig.json
 
-# 4. Run the frontend tests.
+# 5. Run the frontend tests.
 run node --test 'web/ts/tests/*.test.mjs'
 
-# 5. Build the single binary; the frontend is embedded via web/embed.go.
+# 6. Build the single binary; the frontend is embedded via web/embed.go.
 run env CGO_ENABLED=0 go build -trimpath -buildvcs=true \
   -o "$OUTPUT_DIR/awb" .
 
-# 6. Run the Go tests.
+# 7. Run the Go tests.
 run go test ./...
 
-# 7. Lint.
+# 8. Lint.
 run golangci-lint run ./...
