@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Issue } from "../api.js";
 import {
   epicSelectionFrom,
+  initialFilterSuggestions,
   noEpicSelection,
+  rankEpicFilterSuggestions,
   withEpicSelection,
 } from "../listings.js";
 import { routeHref, type Route } from "../routing/route.js";
@@ -134,7 +136,7 @@ export function DynamicFilterRow({
                   label: item.label,
                   detail: item.detail,
                 }));
-              return query === "" ? matches.slice(0, 8) : matches;
+              return initialFilterSuggestions(query, matches);
             }}
           />
         </Popover>
@@ -233,15 +235,7 @@ export function EpicFilterRow({
   epics: Issue[];
 }) {
   const selected = epicSelectionFrom(route.query);
-  const ranked = [...epics].sort((left, right) => {
-    const state =
-      Number(left.status === "closed") - Number(right.status === "closed");
-    return (
-      state ||
-      right.updated_at.localeCompare(left.updated_at) ||
-      left.id.localeCompare(right.id)
-    );
-  });
+  const ranked = rankEpicFilterSuggestions(epics);
   return (
     <DynamicFilterRow
       route={route}

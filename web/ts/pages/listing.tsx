@@ -16,6 +16,7 @@ import {
   pageWindow,
   withPage,
   lowestFacetGroup,
+  rankLabelFilterSuggestions,
 } from "../listings.js";
 import {
   routeHref,
@@ -292,12 +293,7 @@ export function ListingPage({
                 title="labels"
                 name="label"
                 selected={route.query.getAll("label")}
-                choices={[...data.labels.rows]
-                  .sort(
-                    (left, right) =>
-                      right.count - left.count ||
-                      left.value.localeCompare(right.value),
-                  )
+                choices={rankLabelFilterSuggestions(data.labels.rows)
                   .map((label) => ({
                     value: label.value,
                     label: `#${label.value}`,
