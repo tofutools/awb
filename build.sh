@@ -33,7 +33,7 @@ run() {
 }
 
 # 1. Verify that the documented SQLite schema matches the migrations.
-run go test ./internal/storage -run '^TestSchemaDocumentIsCurrent$'
+run go test ./internal/storage
 
 # 2. Generate the Go server from openapi.yaml into internal/api/ (the directive
 #    is in internal/generate.go).
