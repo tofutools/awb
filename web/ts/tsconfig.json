@@ -15,13 +15,40 @@
     "removeComments": false,
     "outDir": "../static",
     "rootDir": ".",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "paths": {
-      "codemirror": ["./vendor/codemirror.d.ts"],
-      "markdown-it": ["./vendor/markdown-it.d.ts"],
-      "dompurify": ["./vendor/dompurify.d.ts"]
-    }
+      "codemirror": [
+        "./vendor/codemirror.d.ts"
+      ],
+      "markdown-it": [
+        "./vendor/markdown-it.d.ts"
+      ],
+      "dompurify": [
+        "./vendor/dompurify.d.ts"
+      ],
+      "preact": [
+        "./vendor/preact/index.d.ts"
+      ],
+      "preact/hooks": [
+        "./vendor/preact/hooks.d.ts"
+      ],
+      "preact/jsx-runtime": [
+        "./vendor/preact/jsx-runtime.d.ts"
+      ]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["*.ts"],
-  "exclude": ["vendor", "tests"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "vendor",
+    "tests"
+  ]
 }

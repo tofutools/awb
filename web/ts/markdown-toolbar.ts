@@ -39,11 +39,6 @@ export interface EditorHost {
   apply(edit: MarkdownEdit): void;
 }
 
-export interface MarkdownToolbar {
-  readonly element: HTMLElement;
-  /** sync refreshes the controls that mirror where the cursor is. */
-  sync(): void;
-}
 
 // An ATX heading: up to three spaces of indentation, one to six `#`, and then
 // either whitespace or the end of the line — `###` on its own is an empty
@@ -213,7 +208,7 @@ export function linkEdit(doc: string, from: number, to: number, image: boolean):
   return { changes: [{ from, to, insert }], selection };
 }
 
-type IconName =
+export type IconName =
   | "bold" | "italic" | "code" | "strikethrough"
   | "bullet-list" | "numbered-list" | "task-list"
   | "quote" | "code-block" | "table" | "rule"
@@ -221,7 +216,7 @@ type IconName =
 
 // Drawn on the same 24-unit stroked grid as the interface icons in app.ts, so
 // the toolbar sits in the same visual family without a second asset pipeline.
-const iconPaths: Record<IconName, string> = {
+export const iconPaths: Record<IconName, string> = {
   "bold": '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"></path><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"></path>',
   "italic": '<path d="M15 5h-5M14 19H9M13 5l-2 14"></path>',
   "code": '<path d="m15 8 4 4-4 4M9 8l-4 4 4 4"></path>',
@@ -238,102 +233,6 @@ const iconPaths: Record<IconName, string> = {
   "help": '<circle cx="12" cy="12" r="9"></circle><path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.4v.3"></path><path d="M12 17h.01"></path>',
 };
 
-function toolbarIcon(name: IconName): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.classList.add("icon");
-  svg.innerHTML = iconPaths[name];
-  return svg;
-}
-
-function toolbarButton(label: string, icon: IconName, run: () => void): HTMLButtonElement {
-  const control = document.createElement("button");
-  control.type = "button";
-  control.className = "markdown-toolbar-button";
-  control.title = label;
-  control.setAttribute("aria-label", label);
-  control.append(toolbarIcon(icon));
-  // A toolbar button must not take the focus off the document it edits: the
-  // selection it acts on is the one the editor still holds.
-  control.addEventListener("mousedown", (event) => event.preventDefault());
-  control.addEventListener("click", run);
-  return control;
-}
-
-function separator(): HTMLElement {
-  const line = document.createElement("span");
-  line.className = "markdown-toolbar-separator";
-  line.setAttribute("role", "separator");
-  line.setAttribute("aria-orientation", "vertical");
-  return line;
-}
-
-export function createMarkdownToolbar(host: EditorHost): MarkdownToolbar {
-  const element = document.createElement("div");
-  element.className = "markdown-toolbar";
-  // A group rather than role="toolbar": that role promises arrow-key
-  // navigation between the controls, and every control here is in the tab
-  // order instead.
-  element.setAttribute("role", "group");
-  element.setAttribute("aria-label", "Markdown formatting");
-
-  const edit = (build: (doc: string, from: number, to: number) => MarkdownEdit) => () => {
-    const { from, to } = host.selection();
-    host.apply(build(host.doc(), from, to));
-  };
-
-  const heading = document.createElement("select");
-  heading.className = "markdown-toolbar-heading";
-  heading.title = "Heading level";
-  heading.setAttribute("aria-label", "Heading level");
-  for (const level of [0, 1, 2, 3, 4, 5, 6]) {
-    const option = document.createElement("option");
-    option.value = String(level);
-    option.textContent = level === 0 ? "Normal" : `Heading ${level}`;
-    heading.append(option);
-  }
-  heading.addEventListener("change", () => {
-    const level = Number(heading.value);
-    const { from, to } = host.selection();
-    host.apply(headingEdit(host.doc(), from, to, level));
-  });
-
-  element.append(
-    heading,
-    separator(),
-    toolbarButton("Bold", "bold", edit((doc, from, to) => wrapEdit(doc, from, to, "**"))),
-    toolbarButton("Italic", "italic", edit((doc, from, to) => wrapEdit(doc, from, to, "*"))),
-    toolbarButton("Code", "code", edit((doc, from, to) => wrapEdit(doc, from, to, "`"))),
-    toolbarButton("Strikethrough", "strikethrough", edit((doc, from, to) => wrapEdit(doc, from, to, "~~"))),
-    separator(),
-    toolbarButton("Bullet list", "bullet-list", edit((doc, from, to) => linePrefixEdit(doc, from, to, "- "))),
-    toolbarButton("Numbered list", "numbered-list", edit(numberedListEdit)),
-    toolbarButton("Task list", "task-list", edit((doc, from, to) => linePrefixEdit(doc, from, to, "- [ ] "))),
-    separator(),
-    toolbarButton("Blockquote", "quote", edit((doc, from, to) => linePrefixEdit(doc, from, to, "> "))),
-    toolbarButton("Code block", "code-block", edit(codeBlockEdit)),
-    toolbarButton("Table", "table", edit(tableEdit)),
-    toolbarButton("Horizontal rule", "rule", edit(ruleEdit)),
-    separator(),
-    toolbarButton("Link", "link", edit((doc, from, to) => linkEdit(doc, from, to, false))),
-    toolbarButton("Image", "image", edit((doc, from, to) => linkEdit(doc, from, to, true))),
-  );
-
-  const spacer = document.createElement("span");
-  spacer.className = "markdown-toolbar-spacer";
-  const help = toolbarButton("Markdown help", "help", () => openMarkdownHelp(help));
-  help.setAttribute("aria-haspopup", "dialog");
-  element.append(spacer, help);
-
-  return {
-    element,
-    sync(): void {
-      heading.value = String(headingLevel(host.lineAt(host.selection().from)));
-    },
-  };
-}
-
 interface HelpRow {
   readonly syntax: string;
   readonly description: string;
@@ -346,7 +245,7 @@ interface HelpSection {
 
 // The reference is the dialect and nothing else. It follows the toolbar's
 // order so a reader can go from a button to the syntax behind it.
-const helpSections: readonly HelpSection[] = [
+export const helpSections: readonly HelpSection[] = [
   {
     title: "Headings",
     rows: [
@@ -395,66 +294,4 @@ const helpSections: readonly HelpSection[] = [
   },
 ];
 
-const helpNote = "Raw HTML is refused rather than escaped, so a tag written by hand — <b>, <script>, an HTML comment, or a bare <word> — has to be written as `<word>` or \\<word>.";
-
-/** openMarkdownHelp shows the syntax reference. A fresh dialog per opening
- * ties its lifetime to the button that asked for it and hands the focus back
- * there, as the confirmation dialogs do. */
-export function openMarkdownHelp(trigger: HTMLElement): void {
-  const dialog = document.createElement("dialog");
-  dialog.className = "markdown-help-dialog";
-  dialog.setAttribute("aria-labelledby", "markdown-help-title");
-
-  const heading = document.createElement("h2");
-  heading.id = "markdown-help-title";
-  heading.textContent = "Markdown syntax";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "secondary-button";
-  close.textContent = "Close";
-  const header = document.createElement("div");
-  header.className = "markdown-help-header";
-  header.append(heading, close);
-  dialog.append(header);
-
-  const body = document.createElement("div");
-  body.className = "markdown-help-body";
-  for (const section of helpSections) {
-    const title = document.createElement("h3");
-    title.textContent = section.title;
-    const list = document.createElement("dl");
-    list.className = "markdown-help-list";
-    for (const row of section.rows) {
-      const term = document.createElement("dt");
-      const syntax = document.createElement("code");
-      syntax.textContent = row.syntax;
-      term.append(syntax);
-      const description = document.createElement("dd");
-      description.textContent = row.description;
-      list.append(term, description);
-    }
-    const group = document.createElement("section");
-    group.className = "markdown-help-section";
-    group.append(title, list);
-    body.append(group);
-  }
-  const note = document.createElement("p");
-  note.className = "markdown-help-note";
-  note.textContent = helpNote;
-  body.append(note);
-  dialog.append(body);
-
-  document.body.append(dialog);
-  close.addEventListener("click", () => dialog.close());
-  // A click on the backdrop lands on the dialog itself rather than on anything
-  // inside it, which is how a modal dialog reports one.
-  dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
-  });
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    if (trigger.isConnected) trigger.focus();
-  }, { once: true });
-  dialog.showModal();
-  close.focus();
-}
+export const helpNote = "Raw HTML is refused rather than escaped, so a tag written by hand — <b>, <script>, an HTML comment, or a bare <word> — has to be written as `<word>` or \\<word>.";
