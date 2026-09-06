@@ -55,8 +55,24 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 	}
 	c := t.selection(filter)
 	laneSet := make(map[string]bool, len(epics))
+	selectedEpics := make([]string, 0, len(epics))
+	includeNoEpic := false
 	for _, epic := range epics {
 		laneSet[epic] = true
+		if epic == "" {
+			includeNoEpic = true
+		} else {
+			selectedEpics = append(selectedEpics, epic)
+		}
+	}
+	laneClause := "parent.id IS NULL"
+	laneArgs := []any{}
+	if len(selectedEpics) > 0 {
+		laneClause = "parent.id IN (" + placeholders(len(selectedEpics)) + ")"
+		laneArgs = anyArgs(selectedEpics)
+		if includeNoEpic {
+			laneClause = "(parent.id IS NULL OR " + laneClause + ")"
+		}
 	}
 
 	type candidate struct {
@@ -66,13 +82,14 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 		updatedAt string
 	}
 	candidates := make(map[BoardColumnKey][]candidate, len(epics)*len(statuses))
+	args := append(append([]any{}, c.args...), laneArgs...)
 	rows, err := t.q.QueryContext(t.ctx, `
 		SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, COALESCE(parent.id, '')
 		  FROM issues i
 		  LEFT JOIN relations er ON er.subject = i.id AND er.type = 'has-parent'
 		  LEFT JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
 		                         AND parent.workspace = i.workspace
-		 WHERE `+c.where(), c.args...)
+		 WHERE `+c.where()+` AND `+laneClause, args...)
 	if err != nil {
 		return nil, awberr.Wrap(awberr.Runtime, err, "list board columns")
 	}
