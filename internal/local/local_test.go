@@ -881,6 +881,26 @@ func TestFilterNamingAMissingWorkspaceIsNotFound(t *testing.T) {
 	_, err = b.ListIssues(ctx, &domain.Filter{Parent: "awb-ffffff", Sort: domain.DefaultSort})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
+
+	missing := "awb-ffffff"
+	_, err = b.ListIssues(ctx, &domain.Filter{Ancestor: &missing, Recursive: true, Sort: domain.DefaultSort})
+	require.Error(t, err)
+	assert.Equal(t, 3, exitOf(err))
+}
+
+func TestInvalidAncestorFilterCombinationsAreUsageErrors(t *testing.T) {
+	b, ctx := newBackend(t)
+	ancestor := "awb-ffffff"
+	ancestorType := domain.TypeEpic
+	for _, filter := range []*domain.Filter{
+		{Recursive: true},
+		{AncestorType: &ancestorType},
+		{Ancestor: &ancestor, AncestorType: &ancestorType},
+	} {
+		_, err := b.ListIssues(ctx, filter)
+		require.Error(t, err)
+		assert.Equal(t, 2, exitOf(err))
+	}
 }
 
 func TestDeleteIssue(t *testing.T) {

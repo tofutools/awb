@@ -25,9 +25,12 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/labels":
 			assert.Equal(t, "ready", r.URL.Query().Get("readiness"))
-			assert.Equal(t, "none", r.URL.Query().Get("epic"))
+			assert.Equal(t, "none", r.URL.Query().Get("ancestor"))
+			assert.Equal(t, "epic", r.URL.Query().Get("ancestor-type"))
+			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
 		case "/api/issues":
-			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("epic"))
+			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("ancestor"))
+			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Total-Count", "0")
@@ -40,13 +43,18 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	client := remote.New(base, "", "", "operator")
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
-	epic := "awb-a1b2c3"
-	_, err = client.ListIssues(t.Context(), &domain.Filter{ListingFilter: want["/api/issues"], Epic: &epic})
+	ancestor := "awb-a1b2c3"
+	_, err = client.ListIssues(t.Context(), &domain.Filter{
+		ListingFilter: want["/api/issues"], Ancestor: &ancestor, Recursive: true,
+	})
 	require.NoError(t, err)
+	epicType := domain.TypeEpic
 	_, err = client.LabelFacets(t.Context(), &domain.Filter{
 		ListingFilter: want["/api/labels"],
 		Readiness:     domain.ReadinessReady,
-		Epic:          new(string),
+		Ancestor:      new(string),
+		AncestorType:  &epicType,
+		Recursive:     true,
 	})
 	require.NoError(t, err)
 	_, err = client.ListWorkspaces(t.Context(), want["/api/workspaces"], domain.DefaultWorkspaceSort, nil, nil)

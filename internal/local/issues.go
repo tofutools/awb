@@ -193,7 +193,7 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 		if err := checkFilterWorkspaces(tx, filter); err != nil {
 			return err
 		}
-		if err := resolveFilterParent(tx, filter); err != nil {
+		if err := resolveFilterReferences(tx, filter); err != nil {
 			return err
 		}
 		var err error
@@ -247,17 +247,26 @@ func checkFilterWorkspaces(tx *storage.Tx, filter *domain.Filter) error {
 	return nil
 }
 
-// resolveFilterParent turns --parent's reference into a stored ID, reporting
-// one that names no issue for the same reason.
-func resolveFilterParent(tx *storage.Tx, filter *domain.Filter) error {
-	if filter.Parent == "" {
-		return nil
-	}
-	id, err := resolve(tx, filter.Parent)
-	if err != nil {
+// resolveFilterReferences turns relationship references into stored IDs,
+// reporting one that names no issue for the same reason as a direct lookup.
+func resolveFilterReferences(tx *storage.Tx, filter *domain.Filter) error {
+	if err := domain.ValidateAncestorFilter(filter); err != nil {
 		return err
 	}
-	filter.Parent = id
+	if filter.Parent != "" {
+		id, err := resolve(tx, filter.Parent)
+		if err != nil {
+			return err
+		}
+		filter.Parent = id
+	}
+	if filter.Ancestor != nil && *filter.Ancestor != "" {
+		id, err := resolve(tx, *filter.Ancestor)
+		if err != nil {
+			return err
+		}
+		*filter.Ancestor = id
+	}
 	return nil
 }
 
@@ -635,7 +644,7 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 		if err := checkFilterWorkspaces(tx, filter); err != nil {
 			return err
 		}
-		if err := resolveFilterParent(tx, filter); err != nil {
+		if err := resolveFilterReferences(tx, filter); err != nil {
 			return err
 		}
 		facets, err := query(tx, filter)

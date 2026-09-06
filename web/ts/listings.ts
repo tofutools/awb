@@ -26,6 +26,23 @@ export function epicSelectionFrom(query: URLSearchParams): string | null {
   return value === noEpicSelection || (value !== null && issueIDPattern.test(value)) ? value : null;
 }
 
+export interface EpicAncestorFilter {
+  ancestor?: string;
+  "ancestor-type"?: "epic";
+  recursive?: true;
+}
+
+/** epicAncestorFilter translates the epic-specific route state into the
+ * general ancestry query exposed by the API. */
+export function epicAncestorFilter(query: URLSearchParams): EpicAncestorFilter {
+  const epic = epicSelectionFrom(query);
+  if (epic === null) return {};
+  if (epic === noEpicSelection) {
+    return { ancestor: "none", "ancestor-type": "epic", recursive: true };
+  }
+  return { ancestor: epic, recursive: true };
+}
+
 /** withEpicSelection changes the single epic selection without disturbing
  * the other filters or sort, and returns to the first backend page. */
 export function withEpicSelection(query: URLSearchParams, epic: string | null): URLSearchParams {

@@ -5,6 +5,7 @@ import {
   activeListingFamily,
   BackendListingFilter,
   emptyFacetLabel,
+  epicAncestorFilter,
   epicSelectionFrom,
   listingFilterMaxLength,
   listingParentTitle,
@@ -41,6 +42,11 @@ test("epic selection is shareable, single-valued, and resets pagination", () => 
   assert.equal(withEpicSelection(selected, noEpicSelection).get("epic"), "none");
   assert.equal(withEpicSelection(selected, null).has("epic"), false);
   assert.equal(epicSelectionFrom(new URLSearchParams("epic=not-an-id")), null);
+  assert.deepEqual(epicAncestorFilter(selected), { ancestor: "awb-a1b2c3", recursive: true });
+  assert.deepEqual(epicAncestorFilter(new URLSearchParams("epic=none")), {
+    ancestor: "none", "ancestor-type": "epic", recursive: true,
+  });
+  assert.deepEqual(epicAncestorFilter(new URLSearchParams()), {});
 });
 
 test("parent titles are bounded for their narrow listing column", () => {

@@ -133,7 +133,9 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -591,7 +593,9 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -617,7 +621,9 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -660,7 +666,9 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - name: sort
           in: query
@@ -1317,7 +1325,9 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
@@ -1354,7 +1364,9 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/epic'
+        - $ref: '#/components/parameters/ancestor'
+        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
@@ -1541,15 +1553,31 @@ components:
         Select the direct children of that issue — the issues whose `has-parent`
         relation names it — not the whole subtree.
       schema: { type: string }
-    epic:
-      name: epic
+    ancestor:
+      name: ancestor
       in: query
       description: |
-        Select issues with direct same-workspace membership in this epic, or
-        use the literal `none` to select issues without such membership.
+        Select issues whose direct parent is this issue, or use the literal
+        `none` to select issues without a parent. `recursive=true` widens both
+        forms to the whole ancestry chain. The named issue may have any type
+        and uses the same full-ID or unambiguous-reference rules as `parent`.
       schema:
         type: string
-        pattern: '^(none|[a-z][a-z0-9-]*-[0-9a-f]{6})$'
+        minLength: 1
+    ancestorType:
+      name: ancestor-type
+      in: query
+      description: |
+        With `ancestor=none`, select issues without an ancestor of this type.
+        It is invalid with a named ancestor or without `ancestor=none`.
+      schema: { $ref: '#/components/schemas/Type' }
+    recursive:
+      name: recursive
+      in: query
+      description: |
+        With `ancestor`, traverse the whole ancestry chain instead of only the
+        direct parent relation. It is invalid without `ancestor`.
+      schema: { type: boolean, default: false }
     listingFilter:
       name: filter
       in: query

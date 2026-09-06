@@ -99,6 +99,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		c.add(`i.id IN (SELECT subject FROM relations
 		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)
 	}
+	addAncestorSelection(c, f)
 	if f.Epic != nil {
 		const directEpic = `EXISTS (
 			SELECT 1 FROM relations er JOIN issues epic ON epic.id = er.other
@@ -142,6 +143,57 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	}
 
 	return c
+}
+
+// addAncestorSelection expresses both halves of the general ancestry filter:
+// selecting children/descendants of one issue, and selecting issues without a
+// direct/recursive ancestor (optionally of one type). UNION makes a malformed
+// legacy cycle terminate rather than recurse forever.
+func addAncestorSelection(c *conditions, f *domain.Filter) {
+	if f.Ancestor == nil {
+		return
+	}
+	if *f.Ancestor != "" {
+		if !f.Recursive {
+			c.add(`i.id IN (SELECT subject FROM relations
+			                 WHERE type = 'has-parent' AND other = ?)`, *f.Ancestor)
+			return
+		}
+		c.add(`i.id IN (
+			WITH RECURSIVE descendants(id) AS (
+				SELECT subject FROM relations WHERE type = 'has-parent' AND other = ?
+				UNION
+				SELECT r.subject FROM relations r JOIN descendants d ON r.other = d.id
+				 WHERE r.type = 'has-parent'
+			)
+			SELECT id FROM descendants
+		)`, *f.Ancestor)
+		return
+	}
+
+	typeClause := ""
+	args := []any{}
+	if f.AncestorType != nil {
+		typeClause = " AND ancestor.type = ?"
+		args = append(args, *f.AncestorType)
+	}
+	if !f.Recursive {
+		c.add(`NOT EXISTS (
+			SELECT 1 FROM relations ar JOIN issues ancestor ON ancestor.id = ar.other
+			 WHERE ar.subject = i.id AND ar.type = 'has-parent'`+typeClause+`
+		)`, args...)
+		return
+	}
+	c.add(`NOT EXISTS (
+		WITH RECURSIVE ancestors(id) AS (
+			SELECT other FROM relations WHERE subject = i.id AND type = 'has-parent'
+			UNION
+			SELECT r.other FROM relations r JOIN ancestors a ON r.subject = a.id
+			 WHERE r.type = 'has-parent'
+		)
+		SELECT 1 FROM ancestors a JOIN issues ancestor ON ancestor.id = a.id
+		 WHERE 1 = 1`+typeClause+`
+	)`, args...)
 }
 
 // statusRank and typeRank order a vocabulary column by what its values mean

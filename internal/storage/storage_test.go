@@ -617,30 +617,45 @@ func TestListingFilterAppliesBeforeIssuePagingTotalsAndFacets(t *testing.T) {
 	assert.Equal(t, 13, total, "clearing restores the complete result set")
 }
 
-func TestEpicFilterAppliesBeforePagingAndSelectsNoEpic(t *testing.T) {
+func TestAncestorFilterCanTraverseRecursivelyBeforePaging(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
 	epic := add("Release epic", func(i *domain.Issue) { i.Type = domain.TypeEpic })
-	first := add("first member")
-	second := add("second member")
+	child := add("direct child")
+	grandchild := add("nested descendant")
 	unrelated := add("unrelated")
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		if err := tx.InsertRelation(first, domain.RelHasParent, epic); err != nil {
+		if err := tx.InsertRelation(child, domain.RelHasParent, epic); err != nil {
 			return err
 		}
-		return tx.InsertRelation(second, domain.RelHasParent, epic)
+		return tx.InsertRelation(grandchild, domain.RelHasParent, child)
 	}))
 
-	limit, offset := 1, 1
-	filter := &domain.Filter{Epic: &epic, Limit: &limit, Offset: &offset, Sort: domain.Sort{Key: domain.SortID}}
+	filter := &domain.Filter{Ancestor: &epic, Sort: domain.Sort{Key: domain.SortID}}
 	issues, total, err := listWith(t, db, filter)
 	require.NoError(t, err)
 	require.Len(t, issues, 1)
-	assert.Equal(t, 2, total, "epic membership is counted before paging")
-	assert.Contains(t, []string{first, second}, issues[0].ID)
+	assert.Equal(t, child, issues[0].ID, "non-recursive ancestry selects direct children")
+	assert.Equal(t, 1, total)
 
-	noEpic := ""
-	filter = &domain.Filter{Epic: &noEpic, Sort: domain.Sort{Key: domain.SortID}}
+	limit, offset := 1, 1
+	filter = &domain.Filter{Ancestor: &epic, Recursive: true, Limit: &limit, Offset: &offset, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 2, total)
+	require.Len(t, issues, 1, "recursive ancestry is counted before paging")
+	assert.Contains(t, []string{child, grandchild}, issues[0].ID)
+
+	filter = &domain.Filter{Ancestor: &child, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1, "an ancestor may have any issue type")
+	assert.Equal(t, grandchild, issues[0].ID)
+	assert.Equal(t, 1, total)
+
+	noAncestor := ""
+	epicType := domain.TypeEpic
+	filter = &domain.Filter{Ancestor: &noAncestor, AncestorType: &epicType, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
 	issues, total, err = listWith(t, db, filter)
 	require.NoError(t, err)
 	assert.Equal(t, 2, total)

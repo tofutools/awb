@@ -30,7 +30,9 @@ type selection struct {
 	unassigned      bool
 	workspaces      []api.WorkspaceKey
 	parent          api.OptString
-	epic            api.OptString
+	ancestor        api.OptString
+	ancestorType    api.OptType
+	recursive       bool
 	sort            string
 	limit           api.OptInt
 	offset          api.OptInt
@@ -49,13 +51,23 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 		IncludeArchived: s.includeArchived,
 		Unassigned:      s.unassigned,
 		Parent:          s.parent.Or(""),
+		Recursive:       s.recursive,
 		ListingFilter:   s.listingFilter,
 	}
-	if epic, ok := s.epic.Get(); ok {
-		if epic == "none" {
-			epic = ""
+	ancestor, hasAncestor := s.ancestor.Get()
+	ancestorType, hasAncestorType := s.ancestorType.Get()
+	if hasAncestor {
+		if ancestor == "none" {
+			ancestor = ""
 		}
-		filter.Epic = &epic
+		filter.Ancestor = &ancestor
+	}
+	if hasAncestorType {
+		issueType := domain.Type(ancestorType)
+		filter.AncestorType = &issueType
+	}
+	if err := domain.ValidateAncestorFilter(filter); err != nil {
+		return nil, err
 	}
 
 	for _, status := range s.statuses {
@@ -149,7 +161,9 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 		unassigned:      params.Unassigned.Or(false),
 		workspaces:      params.Workspace,
 		parent:          params.Parent,
-		epic:            params.Epic,
+		ancestor:        params.Ancestor,
+		ancestorType:    params.AncestorType,
+		recursive:       params.Recursive.Or(false),
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
 		offset:          params.Offset,
@@ -173,7 +187,9 @@ func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
 		labels:        params.Label,
 		workspaces:    params.Workspace,
 		parent:        params.Parent,
-		epic:          params.Epic,
+		ancestor:      params.Ancestor,
+		ancestorType:  params.AncestorType,
+		recursive:     params.Recursive.Or(false),
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
 		offset:        params.Offset,
@@ -200,7 +216,9 @@ func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams)
 		unassigned:    params.Unassigned.Or(false),
 		workspaces:    params.Workspace,
 		parent:        params.Parent,
-		epic:          params.Epic,
+		ancestor:      params.Ancestor,
+		ancestorType:  params.AncestorType,
+		recursive:     params.Recursive.Or(false),
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
 		offset:        params.Offset,
@@ -228,7 +246,9 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 		unassigned:      params.Unassigned.Or(false),
 		workspaces:      params.Workspace,
 		parent:          params.Parent,
-		epic:            params.Epic,
+		ancestor:        params.Ancestor,
+		ancestorType:    params.AncestorType,
+		recursive:       params.Recursive.Or(false),
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
 		offset:          params.Offset,
@@ -295,7 +315,9 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 		unassigned:      params.Unassigned.Or(false),
 		workspaces:      params.Workspace,
 		parent:          params.Parent,
-		epic:            params.Epic,
+		ancestor:        params.Ancestor,
+		ancestorType:    params.AncestorType,
+		recursive:       params.Recursive.Or(false),
 		limit:           params.Limit,
 		offset:          params.Offset,
 		listingFilter:   params.Filter.Or(""),
@@ -322,7 +344,9 @@ func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesPar
 		unassigned:      params.Unassigned.Or(false),
 		workspaces:      params.Workspace,
 		parent:          params.Parent,
-		epic:            params.Epic,
+		ancestor:        params.Ancestor,
+		ancestorType:    params.AncestorType,
+		recursive:       params.Recursive.Or(false),
 		limit:           params.Limit,
 		offset:          params.Offset,
 		listingFilter:   params.Filter.Or(""),

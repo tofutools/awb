@@ -222,12 +222,18 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 	if filter.Parent != "" {
 		query.Set("parent", filter.Parent)
 	}
-	if filter.Epic != nil {
-		if *filter.Epic == "" {
-			query.Set("epic", "none")
+	if filter.Ancestor != nil {
+		if *filter.Ancestor == "" {
+			query.Set("ancestor", "none")
 		} else {
-			query.Set("epic", *filter.Epic)
+			query.Set("ancestor", *filter.Ancestor)
 		}
+	}
+	if filter.AncestorType != nil {
+		query.Set("ancestor-type", string(*filter.AncestorType))
+	}
+	if filter.Recursive {
+		query.Set("recursive", "true")
 	}
 	if filter.ListingFilter != "" {
 		query.Set("filter", filter.ListingFilter)
