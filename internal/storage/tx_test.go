@@ -53,6 +53,17 @@ func TestCancelledWriteDoesNotPoisonConnection(t *testing.T) {
 	assertPoolRemainsUsable(t, db)
 }
 
+func TestCancelledCommitRaceReportsContextError(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	require.ErrorIs(t, transactionEndError(ctx, sql.ErrTxDone), context.Canceled)
+	require.ErrorIs(t,
+		transactionEndError(context.Background(), sql.ErrTxDone),
+		sql.ErrTxDone,
+	)
+}
+
 func TestCancelledWriteAfterStatementFailureDoesNotPoisonConnection(t *testing.T) {
 	db := newTxTestDB(t)
 	ctx, cancel := context.WithCancel(t.Context())
