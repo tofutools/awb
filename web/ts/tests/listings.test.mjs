@@ -22,7 +22,7 @@ import {
   rememberedPageSize,
   rememberPageSize,
   rankEpicFilterSuggestions,
-  rankLabelFilterSuggestions,
+  rankCountedFilterSuggestions,
   sortState,
   withEpicSelection,
   withPage,
@@ -35,8 +35,8 @@ test("listing filter length mirrors the OpenAPI contract", () => {
   assert.equal(listingFilterMaxLength, 500);
 });
 
-test("initial label suggestions rank frequent labels first and break ties by name", () => {
-  const labels = [
+test("initial counted suggestions rank frequent values first and break ties by name", () => {
+  const values = [
     { value: "frontend", count: 3 },
     { value: "api", count: 7 },
     { value: "backend", count: 7 },
@@ -44,10 +44,10 @@ test("initial label suggestions rank frequent labels first and break ties by nam
   ];
 
   assert.deepEqual(
-    rankLabelFilterSuggestions(labels).map((label) => label.value),
+    rankCountedFilterSuggestions(values).map((value) => value.value),
     ["api", "backend", "frontend", "docs"],
   );
-  assert.equal(labels[0].value, "frontend", "ranking does not mutate API data");
+  assert.equal(values[0].value, "frontend", "ranking does not mutate API data");
 });
 
 test("initial epic suggestions rank active and recently updated epics first", () => {

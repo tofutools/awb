@@ -30,11 +30,11 @@ export function initialFilterSuggestions<T>(
     : [...matches];
 }
 
-/** Frequently used labels make the most useful suggestions before search. */
-export function rankLabelFilterSuggestions<
+/** Frequently used facet values make the most useful suggestions before search. */
+export function rankCountedFilterSuggestions<
   T extends { value: string; count: number },
->(labels: readonly T[]): T[] {
-  return [...labels].sort(
+>(values: readonly T[]): T[] {
+  return [...values].sort(
     (left, right) =>
       right.count - left.count || left.value.localeCompare(right.value),
   );
