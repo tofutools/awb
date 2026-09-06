@@ -120,7 +120,7 @@ export function ListingPage({
           : kind === "blocked"
             ? api.blocked(blockedFilters(filters))
             : api.issues(filters);
-    const [page, workspaces, labels, assignees, epics] = await Promise.all([
+    const [page, workspaces, labels, assignees] = await Promise.all([
       load(),
       api.workspaces(filters["include-archived"] ? { state: "all" } : {}),
       api.labels(
@@ -129,17 +129,6 @@ export function ListingPage({
       kind === "ready"
         ? Promise.resolve({ rows: [], total: 0 })
         : api.assignees(facetFilters(filters)),
-      kind === "issues"
-        ? api.issues({
-            type: ["epic"],
-            workspace: filters.workspace,
-            "include-closed": true,
-            ...(filters["include-archived"]
-              ? { "include-archived": true }
-              : {}),
-            sort: "id",
-          })
-        : Promise.resolve({ rows: [], total: 0 }),
     ]);
     const normalized = pageWindow(
       page.total,
@@ -150,7 +139,7 @@ export function ListingPage({
       replaceRoute(route, withPage(route.query, normalized));
       return;
     }
-    return { page, workspaces, labels, assignees, epics };
+    return { page, workspaces, labels, assignees };
   }, [kind, route.query.toString()]);
   const data = resource.data;
   const state = sortState(
@@ -309,7 +298,7 @@ export function ListingPage({
                 }
               />
               {kind === "issues" && (
-                <EpicFilterRow route={route} epics={data.epics.rows} />
+                <EpicFilterRow route={route} />
               )}
               {kind !== "ready" && (
                 <DynamicFilterRow

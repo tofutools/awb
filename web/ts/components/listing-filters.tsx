@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import type { Issue } from "../api.js";
+import { api, type Issue } from "../api.js";
 import {
   epicSelectionFrom,
   initialFilterSuggestions,
@@ -68,6 +68,7 @@ export function DynamicFilterRow({
   title,
   name,
   choices,
+  loadChoices,
   selected,
   trailing,
 }: {
@@ -75,6 +76,7 @@ export function DynamicFilterRow({
   title: string;
   name: DynamicFilterName;
   choices: DynamicFilterChoice[];
+  loadChoices?: () => Promise<DynamicFilterChoice[]>;
   selected: string[];
   trailing?: ComponentChildren;
 }) {
@@ -84,7 +86,6 @@ export function DynamicFilterRow({
 
   const choice = (value: string) =>
     choices.find((item) => item.value === value);
-  const available = choices.filter((item) => !selected.includes(item.value));
   const add = (value: string): void => {
     let query: URLSearchParams;
     if (name === "epic") {
@@ -156,8 +157,12 @@ export function DynamicFilterRow({
             aria-label={dynamicFilterCopy[name].search}
             placeholder={dynamicFilterCopy[name].placeholder}
             load={async (query) => {
+              const loadedChoices = loadChoices
+                ? await loadChoices()
+                : choices;
               const match = query.toLocaleLowerCase();
-              const matches = available
+              const matches = loadedChoices
+                .filter((item) => !selected.includes(item.value))
                 .filter((item) =>
                   `${item.label} ${item.value} ${item.detail ?? ""}`
                     .toLocaleLowerCase()
@@ -301,29 +306,55 @@ export function ListingFilters({ route }: { route: Route }) {
   );
 }
 
-export function EpicFilterRow({
-  route,
-  epics,
-}: {
-  route: Route;
-  epics: Issue[];
-}) {
+export function EpicFilterRow({ route }: { route: Route }) {
   const selected = epicSelectionFrom(route.query);
-  const ranked = rankEpicFilterSuggestions(epics);
+  const workspaces = route.query.getAll("workspace");
+  const includeArchived = route.query.get("include-archived") === "true";
+  const scope = JSON.stringify([workspaces, includeArchived]);
+  const [loaded, setLoaded] = useState<{ scope: string; epics: Issue[] }>();
+  const pending = useRef<{ scope: string; epics: Promise<Issue[]> }>();
+  const epics = loaded?.scope === scope ? loaded.epics : [];
+  const choices = (rows: Issue[]): DynamicFilterChoice[] => [
+    { value: noEpicSelection, label: "No epic" },
+    ...rankEpicFilterSuggestions(rows).map((epic) => ({
+      value: epic.id,
+      label: epic.title,
+      detail: epic.id,
+    })),
+  ];
+  const loadChoices = async (): Promise<DynamicFilterChoice[]> => {
+    let request = pending.current;
+    if (request?.scope !== scope) {
+      const promise = api
+        .issues({
+          type: ["epic"],
+          workspace: workspaces.length ? workspaces : undefined,
+          "include-closed": true,
+          ...(includeArchived ? { "include-archived": true } : {}),
+          sort: "id",
+        })
+        .then((page) => {
+          setLoaded({ scope, epics: page.rows });
+          return page.rows;
+        });
+      request = { scope, epics: promise };
+      pending.current = request;
+    }
+    try {
+      return choices(await request.epics);
+    } catch (error) {
+      if (pending.current === request) pending.current = undefined;
+      throw error;
+    }
+  };
   return (
     <DynamicFilterRow
       route={route}
       title="epic"
       name="epic"
       selected={selected === null ? [] : [selected]}
-      choices={[
-        { value: noEpicSelection, label: "No epic" },
-        ...ranked.map((epic) => ({
-          value: epic.id,
-          label: epic.title,
-          detail: epic.id,
-        })),
-      ]}
+      choices={choices(epics)}
+      loadChoices={loadChoices}
     />
   );
 }

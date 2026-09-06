@@ -416,15 +416,23 @@ test("epic, status, and type filters compose without duplicate page fetches", as
     assignees: ["filter-user"],
   });
   const requests = [];
+  const epicRequests = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname === "/api/issues" && url.searchParams.has("limit"))
       requests.push(url);
+    if (
+      url.pathname === "/api/issues" &&
+      url.searchParams.getAll("type").includes("epic") &&
+      !url.searchParams.has("limit")
+    )
+      epicRequests.push(url);
   });
   await page.goto(`${baseURL}/#/issues?workspace=${workspace}&page=999`);
   await expect(page).not.toHaveURL(/page=999/);
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
   expect(requests).toHaveLength(2);
+  expect(epicRequests).toHaveLength(0);
   const labelRow = page.locator(".dynamic-filter-group", {
     has: page.getByText("labels", { exact: true }),
   });
@@ -487,6 +495,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
     has: page.getByText("epic", { exact: true }),
   });
   await epicRow.getByRole("button", { name: "Choose epic filter" }).click();
+  await expect.poll(() => epicRequests.length).toBe(1);
   let epicDialog = page.getByRole("dialog", { name: "Choose epic filter" });
   let epicSelector = epicDialog.getByRole("combobox", {
     name: "Search epics",
