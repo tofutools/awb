@@ -12,12 +12,14 @@ export function Autocomplete({
   value,
   onValue,
   onSuggestion,
+  onDismiss,
   ...props
 }: Omit<JSX.InputHTMLAttributes<HTMLInputElement>, "value" | "onInput"> & {
   load: (query: string, signal: AbortSignal) => Promise<Suggestion[]>;
   value: string;
   onValue: (value: string) => void;
   onSuggestion?: (suggestion: Suggestion) => void;
+  onDismiss?: () => void;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -77,7 +79,7 @@ export function Autocomplete({
             active,
             rows.length,
           );
-          if (["next", "previous", "select", "dismiss"].includes(action))
+          if (["next", "previous", "select"].includes(action))
             e.preventDefault();
           if (action === "next" || action === "previous")
             setActive(
@@ -86,7 +88,11 @@ export function Autocomplete({
           if (action === "select" && rows[active]) select(rows[active]);
           if (action === "dismiss") {
             setOpen(false);
-            e.stopPropagation();
+            if (onDismiss) onDismiss();
+            else {
+              e.preventDefault();
+              e.stopPropagation();
+            }
           }
         }}
       />

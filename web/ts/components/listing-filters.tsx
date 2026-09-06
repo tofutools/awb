@@ -117,6 +117,7 @@ export function DynamicFilterRow({
             value={draft}
             onValue={setDraft}
             onSuggestion={(item) => add(item.value)}
+            onDismiss={() => setDraft("")}
             aria-label={name === "label" ? "Search labels" : "Search epics"}
             placeholder={name === "label" ? "Search labels…" : "Search epics…"}
             load={async (query) => {
