@@ -186,6 +186,8 @@ const (
 // Filter selects issues for a listing. Repeated values of one filter are ORed;
 // different filters are ANDed.
 type Filter struct {
+	// ExcludeBacklog omits parked issues and their complete has-parent subtree.
+	ExcludeBacklog bool
 	// Readiness selects on the derived blocked state; the zero value does not.
 	Readiness Readiness
 
@@ -260,6 +262,9 @@ type Filter struct {
 // listings. Reference existence is resolved by the local backend inside the
 // same scoped read transaction as the query.
 func ValidateAncestorFilter(f *Filter) error {
+	if f.Ancestor != nil && *f.Ancestor == "none" {
+		return awberr.Usagef(`ancestor "none" is reserved for the HTTP API; use an empty value`)
+	}
 	if f.Recursive && f.Ancestor == nil {
 		return awberr.Usagef("recursive requires ancestor")
 	}

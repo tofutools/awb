@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { stagedLabel } from "../../static/issue-create.js";
+import { inlineChildIssueCreate, stagedLabel } from "../../static/issue-create.js";
 
 test("new issue labels are trimmed and validated against the API vocabulary", () => {
   assert.deepEqual(stagedLabel(" frontend ", []), { label: "frontend" });
@@ -15,4 +15,13 @@ test("a new issue cannot stage the same label twice", () => {
   assert.deepEqual(stagedLabel("frontend", ["frontend"]), {
     error: "That label is already staged.",
   });
+});
+
+test("rapid child entry creates only a title in the parent's workspace and relation", () => {
+  assert.deepEqual(inlineChildIssueCreate("awb", "awb-parent", "  First child  "), {
+    workspace: "awb",
+    title: "First child",
+    relations: [{ type: "has-parent", other: "awb-parent" }],
+  });
+  assert.equal(inlineChildIssueCreate("awb", "awb-parent", " \n\t "), undefined);
 });

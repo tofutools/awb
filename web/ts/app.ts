@@ -52,11 +52,19 @@ import {
   sortState,
   withPage,
   withPageSize,
-  withClosedIssues,
   withEpicSelection,
   type SortDirection,
   type SortState,
 } from "./listings.js";
+import {
+  defaultIssueStatuses,
+  hasEmptyStatusSelection,
+  issueStatusLabel,
+  issueStatusVocabulary,
+  selectedIssueStatuses,
+  withIssueStatuses,
+  type IssueStatusValue,
+} from "./status-filter.js";
 import { commentSubmitShortcut, confirmationDecision, issueEditorShortcut } from "./keyboard.js";
 import {
   CommandPalette,
@@ -73,6 +81,11 @@ import {
   type MarkdownEditor,
 } from "./markdown-editor.js";
 import { activityValues, initialFor, relativeTime } from "./presentation.js";
+import {
+  historyDiff,
+  historyDiffPreview,
+  type HistoryDiffPart,
+} from "./history-diff.js";
 import { issueSidebarCollapsed, issueSidebarStorage, rememberIssueSidebar } from "./sidebar.js";
 import {
   legacyIssueSearchHref,
@@ -103,7 +116,7 @@ import {
 } from "./inspector.js";
 import { legalBoardTargets, splitBoardFilter, type BoardStatus } from "./boards.js";
 import { attachSearchClear } from "./search-control.js";
-import { stagedLabel } from "./issue-create.js";
+import { inlineChildIssueCreate, stagedLabel } from "./issue-create.js";
 import {
   accountMenuItems,
   preferenceStorage,
@@ -136,6 +149,8 @@ let updatedDisplay: UpdatedDisplay | null = null;
 let updatedControlID = 0;
 let inspectorPopoverID = 0;
 let confirmationDialogID = 0;
+let statusFilterID = 0;
+let historyDiffDialogID = 0;
 const preferences = preferenceStorage(window);
 let paginationAutoHide = readPaginationAutoHide(preferences);
 const paginationStorage = pageSizeStorage(window);
@@ -183,8 +198,10 @@ interface IssueForm {
 }
 
 interface IssueCreateDefaults {
+  backlog?: boolean;
   workspace?: string;
   epic?: Issue;
+  parent?: Issue;
   assignToMe?: boolean;
 }
 
@@ -752,7 +769,8 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   const editor = issueForm("New issue", "Create issue", "", "", "", "", "issue-create-form");
   editor.form.querySelector("h2")!.id = "issue-create-heading";
 
-  const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? defaults.epic?.workspace ?? workspaces[0].key);
+  const parent = defaults.parent ?? defaults.epic;
+  const workspace = select(workspaces.map((item) => item.key), defaults.workspace ?? parent?.workspace ?? workspaces[0].key);
   workspace.name = "workspace";
   const type = select(["task", "feature", "bug", "epic", "chore"], "task");
   type.name = "type";
@@ -762,14 +780,18 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   const metadata = element("div", "edit-field-row");
   metadata.append(field("Workspace", workspace), field("Type", type), field("Priority", priority));
   editor.form.insertBefore(metadata, editor.form.children[1]);
-  const staged = stagedIssueResources(workspace, defaults.epic);
+  const staged = stagedIssueResources(workspace, parent);
   editor.form.insertBefore(staged.element, editor.actions);
 
-  if (defaults.epic !== undefined) {
-    workspace.value = defaults.epic.workspace;
+  if (parent !== undefined) {
+    workspace.value = parent.workspace;
     workspace.disabled = true;
     editor.form.insertBefore(
-      element("p", "issue-create-context", `Epic: ${defaults.epic.id} · ${defaults.epic.title}`),
+      element(
+        "p",
+        "issue-create-context",
+        `${defaults.parent === undefined ? "Epic" : "Parent"}: ${parent.id} · ${parent.title}`,
+      ),
       editor.form.children[1],
     );
   }
@@ -780,7 +802,11 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
   assign.checked = defaults.assignToMe === true;
   assignLabel.append(assign, document.createTextNode(`Assign to me${identity === "" ? "" : ` (@${identity})`}`));
   const cancel = button("Cancel");
-  editor.actions.append(assignLabel, cancel, editor.submit);
+  const backlog = document.createElement("input"); backlog.type = "checkbox"; backlog.checked = defaults.backlog === true;
+  const backlogLabel = element("label", "issue-create-assign"); backlogLabel.append(backlog, document.createTextNode("Backlog"));
+  backlog.addEventListener("change", () => { if (backlog.checked) assign.checked = false; });
+  assign.addEventListener("change", () => { if (assign.checked) backlog.checked = false; });
+  editor.actions.append(backlogLabel, assignLabel, cancel, editor.submit);
   dialog.append(editor.form);
   document.body.append(dialog);
 
@@ -800,6 +826,7 @@ async function openIssueCreateDialog(defaults: IssueCreateDefaults = {}): Promis
     if (!staged.stagePendingLabel()) return;
     editor.submit.disabled = true;
     const body: IssueCreate = {
+      backlog: backlog.checked,
       workspace: workspace.value,
       title: editor.title.value,
       description: editor.description.textarea.value,
@@ -1270,17 +1297,91 @@ function listingFilter(
   return bar;
 }
 
-/** includeClosedControl widens an issue listing without losing its filters. */
-function includeClosedControl(route: Route): HTMLElement {
-  const label = element("label", "include-closed-control");
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = route.query.get("include-closed") === "true";
-  input.addEventListener("change", () => {
-    location.hash = routeHref(route, withClosedIssues(route.query, input.checked)).slice(1);
+/** The Issues status picker stages independent choices and applies them as a
+ * repeated backend status filter. Native popover behavior supplies Escape,
+ * outside-click dismissal, and predictable keyboard focus. */
+function issueStatusFilter(route: Route): HTMLElement {
+  const id = `status-filter-${statusFilterID++}`;
+  const control = element("span", "status-filter-control");
+  const trigger = button("", "status-filter-button");
+  trigger.setAttribute("aria-controls", id);
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-haspopup", "dialog");
+  trigger.setAttribute("aria-label", "Choose visible issue statuses");
+
+  const selected = selectedIssueStatuses(route.query);
+  trigger.textContent = `Statuses · ${selected.length} ▾`;
+
+  const popover = element("div", "status-filter-popover");
+  popover.id = id;
+  popover.setAttribute("popover", "auto");
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", "Visible issue statuses");
+  popover.append(element("strong", "status-filter-title", "Visible statuses"));
+
+  const choices = element("div", "status-filter-choices");
+  const inputs = new Map<IssueStatusValue, HTMLInputElement>();
+  for (const status of issueStatusVocabulary) {
+    const option = element("label", "status-filter-option");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = status;
+    input.checked = selected.includes(status);
+    input.dataset.status = status;
+    inputs.set(status, input);
+    option.append(input, document.createTextNode(issueStatusLabel(status)));
+    choices.append(option);
+  }
+
+  const help = element("p", "status-filter-help");
+  help.setAttribute("aria-live", "polite");
+  const updateHelp = (): void => {
+    const count = [...inputs.values()].filter((input) => input.checked).length;
+    help.textContent = count === 0
+      ? "No statuses selected; the list will be empty."
+      : `${count} status${count === 1 ? "" : "es"} selected.`;
+  };
+  for (const input of inputs.values()) input.addEventListener("change", updateHelp);
+  updateHelp();
+
+  const actions = element("div", "status-filter-actions");
+  const reset = button("Reset", "secondary-button");
+  reset.addEventListener("click", () => {
+    for (const [status, input] of inputs) input.checked = defaultIssueStatuses.includes(status);
+    updateHelp();
+    inputs.get(defaultIssueStatuses[0])?.focus();
   });
-  label.append(input, document.createTextNode("Show closed"));
-  return label;
+  const done = button("Done", "primary-button");
+  done.addEventListener("click", () => {
+    const statuses = [...inputs].filter(([, input]) => input.checked).map(([status]) => status);
+    const next = withIssueStatuses(route.query, statuses);
+    popover.hidePopover();
+    const href = routeHref(route, next);
+    if (href === location.hash) return;
+    location.hash = href.slice(1);
+  });
+  actions.append(reset, done);
+  popover.append(choices, help, actions);
+
+  trigger.addEventListener("click", () => {
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    popover.showPopover();
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = popover.getBoundingClientRect();
+    const gap = 6;
+    popover.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+    const below = anchor.bottom + gap;
+    popover.style.top = `${below + bounds.height <= innerHeight - 8 ? below : Math.max(8, anchor.top - bounds.height - gap)}px`;
+    inputs.get(issueStatusVocabulary[0])?.focus();
+  });
+  popover.addEventListener("toggle", () => {
+    trigger.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+  });
+  control.append(trigger, popover);
+  return control;
 }
 
 /** epicFilterControl offers only epic rows returned through the caller's
@@ -1414,7 +1515,9 @@ function issueList(
   }
 
   const selectionControls = kind === "issues" ? element("div", "listing-selection-controls") : null;
-  if (selectionControls !== null) selectionControls.append(epicFilterControl(route, epics), includeClosedControl(route));
+  if (selectionControls !== null) {
+    selectionControls.append(epicFilterControl(route, epics), issueStatusFilter(route));
+  }
   section.append(listingFilter(
     route,
     `Filter all ${kind}…`,
@@ -1433,10 +1536,23 @@ function filtersFrom(query: URLSearchParams): Filters {
   const filters: Filters = {};
   const workspace = query.getAll("workspace");
   if (workspace.length > 0) filters.workspace = workspace;
+  const issueTypes = query.getAll("type").filter((value) =>
+    ["epic", "feature", "bug", "task", "chore"].includes(value));
+  if (issueTypes.length > 0) filters.type = issueTypes as Filters["type"];
+  const priorities = query.getAll("priority")
+    .filter((value) => /^[0-4]$/.test(value))
+    .map(Number);
+  if (priorities.length > 0) filters.priority = priorities as Filters["priority"];
+  const priorityMax = query.get("priority-max");
+  if (priorityMax !== null && /^[0-4]$/.test(priorityMax)) {
+    filters["priority-max"] = Number(priorityMax) as Filters["priority-max"];
+  }
   const label = query.getAll("label");
   if (label.length > 0) filters.label = label;
   const assignee = query.getAll("assignee");
   if (assignee.length > 0) filters.assignee = assignee;
+  const statuses = selectedIssueStatuses(query);
+  if (query.has("status") && statuses.length > 0) filters.status = statuses as Filters["status"];
   if (query.get("include-closed") === "true") filters["include-closed"] = true;
   if (query.get("include-archived") === "true") filters["include-archived"] = true;
   const listingFilter = query.get("filter");
@@ -1542,7 +1658,9 @@ async function viewListing(
 ): Promise<HTMLElement> {
   const filters = filtersFrom(route.query);
 
-  const load = () => kind === "ready"
+  const load = () => kind === "issues" && hasEmptyStatusSelection(route.query)
+    ? Promise.resolve({ rows: [], total: 0 })
+    : kind === "ready"
     ? api.ready(readyFilters(filters), signal)
     : kind === "blocked"
       ? api.blocked(blockedFilters(filters), signal)
@@ -1577,7 +1695,7 @@ async function viewListing(
     route,
     page.rows,
     page.total,
-    emptyFor(kind),
+    kind === "issues" && hasEmptyStatusSelection(route.query) ? "No statuses selected." : emptyFor(kind),
     kind,
     facetBar(
       route,
@@ -1868,11 +1986,11 @@ async function openBoardPresentationSettings(ref: string): Promise<void> {
   dialog.showModal(); save.focus();
 }
 
-function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
-  if (issue.status === "open" || issue.assignees.length === 0) return Promise.resolve(true);
+function confirmUnassigningMove(issue: Issue, host: HTMLElement, target: "open" | "backlog"): Promise<boolean> {
+  if (issue.status === target || issue.assignees.length === 0) return Promise.resolve(true);
   return confirmMutation(
-    "Move issue to Open?",
-    `Move ${issue.id} to Open? This will unassign ${issue.assignees.join(", ")}.`,
+    `Move issue to ${boardStatusLabel(target)}?`,
+    `Move ${issue.id} to ${boardStatusLabel(target)}? This will unassign ${issue.assignees.join(", ")}.`,
     host,
     true,
   );
@@ -1881,14 +1999,14 @@ function confirmMoveToOpen(issue: Issue, host: HTMLElement): Promise<boolean> {
 async function moveBoardIssue(
   host: HTMLElement,
   issue: Issue,
-  epic: string,
+  epic: string | undefined,
   target: BoardStatus,
   before = "",
   after = "",
 ): Promise<void> {
   if (target === issue.status && (before === issue.id || after === issue.id)) return;
-  if (target === "open") {
-    const confirmed = await confirmMoveToOpen(issue, host);
+  if (target === "open" || target === "backlog") {
+    const confirmed = await confirmUnassigningMove(issue, host, target);
     if (!confirmed) return;
   }
   if (target === "closed" && issue.status !== "closed") {
@@ -1904,7 +2022,7 @@ async function moveBoardIssue(
   try {
     await api.moveIssue(issue.id, {
       status: target,
-      epic,
+      ...(epic === undefined ? {} : { epic }),
       ...(before === "" ? {} : { before }),
       ...(after === "" ? {} : { after }),
     });
@@ -1983,6 +2101,7 @@ function boardColumn(
         workspace: epic?.workspace ?? (selectedWorkspaces.length === 1 ? selectedWorkspaces[0] : undefined),
         epic: epic ?? undefined,
         assignToMe: column.status === "in_progress",
+        backlog: column.status === "backlog",
       },
       "board-column-create",
     );
@@ -2123,6 +2242,14 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   meta.append(element("span", "board-lane-total", `${total} issue${total === 1 ? "" : "s"}`));
   if (lane.epic !== undefined) {
     const epic = lane.epic;
+    const epicStatus = select(legalBoardTargets(), epic.status);
+    epicStatus.setAttribute("aria-label", `Status of ${epic.id}`);
+    epicStatus.addEventListener("change", () => {
+      const target = epicStatus.value as BoardStatus;
+      epicStatus.value = epic.status;
+      void moveBoardIssue(host, epic, undefined, target);
+    });
+    meta.append(epicStatus);
     const hide = button("Hide", "secondary-button board-lane-hide");
     hide.title = "Hide this epic lane from the current view";
     hide.setAttribute("aria-label", `Hide ${epic.id} from this view`);
@@ -2135,6 +2262,7 @@ function boardLane(ref: string, lane: Board["lanes"][number], selectedWorkspaces
   }
   const columns = element("div", "board-columns");
   columns.id = `board-lane-columns-${laneKey}`;
+  columns.style.setProperty("--board-columns", String(lane.columns.length));
   for (const column of lane.columns) columns.append(boardColumn(ref, lane.epic ?? null, selectedWorkspaces, column, issuesByID, boardFilters));
 	let isCollapsed = collapsedBoardLanes(ref).has(laneKey);
   const toggle = button("", "secondary-button board-lane-toggle");
@@ -2362,7 +2490,8 @@ async function openBoardViewEditor(source: BoardView | null, duplicate: boolean,
 async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLElement> {
   const ref = route.path[1] ?? "default";
   const defaultPreferences = defaultBoardPreferences();
-  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize };
+  const filters: Parameters<typeof api.board>[1] = { "lane-limit": boardLanePageSize,
+    "include-backlog": route.query.get("include-backlog") === "true" };
   if (ref === "default") {
     const preferences = defaultPreferences;
     filters["card-limit"] = preferences.card_limit;
@@ -2395,6 +2524,15 @@ async function viewBoards(route: Route, signal?: AbortSignal): Promise<HTMLEleme
   option("default", "Default board"); for (const item of owned) option(item.id, item.name);
   if (board.view !== undefined && !owned.some((item) => item.id === board.view?.id)) option(board.view.id, board.view.name);
   picker.addEventListener("change", () => { location.hash = picker.value === "default" ? "#/boards" : `#/boards/${picker.value}`; }); pickerLabel.append(picker); actions.append(pickerLabel);
+  const showBacklog = document.createElement("input"); showBacklog.type = "checkbox";
+  showBacklog.checked = filters["include-backlog"] ?? false;
+  const backlogLabel = element("label", "board-view-check"); backlogLabel.append(showBacklog, document.createTextNode("Show backlog"));
+  showBacklog.addEventListener("change", () => {
+    const query = new URLSearchParams(route.query);
+    if (showBacklog.checked) query.set("include-backlog", "true"); else query.delete("include-backlog");
+    location.hash = `#/boards/${ref}?${query}`;
+  });
+  actions.append(backlogLabel);
   const saved = board.view;
   if (saved === undefined) {
     const save = button("Save as view"); save.addEventListener("click", () => void openBoardViewEditor(effectiveDefaultBoardView(route), false, route, false, true)); actions.append(save);
@@ -3464,8 +3602,11 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   const heading = element("div", "issue-heading");
   const headingText = element("div", "issue-heading-text");
   headingText.append(element("div", "issue-key", issue.id), element("h1", "", issue.title));
+  const headingActions = element("div", "issue-heading-actions");
+  const newChildButton = issueCreateButton("New child issue", { parent: issue }, "secondary-button");
   const editButton = button("Edit issue");
-  heading.append(headingText, editButton);
+  headingActions.append(newChildButton, editButton);
+  heading.append(headingText, headingActions);
   content.append(heading);
 
   const existingDraft = issueEditDrafts.get(issue.id);
@@ -3523,9 +3664,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   }
   content.append(description);
 
-  if (children.rows.length > 0) {
-    content.append(issueChildrenSection(issue.id, children.rows, workspace.state === "active"));
-  }
+  content.append(issueChildrenSection(issue, children.rows, workspace.state === "active"));
 
   // These are deliberately compact, content-height lists directly below the
   // description. Mutation controls only appear while the issue editor is
@@ -3545,6 +3684,7 @@ async function viewIssue(id: string): Promise<HTMLElement> {
       document.createTextNode(`Workspace ${workspace.key} is archived.`),
     );
     content.prepend(banner);
+    newChildButton.disabled = true;
     editButton.remove();
     for (const control of view.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
       "form button, form input, form select, form textarea, .issue-sidebar button, .issue-sidebar input, .issue-sidebar select",
@@ -3561,25 +3701,67 @@ async function viewIssue(id: string): Promise<HTMLElement> {
   return view;
 }
 
-function issueChildrenSection(parent: string, children: Issue[], mutable: boolean): HTMLElement {
+function issueChildrenSection(parent: Issue, children: Issue[], mutable: boolean): HTMLElement {
   const section = element("section", "issue-resource-section child-issues-section");
   const heading = element("div", "child-issues-heading");
   heading.append(element("h2", "", "Child issues"));
+  const headingActions = element("div", "child-issues-actions");
+  const addInline = button("Add child inline", "quiet-action");
+  addInline.disabled = !mutable;
   const includeClosed = element("label", "include-closed-control");
   const includeClosedInput = document.createElement("input");
   includeClosedInput.type = "checkbox";
-  const includeClosedKey = `awb.issue.${parent}.show-closed-children`;
+  const includeClosedKey = `awb.issue.${parent.id}.show-closed-children`;
   try {
     includeClosedInput.checked = localStorage.getItem(includeClosedKey) !== "false";
   } catch {
     includeClosedInput.checked = true;
   }
   includeClosed.append(includeClosedInput, document.createTextNode("Show closed"));
-  heading.append(includeClosed);
+  headingActions.append(addInline, includeClosed);
+  heading.append(headingActions);
   section.append(heading);
   const sortKeys = ["id", "type", "priority", "status", "assignee"];
   let sortValue: string | null = null;
   let draggedChild: Issue | null = null;
+
+  const inlineForm = element("form", "child-inline-create") as HTMLFormElement;
+  inlineForm.hidden = true;
+  const inlineTitle = document.createElement("input");
+  inlineTitle.name = "title";
+  inlineTitle.maxLength = 500;
+  inlineTitle.placeholder = "Add another child…";
+  inlineTitle.setAttribute("aria-label", "Child issue title");
+  const inlineSubmit = element("button", "primary-button", "Add") as HTMLButtonElement;
+  inlineSubmit.type = "submit";
+  inlineSubmit.disabled = true;
+  const inlineCancel = button("Cancel", "quiet-action");
+  const inlineHint = element("span", "child-inline-hint", "Enter to create · Esc to cancel");
+  const inlineStatus = element("span", "child-inline-status");
+  inlineStatus.setAttribute("role", "status");
+  inlineStatus.setAttribute("aria-live", "polite");
+  inlineForm.append(inlineTitle, inlineSubmit, inlineCancel, inlineHint, inlineStatus);
+
+  const leaveInlineMode = (): void => {
+    inlineForm.hidden = true;
+    inlineForm.querySelector(".edit-error")?.remove();
+    addInline.focus();
+  };
+  addInline.addEventListener("click", () => {
+    inlineForm.hidden = false;
+    inlineStatus.textContent = "";
+    inlineTitle.focus();
+  });
+  inlineCancel.addEventListener("click", leaveInlineMode);
+  inlineTitle.addEventListener("input", () => {
+    inlineSubmit.disabled = inlineTitle.value.trim() === "";
+    inlineForm.querySelector(".edit-error")?.remove();
+  });
+  inlineForm.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    leaveInlineMode();
+  });
 
   const renderTable = (focusColumn = ""): void => {
     const state = sortState(sortValue, sortKeys, "order");
@@ -3589,7 +3771,7 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
         if (state.key === "priority") return issue.priority;
         if (state.key === "assignee") return issue.assignees.join(",");
         if (state.key === "type") return ["epic", "feature", "bug", "task", "chore"].indexOf(issue.type);
-        if (state.key === "status") return ["open", "in_progress", "closed"].indexOf(issue.status);
+        if (state.key === "status") return ["backlog", "open", "in_progress", "closed"].indexOf(issue.status);
         return issue.id;
       };
       rows.sort((left, right) => {
@@ -3615,13 +3797,13 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
           remove.addEventListener("click", async () => {
             const confirmed = await confirmMutation(
               "Remove child?",
-              `Remove ${child.id} from ${parent}?`,
+              `Remove ${child.id} from ${parent.id}?`,
               remove,
               true,
             );
             if (!confirmed) return;
             const row = remove.closest("tr") ?? remove;
-            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent));
+            void mutate(row, [remove], () => api.removeRelation(child.id, "has-parent", parent.id));
           });
           return remove;
         },
@@ -3663,11 +3845,35 @@ function issueChildrenSection(parent: string, children: Issue[], mutable: boolea
       table.querySelector<HTMLButtonElement>(`.listing-col-${focusColumn} .sort-button`)?.focus();
     }
   };
+  inlineForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const body = inlineChildIssueCreate(parent.workspace, parent.id, inlineTitle.value);
+    if (body === undefined || inlineSubmit.disabled) return;
+    inlineSubmit.disabled = true;
+    inlineTitle.disabled = true;
+    inlineCancel.disabled = true;
+    void api.createIssue(body).then((created) => {
+      children.push(created);
+      inlineTitle.value = "";
+      inlineForm.querySelector(".edit-error")?.remove();
+      renderTable();
+      inlineStatus.textContent = `Child ${created.id} was created. Add another child.`;
+    }).catch((error) => {
+      inlineStatus.textContent = "";
+      mutationError(inlineForm, error);
+    }).finally(() => {
+      inlineTitle.disabled = false;
+      inlineCancel.disabled = false;
+      inlineSubmit.disabled = inlineTitle.value.trim() === "";
+      inlineTitle.focus();
+    });
+  });
   includeClosedInput.addEventListener("change", () => {
     try { localStorage.setItem(includeClosedKey, String(includeClosedInput.checked)); } catch { /* preference is best-effort */ }
     renderTable();
   });
   renderTable();
+  section.append(inlineForm);
   return section;
 }
 
@@ -3935,7 +4141,7 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
   });
   add("Type", type);
 
-  const status = select(["open", "in_progress", "closed"], issue.status);
+  const status = select(["backlog", "open", "in_progress", "closed"], issue.status);
   status.className = "sidebar-select";
   status.setAttribute("aria-label", "Status");
   const closeEditor = statusEditor(issue);
@@ -3950,13 +4156,15 @@ function issueSidebar(issue: Issue, view: HTMLElement): [HTMLElement, HTMLButton
         deferInspectorPopoverOpen(openCloseEditor);
         return;
       }
-      if (target === "open" && issue.assignees.length > 0) {
+      if ((target === "open" || target === "backlog") && issue.assignees.length > 0) {
         status.value = issue.status;
-        const confirmed = await confirmMoveToOpen(issue, aside);
+        const confirmed = await confirmUnassigningMove(issue, aside, target);
         if (!confirmed) return;
         status.value = target;
       }
-      const operation = action === "claim"
+      const operation = action === "backlog"
+        ? () => api.moveIssue(issue.id, { status: "backlog" })
+        : action === "claim"
         ? () => api.claimIssue(issue.id, { force: issue.status === "closed" })
         : action === "release"
           ? () => api.releaseIssue(issue.id, { force: true })
@@ -4373,18 +4581,91 @@ function activityEntry(entry: Activity): HTMLElement {
   if (entry.changes.length > 0) {
     const changes = element("ul", "activity-changes");
     for (const change of entry.changes) {
-      const [from, to] = activityValues(change.from, change.to);
       const item = element("li");
       item.append(element("span", "activity-field", change.field));
-      item.append(element("code", "", from));
-      item.append(element("span", "activity-arrow", "→"));
-      item.append(element("code", "", to));
+      if (typeof change.from === "string" && typeof change.to === "string" && change.from !== change.to) {
+        const parts = historyDiff(change.from, change.to);
+        const preview = element("button", "history-diff-preview") as HTMLButtonElement;
+        preview.type = "button";
+        preview.title = `View full ${change.field} diff`;
+        preview.append(element("span", "visually-hidden", `View full ${change.field} diff. `));
+        appendHistoryDiff(preview, historyDiffPreview(parts));
+        preview.addEventListener("click", () => showHistoryDiff(change.field, parts, preview));
+        item.append(preview);
+      } else {
+        const [from, to] = activityValues(change.from, change.to);
+        item.append(element("code", "", from));
+        item.append(element("span", "activity-arrow", "→"));
+        item.append(element("code", "", to));
+      }
       changes.append(item);
     }
     card.append(changes);
   }
   row.append(marker, card);
   return row;
+}
+
+function appendHistoryDiff(host: HTMLElement, parts: readonly HistoryDiffPart[]): void {
+  for (const part of parts) {
+    if (part.kind === "same") {
+      host.append(document.createTextNode(part.text));
+      continue;
+    }
+    if (part.kind === "omitted") {
+      const omitted = element("span", "history-diff-omitted", part.text);
+      omitted.setAttribute("aria-label", "omitted content");
+      host.append(omitted);
+      continue;
+    }
+    const changed = document.createElement(part.kind === "remove" ? "del" : "ins");
+    changed.className = `history-diff-${part.kind}`;
+    changed.append(element("span", "visually-hidden", part.kind === "remove" ? "Removed: " : "Added: "));
+    const indicator = element("span", "history-diff-indicator", part.kind === "remove" ? "−" : "+");
+    indicator.setAttribute("aria-hidden", "true");
+    changed.append(indicator, document.createTextNode(part.text));
+    host.append(changed);
+  }
+}
+
+/** showHistoryDiff uses a native modal for its focus trap and Escape handling.
+ * Removing it does not redraw the timeline; focus and scroll are restored to
+ * the exact preview so returning never loses the reader's place. */
+function showHistoryDiff(field: string, parts: readonly HistoryDiffPart[], trigger: HTMLButtonElement): void {
+  const scrollLeft = window.scrollX;
+  const scrollTop = window.scrollY;
+  const dialog = element("dialog", "history-diff-dialog") as HTMLDialogElement;
+  const id = historyDiffDialogID++;
+  const headingID = `history-diff-heading-${id}`;
+  const descriptionID = `history-diff-description-${id}`;
+  dialog.setAttribute("aria-labelledby", headingID);
+  dialog.setAttribute("aria-describedby", descriptionID);
+  const header = element("header", "history-diff-dialog-header");
+  const heading = element("h2", "", `${field} change`);
+  heading.id = headingID;
+  const description = element(
+    "p",
+    "muted",
+    "Full source diff. − marks removed text, + marks added text, and unchanged text provides context.",
+  );
+  description.id = descriptionID;
+  header.append(heading, description);
+  const full = element("pre", "history-diff-full");
+  full.tabIndex = 0;
+  appendHistoryDiff(full, parts);
+  const close = button("Close", "primary-button history-diff-close");
+  const footer = element("footer", "history-diff-dialog-footer");
+  footer.append(close);
+  dialog.append(header, full, footer);
+  document.body.append(dialog);
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+    window.scrollTo(scrollLeft, scrollTop);
+  }, { once: true });
+  dialog.showModal();
+  close.focus();
 }
 
 function activityAction(action: string): string {

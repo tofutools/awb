@@ -48,6 +48,9 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		ListingFilter: want["/api/issues"], Ancestor: &ancestor, Recursive: true,
 	})
 	require.NoError(t, err)
+	wireSentinel := "none"
+	_, err = client.ListIssues(t.Context(), &domain.Filter{Ancestor: &wireSentinel})
+	require.Error(t, err, "remote mode rejects the wire sentinel as an internal filter value")
 	epicType := domain.TypeEpic
 	_, err = client.LabelFacets(t.Context(), &domain.Filter{
 		ListingFilter: want["/api/labels"],

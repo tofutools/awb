@@ -79,6 +79,9 @@ func (b *Backend) DeleteBoardView(ctx context.Context, id, ifMatch string) (*dom
 }
 func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQuery) (*domain.Board, error) {
 	values := url.Values{}
+	if query.IncludeBacklog {
+		values.Set("include-backlog", "true")
+	}
 	set := func(key string, value *int) {
 		if value != nil {
 			values.Set(key, strconv.Itoa(*value))

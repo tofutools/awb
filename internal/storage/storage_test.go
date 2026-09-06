@@ -662,6 +662,25 @@ func TestAncestorFilterCanTraverseRecursivelyBeforePaging(t *testing.T) {
 	assert.ElementsMatch(t, []string{epic, unrelated}, []string{issues[0].ID, issues[1].ID})
 }
 
+func TestRecursiveAncestorFilterExcludesItsSeedInACycle(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	first, second := add("first"), add("second")
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		if err := tx.InsertRelation(second, domain.RelHasParent, first); err != nil {
+			return err
+		}
+		return tx.InsertRelation(first, domain.RelHasParent, second)
+	}))
+
+	filter := &domain.Filter{Ancestor: &first, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err := listWith(t, db, filter)
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, second, issues[0].ID)
+	assert.Equal(t, 1, total)
+}
+
 func TestListingFilterMatchesChildrenByParentID(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)
@@ -1048,6 +1067,7 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 			closeIssue(t, db, issue.ID)
 		}
 	}
+	statusIssue("backlog", func(i *domain.Issue) { i.Status = domain.StatusBacklog })
 	statusIssue("closed", func(i *domain.Issue) { i.Status = domain.StatusClosed })
 	statusIssue("open", func(*domain.Issue) {})
 	statusIssue("in progress", func(i *domain.Issue) {

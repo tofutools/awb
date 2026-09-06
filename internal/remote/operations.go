@@ -18,6 +18,7 @@ import (
 // is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
+	Backlog        bool           `json:"backlog,omitempty"`
 	Workspace      string         `json:"workspace"`
 	Title          string         `json:"title"`
 	Description    string         `json:"description,omitempty"`
@@ -100,6 +101,7 @@ type commentBody struct {
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
 	body := issueCreateBody{
+		Backlog:        req.Backlog,
 		Workspace:      req.Workspace,
 		Title:          req.Title,
 		Description:    req.Description,
@@ -138,6 +140,9 @@ func (b *Backend) GetIssue(ctx context.Context, ref string) (*domain.Issue, erro
 // ready and blocked are their own endpoints, so the readiness selector picks
 // the path rather than becoming a parameter.
 func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backend.IssuePage, error) {
+	if err := domain.ValidateAncestorFilter(filter); err != nil {
+		return backend.IssuePage{}, err
+	}
 	path := "/api/issues"
 	switch filter.Readiness {
 	case domain.ReadinessReady:
@@ -520,6 +525,9 @@ func (b *Backend) AssigneeFacets(ctx context.Context, filter *domain.Filter) (ba
 }
 
 func (b *Backend) facets(ctx context.Context, path string, filter *domain.Filter) (backend.FacetPage, error) {
+	if err := domain.ValidateAncestorFilter(filter); err != nil {
+		return backend.FacetPage{}, err
+	}
 	query := filterQuery(filter, path)
 	// sort is not accepted on a facet endpoint, the row order being fixed at
 	// value ascending.
