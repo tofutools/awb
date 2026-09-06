@@ -33,6 +33,28 @@ test("suggestions wait for the fixed debounce and expose loading then results", 
   search.close();
 });
 
+test("empty queries can opt into initial suggestions", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const calls = [];
+  const ordinary = new SuggestionSearch(async (query) => {
+    calls.push(query);
+    return [];
+  }, () => {});
+  ordinary.query("");
+  context.mock.timers.tick(autocompleteDebounceMs);
+  assert.deepEqual(calls, []);
+
+  const enabled = new SuggestionSearch(async (query) => {
+    calls.push(query);
+    return [{ value: "recent", label: "recent" }];
+  }, () => {}, true);
+  enabled.query("   ");
+  context.mock.timers.tick(autocompleteDebounceMs);
+  await Promise.resolve();
+  assert.deepEqual(calls, [""]);
+  enabled.close();
+});
+
 test("a superseded request is aborted and its stale result is ignored", async () => {
   const pending = [];
   const states = [];

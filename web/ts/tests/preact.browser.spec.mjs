@@ -422,6 +422,9 @@ test("epic and status filters compose, and page normalization does not refetch t
   const labelSelector = labelDialog.getByRole("combobox", {
     name: "Search labels",
   });
+  await expect(
+    labelDialog.getByRole("option", { name: /#frontend/ }),
+  ).toBeVisible();
   await labelSelector.fill("front");
   await labelSelector.press("Escape");
   await expect(labelDialog).toHaveCount(0);
@@ -450,6 +453,9 @@ test("epic and status filters compose, and page normalization does not refetch t
   let epicSelector = epicDialog.getByRole("combobox", {
     name: "Search epics",
   });
+  await expect(
+    epicDialog.getByRole("option", { name: /Filter epic/ }),
+  ).toBeVisible();
   await epicSelector.fill("Filter epic");
   await epicDialog.getByRole("option", { name: /Filter epic/ }).click();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");

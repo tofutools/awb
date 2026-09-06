@@ -118,11 +118,12 @@ export function DynamicFilterRow({
             onValue={setDraft}
             onSuggestion={(item) => add(item.value)}
             onDismiss={() => setDraft("")}
+            suggestOnEmpty
             aria-label={name === "label" ? "Search labels" : "Search epics"}
             placeholder={name === "label" ? "Search labels…" : "Search epics…"}
             load={async (query) => {
               const match = query.toLocaleLowerCase();
-              return available
+              const matches = available
                 .filter((item) =>
                   `${item.label} ${item.value} ${item.detail ?? ""}`
                     .toLocaleLowerCase()
@@ -133,6 +134,7 @@ export function DynamicFilterRow({
                   label: item.label,
                   detail: item.detail,
                 }));
+              return query === "" ? matches.slice(0, 8) : matches;
             }}
           />
         </Popover>
@@ -231,6 +233,15 @@ export function EpicFilterRow({
   epics: Issue[];
 }) {
   const selected = epicSelectionFrom(route.query);
+  const ranked = [...epics].sort((left, right) => {
+    const state =
+      Number(left.status === "closed") - Number(right.status === "closed");
+    return (
+      state ||
+      right.updated_at.localeCompare(left.updated_at) ||
+      left.id.localeCompare(right.id)
+    );
+  });
   return (
     <DynamicFilterRow
       route={route}
@@ -239,7 +250,7 @@ export function EpicFilterRow({
       selected={selected === null ? [] : [selected]}
       choices={[
         { value: noEpicSelection, label: "No epic" },
-        ...epics.map((epic) => ({
+        ...ranked.map((epic) => ({
           value: epic.id,
           label: epic.title,
           detail: epic.id,

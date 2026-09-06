@@ -13,6 +13,7 @@ export function Autocomplete({
   onValue,
   onSuggestion,
   onDismiss,
+  suggestOnEmpty = false,
   ...props
 }: Omit<JSX.InputHTMLAttributes<HTMLInputElement>, "value" | "onInput"> & {
   load: (query: string, signal: AbortSignal) => Promise<Suggestion[]>;
@@ -20,6 +21,7 @@ export function Autocomplete({
   onValue: (value: string) => void;
   onSuggestion?: (suggestion: Suggestion) => void;
   onDismiss?: () => void;
+  suggestOnEmpty?: boolean;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -38,10 +40,11 @@ export function Autocomplete({
         setRows(rows);
         setActive(-1);
       },
+      suggestOnEmpty,
     );
     search.current = next;
     return () => next.close();
-  }, []);
+  }, [suggestOnEmpty]);
   const select = (row: Suggestion) => {
     onValue(row.value);
     onSuggestion?.(row);

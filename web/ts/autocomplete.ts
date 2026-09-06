@@ -32,7 +32,8 @@ export function autocompleteKeyAction(
 /**
  * Runs one debounced suggestion request at a time. Aborting the old request
  * saves backend work; the generation check also ignores a stale response from
- * a transport that completed despite cancellation.
+ * a transport that completed despite cancellation. Callers may opt into an
+ * empty query when they have a useful ranked initial set to offer.
  */
 export class SuggestionSearch<T = Suggestion> {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -42,6 +43,7 @@ export class SuggestionSearch<T = Suggestion> {
   constructor(
     private readonly load: (query: string, signal: AbortSignal) => Promise<T[]>,
     private readonly update: (state: SuggestionState, rows: T[]) => void,
+    private readonly allowEmpty = false,
   ) {}
 
   query(raw: string): void {
@@ -51,7 +53,7 @@ export class SuggestionSearch<T = Suggestion> {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.request?.abort();
     this.request = undefined;
-    if (query === "") {
+    if (query === "" && !this.allowEmpty) {
       this.update("idle", []);
       return;
     }
@@ -75,4 +77,3 @@ export class SuggestionSearch<T = Suggestion> {
     this.request?.abort();
   }
 }
-

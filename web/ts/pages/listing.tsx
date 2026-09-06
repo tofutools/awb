@@ -292,11 +292,17 @@ export function ListingPage({
                 title="labels"
                 name="label"
                 selected={route.query.getAll("label")}
-                choices={data.labels.rows.map((label) => ({
-                  value: label.value,
-                  label: `#${label.value}`,
-                  detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
-                }))}
+                choices={[...data.labels.rows]
+                  .sort(
+                    (left, right) =>
+                      right.count - left.count ||
+                      left.value.localeCompare(right.value),
+                  )
+                  .map((label) => ({
+                    value: label.value,
+                    label: `#${label.value}`,
+                    detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
+                  }))}
                 trailing={
                   lowest === "label" ? (
                     <Pagination route={route} total={data.page.total} />
