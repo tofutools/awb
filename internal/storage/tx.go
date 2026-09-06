@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/tofutools/awb/internal/awberr"
 )
@@ -50,9 +51,19 @@ func (d *DB) Write(ctx context.Context, fn func(*Tx) error) error {
 	}
 
 	if err := sqlTx.Commit(); err != nil {
-		return awberr.Wrap(awberr.Runtime, err, "commit transaction")
+		return awberr.Wrap(awberr.Runtime, transactionEndError(ctx, err), "commit transaction")
 	}
 	return nil
+}
+
+// database/sql rolls a transaction back asynchronously when its context is
+// cancelled. If that rollback wins the race with Commit, Commit returns
+// sql.ErrTxDone instead of the context error which ended the transaction.
+func transactionEndError(ctx context.Context, err error) error {
+	if errors.Is(err, sql.ErrTxDone) && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // Read runs fn inside a deferred transaction, so a composite read — an issue
