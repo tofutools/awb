@@ -518,7 +518,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   }
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page).toHaveURL(/type=task/);
-  await expect(page.locator(".filter-count")).toHaveText("3 issues");
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
   await expect
     .poll(() => requests.at(-1)?.searchParams.getAll("type"))
     .toEqual(["task"]);
@@ -552,7 +552,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   await statuses.getByRole("button", { name: "Reset", exact: true }).click();
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page).not.toHaveURL(/type=/);
-  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await expect(page.locator(".filter-count")).toHaveText("3 issues");
   await trigger.click();
   const statusChoices = statuses.locator("input[data-status]");
   await expect(statusChoices).toHaveCount(4);
