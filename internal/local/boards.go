@@ -636,9 +636,13 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				laneEpics = append(laneEpics, &epics[i])
 			}
 		}
-		statuses := slices.DeleteFunc(slices.Clone(domain.Statuses), func(s domain.Status) bool { return s == domain.StatusBacklog && !query.IncludeBacklog })
+		statuses := slices.Clone(domain.Statuses)
 		if query.Status != "" {
 			statuses = []domain.Status{query.Status}
+		}
+		// An explicit status narrows the board; it does not enable backlog visibility.
+		if !query.IncludeBacklog {
+			statuses = slices.DeleteFunc(statuses, func(s domain.Status) bool { return s == domain.StatusBacklog })
 		}
 		cardTypes := []domain.Type{domain.TypeFeature, domain.TypeBug, domain.TypeTask, domain.TypeChore}
 		for _, epic := range laneEpics {

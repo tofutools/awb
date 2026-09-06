@@ -58,6 +58,26 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 			require.Len(t, board.Lanes, 1)
 			require.Len(t, board.Lanes[0].Columns, 3)
 			assert.Equal(t, 1, board.Lanes[0].Columns[0].Total)
+			// Explicit status filtering must not override backlog visibility.
+			for _, includeBacklog := range []bool{false, true} {
+				filtered, err := be.GetBoard(ctx, "default", backend.BoardQuery{
+					Status: domain.StatusBacklog, IncludeBacklog: includeBacklog,
+				})
+				require.NoError(t, err)
+				require.NotEmpty(t, filtered.Lanes)
+				for _, lane := range filtered.Lanes {
+					if !includeBacklog {
+						assert.Empty(t, lane.Columns)
+						continue
+					}
+					require.Len(t, lane.Columns, 1)
+					assert.Equal(t, domain.StatusBacklog, lane.Columns[0].Status)
+				}
+				if includeBacklog {
+					require.Len(t, filtered.Lanes[0].Columns[0].Issues, 1)
+					assert.Equal(t, parked.ID, filtered.Lanes[0].Columns[0].Issues[0].ID)
+				}
+			}
 			_, err = be.GetBoard(ctx, "default", backend.BoardQuery{Epic: &epic.ID})
 			require.Error(t, err)
 			board, err = be.GetBoard(ctx, "default", backend.BoardQuery{IncludeBacklog: true})
