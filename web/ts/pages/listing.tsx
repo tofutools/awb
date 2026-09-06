@@ -49,6 +49,7 @@ import {
   selectedIssueStatuses,
   hasEmptyStatusSelection,
 } from "../status-filter.js";
+import { hasEmptyIssueTypeSelection } from "../type-filter.js";
 export function filtersFrom(query: URLSearchParams): Filters {
   const result: Filters = {
     limit: listingPageSize(query),
@@ -111,6 +112,8 @@ export function ListingPage({
     const filters = filtersFrom(route.query);
     const load = () =>
       kind === "issues" && hasEmptyStatusSelection(route.query)
+        ? Promise.resolve({ rows: [], total: 0 })
+        : kind === "issues" && hasEmptyIssueTypeSelection(route.query)
         ? Promise.resolve({ rows: [], total: 0 })
         : kind === "ready"
           ? api.ready(readyFilters(filters))
@@ -342,6 +345,8 @@ export function ListingPage({
                 <p class="empty">
                   {kind === "issues" && hasEmptyStatusSelection(route.query)
                     ? "No statuses selected."
+                    : kind === "issues" && hasEmptyIssueTypeSelection(route.query)
+                      ? "No issue types selected."
                     : filter || epicSelectionFrom(route.query) !== null
                       ? "No issues match these filters."
                       : `No ${kind === "issues" ? "issues" : kind + " issues"}.`}

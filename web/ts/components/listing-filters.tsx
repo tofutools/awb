@@ -18,6 +18,14 @@ import {
   withIssueStatuses,
   type IssueStatusValue,
 } from "../status-filter.js";
+import {
+  defaultIssueTypes,
+  issueTypeLabel,
+  issueTypeVocabulary,
+  selectedIssueTypes,
+  withIssueTypes,
+  type IssueTypeValue,
+} from "../type-filter.js";
 import { Autocomplete } from "./autocomplete.js";
 import { Button, Popover } from "./ui.js";
 
@@ -171,24 +179,42 @@ export function DynamicFilterRow({
 }
 
 export function ListingFilters({ route }: { route: Route }) {
-  const selected = selectedIssueStatuses(route.query);
-  const [staged, setStaged] = useState<IssueStatusValue[]>(selected);
+  const [stagedStatuses, setStagedStatuses] = useState<IssueStatusValue[]>(
+    selectedIssueStatuses(route.query),
+  );
+  const [stagedTypes, setStagedTypes] = useState<IssueTypeValue[]>(
+    selectedIssueTypes(route.query),
+  );
   const firstChoice = useRef<HTMLInputElement>(null);
   const routeState = route.query.toString();
 
-  useEffect(() => setStaged(selectedIssueStatuses(route.query)), [routeState]);
+  useEffect(() => {
+    setStagedStatuses(selectedIssueStatuses(route.query));
+    setStagedTypes(selectedIssueTypes(route.query));
+  }, [routeState]);
 
-  const toggle = (status: IssueStatusValue, checked: boolean): void => {
-    setStaged((current) =>
+  const toggleStatus = (status: IssueStatusValue, checked: boolean): void => {
+    setStagedStatuses((current) =>
       issueStatusVocabulary.filter((candidate) =>
         candidate === status ? checked : current.includes(candidate),
       ),
     );
   };
-  const help =
-    staged.length === 0
+  const toggleType = (type: IssueTypeValue, checked: boolean): void => {
+    setStagedTypes((current) =>
+      issueTypeVocabulary.filter((candidate) =>
+        candidate === type ? checked : current.includes(candidate),
+      ),
+    );
+  };
+  const statusHelp =
+    stagedStatuses.length === 0
       ? "No statuses selected; the list will be empty."
-      : `${staged.length} status${staged.length === 1 ? "" : "es"} selected.`;
+      : `${stagedStatuses.length} status${stagedStatuses.length === 1 ? "" : "es"} selected.`;
+  const typeHelp =
+    stagedTypes.length === 0
+      ? "No types selected; the list will be empty."
+      : `${stagedTypes.length} type${stagedTypes.length === 1 ? "" : "s"} selected.`;
 
   return (
     <div class="listing-selection-controls">
@@ -209,9 +235,9 @@ export function ListingFilters({ route }: { route: Route }) {
                   type="checkbox"
                   value={status}
                   data-status={status}
-                  checked={staged.includes(status)}
+                  checked={stagedStatuses.includes(status)}
                   onChange={(event) =>
-                    toggle(status, event.currentTarget.checked)
+                    toggleStatus(status, event.currentTarget.checked)
                   }
                 />
                 {issueStatusLabel(status)}
@@ -219,13 +245,34 @@ export function ListingFilters({ route }: { route: Route }) {
             ))}
           </div>
           <p class="issue-view-help" aria-live="polite">
-            {help}
+            {statusHelp}
+          </p>
+          <strong class="issue-view-section-title">Types</strong>
+          <div class="issue-view-choices">
+            {issueTypeVocabulary.map((type) => (
+              <label class="issue-view-option" key={type}>
+                <input
+                  type="checkbox"
+                  value={type}
+                  data-type={type}
+                  checked={stagedTypes.includes(type)}
+                  onChange={(event) =>
+                    toggleType(type, event.currentTarget.checked)
+                  }
+                />
+                {issueTypeLabel(type)}
+              </label>
+            ))}
+          </div>
+          <p class="issue-view-help" aria-live="polite">
+            {typeHelp}
           </p>
           <div class="issue-view-actions">
             <Button
               class="secondary-button"
               onClick={() => {
-                setStaged([...defaultIssueStatuses]);
+                setStagedStatuses([...defaultIssueStatuses]);
+                setStagedTypes([...defaultIssueTypes]);
                 firstChoice.current?.focus();
               }}
             >
@@ -234,7 +281,10 @@ export function ListingFilters({ route }: { route: Route }) {
             <Button
               class="primary-button"
               onClick={(event) => {
-                const next = withIssueStatuses(route.query, staged);
+                const next = withIssueTypes(
+                  withIssueStatuses(route.query, stagedStatuses),
+                  stagedTypes,
+                );
                 event.currentTarget
                   .closest<HTMLElement>("[popover]")
                   ?.hidePopover();

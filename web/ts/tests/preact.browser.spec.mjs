@@ -386,7 +386,7 @@ test("Markdown changes notify once and still bubble input", async ({
   expect(await page.evaluate(() => window.editorInputEvents)).toBe(1);
 });
 
-test("epic and status filters compose, and page normalization does not refetch twice", async ({
+test("epic, status, and type filters compose without duplicate page fetches", async ({
   page,
 }) => {
   const workspace = await fixture(page, "f");
@@ -408,7 +408,7 @@ test("epic and status filters compose, and page normalization does not refetch t
   const requests = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname === "/api/issues" && !url.searchParams.has("type"))
+    if (url.pathname === "/api/issues" && url.searchParams.has("limit"))
       requests.push(url);
   });
   await page.goto(`${baseURL}/#/issues?workspace=${workspace}&page=999`);
@@ -494,8 +494,27 @@ test("epic and status filters compose, and page normalization does not refetch t
   await trigger.click();
   const statuses = page.getByRole("dialog", { name: "Issue view options" });
   await expect(statuses).toBeVisible();
-  await expect(statuses.getByRole("checkbox")).toHaveCount(4);
-  for (const checkbox of await statuses.getByRole("checkbox").all())
+  await expect(statuses.getByRole("checkbox")).toHaveCount(9);
+  const types = statuses.locator("input[data-type]");
+  await expect(types).toHaveCount(5);
+  for (const checkbox of await types.all()) {
+    if ((await checkbox.getAttribute("value")) !== "task")
+      await checkbox.uncheck();
+  }
+  await statuses.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page).toHaveURL(/type=task/);
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await expect
+    .poll(() => requests.at(-1)?.searchParams.getAll("type"))
+    .toEqual(["task"]);
+  await trigger.click();
+  await statuses.getByRole("button", { name: "Reset", exact: true }).click();
+  await statuses.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page).not.toHaveURL(/type=/);
+  await trigger.click();
+  const statusChoices = statuses.locator("input[data-status]");
+  await expect(statusChoices).toHaveCount(4);
+  for (const checkbox of await statusChoices.all())
     await checkbox.uncheck();
   const beforeEmpty = requests.length;
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
