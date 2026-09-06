@@ -47,6 +47,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | --- | --- |
 | `internal/domain` | The rules, and no I/O: vocabulary, the text gate, hash IDs, GFM link extraction, the relation graph, readiness, the permission rules, password hashing, the `--compact` encoders. |
 | `internal/storage` | The schema, the migrations, all SQL, and the attachment blob store. |
+| `spec/schema.sql` | The current SQLite schema produced by all migrations. |
 | `internal/local` | The operations, one `BEGIN IMMEDIATE` transaction each. |
 | `internal/backend` | The one interface every command is written against. |
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
@@ -101,6 +102,9 @@ Three structural rules hold the design together:
 * Every mutation is one `BEGIN IMMEDIATE` transaction, so checks and the write
   they guard happen inside one writer's exclusive turn.
 * A released migration batch is never edited, only followed by another.
+* Whenever the database schema changes, update `spec/schema.sql` to match. The
+  build and `task schema:check` verify the document against a freshly migrated
+  database.
 * An attachment is keyed on `(issue, name)` and has no id of its own, as a
   label is keyed on `(issue, label)`. A name is therefore unique within an
   issue, and both surfaces address one by that pair.
