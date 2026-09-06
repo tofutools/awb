@@ -223,3 +223,11 @@ CREATE TABLE board_view_epics (
         epic TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
         PRIMARY KEY (view, epic)
     ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE board_view_columns (
+		view TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		status TEXT NOT NULL CHECK (status IN ('backlog', 'open', 'in_progress', 'closed')),
+		position INTEGER NOT NULL CHECK (position >= 0),
+		PRIMARY KEY (view, status),
+		UNIQUE (view, position)
+	) STRICT, WITHOUT ROWID;
