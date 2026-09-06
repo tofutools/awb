@@ -35,6 +35,58 @@ export interface DynamicFilterChoice {
   detail?: string;
 }
 
+/** A filter editor loads its vocabulary once while open. Popover unmounts its
+ * children on close, so reopening refreshes choices that may have changed. */
+function DynamicFilterAutocomplete({
+  name,
+  choices,
+  loadChoices,
+  selected,
+  value,
+  onValue,
+  onSuggestion,
+}: {
+  name: DynamicFilterName;
+  choices: DynamicFilterChoice[];
+  loadChoices?: () => Promise<DynamicFilterChoice[]>;
+  selected: string[];
+  value: string;
+  onValue: (value: string) => void;
+  onSuggestion: (choice: DynamicFilterChoice) => void;
+}) {
+  const loaded = useRef<Promise<DynamicFilterChoice[]>>();
+  return (
+    <Autocomplete
+      value={value}
+      onValue={onValue}
+      onSuggestion={onSuggestion}
+      onDismiss={() => onValue("")}
+      suggestOnEmpty
+      aria-label={dynamicFilterCopy[name].search}
+      placeholder={dynamicFilterCopy[name].placeholder}
+      load={async (query) => {
+        loaded.current ??= loadChoices
+          ? loadChoices()
+          : Promise.resolve(choices);
+        const match = query.toLocaleLowerCase();
+        const matches = (await loaded.current)
+          .filter((item) => !selected.includes(item.value))
+          .filter((item) =>
+            `${item.label} ${item.value} ${item.detail ?? ""}`
+              .toLocaleLowerCase()
+              .includes(match),
+          )
+          .map((item) => ({
+            value: item.value,
+            label: item.label,
+            detail: item.detail,
+          }));
+        return initialFilterSuggestions(query, matches);
+      }}
+    />
+  );
+}
+
 type DynamicFilterName = "label" | "epic" | "assignee";
 
 const dynamicFilterCopy: Record<
@@ -124,7 +176,7 @@ export function DynamicFilterRow({
             const display =
               item?.label ??
               (name === "epic"
-                ? "Unavailable epic"
+                ? value
                 : `${name === "label" ? "#" : "@"}${value}`);
             return (
               <span class="editable-chip" key={value} title={item?.detail}>
@@ -148,33 +200,14 @@ export function DynamicFilterRow({
           align="start"
           buttonLabel={dynamicFilterCopy[name].button}
         >
-          <Autocomplete
+          <DynamicFilterAutocomplete
+            name={name}
+            choices={choices}
+            loadChoices={loadChoices}
+            selected={selected}
             value={draft}
             onValue={setDraft}
             onSuggestion={(item) => add(item.value)}
-            onDismiss={() => setDraft("")}
-            suggestOnEmpty
-            aria-label={dynamicFilterCopy[name].search}
-            placeholder={dynamicFilterCopy[name].placeholder}
-            load={async (query) => {
-              const loadedChoices = loadChoices
-                ? await loadChoices()
-                : choices;
-              const match = query.toLocaleLowerCase();
-              const matches = loadedChoices
-                .filter((item) => !selected.includes(item.value))
-                .filter((item) =>
-                  `${item.label} ${item.value} ${item.detail ?? ""}`
-                    .toLocaleLowerCase()
-                    .includes(match),
-                )
-                .map((item) => ({
-                  value: item.value,
-                  label: item.label,
-                  detail: item.detail,
-                }));
-              return initialFilterSuggestions(query, matches);
-            }}
           />
         </Popover>
       </div>
@@ -306,14 +339,22 @@ export function ListingFilters({ route }: { route: Route }) {
   );
 }
 
-export function EpicFilterRow({ route }: { route: Route }) {
+export function EpicFilterRow({
+  route,
+  initialEpics,
+}: {
+  route: Route;
+  initialEpics: Issue[];
+}) {
   const selected = epicSelectionFrom(route.query);
   const workspaces = route.query.getAll("workspace");
   const includeArchived = route.query.get("include-archived") === "true";
   const scope = JSON.stringify([workspaces, includeArchived]);
-  const [loaded, setLoaded] = useState<{ scope: string; epics: Issue[] }>();
-  const pending = useRef<{ scope: string; epics: Promise<Issue[]> }>();
-  const epics = loaded?.scope === scope ? loaded.epics : [];
+  const [loaded, setLoaded] = useState<{ scope: string; epics: Issue[] }>({
+    scope,
+    epics: initialEpics,
+  });
+  const epics = loaded.scope === scope ? loaded.epics : initialEpics;
   const choices = (rows: Issue[]): DynamicFilterChoice[] => [
     { value: noEpicSelection, label: "No epic" },
     ...rankEpicFilterSuggestions(rows).map((epic) => ({
@@ -323,29 +364,15 @@ export function EpicFilterRow({ route }: { route: Route }) {
     })),
   ];
   const loadChoices = async (): Promise<DynamicFilterChoice[]> => {
-    let request = pending.current;
-    if (request?.scope !== scope) {
-      const promise = api
-        .issues({
-          type: ["epic"],
-          workspace: workspaces.length ? workspaces : undefined,
-          "include-closed": true,
-          ...(includeArchived ? { "include-archived": true } : {}),
-          sort: "id",
-        })
-        .then((page) => {
-          setLoaded({ scope, epics: page.rows });
-          return page.rows;
-        });
-      request = { scope, epics: promise };
-      pending.current = request;
-    }
-    try {
-      return choices(await request.epics);
-    } catch (error) {
-      if (pending.current === request) pending.current = undefined;
-      throw error;
-    }
+    const page = await api.issues({
+      type: ["epic"],
+      workspace: workspaces.length ? workspaces : undefined,
+      "include-closed": true,
+      ...(includeArchived ? { "include-archived": true } : {}),
+      sort: "id",
+    });
+    setLoaded({ scope, epics: page.rows });
+    return choices(page.rows);
   };
   return (
     <DynamicFilterRow

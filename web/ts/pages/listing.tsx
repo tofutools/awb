@@ -120,15 +120,9 @@ export function ListingPage({
           : kind === "blocked"
             ? api.blocked(blockedFilters(filters))
             : api.issues(filters);
-    const [page, workspaces, labels, assignees] = await Promise.all([
+    const [page, workspaces] = await Promise.all([
       load(),
       api.workspaces(filters["include-archived"] ? { state: "all" } : {}),
-      api.labels(
-        kind === "ready" ? readyFacetFilters(filters) : facetFilters(filters),
-      ),
-      kind === "ready"
-        ? Promise.resolve({ rows: [], total: 0 })
-        : api.assignees(facetFilters(filters)),
     ]);
     const normalized = pageWindow(
       page.total,
@@ -139,7 +133,7 @@ export function ListingPage({
       replaceRoute(route, withPage(route.query, normalized));
       return;
     }
-    return { page, workspaces, labels, assignees };
+    return { page, workspaces };
   }, [kind, route.query.toString()]);
   const data = resource.data;
   const state = sortState(
@@ -169,8 +163,8 @@ export function ListingPage({
     blocked: "Work waiting on something else.",
   };
   const lowest = lowestFacetGroup(
-    data?.labels.rows ?? [],
-    kind === "ready" ? null : (data?.assignees.rows ?? []),
+    [],
+    kind === "ready" ? null : [],
   );
   const group = (
     name: string,
@@ -285,12 +279,22 @@ export function ListingPage({
                 title="labels"
                 name="label"
                 selected={route.query.getAll("label")}
-                choices={rankCountedFilterSuggestions(data.labels.rows)
-                  .map((label) => ({
-                    value: label.value,
-                    label: `#${label.value}`,
-                    detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
-                  }))}
+                choices={[]}
+                loadChoices={async () => {
+                  const filters = filtersFrom(route.query);
+                  const page = await api.labels(
+                    kind === "ready"
+                      ? readyFacetFilters(filters)
+                      : facetFilters(filters),
+                  );
+                  return rankCountedFilterSuggestions(page.rows).map(
+                    (label) => ({
+                      value: label.value,
+                      label: `#${label.value}`,
+                      detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
+                    }),
+                  );
+                }}
                 trailing={
                   lowest === "label" ? (
                     <Pagination route={route} total={data.page.total} />
@@ -298,7 +302,12 @@ export function ListingPage({
                 }
               />
               {kind === "issues" && (
-                <EpicFilterRow route={route} />
+                <EpicFilterRow
+                  route={route}
+                  initialEpics={data.page.rows.filter(
+                    (issue) => issue.type === "epic",
+                  )}
+                />
               )}
               {kind !== "ready" && (
                 <DynamicFilterRow
@@ -306,12 +315,19 @@ export function ListingPage({
                   title="assignees"
                   name="assignee"
                   selected={route.query.getAll("assignee")}
-                  choices={rankCountedFilterSuggestions(data.assignees.rows)
-                    .map((assignee) => ({
-                      value: assignee.value,
-                      label: `@${assignee.value}`,
-                      detail: `${assignee.count} issue${assignee.count === 1 ? "" : "s"}`,
-                    }))}
+                  choices={[]}
+                  loadChoices={async () => {
+                    const page = await api.assignees(
+                      facetFilters(filtersFrom(route.query)),
+                    );
+                    return rankCountedFilterSuggestions(page.rows).map(
+                      (assignee) => ({
+                        value: assignee.value,
+                        label: `@${assignee.value}`,
+                        detail: `${assignee.count} issue${assignee.count === 1 ? "" : "s"}`,
+                      }),
+                    );
+                  }}
                   trailing={
                     lowest === "assignee" ? (
                       <Pagination route={route} total={data.page.total} />

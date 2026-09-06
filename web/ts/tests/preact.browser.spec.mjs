@@ -417,6 +417,8 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   });
   const requests = [];
   const epicRequests = [];
+  const labelRequests = [];
+  const assigneeRequests = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname === "/api/issues" && url.searchParams.has("limit"))
@@ -427,12 +429,16 @@ test("epic, status, and type filters compose without duplicate page fetches", as
       !url.searchParams.has("limit")
     )
       epicRequests.push(url);
+    if (url.pathname === "/api/labels") labelRequests.push(url);
+    if (url.pathname === "/api/assignees") assigneeRequests.push(url);
   });
   await page.goto(`${baseURL}/#/issues?workspace=${workspace}&page=999`);
   await expect(page).not.toHaveURL(/page=999/);
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
   expect(requests).toHaveLength(2);
   expect(epicRequests).toHaveLength(0);
+  expect(labelRequests).toHaveLength(0);
+  expect(assigneeRequests).toHaveLength(0);
   const labelRow = page.locator(".dynamic-filter-group", {
     has: page.getByText("labels", { exact: true }),
   });
@@ -444,6 +450,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   await expect(
     labelDialog.getByRole("option", { name: /#frontend/ }),
   ).toBeVisible();
+  expect(labelRequests).toHaveLength(1);
   await labelSelector.fill("front");
   await labelSelector.press("Escape");
   await expect(labelDialog).toHaveCount(0);
@@ -454,6 +461,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
       .getByRole("dialog", { name: "Add label filter" })
       .getByRole("combobox", { name: "Search labels" }),
   ).toHaveValue("");
+  await expect.poll(() => labelRequests.length).toBe(2);
   await labelSelector.fill("front");
   await labelDialog.getByRole("option", { name: /#frontend/ }).click();
   await expect(page).toHaveURL(/label=frontend/);
@@ -479,6 +487,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   await expect(
     assigneeDialog.getByRole("option", { name: /@filter-user/ }),
   ).toBeVisible();
+  expect(assigneeRequests).toHaveLength(1);
   await assigneeSelector.fill("filter");
   await assigneeDialog
     .getByRole("option", { name: /@filter-user/ })
@@ -506,6 +515,8 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   await epicSelector.fill("Filter epic");
   await epicDialog.getByRole("option", { name: /Filter epic/ }).click();
   await expect(page.locator(".filter-count")).toHaveText("3 issues");
+  await page.reload();
+  await expect(epicRow.locator(".facet.active")).toHaveText("Filter epic");
   expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
   expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
   expect(requests.at(-1).searchParams.get("include-parent")).toBe("true");
