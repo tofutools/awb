@@ -395,11 +395,15 @@ test("epic and status filters compose, and page normalization does not refetch t
   });
   const child = await createIssue(page, workspace, "Filter child", {
     relations: [{ type: "has-parent", other: epic.id }],
+    labels: ["frontend"],
   });
   await createIssue(page, workspace, "Filter grandchild", {
     relations: [{ type: "has-parent", other: child.id }],
+    labels: ["frontend"],
   });
-  await createIssue(page, workspace, "Standalone issue");
+  await createIssue(page, workspace, "Standalone issue", {
+    labels: ["backend"],
+  });
   const requests = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -410,16 +414,37 @@ test("epic and status filters compose, and page normalization does not refetch t
   await expect(page).not.toHaveURL(/page=999/);
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
   expect(requests).toHaveLength(2);
-  const trigger = page.getByRole("button", { name: "Configure issue view" });
-  await expect(trigger).toHaveText("▾ View");
-  await trigger.click();
-  const view = page.getByRole("dialog", { name: "Issue view options" });
-  const selector = view.getByRole("combobox", { name: "Filter by epic" });
-  await selector.selectOption(epic.id);
-  await view.getByRole("button", { name: "Done", exact: true }).click();
+  const labelRow = page.locator(".dynamic-filter-group", {
+    has: page.getByText("labels", { exact: true }),
+  });
+  const labelSelector = labelRow.getByRole("combobox", {
+    name: "Filter by label",
+  });
+  await labelSelector.fill("front");
+  await labelRow.getByRole("option", { name: /#frontend/ }).click();
+  await labelRow.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page).toHaveURL(/label=frontend/);
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await labelRow
+    .getByRole("button", { name: "Remove label frontend" })
+    .click();
+  await expect(page).not.toHaveURL(/label=frontend/);
+  await expect(page.locator(".filter-count")).toHaveText("4 issues");
+
+  const epicRow = page.locator(".dynamic-filter-group", {
+    has: page.getByText("epics", { exact: true }),
+  });
+  const epicSelector = epicRow.getByRole("combobox", {
+    name: "Filter by epic",
+  });
+  await epicSelector.fill("Filter epic");
+  await epicRow.getByRole("option", { name: /Filter epic/ }).click();
+  await epicRow.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
   expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
   expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
+  const trigger = page.getByRole("button", { name: "Configure issue view" });
+  await expect(trigger).toHaveText("▾ View");
   await trigger.click();
   const statuses = page.getByRole("dialog", { name: "Issue view options" });
   await expect(statuses).toBeVisible();
@@ -432,15 +457,21 @@ test("epic and status filters compose, and page normalization does not refetch t
     page.getByText("No statuses selected.", { exact: true }),
   ).toBeVisible();
   expect(requests).toHaveLength(beforeEmpty);
+  await expect(
+    epicRow.getByRole("button", { name: `Remove epic ${epic.id}` }),
+  ).toBeVisible();
+  await epicSelector.fill("No epic");
+  await epicRow.getByRole("option", { name: "No epic", exact: true }).click();
+  await epicRow.getByRole("button", { name: "Add", exact: true }).click();
   await trigger.click();
-  await expect(statuses.getByRole("combobox", { name: "Filter by epic" })).toHaveValue(epic.id);
-  await statuses.getByRole("combobox", { name: "Filter by epic" }).selectOption("none");
   await statuses.getByRole("button", { name: "Reset", exact: true }).click();
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(page.locator(".filter-count")).toHaveText("4 issues");
-  expect(requests.at(-1).searchParams.has("parent")).toBe(false);
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  expect(requests.at(-1).searchParams.get("parent")).toBe("none");
+  expect(requests.at(-1).searchParams.get("parent-type")).toBe("epic");
   await page.reload();
-  await trigger.click();
-  await expect(statuses.getByRole("combobox", { name: "Filter by epic" })).toHaveValue("");
-  await expect(page.locator(".filter-count")).toHaveText("4 issues");
+  await expect(
+    epicRow.getByRole("button", { name: "Remove epic none" }),
+  ).toBeVisible();
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
 });

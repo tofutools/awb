@@ -39,7 +39,11 @@ import {
   type ListingKind,
 } from "../components/issues.js";
 import { IssueCreateButton } from "../components/issue-form.js";
-import { ListingFilters } from "../components/listing-filters.js";
+import {
+  DynamicFilterRow,
+  EpicFilterRow,
+  ListingFilters,
+} from "../components/listing-filters.js";
 import {
   selectedIssueStatuses,
   hasEmptyStatusSelection,
@@ -226,7 +230,7 @@ export function ListingPage({
               : "Loading…"}
           </span>
           {kind === "issues" && (
-            <ListingFilters route={route} epics={data?.epics.rows ?? []} />
+            <ListingFilters route={route} />
           )}
           <div class="listing-actions">
             <label class="mobile-sort-control">
@@ -283,7 +287,25 @@ export function ListingPage({
                 "workspaces",
                 data.workspaces.rows.map((w) => ({ value: w.key })),
               )}
-              {group("label", "labels", data.labels.rows)}
+              <DynamicFilterRow
+                route={route}
+                title="labels"
+                name="label"
+                selected={route.query.getAll("label")}
+                choices={data.labels.rows.map((label) => ({
+                  value: label.value,
+                  label: `#${label.value}`,
+                  detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
+                }))}
+                trailing={
+                  lowest === "label" ? (
+                    <Pagination route={route} total={data.page.total} />
+                  ) : undefined
+                }
+              />
+              {kind === "issues" && (
+                <EpicFilterRow route={route} epics={data.epics.rows} />
+              )}
               {kind !== "ready" &&
                 group("assignee", "assignees", data.assignees.rows)}
             </div>
