@@ -161,8 +161,25 @@ func addParentSelection(c *conditions, f *domain.Filter) {
 	}
 	if *f.Parent != "" {
 		if !f.Recursive {
-			c.add(`i.id IN (SELECT subject FROM relations
-			                 WHERE type = 'has-parent' AND other = ?)`, *f.Parent)
+			if f.IncludeParent {
+				c.add(`(i.id = ? OR i.id IN (SELECT subject FROM relations
+				                  WHERE type = 'has-parent' AND other = ?))`, *f.Parent, *f.Parent)
+			} else {
+				c.add(`i.id IN (SELECT subject FROM relations
+				                 WHERE type = 'has-parent' AND other = ?)`, *f.Parent)
+			}
+			return
+		}
+		if f.IncludeParent {
+			c.add(`i.id IN (
+				WITH RECURSIVE descendants(id) AS (
+					SELECT ?
+					UNION
+					SELECT r.subject FROM relations r JOIN descendants d ON r.other = d.id
+					 WHERE r.type = 'has-parent'
+				)
+				SELECT id FROM descendants
+			)`, *f.Parent)
 			return
 		}
 		c.add(`i.id IN (

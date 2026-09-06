@@ -496,9 +496,10 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   ).toBeVisible();
   await epicSelector.fill("Filter epic");
   await epicDialog.getByRole("option", { name: /Filter epic/ }).click();
-  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await expect(page.locator(".filter-count")).toHaveText("3 issues");
   expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
   expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
+  expect(requests.at(-1).searchParams.get("include-parent")).toBe("true");
   const trigger = page.getByRole("button", { name: "Configure issue view" });
   await expect(trigger).toHaveText("▾ View");
   await trigger.click();
@@ -551,7 +552,7 @@ test("epic, status, and type filters compose without duplicate page fetches", as
   await statuses.getByRole("button", { name: "Reset", exact: true }).click();
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page).not.toHaveURL(/type=/);
-  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await expect(page.locator(".filter-count")).toHaveText("3 issues");
   await trigger.click();
   const statusChoices = statuses.locator("input[data-status]");
   await expect(statusChoices).toHaveCount(4);

@@ -730,6 +730,12 @@ func TestParentListingFilterCanBeRecursive(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.Contains(t, []string{member.ID, nested.ID}, issues[0].ID)
 
+	resp, payload = a.do(http.MethodGet, "/api/issues?parent="+epic.ID+"&recursive=true&include-parent=true", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "3", resp.Header.Get("X-Total-Count"))
+	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
+	assert.ElementsMatch(t, []string{epic.ID, member.ID, nested.ID}, []string{issues[0].ID, issues[1].ID, issues[2].ID})
+
 	resp, payload = a.do(http.MethodGet, "/api/issues?parent=none&parent-type=epic", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
@@ -743,6 +749,8 @@ func TestParentListingFilterCanBeRecursive(t *testing.T) {
 	for _, query := range []string{
 		"parent=not-an-id",
 		"recursive=true",
+		"include-parent=true",
+		"parent=none&include-parent=true",
 		"parent-type=epic",
 		"parent=" + epic.ID + "&parent-type=epic",
 	} {

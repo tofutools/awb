@@ -68,6 +68,7 @@ export interface EpicParentFilter {
   parent?: string;
   "parent-type"?: "epic";
   recursive?: true;
+  "include-parent"?: true;
 }
 
 /** epicParentFilter translates the epic-specific route state into the
@@ -78,7 +79,7 @@ export function epicParentFilter(query: URLSearchParams): EpicParentFilter {
   if (epic === noEpicSelection) {
     return { parent: "none", "parent-type": "epic", recursive: true };
   }
-  return { parent: epic, recursive: true };
+  return { parent: epic, recursive: true, "include-parent": true };
 }
 
 /** withEpicSelection changes the single epic selection without disturbing

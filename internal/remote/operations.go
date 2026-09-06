@@ -237,6 +237,9 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 	if filter.Recursive {
 		query.Set("recursive", "true")
 	}
+	if filter.IncludeParent {
+		query.Set("include-parent", "true")
+	}
 	if filter.ListingFilter != "" {
 		query.Set("filter", filter.ListingFilter)
 	}

@@ -232,6 +232,9 @@ type Filter struct {
 	Parent     *string
 	ParentType *Type
 	Recursive  bool
+	// IncludeParent includes a named Parent itself alongside its selected
+	// children or descendants. It is invalid without a non-empty Parent.
+	IncludeParent bool
 	// Epic selects direct same-workspace membership in one epic. A non-nil empty
 	// value selects issues without such a membership. It remains board-internal;
 	// general listings use Parent instead.
@@ -267,6 +270,9 @@ func ValidateParentFilter(f *Filter) error {
 	}
 	if f.ParentType != nil && (f.Parent == nil || *f.Parent != "") {
 		return awberr.Usagef("parent-type requires parent=none")
+	}
+	if f.IncludeParent && (f.Parent == nil || *f.Parent == "") {
+		return awberr.Usagef("include-parent requires a named parent")
 	}
 	return nil
 }
