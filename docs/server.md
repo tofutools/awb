@@ -17,6 +17,12 @@ awb serve --addr 0.0.0.0 --port 8080
 A non-loopback listener needs an intentional authentication decision; see
 below.
 
+An authenticated listener also needs protected transport. Plain HTTP is
+accepted on loopback. Elsewhere, use a TLS-terminating reverse proxy and say so
+with `--https` or an HTTPS `--public-url`. As a last resort,
+`--insecure-transport` explicitly accepts that Basic credentials can be
+observed and reused.
+
 ## Remote CLI
 
 Point `--db`, `AWB_DB`, or the user configuration's `db` at the server:
@@ -27,6 +33,8 @@ AWB_DB=http://127.0.0.1:7777 awb ready --compact
 
 The URL may include a base path. Every CLI command is written against the same
 backend interface, so commands and outputs do not gain remote-only variants.
+Configured Basic credentials require HTTPS unless the URL is loopback; see
+[Configuration](configuration.md) for the explicit escape hatch.
 
 ## OpenAPI
 
@@ -74,6 +82,13 @@ awb refuses to start a never-authenticated database in an apparently public
 deployment: a non-loopback binding, `--public-url`, `--https`, or an explicitly
 chosen Basic-auth realm. Use accounts for a shared deployment. Use `--no-auth`
 only when unauthenticated access is deliberate and protected elsewhere.
+
+Accounts use reusable HTTP Basic credentials, so authentication alone does not
+make a public plain-HTTP listener safe. When a database has or has previously
+had password accounts, a non-loopback listener requires `--https`, an HTTPS
+`--public-url`, or the explicit `--insecure-transport` escape hatch. The rule
+also covers a locked server because adding an account makes that running server
+start accepting credentials without a restart.
 
 Create the first account through direct database access. `--password` reads it
 from standard input or prompts for it without terminal echo; it is never a flag
@@ -140,7 +155,9 @@ awb serve --proxy-to https://example.com/awb/
 
 Only `/api/` requests are proxied. Authentication challenges pass through, and
 local browser writes still have to satisfy cross-site request checks. The
-default loopback binding keeps this development proxy local.
+default loopback binding keeps this development proxy local. Because the proxy
+forwards Basic credentials, both its browser-facing listener and its upstream
+connection enforce the same transport boundary as the server and remote CLI.
 
 ## Backups and copies
 

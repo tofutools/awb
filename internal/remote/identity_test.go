@@ -21,7 +21,7 @@ func TestRemoteReadsEffectiveUserAdministrationFromIdentity(t *testing.T) {
 	t.Cleanup(server.Close)
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "configured-name")
+	client := remote.New(base, "", "", "configured-name", false)
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
 	identity, err := client.AuthenticatedIdentity(t.Context())

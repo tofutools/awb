@@ -40,7 +40,7 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "operator")
+	client := remote.New(base, "", "", "operator", false)
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
 	parent := "awb-a1b2c3"

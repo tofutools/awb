@@ -70,7 +70,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "", "", "alice")
+	client := remote.New(base, "", "", "alice", false)
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
 	views, err := client.ListBoardViews(t.Context())
