@@ -703,33 +703,29 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			}
 		}
 		includeBacklog = slices.Contains(statuses, domain.StatusBacklog)
-		cardTypes := []domain.Type{domain.TypeFeature, domain.TypeBug, domain.TypeTask, domain.TypeChore}
+		laneIDs := make([]string, len(laneEpics))
+		for i, epic := range laneEpics {
+			if epic != nil {
+				laneIDs[i] = epic.ID
+			}
+		}
+		columnPages, err := tx.ListBoardColumns(laneSelection, laneIDs, statuses, closedAfter,
+			cardLabels, cardAssignees, priorityMax, includeBacklog, query.CardLimit, query.CardOffset)
+		if err != nil {
+			return err
+		}
 		for _, epic := range laneEpics {
 			lane := domain.BoardLane{Epic: epic, Columns: []domain.BoardColumn{}}
 			epicID := ""
-			workspaces := laneSelection
 			if epic != nil {
 				epicID = epic.ID
-				workspaces = []string{epic.Workspace}
 			}
 			for _, status := range statuses {
-				filter := &domain.Filter{ExcludeBacklog: !includeBacklog, Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
-					Statuses: []domain.Status{status}, Limit: query.CardLimit,
-					Offset: query.CardOffset, Sort: domain.DefaultSort}
-				if status == domain.StatusClosed {
-					filter.ClosedAfter = closedAfter
+				page := columnPages[storage.BoardColumnKey{Epic: epicID, Status: status}]
+				if page.Issues == nil {
+					page.Issues = []domain.Issue{}
 				}
-				filter.Labels = cardLabels
-				filter.Assignees = cardAssignees
-				filter.PriorityMax = &priorityMax
-				issues, total, err := []domain.Issue{}, 0, error(nil)
-				if workspaces == nil || len(workspaces) > 0 {
-					issues, total, err = tx.ListIssues(filter)
-				}
-				if err != nil {
-					return err
-				}
-				lane.Columns = append(lane.Columns, domain.BoardColumn{Status: status, Issues: issues, Total: total})
+				lane.Columns = append(lane.Columns, domain.BoardColumn{Status: status, Issues: page.Issues, Total: page.Total})
 			}
 			result.Lanes = append(result.Lanes, lane)
 		}
