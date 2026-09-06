@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Issue } from "../api.js";
 import {
   epicSelectionFrom,
+  initialFilterSuggestions,
   noEpicSelection,
+  rankEpicFilterSuggestions,
   withEpicSelection,
 } from "../listings.js";
 import { routeHref, type Route } from "../routing/route.js";
@@ -117,11 +119,13 @@ export function DynamicFilterRow({
             value={draft}
             onValue={setDraft}
             onSuggestion={(item) => add(item.value)}
+            onDismiss={() => setDraft("")}
+            suggestOnEmpty
             aria-label={name === "label" ? "Search labels" : "Search epics"}
             placeholder={name === "label" ? "Search labels…" : "Search epics…"}
             load={async (query) => {
               const match = query.toLocaleLowerCase();
-              return available
+              const matches = available
                 .filter((item) =>
                   `${item.label} ${item.value} ${item.detail ?? ""}`
                     .toLocaleLowerCase()
@@ -132,6 +136,7 @@ export function DynamicFilterRow({
                   label: item.label,
                   detail: item.detail,
                 }));
+              return initialFilterSuggestions(query, matches);
             }}
           />
         </Popover>
@@ -230,6 +235,7 @@ export function EpicFilterRow({
   epics: Issue[];
 }) {
   const selected = epicSelectionFrom(route.query);
+  const ranked = rankEpicFilterSuggestions(epics);
   return (
     <DynamicFilterRow
       route={route}
@@ -238,7 +244,7 @@ export function EpicFilterRow({
       selected={selected === null ? [] : [selected]}
       choices={[
         { value: noEpicSelection, label: "No epic" },
-        ...epics.map((epic) => ({
+        ...ranked.map((epic) => ({
           value: epic.id,
           label: epic.title,
           detail: epic.id,

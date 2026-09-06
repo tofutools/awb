@@ -6,6 +6,8 @@ import {
   emptyFacetLabel,
   epicParentFilter,
   epicSelectionFrom,
+  initialFilterSuggestionLimit,
+  initialFilterSuggestions,
   listingFilterMaxLength,
   listingParentTitle,
   listingParentTitleMaxLength,
@@ -19,6 +21,8 @@ import {
   pageWindow,
   rememberedPageSize,
   rememberPageSize,
+  rankEpicFilterSuggestions,
+  rankLabelFilterSuggestions,
   sortState,
   withEpicSelection,
   withPage,
@@ -29,6 +33,44 @@ const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration
 
 test("listing filter length mirrors the OpenAPI contract", () => {
   assert.equal(listingFilterMaxLength, 500);
+});
+
+test("initial label suggestions rank frequent labels first and break ties by name", () => {
+  const labels = [
+    { value: "frontend", count: 3 },
+    { value: "api", count: 7 },
+    { value: "backend", count: 7 },
+    { value: "docs", count: 1 },
+  ];
+
+  assert.deepEqual(
+    rankLabelFilterSuggestions(labels).map((label) => label.value),
+    ["api", "backend", "frontend", "docs"],
+  );
+  assert.equal(labels[0].value, "frontend", "ranking does not mutate API data");
+});
+
+test("initial epic suggestions rank active and recently updated epics first", () => {
+  const epics = [
+    { id: "awb-bbb222", status: "closed", updated_at: "2026-09-05T00:00:00Z" },
+    { id: "awb-ccc333", status: "open", updated_at: "2026-09-04T00:00:00Z" },
+    { id: "awb-bbb111", status: "open", updated_at: "2026-09-04T00:00:00Z" },
+    { id: "awb-aaa000", status: "closed", updated_at: "2026-09-06T00:00:00Z" },
+    { id: "awb-ddd444", status: "in_progress", updated_at: "2026-09-06T00:00:00Z" },
+  ];
+
+  assert.deepEqual(
+    rankEpicFilterSuggestions(epics).map((epic) => epic.id),
+    ["awb-ddd444", "awb-bbb111", "awb-ccc333", "awb-aaa000", "awb-bbb222"],
+  );
+});
+
+test("initial filter suggestions are capped while searched matches are not", () => {
+  const matches = Array.from({ length: 10 }, (_, index) => index + 1);
+
+  assert.equal(initialFilterSuggestionLimit, 8);
+  assert.deepEqual(initialFilterSuggestions("", matches), matches.slice(0, 8));
+  assert.deepEqual(initialFilterSuggestions("api", matches), matches);
 });
 
 test("epic selection is shareable, single-valued, and resets pagination", () => {
@@ -153,4 +195,3 @@ test("sort headers cycle ascending, descending, then natural order", () => {
   assert.equal(nextSortValue("-active", "active", allowed, "key"), null);
   assert.equal(nextSortValue(null, "key", allowed, "key"), "-key");
 });
-

@@ -16,6 +16,7 @@ import {
   pageWindow,
   withPage,
   lowestFacetGroup,
+  rankLabelFilterSuggestions,
 } from "../listings.js";
 import {
   routeHref,
@@ -292,11 +293,12 @@ export function ListingPage({
                 title="labels"
                 name="label"
                 selected={route.query.getAll("label")}
-                choices={data.labels.rows.map((label) => ({
-                  value: label.value,
-                  label: `#${label.value}`,
-                  detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
-                }))}
+                choices={rankLabelFilterSuggestions(data.labels.rows)
+                  .map((label) => ({
+                    value: label.value,
+                    label: `#${label.value}`,
+                    detail: `${label.count} issue${label.count === 1 ? "" : "s"}`,
+                  }))}
                 trailing={
                   lowest === "label" ? (
                     <Pagination route={route} total={data.page.total} />

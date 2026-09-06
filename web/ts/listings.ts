@@ -17,6 +17,45 @@ export const listingFilterMaxLength = 500;
 export const noEpicSelection = "none";
 const issueIDPattern = /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/;
 
+export const initialFilterSuggestionLimit = 8;
+
+/** Initial filter suggestions stay compact; an explicit search may return
+ * every match so the user can find less common values. */
+export function initialFilterSuggestions<T>(
+  query: string,
+  matches: readonly T[],
+): T[] {
+  return query === ""
+    ? matches.slice(0, initialFilterSuggestionLimit)
+    : [...matches];
+}
+
+/** Frequently used labels make the most useful suggestions before search. */
+export function rankLabelFilterSuggestions<
+  T extends { value: string; count: number },
+>(labels: readonly T[]): T[] {
+  return [...labels].sort(
+    (left, right) =>
+      right.count - left.count || left.value.localeCompare(right.value),
+  );
+}
+
+/** Active and recently updated epics are the most useful suggestions before
+ * search. Stable IDs make otherwise equal entries deterministic. */
+export function rankEpicFilterSuggestions<
+  T extends { id: string; status: string; updated_at: string },
+>(epics: readonly T[]): T[] {
+  return [...epics].sort((left, right) => {
+    const state =
+      Number(left.status === "closed") - Number(right.status === "closed");
+    return (
+      state ||
+      right.updated_at.localeCompare(left.updated_at) ||
+      left.id.localeCompare(right.id)
+    );
+  });
+}
+
 /** epicSelectionFrom accepts exactly the values the listing API accepts. An
  * invalid hand-written URL is treated as an unfiltered view rather than
  * sending a request the API must reject. */
