@@ -20,7 +20,7 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 			if mode == "remote" {
 				u, err := url.Parse(a.server.URL)
 				require.NoError(t, err)
-				be = remote.New(u, "", "", "mikael")
+				be = remote.New(u, "", "", "mikael", false)
 				t.Cleanup(func() { _ = be.Close() })
 			}
 			ctx := t.Context()
