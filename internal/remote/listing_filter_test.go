@@ -31,6 +31,7 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		case "/api/issues":
 			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("parent"))
 			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
+			assert.Equal(t, "true", r.URL.Query().Get("include-parent"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Total-Count", "0")
@@ -45,7 +46,7 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 
 	parent := "awb-a1b2c3"
 	_, err = client.ListIssues(t.Context(), &domain.Filter{
-		ListingFilter: want["/api/issues"], Parent: &parent, Recursive: true,
+		ListingFilter: want["/api/issues"], Parent: &parent, Recursive: true, IncludeParent: true,
 	})
 	require.NoError(t, err)
 	wireSentinel := "none"

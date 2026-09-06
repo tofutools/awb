@@ -135,6 +135,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -594,6 +595,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -621,6 +623,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
         - $ref: '#/components/parameters/limit'
@@ -665,6 +668,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - name: sort
           in: query
@@ -1337,6 +1341,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
@@ -1375,6 +1380,7 @@ paths:
         - $ref: '#/components/parameters/parent'
         - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
         - $ref: '#/components/parameters/limit'
@@ -1579,6 +1585,13 @@ components:
       description: |
         With `parent`, traverse the whole ancestry chain instead of only the
         direct parent relation. It is invalid without `parent`.
+      schema: { type: boolean, default: false }
+    includeParent:
+      name: include-parent
+      in: query
+      description: |
+        Include the named parent itself alongside its selected children or
+        descendants. It is invalid without a named `parent`.
       schema: { type: boolean, default: false }
     listingFilter:
       name: filter

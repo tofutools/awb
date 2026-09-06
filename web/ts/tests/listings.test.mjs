@@ -81,7 +81,9 @@ test("epic selection is shareable, single-valued, and resets pagination", () => 
   assert.equal(withEpicSelection(selected, noEpicSelection).get("epic"), "none");
   assert.equal(withEpicSelection(selected, null).has("epic"), false);
   assert.equal(epicSelectionFrom(new URLSearchParams("epic=not-an-id")), null);
-  assert.deepEqual(epicParentFilter(selected), { parent: "awb-a1b2c3", recursive: true });
+  assert.deepEqual(epicParentFilter(selected), {
+    parent: "awb-a1b2c3", recursive: true, "include-parent": true,
+  });
   assert.deepEqual(epicParentFilter(new URLSearchParams("epic=none")), {
     parent: "none", "parent-type": "epic", recursive: true,
   });

@@ -39,3 +39,20 @@ func TestParentFilterUsesAnEmptyValueForNoParent(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reserved for the HTTP API")
 }
+
+func TestIncludeParentRequiresANamedParent(t *testing.T) {
+	parent := "awb-a1b2c3"
+	require.NoError(t, domain.ValidateParentFilter(&domain.Filter{
+		Parent: &parent, IncludeParent: true,
+	}))
+
+	none := ""
+	for _, filter := range []*domain.Filter{
+		{IncludeParent: true},
+		{Parent: &none, IncludeParent: true},
+	} {
+		err := domain.ValidateParentFilter(filter)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "include-parent requires a named parent")
+	}
+}

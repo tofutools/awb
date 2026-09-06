@@ -646,6 +646,12 @@ func TestParentFilterCanTraverseRecursivelyBeforePaging(t *testing.T) {
 	require.Len(t, issues, 1, "recursive ancestry is counted before paging")
 	assert.Contains(t, []string{child, grandchild}, issues[0].ID)
 
+	filter = &domain.Filter{Parent: &epic, Recursive: true, IncludeParent: true, Sort: domain.Sort{Key: domain.SortID}}
+	issues, total, err = listWith(t, db, filter)
+	require.NoError(t, err)
+	assert.Equal(t, 3, total)
+	assert.ElementsMatch(t, []string{epic, child, grandchild}, []string{issues[0].ID, issues[1].ID, issues[2].ID})
+
 	filter = &domain.Filter{Parent: &child, Recursive: true, Sort: domain.Sort{Key: domain.SortID}}
 	issues, total, err = listWith(t, db, filter)
 	require.NoError(t, err)

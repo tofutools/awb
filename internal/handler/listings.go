@@ -32,6 +32,7 @@ type selection struct {
 	parent          api.OptString
 	parentType      api.OptType
 	recursive       bool
+	includeParent   bool
 	sort            string
 	limit           api.OptInt
 	offset          api.OptInt
@@ -50,6 +51,7 @@ func (s selection) filter(relevance bool) (*domain.Filter, error) {
 		IncludeArchived: s.includeArchived,
 		Unassigned:      s.unassigned,
 		Recursive:       s.recursive,
+		IncludeParent:   s.includeParent,
 		ListingFilter:   s.listingFilter,
 	}
 	parent, hasParent := s.parent.Get()
@@ -161,6 +163,7 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 		parent:          params.Parent,
 		parentType:      params.ParentType,
 		recursive:       params.Recursive.Or(false),
+		includeParent:   params.IncludeParent.Or(false),
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
 		offset:          params.Offset,
@@ -186,6 +189,7 @@ func (h *Handler) ListReady(ctx context.Context, params api.ListReadyParams) (
 		parent:        params.Parent,
 		parentType:    params.ParentType,
 		recursive:     params.Recursive.Or(false),
+		includeParent: params.IncludeParent.Or(false),
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
 		offset:        params.Offset,
@@ -214,6 +218,7 @@ func (h *Handler) ListBlocked(ctx context.Context, params api.ListBlockedParams)
 		parent:        params.Parent,
 		parentType:    params.ParentType,
 		recursive:     params.Recursive.Or(false),
+		includeParent: params.IncludeParent.Or(false),
 		sort:          string(params.Sort.Or("")),
 		limit:         params.Limit,
 		offset:        params.Offset,
@@ -243,6 +248,7 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 		parent:          params.Parent,
 		parentType:      params.ParentType,
 		recursive:       params.Recursive.Or(false),
+		includeParent:   params.IncludeParent.Or(false),
 		sort:            string(params.Sort.Or("")),
 		limit:           params.Limit,
 		offset:          params.Offset,
@@ -311,6 +317,7 @@ func (h *Handler) ListLabels(ctx context.Context, params api.ListLabelsParams) (
 		parent:          params.Parent,
 		parentType:      params.ParentType,
 		recursive:       params.Recursive.Or(false),
+		includeParent:   params.IncludeParent.Or(false),
 		limit:           params.Limit,
 		offset:          params.Offset,
 		listingFilter:   params.Filter.Or(""),
@@ -339,6 +346,7 @@ func (h *Handler) ListAssignees(ctx context.Context, params api.ListAssigneesPar
 		parent:          params.Parent,
 		parentType:      params.ParentType,
 		recursive:       params.Recursive.Or(false),
+		includeParent:   params.IncludeParent.Or(false),
 		limit:           params.Limit,
 		offset:          params.Offset,
 		listingFilter:   params.Filter.Or(""),
