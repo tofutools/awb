@@ -177,6 +177,7 @@ type BoardViewPatch struct {
 }
 
 type BoardQuery struct {
+	IncludeBacklog bool
 	LaneLimit      *int
 	LaneOffset     *int
 	CardLimit      *int
@@ -303,6 +304,7 @@ type AttachmentCreate struct {
 // but Workspace and Title may be left at its zero value and then takes its
 // documented default.
 type IssueCreate struct {
+	Backlog        bool
 	Workspace      string
 	Title          string
 	Description    string
@@ -325,7 +327,7 @@ type NewRelation struct {
 }
 
 // IssuePatch is what awb update and PATCH /api/issues/{id} may change. It
-// cannot change status or assignees: the four transitions are the only way to
+// cannot change status or assignees: explicit workflow transitions are the only way to
 // move either, which keeps in_progress and the assignment set from drifting
 // apart and keeps a claim from being taken silently.
 //

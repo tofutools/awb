@@ -1003,6 +1003,7 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 			closeIssue(t, db, issue.ID)
 		}
 	}
+	statusIssue("backlog", func(i *domain.Issue) { i.Status = domain.StatusBacklog })
 	statusIssue("closed", func(i *domain.Issue) { i.Status = domain.StatusClosed })
 	statusIssue("open", func(*domain.Issue) {})
 	statusIssue("in progress", func(i *domain.Issue) {

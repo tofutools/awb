@@ -75,12 +75,13 @@ func ParseType(s string) (Type, error) {
 	return "", awberr.Usagef("invalid type %q: must be one of %s", s, join(Types))
 }
 
-// Status is where an issue stands. It is changed only by the four transitions,
+// Status is where an issue stands. It is changed only by explicit workflow transitions,
 // never by update, which is what keeps it from drifting away from the
 // assignee.
 type Status string
 
 const (
+	StatusBacklog    Status = "backlog"
 	StatusOpen       Status = "open"
 	StatusInProgress Status = "in_progress"
 	StatusClosed     Status = "closed"
@@ -90,7 +91,7 @@ const (
 )
 
 // Statuses lists every status, in their canonical order.
-var Statuses = []Status{StatusOpen, StatusInProgress, StatusClosed}
+var Statuses = []Status{StatusBacklog, StatusOpen, StatusInProgress, StatusClosed}
 
 // ParseStatus validates s as a status. There is deliberately no magic "all"
 // value: the vocabulary here is exactly the enum the OpenAPI document
@@ -102,10 +103,10 @@ func ParseStatus(s string) (Status, error) {
 	return "", awberr.Usagef("invalid status %q: must be one of %s", s, join(Statuses))
 }
 
-// NotClosedStatuses are the two statuses an issue that is still live can hold.
+// NotClosedStatuses are the statuses an issue that is still live can hold.
 // It is the status set awb blocked fixes for itself, and the one every listing
 // falls back to when closed issues are hidden.
-var NotClosedStatuses = []Status{StatusOpen, StatusInProgress}
+var NotClosedStatuses = []Status{StatusBacklog, StatusOpen, StatusInProgress}
 
 // Priority ranges from 0, the highest, to 4, the lowest.
 const (

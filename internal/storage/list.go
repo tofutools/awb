@@ -95,6 +95,16 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	case domain.ReadinessAny:
 	}
 
+	// Parent inheritance is independent of blocking: parked work is not ready,
+	// and its subtree stays off active boards even when a child is open.
+	if f.ExcludeBacklog || f.Readiness == domain.ReadinessReady {
+		c.add(`i.id NOT IN (WITH RECURSIVE parked(id) AS (
+			SELECT id FROM issues WHERE status = 'backlog'
+			UNION SELECT r.subject FROM relations r JOIN parked p ON r.other = p.id
+			WHERE r.type = 'has-parent'
+		) SELECT id FROM parked)`)
+	}
+
 	if f.Parent != "" {
 		c.add(`i.id IN (SELECT subject FROM relations
 		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)

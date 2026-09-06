@@ -55,6 +55,14 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		issue.Status = domain.StatusInProgress
 	}
 
+	// Backlog is deliberately unassigned; combining it with create-and-claim is ambiguous.
+	if req.Backlog {
+		if len(issue.Assignees) > 0 {
+			return nil, awberr.Usagef("backlog cannot be combined with assignees")
+		}
+		issue.Status = domain.StatusBacklog
+	}
+
 	labels, err := validateLabels(req.Labels)
 	if err != nil {
 		return nil, err
@@ -440,7 +448,7 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		fields := storage.Fields(issue)
 		switch {
 		case status == issue.Status:
-		case issue.Status == domain.StatusOpen && status == domain.StatusInProgress:
+		case (issue.Status == domain.StatusOpen || issue.Status == domain.StatusBacklog) && status == domain.StatusInProgress:
 			if issue.Blocked {
 				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
 			}
@@ -449,7 +457,8 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 				return err
 			}
 			fields.Assignees = []string{assignee}
-		case status == domain.StatusOpen:
+		// Parking work clears active assignments, just like moving to open.
+		case status == domain.StatusOpen || status == domain.StatusBacklog:
 			fields.Assignees = nil
 		case status == domain.StatusClosed:
 		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
