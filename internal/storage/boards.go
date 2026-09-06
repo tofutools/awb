@@ -140,6 +140,25 @@ func (t *Tx) hydrateBoardView(view *domain.BoardView) error {
 	if err := load(`SELECT assignee FROM board_view_assignees WHERE view = ? ORDER BY assignee`, &view.Assignees); err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "read board view assignees")
 	}
+	rows, err := t.q.QueryContext(t.ctx, `SELECT status FROM board_view_columns WHERE view = ? ORDER BY position`, view.ID)
+	if err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read board view columns")
+	}
+	for rows.Next() {
+		var status domain.Status
+		if err := rows.Scan(&status); err != nil {
+			_ = rows.Close()
+			return awberr.Wrap(awberr.Runtime, err, "read board view columns")
+		}
+		view.Columns = append(view.Columns, status)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return awberr.Wrap(awberr.Runtime, err, "read board view columns")
+	}
+	if err := rows.Close(); err != nil {
+		return awberr.Wrap(awberr.Runtime, err, "read board view columns")
+	}
 	view.Normalize()
 	return nil
 }
@@ -168,6 +187,7 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 		existing.IncludeNoEpic == next.IncludeNoEpic && existing.PriorityMax == next.PriorityMax &&
 		existing.CardLimit == next.CardLimit &&
 		existing.ClosedDays == next.ClosedDays && existing.EpicClosedDays == next.EpicClosedDays &&
+		slices.Equal(existing.Columns, next.Columns) &&
 		slices.Equal(existing.Workspaces, next.Workspaces) && slices.Equal(existing.Labels, next.Labels) &&
 		slices.Equal(existing.Assignees, next.Assignees) && slices.Equal(existing.Epics, next.Epics) {
 		return nil
@@ -184,7 +204,7 @@ func (t *Tx) UpdateBoardView(existing, next *domain.BoardView) error {
 }
 
 func (t *Tx) replaceBoardViewFilters(view *domain.BoardView) error {
-	for _, table := range []string{"board_view_workspaces", "board_view_epics", "board_view_labels", "board_view_assignees"} {
+	for _, table := range []string{"board_view_workspaces", "board_view_epics", "board_view_labels", "board_view_assignees", "board_view_columns"} {
 		if _, err := t.q.ExecContext(t.ctx, `DELETE FROM `+table+` WHERE view = ?`, view.ID); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "replace board view filters")
 		}
@@ -207,6 +227,11 @@ func (t *Tx) replaceBoardViewFilters(view *domain.BoardView) error {
 	for _, value := range view.Assignees {
 		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_assignees (view, assignee) VALUES (?, ?)`, view.ID, value); err != nil {
 			return awberr.Wrap(awberr.Runtime, err, "store board view assignee")
+		}
+	}
+	for position, value := range view.Columns {
+		if _, err := t.q.ExecContext(t.ctx, `INSERT INTO board_view_columns (view, status, position) VALUES (?, ?, ?)`, view.ID, value, position); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "store board view column")
 		}
 	}
 	return nil

@@ -325,14 +325,16 @@ test("rebased child creation and backlog workflows remain available", async ({
   await expect(
     page.locator(".board-card", { hasText: "Backlog child" }),
   ).toHaveCount(0);
-  await page.getByRole("checkbox", { name: "Show backlog" }).check();
-  await expect(page).toHaveURL(/include-backlog=true/);
+  await page.getByRole("button", { name: "Edit view" }).click();
+  let viewDialog = page.getByRole("dialog", { name: "Edit default board" });
+  const columns = viewDialog.locator(".board-view-section", {
+    has: page.getByRole("heading", { name: "Columns", exact: true }),
+  });
+  await columns.getByRole("checkbox", { name: "Backlog" }).check();
+  await viewDialog.getByRole("button", { name: "Save settings" }).click();
   const card = page.locator(".board-card", { hasText: "Backlog child" });
   await expect(card).toBeVisible();
   await page.reload();
-  await expect(
-    page.getByRole("checkbox", { name: "Show backlog" }),
-  ).toBeChecked();
   await expect(card).toBeVisible();
   await page
     .getByRole("combobox", { name: `Status of ${parent.id}` })
@@ -340,7 +342,15 @@ test("rebased child creation and backlog workflows remain available", async ({
   await expect(
     page.getByRole("combobox", { name: `Status of ${parent.id}` }),
   ).toHaveValue("backlog");
-  await page.getByRole("checkbox", { name: "Show backlog" }).uncheck();
+  await page.getByRole("button", { name: "Edit view" }).click();
+  viewDialog = page.getByRole("dialog", { name: "Edit default board" });
+  await viewDialog
+    .locator(".board-view-section", {
+      has: page.getByRole("heading", { name: "Columns", exact: true }),
+    })
+    .getByRole("checkbox", { name: "Backlog" })
+    .uncheck();
+  await viewDialog.getByRole("button", { name: "Save settings" }).click();
   await expect(
     page.locator(".board-lane", { hasText: "Parent issue" }),
   ).toHaveCount(0);

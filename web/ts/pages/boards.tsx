@@ -72,7 +72,6 @@ export function BoardsPage({ route }: { route: Route }) {
   const preferences = defaultBoardPreferences(identity);
   const filters: BoardFilters = {
     "lane-limit": laneLimit,
-    "include-backlog": route.query.get("include-backlog") === "true",
   };
   if (ref === "default") {
     const workspaces = route.query.getAll("workspace");
@@ -84,6 +83,7 @@ export function BoardsPage({ route }: { route: Route }) {
       "priority-max": preferences.priority_max,
       "closed-days": preferences.closed_days,
       "epic-closed-days": preferences.epic_closed_days,
+      column: preferences.columns,
     });
     if (workspaces.length) filters.workspace = workspaces;
     else if (!preferences.all_workspaces)
@@ -186,20 +186,6 @@ export function BoardsPage({ route }: { route: Route }) {
               )}
             </select>
           </label>
-          <label class="board-view-check">
-            <input
-              type="checkbox"
-              checked={filters["include-backlog"] ?? false}
-              onChange={(e) => {
-                const query = new URLSearchParams(route.query);
-                if (e.currentTarget.checked)
-                  query.set("include-backlog", "true");
-                else query.delete("include-backlog");
-                location.hash = `#/boards/${ref}?${query}`;
-              }}
-            />
-            Show backlog
-          </label>
           {!saved ? (
             <>
               <Button
@@ -299,6 +285,7 @@ export function BoardsPage({ route }: { route: Route }) {
                   <span key={a}>@{a}</span>
                 ))}
                 <span>P0–P{saved.priority_max}</span>
+                <span>{saved.columns.map(statusLabel).join(", ")}</span>
                 <span>{saved.card_limit} cards per column</span>
                 <span>Closed cards: {saved.closed_days} days</span>
                 <span>Closed epics: {saved.epic_closed_days} days</span>
@@ -703,10 +690,13 @@ function BoardEditor({
   const [allEpics, setAllEpics] = useState(source.all_epics);
   const [epics, setEpics] = useState(source.epics);
   const [noEpic, setNoEpic] = useState(source.include_no_epic);
+  const [columns, setColumns] = useState<BoardStatus[]>(
+    source.columns ?? ["open", "in_progress", "closed"],
+  );
   const [query, setQuery] = useState("");
   const hiddenEntries = hiddenBoardEpicEntries(identity, source.id);
   const [hidden, setHidden] = useState(hiddenEntries.map((e) => e.id));
-  const toggle = (values: string[], value: string) =>
+  const toggle = <T extends string,>(values: T[], value: T): T[] =>
     values.includes(value)
       ? values.filter((v) => v !== value)
       : [...values, value];
@@ -796,6 +786,8 @@ function BoardEditor({
                 throw new Error(
                   "Select at least one epic lane or include No epic.",
                 );
+              if (!columns.length)
+                throw new Error("Select at least one board column.");
               const body: BoardViewCreate = {
                 name: editDefault ? source.name : String(form.get("name")),
                 shared: form.has("shared"),
@@ -806,6 +798,7 @@ function BoardEditor({
                 include_no_epic: noEpic,
                 labels,
                 assignees,
+                columns,
                 priority_max: Number(form.get("priority")),
                 card_limit: Number(form.get("card-limit")),
                 closed_days: Number(form.get("closed-days")),
@@ -989,6 +982,28 @@ function BoardEditor({
                       </span>
                     </label>
                   </article>
+                </div>
+              </section>
+              <section class="board-view-section">
+                <h3>Columns</h3>
+                <div class="board-view-choices board-view-columns">
+                  {legalBoardTargets().map((status) => (
+                    <label class="board-view-choice" key={status}>
+                      <input
+                        type="checkbox"
+                        checked={columns.includes(status)}
+                        onChange={() => {
+                          const selected = new Set(toggle(columns, status));
+                          setColumns(
+                            legalBoardTargets().filter((value) =>
+                              selected.has(value),
+                            ),
+                          );
+                        }}
+                      />
+                      <span>{statusLabel(status)}</span>
+                    </label>
+                  ))}
                 </div>
               </section>
               <section class="board-view-section">

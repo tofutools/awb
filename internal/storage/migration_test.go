@@ -104,6 +104,28 @@ func TestV20GeneralizesIssueOrderAndDropsBoardHidden(t *testing.T) {
 	assert.NotContains(t, indexes, "idx_issues_board_order")
 }
 
+func TestV22AddsDefaultBoardViewColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 21)
+	_, err := raw.ExecContext(t.Context(), `
+		INSERT INTO board_views (id, name, owner, shared, all_workspaces, priority_max,
+			created_at, updated_at, all_epics, include_no_epic, closed_days, epic_closed_days, card_limit)
+		VALUES ('view-aaaaaaaaaaaaaaaaaaaaaaaa', 'Existing', 'alice', 0, 1, 4,
+			'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1, 1, 30, 0, 8)`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
+		view, readErr := tx.GetBoardView("view-aaaaaaaaaaaaaaaaaaaaaaaa")
+		require.NoError(t, readErr)
+		assert.Equal(t, []domain.Status{domain.StatusOpen, domain.StatusInProgress, domain.StatusClosed}, view.Columns)
+		return nil
+	}))
+}
+
 // openAtVersion builds a real historical database shape from the batches that
 // made it, so a migration is tested against what it will actually meet rather
 // than against current code with a pragma set.

@@ -188,6 +188,7 @@ type BoardView struct {
 	IncludeNoEpic  bool     `json:"include_no_epic"`
 	Labels         []string `json:"labels"`
 	Assignees      []string `json:"assignees"`
+	Columns        []Status `json:"columns"`
 	PriorityMax    int      `json:"priority_max"`
 	CardLimit      int      `json:"card_limit"`
 	ClosedDays     int      `json:"closed_days"`
@@ -213,6 +214,9 @@ func (v *BoardView) Normalize() {
 	}
 	if v.Assignees == nil {
 		v.Assignees = []string{}
+	}
+	if v.Columns == nil {
+		v.Columns = []Status{}
 	}
 }
 

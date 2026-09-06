@@ -89,6 +89,39 @@ func TestBoardViewsAreOwnedShareableAndViewerScoped(t *testing.T) {
 	assert.Equal(t, []string{"awb", "web"}, restored.Workspaces)
 }
 
+func TestBoardViewSelectsWorkflowColumns(t *testing.T) {
+	root, ctx := newInstance(t)
+	parked, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "parked", Backlog: true})
+	require.NoError(t, err)
+	active, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "active"})
+	require.NoError(t, err)
+
+	requestedColumns := []domain.Status{domain.StatusOpen, domain.StatusBacklog}
+	columns := []domain.Status{domain.StatusBacklog, domain.StatusOpen}
+	view, err := root.CreateBoardView(ctx, backend.BoardViewCreate{
+		Name: "Planning", AllWorkspaces: true, PriorityMax: 4, Columns: requestedColumns,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, columns, view.Columns)
+
+	board, err := root.GetBoard(ctx, view.ID, backend.BoardQuery{})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 1)
+	require.Len(t, board.Lanes[0].Columns, 2)
+	assert.Equal(t, domain.StatusBacklog, board.Lanes[0].Columns[0].Status)
+	assert.Equal(t, []string{parked.ID}, issueIDs(board.Lanes[0].Columns[0].Issues))
+	assert.Equal(t, domain.StatusOpen, board.Lanes[0].Columns[1].Status)
+	assert.Equal(t, []string{active.ID}, issueIDs(board.Lanes[0].Columns[1].Issues))
+
+	board, err = root.GetBoard(ctx, view.ID, backend.BoardQuery{Status: domain.StatusClosed})
+	require.NoError(t, err)
+	assert.Empty(t, board.Lanes[0].Columns, "a status query cannot enable a column omitted by the view")
+
+	empty := []domain.Status{}
+	_, err = root.UpdateBoardView(ctx, view.ID, backend.BoardViewPatch{Columns: &empty}, backend.ETag(view.UpdatedAt))
+	assert.Equal(t, awberr.Usage, awberr.KindOf(err), err)
+}
+
 func TestBoardHidesExpiredClosedIssues(t *testing.T) {
 	root, ctx := newInstance(t)
 	visible, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "visible"})

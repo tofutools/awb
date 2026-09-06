@@ -111,10 +111,10 @@ unchanged. Closing backlog works like closing any other unfinished issue.
 
 Backlog stays visible in ordinary listings, but backlog issues and their
 complete `has-parent` subtrees are excluded from readiness and boards by
-default. The board’s “Show backlog” control sets `include-backlog=true`,
-including parked epic lanes and cards without changing any issue status.
-This presentation choice travels in the board URL and applies to saved views
-as well as the default board; other view filters continue to apply.
+default. A board view selects its workflow columns; selecting Backlog includes
+parked epic lanes and cards without changing any issue status. Saved views
+store their selection, while the default board keeps it as browser-local view
+state.
 
 Assignment and state move together where their meaning requires it. Creating
 with assignees is create-and-claim. Claiming joins the assignee set and starts
@@ -220,7 +220,8 @@ A saved board view belongs to one user and stores configuration, not a materiali
 issue set. It may be shared by link, but every reader's current authorization
 and ignored-workspace preferences still apply. Empty selected scope and “all”
 are distinct states so disappearing access cannot silently widen a saved view.
-Each saved view owns its filter scope, per-column card page size, and closed-card retention window. The
+Each saved view owns its filter scope, selected workflow columns, per-column
+card page size, and closed-card retention window. The
 default board accepts the same fields as request preferences, which the web UI
 keeps locally for that browser and identity. Closed epic lanes and closed non-epic cards have independent
 retention windows; each remains until its most recent close is older than its

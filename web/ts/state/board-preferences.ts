@@ -119,6 +119,7 @@ type DefaultBoardPreferences = Pick<
   | "include_no_epic"
   | "labels"
   | "assignees"
+  | "columns"
   | "priority_max"
   | "card_limit"
   | "closed_days"
@@ -153,6 +154,7 @@ export function defaultBoardPreferences(
     include_no_epic: true,
     labels: [],
     assignees: [],
+    columns: ["open", "in_progress", "closed"],
     priority_max: 4,
     card_limit: defaultBoardCardPageSize,
     closed_days: legacyClosedDays,
@@ -197,6 +199,16 @@ export function defaultBoardPreferences(
       assignees: strings(value.assignees).filter(
         (item) => item.length <= 64 && boardLabelLikePattern.test(item),
       ),
+      columns: (() => {
+        const stored = new Set(strings(value.columns));
+        const selected = ([
+          "backlog",
+          "open",
+          "in_progress",
+          "closed",
+        ] as BoardView["columns"]).filter((item) => stored.has(item));
+        return selected.length ? selected : fallback.columns;
+      })(),
       priority_max:
         Number.isInteger(priority) && priority >= 0 && priority <= 4
           ? (priority as 0 | 1 | 2 | 3 | 4)

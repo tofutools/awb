@@ -17,10 +17,14 @@ func toBoardView(view *domain.BoardView) api.BoardView {
 	for i, v := range view.Epics {
 		epics[i] = api.IssueID(v)
 	}
+	columns := make([]api.Status, len(view.Columns))
+	for i, value := range view.Columns {
+		columns[i] = api.Status(value)
+	}
 	return api.BoardView{ID: api.BoardViewID(view.ID), Name: view.Name, Owner: api.Assignee(view.Owner),
 		Shared: view.Shared, AllWorkspaces: view.AllWorkspaces, Workspaces: workspaces,
 		AllEpics: view.AllEpics, Epics: epics, IncludeNoEpic: view.IncludeNoEpic,
-		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees),
+		Labels: toLabels(view.Labels), Assignees: toAssignees(view.Assignees), Columns: columns,
 		PriorityMax: api.Priority(view.PriorityMax), CardLimit: view.CardLimit,
 		ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays,
 		CreatedAt: api.Timestamp(view.CreatedAt), UpdatedAt: api.Timestamp(view.UpdatedAt)}
@@ -66,6 +70,16 @@ func stringsFromAssignees(values []api.Assignee) []string {
 	}
 	return result
 }
+func statusesFromAPI(values []api.Status) []domain.Status {
+	if values == nil {
+		return nil
+	}
+	result := make([]domain.Status, len(values))
+	for i, value := range values {
+		result[i] = domain.Status(value)
+	}
+	return result
+}
 func optWorkspaces(values []api.WorkspaceKey) *[]string {
 	if values == nil {
 		return nil
@@ -94,6 +108,13 @@ func optAssignees(values []api.Assignee) *[]string {
 	result := stringsFromAssignees(values)
 	return &result
 }
+func optStatuses(values []api.Status) *[]domain.Status {
+	if values == nil {
+		return nil
+	}
+	result := statusesFromAPI(values)
+	return &result
+}
 
 func (h *Handler) ListBoardViews(ctx context.Context) ([]api.BoardView, error) {
 	views, err := h.backendFor(ctx).ListBoardViews(ctx)
@@ -108,6 +129,7 @@ func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate)
 		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
 		AllEpics: req.AllEpics.Or(true), Epics: stringsFromIssueIDs(req.Epics), IncludeNoEpic: req.IncludeNoEpic.Or(true),
 		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees),
+		Columns:     statusesFromAPI(req.Columns),
 		PriorityMax: int(req.PriorityMax.Or(4)), CardLimit: req.CardLimit.Or(8),
 		ClosedDays: req.ClosedDays.Or(30), EpicClosedDays: req.EpicClosedDays.Or(0)})
 	if err != nil {
@@ -129,6 +151,7 @@ func (h *Handler) UpdateBoardView(ctx context.Context, req *api.BoardViewPatch, 
 	view, err := h.backendFor(ctx).UpdateBoardView(ctx, string(params.ID), backend.BoardViewPatch{
 		Name: optString(req.Name), Shared: optBool(req.Shared), AllWorkspaces: optBool(req.AllWorkspaces),
 		Workspaces: optWorkspaces(req.Workspaces), Labels: optLabels(req.Labels), Assignees: optAssignees(req.Assignees),
+		Columns:  optStatuses(req.Columns),
 		AllEpics: optBool(req.AllEpics), Epics: optIssueIDs(req.Epics), IncludeNoEpic: optBool(req.IncludeNoEpic),
 		PriorityMax: optPriority(req.PriorityMax), CardLimit: optInt(req.CardLimit),
 		ClosedDays: optInt(req.ClosedDays), EpicClosedDays: optInt(req.EpicClosedDays)}, params.IfMatch.Or(""))
@@ -150,6 +173,7 @@ func (h *Handler) DeleteBoardView(ctx context.Context, params api.DeleteBoardVie
 func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api.Board, error) {
 	query := backend.BoardQuery{IncludeBacklog: params.IncludeBacklog.Or(false), LaneLimit: optInt(params.LaneLimit), LaneOffset: optInt(params.LaneOffset),
 		CardLimit: optInt(params.CardLimit), CardOffset: optInt(params.CardOffset)}
+	query.Columns = statusesFromAPI(params.Column)
 	for _, value := range params.Workspace {
 		query.Workspaces = append(query.Workspaces, string(value))
 	}
