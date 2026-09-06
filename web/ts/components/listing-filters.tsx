@@ -2,7 +2,6 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { Issue } from "../api.js";
-import { stagedLabel } from "../issue-create.js";
 import {
   epicSelectionFrom,
   noEpicSelection,
@@ -50,14 +49,7 @@ export function DynamicFilterRow({
   const choice = (value: string) =>
     choices.find((item) => item.value === value);
   const available = choices.filter((item) => !selected.includes(item.value));
-  const addable =
-    draft.trim() !== "" &&
-    (name === "epic"
-      ? choice(draft.trim()) !== undefined
-      : stagedLabel(draft, selected).error === undefined);
-  const add = (): void => {
-    const value = draft.trim();
-    if (!addable) return;
+  const add = (value: string): void => {
     const query =
       name === "epic"
         ? withEpicSelection(route.query, value)
@@ -85,7 +77,7 @@ export function DynamicFilterRow({
 
   return (
     <div
-      class={`facet-group dynamic-filter-group ${trailing ? "with-pagination" : ""}`}
+      class={`facet-group dynamic-filter-group dynamic-filter-${name} ${trailing ? "with-pagination" : ""}`}
     >
       <span class="facet-title">{title}</span>
       <div class="dynamic-filter-values">
@@ -109,13 +101,24 @@ export function DynamicFilterRow({
             );
           })}
         </span>
-        <div class="compact-editor dynamic-filter-editor">
+        <Popover
+          label={
+            name === "label" ? "Add label filter" : "Choose epic filter"
+          }
+          panelLabel={
+            name === "label" ? "Add label filter" : "Choose epic filter"
+          }
+          className="dynamic-filter-trigger"
+          panelClassName="inspector-popover dynamic-filter-popover"
+          align="start"
+          buttonLabel={name === "label" ? "+ Add label" : "+ Choose epic"}
+        >
           <Autocomplete
             value={draft}
             onValue={setDraft}
-            aria-label={`Filter by ${name}`}
-            placeholder={`Add ${name}`}
-            maxLength={name === "label" ? 64 : undefined}
+            onSuggestion={(item) => add(item.value)}
+            aria-label={name === "label" ? "Search labels" : "Search epics"}
+            placeholder={name === "label" ? "Search labels…" : "Search epics…"}
             load={async (query) => {
               const match = query.toLocaleLowerCase();
               return available
@@ -131,10 +134,7 @@ export function DynamicFilterRow({
                 }));
             }}
           />
-          <Button class="quiet-action" disabled={!addable} onClick={add}>
-            Add
-          </Button>
-        </div>
+        </Popover>
       </div>
       {trailing}
     </div>
@@ -233,7 +233,7 @@ export function EpicFilterRow({
   return (
     <DynamicFilterRow
       route={route}
-      title="epics"
+      title="epic"
       name="epic"
       selected={selected === null ? [] : [selected]}
       choices={[

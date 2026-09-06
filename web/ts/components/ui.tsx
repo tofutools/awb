@@ -458,6 +458,7 @@ export function Popover({
   className = "inspector-add",
   panelClassName = "inspector-popover",
   panelLabel,
+  align = "end",
 }: {
   label: string;
   children: ComponentChildren;
@@ -465,6 +466,7 @@ export function Popover({
   className?: string;
   panelClassName?: string;
   panelLabel?: string;
+  align?: "start" | "end";
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -477,7 +479,9 @@ export function Popover({
     const reposition = () => {
       const anchor = trigger.current!.getBoundingClientRect();
       const bounds = node.getBoundingClientRect();
-      node.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+      const preferredLeft =
+        align === "start" ? anchor.left : anchor.right - bounds.width;
+      node.style.left = `${Math.max(8, Math.min(innerWidth - bounds.width - 8, preferredLeft))}px`;
       node.style.top = `${Math.max(8, Math.min(innerHeight - bounds.height - 8, anchor.bottom + 6))}px`;
       node.style.maxHeight = `${Math.max(0, innerHeight - 16)}px`;
     };
@@ -503,7 +507,7 @@ export function Popover({
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
     };
-  }, [open]);
+  }, [open, align]);
   return (
     <>
       <Button
