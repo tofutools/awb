@@ -109,10 +109,11 @@ test("share a responsive multi-status issue filter", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/#/issues?workspace=demo&type=task&priority=2`);
 
-  const trigger = page.getByRole("button", { name: "Choose visible issue statuses" });
-  await expect(trigger).toHaveText("Statuses · 3 ▾");
+  const trigger = page.getByRole("button", { name: "Configure issue view" });
+  await expect(trigger).toHaveText("▾ View");
   await trigger.click();
-  const picker = page.getByRole("dialog", { name: "Visible issue statuses" });
+  const picker = page.getByRole("dialog", { name: "Issue view options" });
+  await expect(picker.getByLabel("Filter by epic")).toHaveValue("");
   await expect(picker.getByRole("checkbox", { name: "Backlog" })).toBeChecked();
   await expect(picker.getByRole("checkbox", { name: "Open" })).toBeChecked();
   await expect(picker.getByRole("checkbox", { name: "In progress" })).toBeChecked();
@@ -122,6 +123,7 @@ test("share a responsive multi-status issue filter", async ({ page }) => {
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
 
+  await picker.getByLabel("Filter by epic").selectOption("none");
   await picker.getByRole("checkbox", { name: "Backlog" }).uncheck();
   const request = page.waitForRequest((candidate) => {
     const url = new URL(candidate.url());
@@ -133,10 +135,13 @@ test("share a responsive multi-status issue filter", async ({ page }) => {
   expect(requested.getAll("workspace")).toEqual(["demo"]);
   expect(requested.getAll("type")).toEqual(["task"]);
   expect(requested.getAll("priority")).toEqual(["2"]);
+  expect(requested.get("parent")).toBe("none");
+  expect(requested.get("parent-type")).toBe("epic");
   await expect(page).toHaveURL(/status=open&status=in_progress/);
 
   await page.reload();
   await trigger.click();
+  await expect(picker.getByLabel("Filter by epic")).toHaveValue("none");
   await expect(picker.getByRole("checkbox", { name: "Backlog" })).not.toBeChecked();
   await picker.getByRole("checkbox", { name: "Open" }).uncheck();
   await picker.getByRole("checkbox", { name: "In progress" }).uncheck();
@@ -148,6 +153,7 @@ test("share a responsive multi-status issue filter", async ({ page }) => {
   await picker.getByRole("button", { name: "Reset" }).click();
   await picker.getByRole("button", { name: "Done" }).click();
   await expect(page).not.toHaveURL(/status=/);
+  await expect(page).not.toHaveURL(/epic=/);
 
   await page.setViewportSize({ width: 390, height: 260 });
   await trigger.click();

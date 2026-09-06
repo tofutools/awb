@@ -65,7 +65,7 @@ test("direct links, reload and history preserve URL state and mounted filter con
   await page.goBack();
   await expect(filter).toHaveValue("Navigation");
   await page
-    .getByRole("button", { name: "Choose visible issue statuses" })
+    .getByRole("button", { name: "Configure issue view" })
     .click();
   await expect(
     page.getByRole("checkbox", { name: "Closed", exact: true }),
@@ -410,15 +410,18 @@ test("epic and status filters compose, and page normalization does not refetch t
   await expect(page).not.toHaveURL(/page=999/);
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
   expect(requests).toHaveLength(2);
-  const selector = page.getByRole("combobox", { name: "Filter by epic" });
+  const trigger = page.getByRole("button", { name: "Configure issue view" });
+  await expect(trigger).toHaveText("▾ View");
+  await trigger.click();
+  const view = page.getByRole("dialog", { name: "Issue view options" });
+  const selector = view.getByRole("combobox", { name: "Filter by epic" });
   await selector.selectOption(epic.id);
+  await view.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
   expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
   expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
-  await page
-    .getByRole("button", { name: "Choose visible issue statuses" })
-    .click();
-  const statuses = page.getByRole("dialog", { name: "Visible issue statuses" });
+  await trigger.click();
+  const statuses = page.getByRole("dialog", { name: "Issue view options" });
   await expect(statuses).toBeVisible();
   await expect(statuses.getByRole("checkbox")).toHaveCount(4);
   for (const checkbox of await statuses.getByRole("checkbox").all())
@@ -429,17 +432,15 @@ test("epic and status filters compose, and page normalization does not refetch t
     page.getByText("No statuses selected.", { exact: true }),
   ).toBeVisible();
   expect(requests).toHaveLength(beforeEmpty);
-  await expect(selector).toHaveValue(epic.id);
-  await selector.selectOption("none");
-  await page
-    .getByRole("button", { name: "Choose visible issue statuses" })
-    .click();
+  await trigger.click();
+  await expect(statuses.getByRole("combobox", { name: "Filter by epic" })).toHaveValue(epic.id);
+  await statuses.getByRole("combobox", { name: "Filter by epic" }).selectOption("none");
   await statuses.getByRole("button", { name: "Reset", exact: true }).click();
   await statuses.getByRole("button", { name: "Done", exact: true }).click();
-  await expect(page.locator(".filter-count")).toHaveText("2 issues");
-  expect(requests.at(-1).searchParams.get("parent")).toBe("none");
-  expect(requests.at(-1).searchParams.get("parent-type")).toBe("epic");
+  await expect(page.locator(".filter-count")).toHaveText("4 issues");
+  expect(requests.at(-1).searchParams.has("parent")).toBe(false);
   await page.reload();
-  await expect(selector).toHaveValue("none");
-  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  await trigger.click();
+  await expect(statuses.getByRole("combobox", { name: "Filter by epic" })).toHaveValue("");
+  await expect(page.locator(".filter-count")).toHaveText("4 issues");
 });
