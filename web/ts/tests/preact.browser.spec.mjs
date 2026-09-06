@@ -403,6 +403,7 @@ test("epic and status filters compose, and page normalization does not refetch t
   });
   await createIssue(page, workspace, "Standalone issue", {
     labels: ["backend"],
+    assignees: ["filter-user"],
   });
   const requests = [];
   page.on("request", (request) => {
@@ -443,6 +444,33 @@ test("epic and status filters compose, and page normalization does not refetch t
     .getByRole("button", { name: "Remove label frontend" })
     .click();
   await expect(page).not.toHaveURL(/label=frontend/);
+  await expect(page.locator(".filter-count")).toHaveText("4 issues");
+
+  const assigneeRow = page.locator(".dynamic-filter-group", {
+    has: page.getByText("assignees", { exact: true }),
+  });
+  await assigneeRow
+    .getByRole("button", { name: "Add assignee filter" })
+    .click();
+  const assigneeDialog = page.getByRole("dialog", {
+    name: "Add assignee filter",
+  });
+  const assigneeSelector = assigneeDialog.getByRole("combobox", {
+    name: "Search assignees",
+  });
+  await expect(
+    assigneeDialog.getByRole("option", { name: /@filter-user/ }),
+  ).toBeVisible();
+  await assigneeSelector.fill("filter");
+  await assigneeDialog
+    .getByRole("option", { name: /@filter-user/ })
+    .click();
+  await expect(page).toHaveURL(/assignee=filter-user/);
+  await expect(page.locator(".filter-count")).toHaveText("1 issue");
+  await assigneeRow
+    .getByRole("button", { name: "Remove assignee filter-user" })
+    .click();
+  await expect(page).not.toHaveURL(/assignee=/);
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
 
   const epicRow = page.locator(".dynamic-filter-group", {

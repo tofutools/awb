@@ -27,6 +27,32 @@ export interface DynamicFilterChoice {
   detail?: string;
 }
 
+type DynamicFilterName = "label" | "epic" | "assignee";
+
+const dynamicFilterCopy: Record<
+  DynamicFilterName,
+  { label: string; button: string; search: string; placeholder: string }
+> = {
+  label: {
+    label: "Add label filter",
+    button: "+ Add label",
+    search: "Search labels",
+    placeholder: "Search labels…",
+  },
+  epic: {
+    label: "Choose epic filter",
+    button: "+ Choose epic",
+    search: "Search epics",
+    placeholder: "Search epics…",
+  },
+  assignee: {
+    label: "Add assignee filter",
+    button: "+ Add assignee",
+    search: "Search assignees",
+    placeholder: "Search assignees…",
+  },
+};
+
 /** DynamicFilterRow keeps long facet vocabularies out of the listing while
  * preserving selected values as removable, shareable URL state. */
 export function DynamicFilterRow({
@@ -39,7 +65,7 @@ export function DynamicFilterRow({
 }: {
   route: Route;
   title: string;
-  name: "label" | "epic";
+  name: DynamicFilterName;
   choices: DynamicFilterChoice[];
   selected: string[];
   trailing?: ComponentChildren;
@@ -52,27 +78,27 @@ export function DynamicFilterRow({
     choices.find((item) => item.value === value);
   const available = choices.filter((item) => !selected.includes(item.value));
   const add = (value: string): void => {
-    const query =
-      name === "epic"
-        ? withEpicSelection(route.query, value)
-        : new URLSearchParams(route.query);
-    if (name === "label") {
+    let query: URLSearchParams;
+    if (name === "epic") {
+      query = withEpicSelection(route.query, value);
+    } else {
+      query = new URLSearchParams(route.query);
       query.delete("page");
-      query.append("label", value);
+      query.append(name, value);
     }
     setDraft("");
     location.hash = routeHref(route, query);
   };
   const remove = (value: string): void => {
-    const query =
-      name === "epic"
-        ? withEpicSelection(route.query, null)
-        : new URLSearchParams(route.query);
-    if (name === "label") {
-      query.delete("label");
+    let query: URLSearchParams;
+    if (name === "epic") {
+      query = withEpicSelection(route.query, null);
+    } else {
+      query = new URLSearchParams(route.query);
+      query.delete(name);
       query.delete("page");
       for (const item of selected.filter((item) => item !== value))
-        query.append("label", item);
+        query.append(name, item);
     }
     location.hash = routeHref(route, query);
   };
@@ -88,7 +114,9 @@ export function DynamicFilterRow({
             const item = choice(value);
             const display =
               item?.label ??
-              (name === "epic" ? "Unavailable epic" : `#${value}`);
+              (name === "epic"
+                ? "Unavailable epic"
+                : `${name === "label" ? "#" : "@"}${value}`);
             return (
               <span class="editable-chip" key={value} title={item?.detail}>
                 <span class="facet active">{display}</span>
@@ -104,16 +132,12 @@ export function DynamicFilterRow({
           })}
         </span>
         <Popover
-          label={
-            name === "label" ? "Add label filter" : "Choose epic filter"
-          }
-          panelLabel={
-            name === "label" ? "Add label filter" : "Choose epic filter"
-          }
+          label={dynamicFilterCopy[name].label}
+          panelLabel={dynamicFilterCopy[name].label}
           className="dynamic-filter-trigger"
           panelClassName="inspector-popover dynamic-filter-popover"
           align="start"
-          buttonLabel={name === "label" ? "+ Add label" : "+ Choose epic"}
+          buttonLabel={dynamicFilterCopy[name].button}
         >
           <Autocomplete
             value={draft}
@@ -121,8 +145,8 @@ export function DynamicFilterRow({
             onSuggestion={(item) => add(item.value)}
             onDismiss={() => setDraft("")}
             suggestOnEmpty
-            aria-label={name === "label" ? "Search labels" : "Search epics"}
-            placeholder={name === "label" ? "Search labels…" : "Search epics…"}
+            aria-label={dynamicFilterCopy[name].search}
+            placeholder={dynamicFilterCopy[name].placeholder}
             load={async (query) => {
               const match = query.toLocaleLowerCase();
               const matches = available

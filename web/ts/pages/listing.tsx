@@ -16,7 +16,7 @@ import {
   pageWindow,
   withPage,
   lowestFacetGroup,
-  rankLabelFilterSuggestions,
+  rankCountedFilterSuggestions,
 } from "../listings.js";
 import {
   routeHref,
@@ -293,7 +293,7 @@ export function ListingPage({
                 title="labels"
                 name="label"
                 selected={route.query.getAll("label")}
-                choices={rankLabelFilterSuggestions(data.labels.rows)
+                choices={rankCountedFilterSuggestions(data.labels.rows)
                   .map((label) => ({
                     value: label.value,
                     label: `#${label.value}`,
@@ -308,8 +308,25 @@ export function ListingPage({
               {kind === "issues" && (
                 <EpicFilterRow route={route} epics={data.epics.rows} />
               )}
-              {kind !== "ready" &&
-                group("assignee", "assignees", data.assignees.rows)}
+              {kind !== "ready" && (
+                <DynamicFilterRow
+                  route={route}
+                  title="assignees"
+                  name="assignee"
+                  selected={route.query.getAll("assignee")}
+                  choices={rankCountedFilterSuggestions(data.assignees.rows)
+                    .map((assignee) => ({
+                      value: assignee.value,
+                      label: `@${assignee.value}`,
+                      detail: `${assignee.count} issue${assignee.count === 1 ? "" : "s"}`,
+                    }))}
+                  trailing={
+                    lowest === "assignee" ? (
+                      <Pagination route={route} total={data.page.total} />
+                    ) : undefined
+                  }
+                />
+              )}
             </div>
             <div class="listing-host">
               {data.page.rows.length ? (
