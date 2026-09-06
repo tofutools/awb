@@ -65,16 +65,6 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 			selectedEpics = append(selectedEpics, epic)
 		}
 	}
-	laneClause := "parent.id IS NULL"
-	laneArgs := []any{}
-	if len(selectedEpics) > 0 {
-		laneClause = "parent.id IN (" + placeholders(len(selectedEpics)) + ")"
-		laneArgs = anyArgs(selectedEpics)
-		if includeNoEpic {
-			laneClause = "(parent.id IS NULL OR " + laneClause + ")"
-		}
-	}
-
 	type candidate struct {
 		id        string
 		order     int
@@ -82,35 +72,55 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 		updatedAt string
 	}
 	candidates := make(map[BoardColumnKey][]candidate, len(epics)*len(statuses))
-	args := append(append([]any{}, c.args...), laneArgs...)
-	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, COALESCE(parent.id, '')
-		  FROM issues i
-		  LEFT JOIN relations er ON er.subject = i.id AND er.type = 'has-parent'
-		  LEFT JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
-		                         AND parent.workspace = i.workspace
-		 WHERE `+c.where()+` AND `+laneClause, args...)
-	if err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "list board columns")
-	}
-	for rows.Next() {
-		var card candidate
-		var key BoardColumnKey
-		if err := rows.Scan(&card.id, &key.Status, &card.order, &card.priority, &card.updatedAt, &key.Epic); err != nil {
+	readCandidates := func(query string, args []any) error {
+		rows, err := t.q.QueryContext(t.ctx, query, args...)
+		if err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
+		}
+		for rows.Next() {
+			var card candidate
+			var key BoardColumnKey
+			if err := rows.Scan(&card.id, &key.Status, &card.order, &card.priority, &card.updatedAt, &key.Epic); err != nil {
+				_ = rows.Close()
+				return awberr.Wrap(awberr.Runtime, err, "list board columns")
+			}
+			if !laneSet[key.Epic] {
+				continue
+			}
+			candidates[key] = append(candidates[key], card)
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return nil, awberr.Wrap(awberr.Runtime, err, "list board columns")
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
 		}
-		if !laneSet[key.Epic] {
-			continue
+		if err := rows.Close(); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
 		}
-		candidates[key] = append(candidates[key], card)
+		return nil
 	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, awberr.Wrap(awberr.Runtime, err, "list board columns")
+	if includeNoEpic {
+		if err := readCandidates(`
+			SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, ''
+			  FROM issues i
+			  LEFT JOIN relations er ON er.subject = i.id AND er.type = 'has-parent'
+			  LEFT JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
+			                         AND parent.workspace = i.workspace
+			 WHERE `+c.where()+` AND parent.id IS NULL`, c.args); err != nil {
+			return nil, err
+		}
 	}
-	if err := rows.Close(); err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "list board columns")
+	if len(selectedEpics) > 0 {
+		args := append(append([]any{}, c.args...), anyArgs(selectedEpics)...)
+		if err := readCandidates(`
+			SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, parent.id
+			  FROM relations er INDEXED BY idx_relations_other
+			  JOIN issues i ON i.id = er.subject
+			  JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
+			                    AND parent.workspace = i.workspace
+			 WHERE `+c.where()+` AND er.type = 'has-parent'
+			   AND er.other IN (`+placeholders(len(selectedEpics))+`)`, args); err != nil {
+			return nil, err
+		}
 	}
 
 	cardOffset, cardLimit := 0, 0
