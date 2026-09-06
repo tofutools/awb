@@ -64,9 +64,13 @@ test("direct links, reload and history preserve URL state and mounted filter con
   ).toBeVisible();
   await page.goBack();
   await expect(filter).toHaveValue("Navigation");
+  await page
+    .getByRole("button", { name: "Choose visible issue statuses" })
+    .click();
   await expect(
-    page.getByRole("checkbox", { name: "Show closed" }),
+    page.getByRole("checkbox", { name: "Closed", exact: true }),
   ).toBeChecked();
+  await page.keyboard.press("Escape");
   await page.goForward();
   await expect(
     page.getByRole("heading", { name: "Navigation target", exact: true }),
@@ -145,6 +149,7 @@ test("issue creation retains drafts, stages resources and uploads attachments", 
     "evidence.txt",
   );
   await expect(page.locator(".relation-section")).toContainText(related.id);
+  await expect(page.locator(".issue-sidebar")).toContainText("draft");
   await expect(
     page.getByRole("combobox", { name: "Type", exact: true }),
   ).toHaveValue("bug");
@@ -346,4 +351,95 @@ test("rebased child creation and backlog workflows remain available", async ({
   await expect(
     page.getByRole("combobox", { name: "Status", exact: true }),
   ).toHaveValue("open");
+});
+
+test("Markdown changes notify once and still bubble input", async ({
+  page,
+}) => {
+  await page.goto(`${baseURL}/#/issues`);
+  await page.evaluate(async () => {
+    const { h, render } = await import("/vendor/preact-10.29.8.js");
+    const { MarkdownInput } = await import("/components/markdown-input.js");
+    const host = document.createElement("form");
+    host.id = "markdown-callback-check";
+    document.body.append(host);
+    window.editorChanges = [];
+    window.editorInputEvents = 0;
+    host.addEventListener("input", (event) => {
+      if (event.target instanceof HTMLTextAreaElement)
+        window.editorInputEvents++;
+    });
+    render(
+      h(MarkdownInput, {
+        value: "",
+        label: "Callback editor",
+        onInput: (value) => window.editorChanges.push(value),
+      }),
+      host,
+    );
+  });
+  const editor = page.locator("#markdown-callback-check .cm-content");
+  await editor.fill("one change");
+  await expect
+    .poll(() => page.evaluate(() => window.editorChanges))
+    .toEqual(["one change"]);
+  expect(await page.evaluate(() => window.editorInputEvents)).toBe(1);
+});
+
+test("epic and status filters compose, and page normalization does not refetch twice", async ({
+  page,
+}) => {
+  const workspace = await fixture(page, "f");
+  const epic = await createIssue(page, workspace, "Filter epic", {
+    type: "epic",
+  });
+  const child = await createIssue(page, workspace, "Filter child", {
+    relations: [{ type: "has-parent", other: epic.id }],
+  });
+  await createIssue(page, workspace, "Filter grandchild", {
+    relations: [{ type: "has-parent", other: child.id }],
+  });
+  await createIssue(page, workspace, "Standalone issue");
+  const requests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/issues" && !url.searchParams.has("type"))
+      requests.push(url);
+  });
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}&page=999`);
+  await expect(page).not.toHaveURL(/page=999/);
+  await expect(page.locator(".filter-count")).toHaveText("4 issues");
+  expect(requests).toHaveLength(2);
+  const selector = page.getByRole("combobox", { name: "Filter by epic" });
+  await selector.selectOption(epic.id);
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
+  expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
+  await page
+    .getByRole("button", { name: "Choose visible issue statuses" })
+    .click();
+  const statuses = page.getByRole("dialog", { name: "Visible issue statuses" });
+  await expect(statuses).toBeVisible();
+  await expect(statuses.getByRole("checkbox")).toHaveCount(4);
+  for (const checkbox of await statuses.getByRole("checkbox").all())
+    await checkbox.uncheck();
+  const beforeEmpty = requests.length;
+  await statuses.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(
+    page.getByText("No statuses selected.", { exact: true }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(beforeEmpty);
+  await expect(selector).toHaveValue(epic.id);
+  await selector.selectOption("none");
+  await page
+    .getByRole("button", { name: "Choose visible issue statuses" })
+    .click();
+  await statuses.getByRole("button", { name: "Reset", exact: true }).click();
+  await statuses.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
+  expect(requests.at(-1).searchParams.get("parent")).toBe("none");
+  expect(requests.at(-1).searchParams.get("parent-type")).toBe("epic");
+  await page.reload();
+  await expect(selector).toHaveValue("none");
+  await expect(page.locator(".filter-count")).toHaveText("2 issues");
 });

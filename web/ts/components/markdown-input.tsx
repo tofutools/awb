@@ -71,7 +71,6 @@ export function MarkdownInput({
               EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                   input.value = update.state.doc.toString();
-                  callback.current?.(input.value);
                   input.dispatchEvent(new Event("input", { bubbles: true }));
                 }
                 if (update.docChanged || update.selectionSet)

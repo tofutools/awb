@@ -10,7 +10,8 @@ import {
 import {
   nextSortValue,
   sortState,
-  withClosedIssues,
+  epicParentFilter,
+  epicSelectionFrom,
   pageNumber,
   pageWindow,
   withPage,
@@ -38,6 +39,11 @@ import {
   type ListingKind,
 } from "../components/issues.js";
 import { IssueCreateButton } from "../components/issue-form.js";
+import { ListingFilters } from "../components/listing-filters.js";
+import {
+  selectedIssueStatuses,
+  hasEmptyStatusSelection,
+} from "../status-filter.js";
 export function filtersFrom(query: URLSearchParams): Filters {
   const result: Filters = {
     limit: listingPageSize(query),
@@ -49,6 +55,21 @@ export function filtersFrom(query: URLSearchParams): Filters {
   }
   for (const key of ["include-closed", "include-archived"] as const)
     if (query.get(key) === "true") result[key] = true;
+  const types = query
+    .getAll("type")
+    .filter((v) => ["epic", "feature", "bug", "task", "chore"].includes(v));
+  if (types.length) result.type = types as Filters["type"];
+  const priorities = query
+    .getAll("priority")
+    .filter((v) => /^[0-4]$/.test(v))
+    .map(Number);
+  if (priorities.length) result.priority = priorities as Filters["priority"];
+  const maximum = query.get("priority-max");
+  if (maximum !== null && /^[0-4]$/.test(maximum))
+    result["priority-max"] = Number(maximum) as Filters["priority-max"];
+  const statuses = selectedIssueStatuses(query);
+  if (query.has("status") && statuses.length) result.status = statuses;
+  Object.assign(result, epicParentFilter(query));
   if (query.get("filter")) result.filter = query.get("filter")!;
   const sort = query.get("sort");
   if (sort && issueSortKeys.flatMap((k) => [k, `-${k}`]).includes(sort))
@@ -84,12 +105,14 @@ export function ListingPage({
   const resource = useResource(async () => {
     const filters = filtersFrom(route.query);
     const load = () =>
-      kind === "ready"
-        ? api.ready(readyFilters(filters))
-        : kind === "blocked"
-          ? api.blocked(blockedFilters(filters))
-          : api.issues(filters);
-    let [page, workspaces, labels, assignees] = await Promise.all([
+      kind === "issues" && hasEmptyStatusSelection(route.query)
+        ? Promise.resolve({ rows: [], total: 0 })
+        : kind === "ready"
+          ? api.ready(readyFilters(filters))
+          : kind === "blocked"
+            ? api.blocked(blockedFilters(filters))
+            : api.issues(filters);
+    const [page, workspaces, labels, assignees, epics] = await Promise.all([
       load(),
       api.workspaces(filters["include-archived"] ? { state: "all" } : {}),
       api.labels(
@@ -98,6 +121,17 @@ export function ListingPage({
       kind === "ready"
         ? Promise.resolve({ rows: [], total: 0 })
         : api.assignees(facetFilters(filters)),
+      kind === "issues"
+        ? api.issues({
+            type: ["epic"],
+            workspace: filters.workspace,
+            "include-closed": true,
+            ...(filters["include-archived"]
+              ? { "include-archived": true }
+              : {}),
+            sort: "id",
+          })
+        : Promise.resolve({ rows: [], total: 0 }),
     ]);
     const normalized = pageWindow(
       page.total,
@@ -105,11 +139,10 @@ export function ListingPage({
       listingPageSize(route.query),
     ).page;
     if (normalized !== pageNumber(route.query)) {
-      filters.offset = (normalized - 1) * listingPageSize(route.query);
-      page = await load();
       replaceRoute(route, withPage(route.query, normalized));
+      return;
     }
-    return { page, workspaces, labels, assignees };
+    return { page, workspaces, labels, assignees, epics };
   }, [kind, route.query.toString()]);
   const data = resource.data;
   const state = sortState(
@@ -193,19 +226,7 @@ export function ListingPage({
               : "Loading…"}
           </span>
           {kind === "issues" && (
-            <label class="include-closed-control">
-              <input
-                type="checkbox"
-                checked={route.query.get("include-closed") === "true"}
-                onChange={(e) => {
-                  location.hash = routeHref(
-                    route,
-                    withClosedIssues(route.query, e.currentTarget.checked),
-                  );
-                }}
-              />
-              Show closed
-            </label>
+            <ListingFilters route={route} epics={data?.epics.rows ?? []} />
           )}
           <div class="listing-actions">
             <label class="mobile-sort-control">
@@ -278,9 +299,11 @@ export function ListingPage({
                 />
               ) : (
                 <p class="empty">
-                  {filter
-                    ? "No issues match this filter."
-                    : `No ${kind === "issues" ? "issues" : kind + " issues"}.`}
+                  {kind === "issues" && hasEmptyStatusSelection(route.query)
+                    ? "No statuses selected."
+                    : filter || epicSelectionFrom(route.query) !== null
+                      ? "No issues match these filters."
+                      : `No ${kind === "issues" ? "issues" : kind + " issues"}.`}
                 </p>
               )}
             </div>
