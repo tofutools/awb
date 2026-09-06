@@ -36,6 +36,12 @@ workspace: app
 color: auto
 ```
 
+If the user file contains `password`, keep the regular Unix file private:
+`chmod 600 ~/.config/awb/config.yaml` (or the path selected by
+`AWB_CONFIG_FILE`). awb refuses a password-bearing file with group or other
+permission bits, including when the path is a symlink to such a file. A file
+without `password` does not require these private permissions.
+
 `db` may instead be an HTTP or HTTPS awb server URL. `user` and `password` are
 used only in remote mode; direct access to a database file is authorized by the
 filesystem. `identity` is the default assignee used by `claim`, `release`, and

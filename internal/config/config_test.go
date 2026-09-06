@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,12 @@ func writeUserConfig(t *testing.T, configDir, content string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(configDir, "awb", "config.yaml"), []byte(content), 0o600))
+}
+
+func writeConfigFile(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(content), mode))
+	require.NoError(t, os.Chmod(path, mode))
 }
 
 // workdir builds a directory tree and drops a local configuration file at the
@@ -557,6 +564,78 @@ func TestConfigFileEnvMissingFileIsAUsageError(t *testing.T) {
 	assert.Equal(t, 2, awberr.ExitCode(err))
 	assert.Contains(t, err.Error(), "AWB_CONFIG_FILE")
 	assert.Contains(t, err.Error(), missing)
+}
+
+// Password-bearing user files are accepted when private and refused when
+// group- or world-readable. The error tells the user how to fix the mode.
+func TestPasswordRequiresPrivateUserConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits do not apply on Windows")
+	}
+	configDir, _ := isolate(t)
+	path := filepath.Join(configDir, "awb", "config.yaml")
+	writeConfigFile(t, path, "password: secret\n", 0o600)
+
+	_, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+
+	require.NoError(t, os.Chmod(path, 0o644))
+	_, err = config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 1, awberr.ExitCode(err))
+	assert.Contains(t, err.Error(), "chmod 600")
+}
+
+// A user file without a password does not need private permissions.
+func TestPasswordFreeUserConfigDoesNotRequirePrivatePermissions(t *testing.T) {
+	configDir, _ := isolate(t)
+	path := filepath.Join(configDir, "awb", "config.yaml")
+	writeConfigFile(t, path, "workspace: public\n", 0o644)
+
+	cfg, err := config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "public", cfg.DefaultWorkspace)
+}
+
+// AWB_CONFIG_FILE has the same password permission requirement as the
+// standard user path.
+func TestExplicitPasswordConfigRequiresPrivatePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits do not apply on Windows")
+	}
+	isolate(t)
+	path := filepath.Join(t.TempDir(), "credentials.yaml")
+	writeConfigFile(t, path, "password: secret\n", 0o644)
+	t.Setenv("AWB_CONFIG_FILE", path)
+
+	_, err := config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Equal(t, 1, awberr.ExitCode(err))
+	assert.Contains(t, err.Error(), path)
+	assert.Contains(t, err.Error(), "chmod 600")
+}
+
+// Permission checks follow symlinks, so a link to a private target works but
+// a link to a group-readable target is refused.
+func TestPasswordConfigSymlinkChecksTargetPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink and Unix permission behavior differ on Windows")
+	}
+	isolate(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.yaml")
+	link := filepath.Join(dir, "config.yaml")
+	writeConfigFile(t, target, "password: secret\n", 0o644)
+	require.NoError(t, os.Symlink(target, link))
+	t.Setenv("AWB_CONFIG_FILE", link)
+
+	_, err := config.Load(config.Flags{}, t.TempDir())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "chmod 600")
+
+	require.NoError(t, os.Chmod(target, 0o600))
+	_, err = config.Load(config.Flags{}, t.TempDir())
+	require.NoError(t, err)
 }
 
 // The default path carries no such obligation: nobody named it, so its absence
