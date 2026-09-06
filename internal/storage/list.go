@@ -105,11 +105,7 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 		) SELECT id FROM parked)`)
 	}
 
-	if f.Parent != "" {
-		c.add(`i.id IN (SELECT subject FROM relations
-		                 WHERE type = 'has-parent' AND other = ?)`, f.Parent)
-	}
-	addAncestorSelection(c, f)
+	addParentSelection(c, f)
 	if f.Epic != nil {
 		const directEpic = `EXISTS (
 			SELECT 1 FROM relations er JOIN issues epic ON epic.id = er.other
@@ -155,18 +151,18 @@ func (t *Tx) selection(f *domain.Filter) *conditions {
 	return c
 }
 
-// addAncestorSelection expresses both halves of the general ancestry filter:
+// addParentSelection expresses both halves of the general parent filter:
 // selecting children/descendants of one issue, and selecting issues without a
-// direct/recursive ancestor (optionally of one type). UNION makes a malformed
+// direct/recursive parent chain (optionally of one type). UNION makes a malformed
 // legacy cycle terminate rather than recurse forever.
-func addAncestorSelection(c *conditions, f *domain.Filter) {
-	if f.Ancestor == nil {
+func addParentSelection(c *conditions, f *domain.Filter) {
+	if f.Parent == nil {
 		return
 	}
-	if *f.Ancestor != "" {
+	if *f.Parent != "" {
 		if !f.Recursive {
 			c.add(`i.id IN (SELECT subject FROM relations
-			                 WHERE type = 'has-parent' AND other = ?)`, *f.Ancestor)
+			                 WHERE type = 'has-parent' AND other = ?)`, *f.Parent)
 			return
 		}
 		c.add(`i.id IN (
@@ -177,15 +173,15 @@ func addAncestorSelection(c *conditions, f *domain.Filter) {
 				 WHERE r.type = 'has-parent'
 			)
 			SELECT id FROM descendants WHERE id <> ?
-		)`, *f.Ancestor, *f.Ancestor)
+		)`, *f.Parent, *f.Parent)
 		return
 	}
 
 	typeClause := ""
 	args := []any{}
-	if f.AncestorType != nil {
+	if f.ParentType != nil {
 		typeClause = " AND ancestor.type = ?"
-		args = append(args, *f.AncestorType)
+		args = append(args, *f.ParentType)
 	}
 	if !f.Recursive {
 		c.add(`NOT EXISTS (

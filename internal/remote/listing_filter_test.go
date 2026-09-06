@@ -25,11 +25,11 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/labels":
 			assert.Equal(t, "ready", r.URL.Query().Get("readiness"))
-			assert.Equal(t, "none", r.URL.Query().Get("ancestor"))
-			assert.Equal(t, "epic", r.URL.Query().Get("ancestor-type"))
+			assert.Equal(t, "none", r.URL.Query().Get("parent"))
+			assert.Equal(t, "epic", r.URL.Query().Get("parent-type"))
 			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
 		case "/api/issues":
-			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("ancestor"))
+			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("parent"))
 			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -43,20 +43,20 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	client := remote.New(base, "", "", "operator")
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 
-	ancestor := "awb-a1b2c3"
+	parent := "awb-a1b2c3"
 	_, err = client.ListIssues(t.Context(), &domain.Filter{
-		ListingFilter: want["/api/issues"], Ancestor: &ancestor, Recursive: true,
+		ListingFilter: want["/api/issues"], Parent: &parent, Recursive: true,
 	})
 	require.NoError(t, err)
 	wireSentinel := "none"
-	_, err = client.ListIssues(t.Context(), &domain.Filter{Ancestor: &wireSentinel})
+	_, err = client.ListIssues(t.Context(), &domain.Filter{Parent: &wireSentinel})
 	require.Error(t, err, "remote mode rejects the wire sentinel as an internal filter value")
 	epicType := domain.TypeEpic
 	_, err = client.LabelFacets(t.Context(), &domain.Filter{
 		ListingFilter: want["/api/labels"],
 		Readiness:     domain.ReadinessReady,
-		Ancestor:      new(string),
-		AncestorType:  &epicType,
+		Parent:        new(string),
+		ParentType:    &epicType,
 		Recursive:     true,
 	})
 	require.NoError(t, err)

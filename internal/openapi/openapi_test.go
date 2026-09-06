@@ -353,24 +353,24 @@ func TestOperations(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{
 		"status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "ancestor", "ancestor-type", "recursive", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "parent-type", "recursive", "filter", "sort", "limit", "offset",
 	}, names("listIssues"))
 	assert.ElementsMatch(t, []string{
-		"type", "priority", "priority-max", "label", "workspace", "parent", "ancestor", "ancestor-type", "recursive", "filter", "sort",
+		"type", "priority", "priority-max", "label", "workspace", "parent", "parent-type", "recursive", "filter", "sort",
 		"limit", "offset",
 	}, names("listReady"))
 	assert.ElementsMatch(t, []string{
 		"type", "priority", "priority-max", "label", "assignee", "unassigned",
-		"workspace", "parent", "ancestor", "ancestor-type", "recursive", "filter", "sort", "limit", "offset",
+		"workspace", "parent", "parent-type", "recursive", "filter", "sort", "limit", "offset",
 	}, names("listBlocked"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "ancestor", "ancestor-type", "recursive", "filter", "readiness", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "parent-type", "recursive", "filter", "readiness", "limit", "offset",
 	}, names("listLabels"))
 	assert.ElementsMatch(t, names("listLabels"), names("listAssignees"))
 	assert.ElementsMatch(t, []string{
 		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
-		"assignee", "unassigned", "workspace", "parent", "ancestor", "ancestor-type", "recursive", "filter", "sort", "limit", "offset",
+		"assignee", "unassigned", "workspace", "parent", "parent-type", "recursive", "filter", "sort", "limit", "offset",
 	}, names("searchIssues"))
 	assert.ElementsMatch(t, []string{"filter", "state", "sort", "limit", "offset"}, names("listWorkspaces"))
 	assert.ElementsMatch(t, []string{"filter", "limit", "offset"}, names("listUsers"))

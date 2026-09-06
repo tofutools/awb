@@ -133,8 +133,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -593,8 +592,7 @@ paths:
         - $ref: '#/components/parameters/label'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -621,8 +619,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/sort'
@@ -666,8 +663,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - name: sort
@@ -1329,8 +1325,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
@@ -1368,8 +1363,7 @@ paths:
         - $ref: '#/components/parameters/unassigned'
         - $ref: '#/components/parameters/workspace'
         - $ref: '#/components/parameters/parent'
-        - $ref: '#/components/parameters/ancestor'
-        - $ref: '#/components/parameters/ancestorType'
+        - $ref: '#/components/parameters/parentType'
         - $ref: '#/components/parameters/recursive'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
@@ -1554,33 +1548,27 @@ components:
       name: parent
       in: query
       description: |
-        Select the direct children of that issue — the issues whose `has-parent`
-        relation names it — not the whole subtree.
-      schema: { type: string }
-    ancestor:
-      name: ancestor
-      in: query
-      description: |
         Select issues whose direct parent is this issue, or use the literal
         `none` to select issues without a parent. `recursive=true` widens both
         forms to the whole ancestry chain. The named issue may have any type
-        and uses the same full-ID or unambiguous-reference rules as `parent`.
+        and uses the full-ID or unambiguous-reference rules.
       schema:
         type: string
         minLength: 1
-    ancestorType:
-      name: ancestor-type
+    parentType:
+      name: parent-type
       in: query
       description: |
-        With `ancestor=none`, select issues without an ancestor of this type.
-        It is invalid with a named ancestor or without `ancestor=none`.
+        With `parent=none`, select issues without a parent of this type.
+        With `recursive=true`, this means no ancestor of this type. It is
+        invalid with a named parent or without `parent=none`.
       schema: { $ref: '#/components/schemas/Type' }
     recursive:
       name: recursive
       in: query
       description: |
-        With `ancestor`, traverse the whole ancestry chain instead of only the
-        direct parent relation. It is invalid without `ancestor`.
+        With `parent`, traverse the whole ancestry chain instead of only the
+        direct parent relation. It is invalid without `parent`.
       schema: { type: boolean, default: false }
     listingFilter:
       name: filter

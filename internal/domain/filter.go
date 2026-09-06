@@ -225,19 +225,16 @@ type Filter struct {
 	// named board presentation preferences use it to omit epic lanes without
 	// changing the issues or a saved view's shared filter definition.
 	ExcludeIDs []string
-	// Parent selects the direct children of that issue — the issues whose
-	// has-parent relation names it — not the whole subtree.
-	Parent string
-	// Ancestor selects issues below one issue through has-parent relations. A
-	// non-nil empty value instead selects issues without an ancestor, optionally
-	// narrowed to AncestorType. Recursive widens direct children/parents to the
+	// Parent selects issues below one issue through has-parent relations. A
+	// non-nil empty value instead selects issues without a parent, optionally
+	// narrowed to ParentType. Recursive widens direct children/parents to the
 	// whole descendant/ancestor chain.
-	Ancestor     *string
-	AncestorType *Type
-	Recursive    bool
+	Parent     *string
+	ParentType *Type
+	Recursive  bool
 	// Epic selects direct same-workspace membership in one epic. A non-nil empty
 	// value selects issues without such a membership. It remains board-internal;
-	// general listings use Ancestor instead.
+	// general listings use Parent instead.
 	Epic *string
 
 	// Terms are search's literal terms. Each is wrapped in double quotes before
@@ -258,18 +255,18 @@ type Filter struct {
 	Sort Sort
 }
 
-// ValidateAncestorFilter checks the combinations shared by direct and remote
+// ValidateParentFilter checks the combinations shared by direct and remote
 // listings. Reference existence is resolved by the local backend inside the
 // same scoped read transaction as the query.
-func ValidateAncestorFilter(f *Filter) error {
-	if f.Ancestor != nil && *f.Ancestor == "none" {
-		return awberr.Usagef(`ancestor "none" is reserved for the HTTP API; use an empty value`)
+func ValidateParentFilter(f *Filter) error {
+	if f.Parent != nil && *f.Parent == "none" {
+		return awberr.Usagef(`parent "none" is reserved for the HTTP API; use an empty value`)
 	}
-	if f.Recursive && f.Ancestor == nil {
-		return awberr.Usagef("recursive requires ancestor")
+	if f.Recursive && f.Parent == nil {
+		return awberr.Usagef("recursive requires parent")
 	}
-	if f.AncestorType != nil && (f.Ancestor == nil || *f.Ancestor != "") {
-		return awberr.Usagef("ancestor-type requires ancestor=none")
+	if f.ParentType != nil && (f.Parent == nil || *f.Parent != "") {
+		return awberr.Usagef("parent-type requires parent=none")
 	}
 	return nil
 }

@@ -30,12 +30,12 @@ func TestWorkspaceSortVocabulary(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestAncestorFilterUsesAnEmptyValueForNoAncestor(t *testing.T) {
+func TestParentFilterUsesAnEmptyValueForNoParent(t *testing.T) {
 	none := ""
-	require.NoError(t, domain.ValidateAncestorFilter(&domain.Filter{Ancestor: &none}))
+	require.NoError(t, domain.ValidateParentFilter(&domain.Filter{Parent: &none}))
 
 	wireSentinel := "none"
-	err := domain.ValidateAncestorFilter(&domain.Filter{Ancestor: &wireSentinel})
+	err := domain.ValidateParentFilter(&domain.Filter{Parent: &wireSentinel})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reserved for the HTTP API")
 }

@@ -258,22 +258,15 @@ func checkFilterWorkspaces(tx *storage.Tx, filter *domain.Filter) error {
 // resolveFilterReferences turns relationship references into stored IDs,
 // reporting one that names no issue for the same reason as a direct lookup.
 func resolveFilterReferences(tx *storage.Tx, filter *domain.Filter) error {
-	if err := domain.ValidateAncestorFilter(filter); err != nil {
+	if err := domain.ValidateParentFilter(filter); err != nil {
 		return err
 	}
-	if filter.Parent != "" {
-		id, err := resolve(tx, filter.Parent)
+	if filter.Parent != nil && *filter.Parent != "" {
+		id, err := resolve(tx, *filter.Parent)
 		if err != nil {
 			return err
 		}
-		filter.Parent = id
-	}
-	if filter.Ancestor != nil && *filter.Ancestor != "" {
-		id, err := resolve(tx, *filter.Ancestor)
-		if err != nil {
-			return err
-		}
-		*filter.Ancestor = id
+		*filter.Parent = id
 	}
 	return nil
 }

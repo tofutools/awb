@@ -34,7 +34,7 @@ import {
   BackendListingFilter,
   activeListingFamily,
   emptyFacetLabel,
-  epicAncestorFilter,
+  epicParentFilter,
   epicSelectionFrom,
   lowestFacetGroup,
   listingFilterMaxLength,
@@ -1557,7 +1557,7 @@ function filtersFrom(query: URLSearchParams): Filters {
   if (query.get("include-archived") === "true") filters["include-archived"] = true;
   const listingFilter = query.get("filter");
   if (listingFilter !== null && listingFilter !== "") filters.filter = listingFilter;
-  Object.assign(filters, epicAncestorFilter(query));
+  Object.assign(filters, epicParentFilter(query));
   const sort = query.get("sort");
   const apiSorts: string[] = issueSortKeys.flatMap((key) => [key, `-${key}`]);
   if (sort !== null && apiSorts.includes(sort)) filters.sort = sort as Filters["sort"];

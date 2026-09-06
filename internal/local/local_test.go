@@ -201,7 +201,7 @@ func TestParentFilteredListingHonoursManualOrder(t *testing.T) {
 	child("first child")
 	child("second child")
 
-	page, err := b.ListIssues(ctx, &domain.Filter{Parent: parent.ID, Sort: domain.DefaultSort})
+	page, err := b.ListIssues(ctx, &domain.Filter{Parent: &parent.ID, Sort: domain.DefaultSort})
 	require.NoError(t, err)
 	require.Len(t, page.Issues, 2)
 	first, second := page.Issues[0], page.Issues[1]
@@ -210,7 +210,7 @@ func TestParentFilteredListingHonoursManualOrder(t *testing.T) {
 		Status: domain.StatusOpen, Before: first.ID,
 	}, "")
 	require.NoError(t, err)
-	page, err = b.ListIssues(ctx, &domain.Filter{Parent: parent.ID, Sort: domain.DefaultSort})
+	page, err = b.ListIssues(ctx, &domain.Filter{Parent: &parent.ID, Sort: domain.DefaultSort})
 	require.NoError(t, err)
 	require.Len(t, page.Issues, 2)
 	assert.Equal(t, []string{second.ID, first.ID}, []string{page.Issues[0].ID, page.Issues[1].ID})
@@ -878,24 +878,24 @@ func TestFilterNamingAMissingWorkspaceIsNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 
-	_, err = b.ListIssues(ctx, &domain.Filter{Parent: "awb-ffffff", Sort: domain.DefaultSort})
+	missing := "awb-ffffff"
+	_, err = b.ListIssues(ctx, &domain.Filter{Parent: &missing, Sort: domain.DefaultSort})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 
-	missing := "awb-ffffff"
-	_, err = b.ListIssues(ctx, &domain.Filter{Ancestor: &missing, Recursive: true, Sort: domain.DefaultSort})
+	_, err = b.ListIssues(ctx, &domain.Filter{Parent: &missing, Recursive: true, Sort: domain.DefaultSort})
 	require.Error(t, err)
 	assert.Equal(t, 3, exitOf(err))
 }
 
-func TestInvalidAncestorFilterCombinationsAreUsageErrors(t *testing.T) {
+func TestInvalidParentFilterCombinationsAreUsageErrors(t *testing.T) {
 	b, ctx := newBackend(t)
-	ancestor := "awb-ffffff"
-	ancestorType := domain.TypeEpic
+	parent := "awb-ffffff"
+	parentType := domain.TypeEpic
 	for _, filter := range []*domain.Filter{
 		{Recursive: true},
-		{AncestorType: &ancestorType},
-		{Ancestor: &ancestor, AncestorType: &ancestorType},
+		{ParentType: &parentType},
+		{Parent: &parent, ParentType: &parentType},
 	} {
 		_, err := b.ListIssues(ctx, filter)
 		require.Error(t, err)

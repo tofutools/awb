@@ -138,7 +138,7 @@ func TestVisibilityIsMembership(t *testing.T) {
 	notFound(t, err)
 }
 
-func TestAncestorListingFilterKeepsTheWorkspaceScope(t *testing.T) {
+func TestRecursiveParentListingFilterKeepsTheWorkspaceScope(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "bob", false, false)
 	grant(t, root, ctx, "awb", "bob", domain.AccessRegular)
@@ -163,12 +163,12 @@ func TestAncestorListingFilterKeepsTheWorkspaceScope(t *testing.T) {
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
-	page, err := bob.ListIssues(ctx, &domain.Filter{Ancestor: &visibleEpic.ID, Recursive: true})
+	page, err := bob.ListIssues(ctx, &domain.Filter{Parent: &visibleEpic.ID, Recursive: true})
 	require.NoError(t, err)
 	require.Len(t, page.Issues, 1)
 	assert.Equal(t, visibleMember.ID, page.Issues[0].ID)
 
-	page, err = bob.ListIssues(ctx, &domain.Filter{Ancestor: &hiddenEpic.ID, Recursive: true})
+	page, err = bob.ListIssues(ctx, &domain.Filter{Parent: &hiddenEpic.ID, Recursive: true})
 	notFound(t, err, "an inaccessible ancestor cannot be resolved")
 
 	epics, err := bob.ListIssues(ctx, &domain.Filter{Types: []domain.Type{domain.TypeEpic}, IncludeClosed: true})
