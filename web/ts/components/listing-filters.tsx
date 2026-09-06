@@ -1,6 +1,8 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { Issue } from "../api.js";
+import { stagedLabel } from "../issue-create.js";
 import {
   epicSelectionFrom,
   noEpicSelection,
@@ -15,26 +17,137 @@ import {
   withIssueStatuses,
   type IssueStatusValue,
 } from "../status-filter.js";
+import { Autocomplete } from "./autocomplete.js";
 import { Button, Popover } from "./ui.js";
 
-export function ListingFilters({
+export interface DynamicFilterChoice {
+  value: string;
+  label: string;
+  detail?: string;
+}
+
+/** DynamicFilterRow keeps long facet vocabularies out of the listing while
+ * preserving selected values as removable, shareable URL state. */
+export function DynamicFilterRow({
   route,
-  epics,
+  title,
+  name,
+  choices,
+  selected,
+  trailing,
 }: {
   route: Route;
-  epics: Issue[];
+  title: string;
+  name: "label" | "epic";
+  choices: DynamicFilterChoice[];
+  selected: string[];
+  trailing?: ComponentChildren;
 }) {
+  const [draft, setDraft] = useState("");
+  const routeState = route.query.toString();
+  useEffect(() => setDraft(""), [routeState]);
+
+  const choice = (value: string) =>
+    choices.find((item) => item.value === value);
+  const available = choices.filter((item) => !selected.includes(item.value));
+  const addable =
+    draft.trim() !== "" &&
+    (name === "epic"
+      ? choice(draft.trim()) !== undefined
+      : stagedLabel(draft, selected).error === undefined);
+  const add = (): void => {
+    const value = draft.trim();
+    if (!addable) return;
+    const query =
+      name === "epic"
+        ? withEpicSelection(route.query, value)
+        : new URLSearchParams(route.query);
+    if (name === "label") {
+      query.delete("page");
+      query.append("label", value);
+    }
+    setDraft("");
+    location.hash = routeHref(route, query);
+  };
+  const remove = (value: string): void => {
+    const query =
+      name === "epic"
+        ? withEpicSelection(route.query, null)
+        : new URLSearchParams(route.query);
+    if (name === "label") {
+      query.delete("label");
+      query.delete("page");
+      for (const item of selected.filter((item) => item !== value))
+        query.append("label", item);
+    }
+    location.hash = routeHref(route, query);
+  };
+
+  return (
+    <div
+      class={`facet-group dynamic-filter-group ${trailing ? "with-pagination" : ""}`}
+    >
+      <span class="facet-title">{title}</span>
+      <div class="dynamic-filter-values">
+        <span class="facet-values dynamic-filter-selected">
+          {selected.map((value) => {
+            const item = choice(value);
+            const display =
+              item?.label ??
+              (name === "epic" ? "Unavailable epic" : `#${value}`);
+            return (
+              <span class="editable-chip" key={value} title={item?.detail}>
+                <span class="facet active">{display}</span>
+                <Button
+                  class="chip-remove"
+                  aria-label={`Remove ${name} ${value}`}
+                  onClick={() => remove(value)}
+                >
+                  ×
+                </Button>
+              </span>
+            );
+          })}
+        </span>
+        <div class="compact-editor dynamic-filter-editor">
+          <Autocomplete
+            value={draft}
+            onValue={setDraft}
+            aria-label={`Filter by ${name}`}
+            placeholder={`Add ${name}`}
+            maxLength={name === "label" ? 64 : undefined}
+            load={async (query) => {
+              const match = query.toLocaleLowerCase();
+              return available
+                .filter((item) =>
+                  `${item.label} ${item.value} ${item.detail ?? ""}`
+                    .toLocaleLowerCase()
+                    .includes(match),
+                )
+                .map((item) => ({
+                  value: item.value,
+                  label: item.label,
+                  detail: item.detail,
+                }));
+            }}
+          />
+          <Button class="quiet-action" disabled={!addable} onClick={add}>
+            Add
+          </Button>
+        </div>
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+export function ListingFilters({ route }: { route: Route }) {
   const selected = selectedIssueStatuses(route.query);
   const [staged, setStaged] = useState<IssueStatusValue[]>(selected);
-  const selectedEpic = epicSelectionFrom(route.query);
-  const [stagedEpic, setStagedEpic] = useState(selectedEpic ?? "");
   const firstChoice = useRef<HTMLInputElement>(null);
   const routeState = route.query.toString();
 
-  useEffect(() => {
-    setStaged(selectedIssueStatuses(route.query));
-    setStagedEpic(epicSelectionFrom(route.query) ?? "");
-  }, [routeState]);
+  useEffect(() => setStaged(selectedIssueStatuses(route.query)), [routeState]);
 
   const toggle = (status: IssueStatusValue, checked: boolean): void => {
     setStaged((current) =>
@@ -47,10 +160,6 @@ export function ListingFilters({
     staged.length === 0
       ? "No statuses selected; the list will be empty."
       : `${staged.length} status${staged.length === 1 ? "" : "es"} selected.`;
-  const unavailable =
-    selectedEpic !== null &&
-    selectedEpic !== noEpicSelection &&
-    !epics.some((epic) => epic.id === selectedEpic);
 
   return (
     <div class="listing-selection-controls">
@@ -62,29 +171,7 @@ export function ListingFilters({
           panelClassName="issue-view-popover"
           buttonLabel={<>▾ View</>}
         >
-          <strong class="issue-view-title">Filters</strong>
-          <label class="issue-view-field">
-            Epic
-            <select
-              aria-label="Filter by epic"
-              value={stagedEpic}
-              onChange={(event) => setStagedEpic(event.currentTarget.value)}
-            >
-              <option value="">All</option>
-              <option value={noEpicSelection}>No epic</option>
-              {epics.map((epic) => (
-                <option value={epic.id} key={epic.id}>
-                  {epic.title} ({epic.id})
-                </option>
-              ))}
-              {unavailable && (
-                <option value={selectedEpic ?? ""} disabled>
-                  Unavailable epic
-                </option>
-              )}
-            </select>
-          </label>
-          <strong class="issue-view-section-title">Statuses</strong>
+          <strong class="issue-view-title">Statuses</strong>
           <div class="issue-view-choices">
             {issueStatusVocabulary.map((status, index) => (
               <label class="issue-view-option" key={status}>
@@ -109,7 +196,6 @@ export function ListingFilters({
             <Button
               class="secondary-button"
               onClick={() => {
-                setStagedEpic("");
                 setStaged([...defaultIssueStatuses]);
                 firstChoice.current?.focus();
               }}
@@ -119,11 +205,7 @@ export function ListingFilters({
             <Button
               class="primary-button"
               onClick={(event) => {
-                const statusQuery = withIssueStatuses(route.query, staged);
-                const next = withEpicSelection(
-                  statusQuery,
-                  stagedEpic || null,
-                );
+                const next = withIssueStatuses(route.query, staged);
                 event.currentTarget
                   .closest<HTMLElement>("[popover]")
                   ?.hidePopover();
@@ -137,5 +219,31 @@ export function ListingFilters({
         </Popover>
       </span>
     </div>
+  );
+}
+
+export function EpicFilterRow({
+  route,
+  epics,
+}: {
+  route: Route;
+  epics: Issue[];
+}) {
+  const selected = epicSelectionFrom(route.query);
+  return (
+    <DynamicFilterRow
+      route={route}
+      title="epics"
+      name="epic"
+      selected={selected === null ? [] : [selected]}
+      choices={[
+        { value: noEpicSelection, label: "No epic" },
+        ...epics.map((epic) => ({
+          value: epic.id,
+          label: epic.title,
+          detail: epic.id,
+        })),
+      ]}
+    />
   );
 }
