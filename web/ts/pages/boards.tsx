@@ -72,7 +72,6 @@ export function BoardsPage({ route }: { route: Route }) {
   const preferences = defaultBoardPreferences(identity);
   const filters: BoardFilters = {
     "lane-limit": laneLimit,
-    "include-backlog": route.query.get("include-backlog") === "true",
   };
   if (ref === "default") {
     const workspaces = route.query.getAll("workspace");
@@ -993,7 +992,14 @@ function BoardEditor({
                       <input
                         type="checkbox"
                         checked={columns.includes(status)}
-                        onChange={() => setColumns(toggle(columns, status))}
+                        onChange={() => {
+                          const selected = new Set(toggle(columns, status));
+                          setColumns(
+                            legalBoardTargets().filter((value) =>
+                              selected.has(value),
+                            ),
+                          );
+                        }}
                       />
                       <span>{statusLabel(status)}</span>
                     </label>

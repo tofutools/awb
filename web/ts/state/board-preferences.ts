@@ -200,9 +200,13 @@ export function defaultBoardPreferences(
         (item) => item.length <= 64 && boardLabelLikePattern.test(item),
       ),
       columns: (() => {
-        const selected = strings(value.columns).filter((item) =>
-          ["backlog", "open", "in_progress", "closed"].includes(item),
-        ) as BoardView["columns"];
+        const stored = new Set(strings(value.columns));
+        const selected = ([
+          "backlog",
+          "open",
+          "in_progress",
+          "closed",
+        ] as BoardView["columns"]).filter((item) => stored.has(item));
         return selected.length ? selected : fallback.columns;
       })(),
       priority_max:
