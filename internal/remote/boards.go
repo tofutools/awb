@@ -11,34 +11,36 @@ import (
 )
 
 type boardViewCreateBody struct {
-	Name           string   `json:"name"`
-	Shared         bool     `json:"shared"`
-	AllWorkspaces  bool     `json:"all_workspaces"`
-	Workspaces     []string `json:"workspaces"`
-	AllEpics       bool     `json:"all_epics"`
-	Epics          []string `json:"epics"`
-	IncludeNoEpic  bool     `json:"include_no_epic"`
-	Labels         []string `json:"labels"`
-	Assignees      []string `json:"assignees"`
-	PriorityMax    int      `json:"priority_max"`
-	CardLimit      int      `json:"card_limit"`
-	ClosedDays     int      `json:"closed_days"`
-	EpicClosedDays int      `json:"epic_closed_days"`
+	Name           string          `json:"name"`
+	Shared         bool            `json:"shared"`
+	AllWorkspaces  bool            `json:"all_workspaces"`
+	Workspaces     []string        `json:"workspaces"`
+	AllEpics       bool            `json:"all_epics"`
+	Epics          []string        `json:"epics"`
+	IncludeNoEpic  bool            `json:"include_no_epic"`
+	Labels         []string        `json:"labels"`
+	Assignees      []string        `json:"assignees"`
+	Columns        []domain.Status `json:"columns"`
+	PriorityMax    int             `json:"priority_max"`
+	CardLimit      int             `json:"card_limit"`
+	ClosedDays     int             `json:"closed_days"`
+	EpicClosedDays int             `json:"epic_closed_days"`
 }
 type boardViewPatchBody struct {
-	Name           *string   `json:"name,omitempty"`
-	Shared         *bool     `json:"shared,omitempty"`
-	AllWorkspaces  *bool     `json:"all_workspaces,omitempty"`
-	Workspaces     *[]string `json:"workspaces,omitempty"`
-	AllEpics       *bool     `json:"all_epics,omitempty"`
-	Epics          *[]string `json:"epics,omitempty"`
-	IncludeNoEpic  *bool     `json:"include_no_epic,omitempty"`
-	Labels         *[]string `json:"labels,omitempty"`
-	Assignees      *[]string `json:"assignees,omitempty"`
-	PriorityMax    *int      `json:"priority_max,omitempty"`
-	CardLimit      *int      `json:"card_limit,omitempty"`
-	ClosedDays     *int      `json:"closed_days,omitempty"`
-	EpicClosedDays *int      `json:"epic_closed_days,omitempty"`
+	Name           *string          `json:"name,omitempty"`
+	Shared         *bool            `json:"shared,omitempty"`
+	AllWorkspaces  *bool            `json:"all_workspaces,omitempty"`
+	Workspaces     *[]string        `json:"workspaces,omitempty"`
+	AllEpics       *bool            `json:"all_epics,omitempty"`
+	Epics          *[]string        `json:"epics,omitempty"`
+	IncludeNoEpic  *bool            `json:"include_no_epic,omitempty"`
+	Labels         *[]string        `json:"labels,omitempty"`
+	Assignees      *[]string        `json:"assignees,omitempty"`
+	Columns        *[]domain.Status `json:"columns,omitempty"`
+	PriorityMax    *int             `json:"priority_max,omitempty"`
+	CardLimit      *int             `json:"card_limit,omitempty"`
+	ClosedDays     *int             `json:"closed_days,omitempty"`
+	EpicClosedDays *int             `json:"epic_closed_days,omitempty"`
 }
 
 func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error) {
@@ -52,6 +54,9 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 	}
 	if req.CardLimit == 0 {
 		req.CardLimit = 8
+	}
+	if req.Columns == nil {
+		req.Columns = []domain.Status{domain.StatusOpen, domain.StatusInProgress, domain.StatusClosed}
 	}
 	body := boardViewCreateBody(req)
 	var view domain.BoardView
@@ -67,6 +72,7 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 	body := boardViewPatchBody{Name: req.Name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
 		Workspaces: req.Workspaces, AllEpics: req.AllEpics, Epics: req.Epics, IncludeNoEpic: req.IncludeNoEpic,
 		Labels: req.Labels, Assignees: req.Assignees, PriorityMax: req.PriorityMax, CardLimit: req.CardLimit, ClosedDays: req.ClosedDays,
+		Columns:        req.Columns,
 		EpicClosedDays: req.EpicClosedDays}
 	var view domain.BoardView
 	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/board-views/"+url.PathEscape(id), nil), body, ifMatch, &view)
@@ -81,6 +87,9 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 	values := url.Values{}
 	if query.IncludeBacklog {
 		values.Set("include-backlog", "true")
+	}
+	for _, column := range query.Columns {
+		values.Add("column", string(column))
 	}
 	set := func(key string, value *int) {
 		if value != nil {

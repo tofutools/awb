@@ -154,6 +154,7 @@ type BoardViewCreate struct {
 	IncludeNoEpic  bool
 	Labels         []string
 	Assignees      []string
+	Columns        []domain.Status
 	PriorityMax    int
 	CardLimit      int
 	ClosedDays     int
@@ -170,6 +171,7 @@ type BoardViewPatch struct {
 	IncludeNoEpic  *bool
 	Labels         *[]string
 	Assignees      *[]string
+	Columns        *[]domain.Status
 	PriorityMax    *int
 	CardLimit      *int
 	ClosedDays     *int
@@ -178,6 +180,7 @@ type BoardViewPatch struct {
 
 type BoardQuery struct {
 	IncludeBacklog bool
+	Columns        []domain.Status
 	LaneLimit      *int
 	LaneOffset     *int
 	CardLimit      *int

@@ -32,6 +32,12 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 	if req.CardLimit == 0 {
 		req.CardLimit = defaultBoardViewCardLimit
 	}
+	if req.Columns == nil {
+		req.Columns = []domain.Status{domain.StatusOpen, domain.StatusInProgress, domain.StatusClosed}
+	}
+	if len(req.Columns) == 0 {
+		return nil, awberr.Usagef("board view must include at least one column")
+	}
 	name, err := domain.ValidateBoardViewName(req.Name)
 	if err != nil {
 		return nil, err
@@ -53,6 +59,17 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 		AllEpics: req.AllEpics, IncludeNoEpic: req.IncludeNoEpic, PriorityMax: priority,
 		CardLimit: req.CardLimit, ClosedDays: req.ClosedDays, EpicClosedDays: req.EpicClosedDays}
 	seen := map[string]bool{}
+	for _, candidate := range domain.Statuses {
+		for _, status := range req.Columns {
+			if status == candidate && !seen["s:"+string(status)] {
+				view.Columns = append(view.Columns, status)
+				seen["s:"+string(status)] = true
+			}
+		}
+	}
+	if len(view.Columns) != len(req.Columns) {
+		return nil, awberr.Usagef("board view columns must be distinct workflow statuses")
+	}
 	for _, value := range req.Workspaces {
 		valid, err := domain.ValidateWorkspaceKey(value)
 		if err != nil {
@@ -101,6 +118,7 @@ func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
 	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
 		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
 		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees,
+		Columns:     view.Columns,
 		PriorityMax: view.PriorityMax, CardLimit: view.CardLimit, ClosedDays: view.ClosedDays, EpicClosedDays: view.EpicClosedDays}
 }
 
@@ -331,6 +349,9 @@ func (b *Backend) UpdateBoardView(ctx context.Context, id string, req backend.Bo
 		if req.Assignees != nil {
 			next.Assignees = slices.Clone(*req.Assignees)
 		}
+		if req.Columns != nil {
+			next.Columns = slices.Clone(*req.Columns)
+		}
 		if req.PriorityMax != nil {
 			next.PriorityMax = *req.PriorityMax
 		}
@@ -515,6 +536,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			includeNoEpic = *query.IncludeNoEpic
 		}
 		cardLabels, cardAssignees := slices.Clone(query.Labels), slices.Clone(query.Assignees)
+		includeBacklog := query.IncludeBacklog || slices.Contains(query.Columns, domain.StatusBacklog)
 		priorityMax := 4
 		if query.PriorityMax != nil {
 			priorityMax = *query.PriorityMax
@@ -551,6 +573,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			epicClosedDays = view.EpicClosedDays
 			allEpics, selectedEpics, includeNoEpic = view.AllEpics, slices.Clone(view.Epics), view.IncludeNoEpic
 			cardLabels, cardAssignees, priorityMax = slices.Clone(view.Labels), slices.Clone(view.Assignees), view.PriorityMax
+			includeBacklog = includeBacklog || slices.Contains(view.Columns, domain.StatusBacklog)
 		}
 		closedAfter := boardClosedAfter(closedDays)
 		epicClosedAfter := boardClosedAfter(epicClosedDays)
@@ -585,7 +608,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				if !query.IncludeBacklog {
+				if !includeBacklog {
 					_, total, err := tx.ListIssues(&domain.Filter{IDs: []string{epic.ID}, IncludeClosed: true, ExcludeBacklog: true})
 					if err != nil {
 						return err
@@ -621,7 +644,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			if !allEpics {
 				epicSelection = selectedEpics
 			}
-			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, epicSelection, query.HiddenEpics, epicClosedAfter, query.IncludeBacklog, &epicLimit, &epicOffset)
+			epics, epicTotal, err := tx.ListBoardEpics(laneSelection, epicSelection, query.HiddenEpics, epicClosedAfter, includeBacklog, &epicLimit, &epicOffset)
 			if err != nil {
 				return err
 			}
@@ -636,14 +659,23 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				laneEpics = append(laneEpics, &epics[i])
 			}
 		}
-		statuses := slices.Clone(domain.Statuses)
+		statuses := slices.Clone(query.Columns)
+		if statuses == nil {
+			statuses = []domain.Status{domain.StatusOpen, domain.StatusInProgress, domain.StatusClosed}
+		}
+		if view != nil {
+			statuses = slices.Clone(view.Columns)
+		}
 		if query.Status != "" {
 			statuses = []domain.Status{query.Status}
 		}
 		// An explicit status narrows the board; it does not enable backlog visibility.
-		if !query.IncludeBacklog {
+		if query.IncludeBacklog && query.Status == "" && !slices.Contains(statuses, domain.StatusBacklog) {
+			statuses = append([]domain.Status{domain.StatusBacklog}, statuses...)
+		} else if !query.IncludeBacklog && view == nil && query.Columns == nil {
 			statuses = slices.DeleteFunc(statuses, func(s domain.Status) bool { return s == domain.StatusBacklog })
 		}
+		includeBacklog = slices.Contains(statuses, domain.StatusBacklog)
 		cardTypes := []domain.Type{domain.TypeFeature, domain.TypeBug, domain.TypeTask, domain.TypeChore}
 		for _, epic := range laneEpics {
 			lane := domain.BoardLane{Epic: epic, Columns: []domain.BoardColumn{}}
@@ -654,7 +686,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				workspaces = []string{epic.Workspace}
 			}
 			for _, status := range statuses {
-				filter := &domain.Filter{ExcludeBacklog: !query.IncludeBacklog, Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
+				filter := &domain.Filter{ExcludeBacklog: !includeBacklog, Workspaces: workspaces, Types: cardTypes, Epic: &epicID,
 					Statuses: []domain.Status{status}, Limit: query.CardLimit,
 					Offset: query.CardOffset, Sort: domain.DefaultSort}
 				if status == domain.StatusClosed {

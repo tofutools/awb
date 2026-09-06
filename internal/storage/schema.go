@@ -38,6 +38,23 @@ var migrations = [][]string{
 	schemaV19,
 	schemaV20,
 	schemaV21,
+	schemaV22,
+}
+
+// schemaV22 lets each saved board choose its workflow columns. Existing views
+// keep the three active-board columns that preceded configurable columns.
+var schemaV22 = []string{
+	`CREATE TABLE board_view_columns (
+		view TEXT NOT NULL REFERENCES board_views(id) ON DELETE CASCADE,
+		status TEXT NOT NULL CHECK (status IN ('backlog', 'open', 'in_progress', 'closed')),
+		position INTEGER NOT NULL CHECK (position >= 0),
+		PRIMARY KEY (view, status),
+		UNIQUE (view, position)
+	) STRICT, WITHOUT ROWID`,
+	`INSERT INTO board_view_columns (view, status, position)
+		SELECT id, 'open', 0 FROM board_views
+		UNION ALL SELECT id, 'in_progress', 1 FROM board_views
+		UNION ALL SELECT id, 'closed', 2 FROM board_views`,
 }
 
 // schemaV20 generalizes the sparse position beyond boards and removes the

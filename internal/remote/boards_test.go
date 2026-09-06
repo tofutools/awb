@@ -28,7 +28,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"priority_max":4,"card_limit":8,"closed_days":30,"epic_closed_days":0}`, string(body))
+			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"columns":["open","in_progress","closed"],"priority_max":4,"card_limit":8,"closed_days":30,"epic_closed_days":0}`, string(body))
 			_, _ = w.Write([]byte(view))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/board-views/"+id:
 			assert.Equal(t, `"etag"`, r.Header.Get("If-Match"))
@@ -49,6 +49,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 			assert.Equal(t, []string{"release", "frontend"}, r.URL.Query()["label"])
 			assert.Equal(t, []string{"alex", "sam"}, r.URL.Query()["assignee"])
 			assert.Equal(t, "2", r.URL.Query().Get("priority-max"))
+			assert.Equal(t, []string{"backlog", "open"}, r.URL.Query()["column"])
 			assert.Equal(t, "7", r.URL.Query().Get("lane-limit"))
 			assert.Equal(t, "3", r.URL.Query().Get("card-offset"))
 			assert.Equal(t, "14", r.URL.Query().Get("closed-days"))
@@ -93,7 +94,8 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		ClosedDays: &closedDays, EpicClosedDays: &epicClosedDays, Workspaces: []string{"awb", "web"}, HiddenEpics: []string{"awb-hidden", "web-hidden"},
 		AllWorkspaces: &allWorkspaces, AllEpics: &allEpics, Epics: []string{"awb-selected"}, IncludeNoEpic: &includeNoEpic,
 		Labels: []string{"release", "frontend"}, Assignees: []string{"alex", "sam"}, PriorityMax: &priorityMax,
-		Status: domain.StatusOpen, Epic: &epic})
+		Columns: []domain.Status{domain.StatusBacklog, domain.StatusOpen},
+		Status:  domain.StatusOpen, Epic: &epic})
 	require.NoError(t, err)
 	_, err = client.MoveIssue(t.Context(), "awb-123", backend.IssueMove{
 		Status: domain.StatusOpen, Epic: &epic, Direction: "earlier",

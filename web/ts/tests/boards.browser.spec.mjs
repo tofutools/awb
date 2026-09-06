@@ -498,12 +498,22 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await page.getByRole("button", { name: "Edit view" }).click();
   const editView = page.getByRole("dialog", { name: "Edit board view" });
   await expect(editView.getByRole("button", { name: "Delete view" })).toBeVisible();
+  await editView
+    .locator(".board-view-section", {
+      has: page.getByRole("heading", { name: "Columns", exact: true }),
+    })
+    .getByRole("checkbox", { name: "Backlog" })
+    .check();
   await editView.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
   const editEpicScope = editView.locator(".board-view-scope-card", { hasText: "Epic lanes" });
   await editEpicScope.getByText("All", { exact: true }).click();
   await editEpicScope.getByText("No epic", { exact: true }).click();
   await editView.getByRole("button", { name: "Save changes" }).click();
   await expect(page.locator(".board-summary")).toContainText("All epic lanes");
+  await expect(page.locator(".board-summary")).toContainText(
+    "Backlog, Open, In progress, Closed",
+  );
+  await expect(page.locator(".board-column[data-status='backlog']").first()).toBeVisible();
 
   const closeCandidate = page.locator(".board-card", { hasText: "Build the full text search index" });
   if (await closeCandidate.count() === 0) {
