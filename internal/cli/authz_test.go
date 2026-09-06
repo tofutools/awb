@@ -339,7 +339,7 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "bob", "hunter2", "bob")
+	client := remote.New(base, "bob", "hunter2", "bob", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	// Forbidden: something bob can see and may not do.
@@ -359,7 +359,7 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 
 	// Wrong credentials are about the credentials rather than about the
 	// request, so they are exit code 1 and not 5.
-	wrong := remote.New(base, "bob", "hunter3", "bob")
+	wrong := remote.New(base, "bob", "hunter3", "bob", false)
 	t.Cleanup(func() { _ = wrong.Close() })
 	_, err = wrong.ListWorkspaces(ctx, "", domain.DefaultWorkspaceSort, nil, nil)
 	require.Error(t, err)
@@ -546,7 +546,7 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 
 	base, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	client := remote.New(base, "alice", "hunter2", "alice")
+	client := remote.New(base, "alice", "hunter2", "alice", false)
 	t.Cleanup(func() { _ = client.Close() })
 
 	created, err := client.CreateUser(ctx, backend.UserCreate{
