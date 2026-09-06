@@ -27,12 +27,15 @@ function canonicalTypes(values: readonly string[]): IssueTypeValue[] {
 
 /**
  * Reads the route selection. The one empty type value intentionally means no
- * types, since an absent parameter means every type.
+ * types, since an absent parameter means every type. Unknown-only selections
+ * retain that default, matching the listing parser's treatment of stale URLs.
  */
 export function selectedIssueTypes(query: URLSearchParams): IssueTypeValue[] {
-  return query.has("type")
-    ? canonicalTypes(query.getAll("type"))
-    : [...defaultIssueTypes];
+  if (!query.has("type")) return [...defaultIssueTypes];
+  const values = query.getAll("type");
+  const selected = canonicalTypes(values);
+  if (selected.length > 0 || values.includes("")) return selected;
+  return [...defaultIssueTypes];
 }
 
 export function hasEmptyIssueTypeSelection(query: URLSearchParams): boolean {

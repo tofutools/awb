@@ -23,6 +23,10 @@ test("an absent type selection includes every type", () => {
 test("explicit type selections are canonical, unique, and ignore unknown values", () => {
   const query = new URLSearchParams("type=task&type=epic&type=task&type=unknown");
   assert.deepEqual(selectedIssueTypes(query), ["epic", "task"]);
+  assert.deepEqual(
+    selectedIssueTypes(new URLSearchParams("type=unknown")),
+    defaultIssueTypes,
+  );
 });
 
 test("type selections preserve other filters and reset pagination", () => {

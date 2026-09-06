@@ -227,7 +227,7 @@ export function ListingFilters({ route }: { route: Route }) {
           buttonLabel={<>▾ View</>}
         >
           <strong class="issue-view-title">Statuses</strong>
-          <div class="issue-view-choices">
+          <div class="issue-view-choices" role="group" aria-label="Statuses">
             {issueStatusVocabulary.map((status, index) => (
               <label class="issue-view-option" key={status}>
                 <input
@@ -248,7 +248,7 @@ export function ListingFilters({ route }: { route: Route }) {
             {statusHelp}
           </p>
           <strong class="issue-view-section-title">Types</strong>
-          <div class="issue-view-choices">
+          <div class="issue-view-choices" role="group" aria-label="Types">
             {issueTypeVocabulary.map((type) => (
               <label class="issue-view-option" key={type}>
                 <input
