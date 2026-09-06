@@ -10,6 +10,7 @@ import {
   rememberIssueSidebar,
 } from "../sidebar.js";
 import { inlineChildIssueCreate } from "../issue-create.js";
+import { childIssueFilters } from "../issue-children.js";
 import { HistoryChange } from "../components/history-diff.js";
 import { nextSortValue, sortState } from "../listings.js";
 import { type Route } from "../routing/route.js";
@@ -39,15 +40,19 @@ import { IssueTable, IssueBadges, Badge } from "../components/issues.js";
 
 export function IssuePage({ route }: { route: Route }) {
   const id = decodeURIComponent(route.path[1]);
+  const childrenPreferenceKey = `awb.issue.${id}.show-closed-children`;
+  const [showClosedChildren, setShowClosedChildren] = useState(() => {
+    try {
+      return localStorage.getItem(childrenPreferenceKey) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const resource = useResource(async () => {
     const [issue, activity, children] = await Promise.all([
       api.issue(id),
       api.activity(id),
-      api.issues({
-        parent: id,
-        "include-closed": true,
-        "include-archived": true,
-      }),
+      api.issues(childIssueFilters(id, showClosedChildren)),
     ]);
     const workspace = await api.workspace(issue.workspace);
     return {
@@ -56,7 +61,7 @@ export function IssuePage({ route }: { route: Route }) {
       children: children.rows,
       workspace,
     };
-  }, [id]);
+  }, [id, showClosedChildren]);
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState(() =>
     issueSidebarCollapsed(issueSidebarStorage(window)),
@@ -139,6 +144,15 @@ export function IssuePage({ route }: { route: Route }) {
         <Children
           parent={issue}
           issues={children}
+          showClosed={showClosedChildren}
+          onShowClosedChange={(showClosed) => {
+            setShowClosedChildren(showClosed);
+            try {
+              localStorage.setItem(childrenPreferenceKey, String(showClosed));
+            } catch {
+              /* optional preference */
+            }
+          }}
           mutable={mutable}
           reload={resource.reload}
         />
@@ -225,27 +239,23 @@ function IssueEditor({
 function Children({
   parent,
   issues,
+  showClosed,
+  onShowClosedChange,
   mutable,
   reload,
 }: {
   parent: Issue;
   issues: Issue[];
+  showClosed: boolean;
+  onShowClosedChange: (showClosed: boolean) => void;
   mutable: boolean;
   reload: () => Promise<void>;
 }) {
-  const key = `awb.issue.${parent.id}.show-closed-children`;
-  const [closed, setClosed] = useState(() => {
-    try {
-      return localStorage.getItem(key) !== "false";
-    } catch {
-      return true;
-    }
-  });
   const [sort, setSort] = useState<string | null>(null);
   const mutation = useMutation();
   const keys = ["id", "type", "priority", "status", "assignee"];
   const state = sortState(sort, keys, "order");
-  const rows = issues.filter((i) => closed || i.status !== "closed");
+  const rows = issues.filter((i) => showClosed || i.status !== "closed");
   if (state.explicit) {
     const value = (i: Issue): string | number =>
       state.key === "priority"
@@ -277,15 +287,8 @@ function Children({
         <label class="include-closed-control">
           <input
             type="checkbox"
-            checked={closed}
-            onChange={(e) => {
-              setClosed(e.currentTarget.checked);
-              try {
-                localStorage.setItem(key, String(e.currentTarget.checked));
-              } catch {
-                /* optional preference */
-              }
-            }}
+            checked={showClosed}
+            onChange={(e) => onShowClosedChange(e.currentTarget.checked)}
           />
           Show closed
         </label>

@@ -233,6 +233,12 @@ test("save, share and work from a responsive board", async ({ page }) => {
   const parentTitle = parentRelation?.other_title;
   expect(parentID).toBeTruthy();
   expect(parentTitle).toBeTruthy();
+  const childListingRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/issues" && url.searchParams.get("parent") === parentID)
+      childListingRequests.push(url);
+  });
   await page.goto(`${baseURL}/#/issues/${parentID}`);
   const childIssues = page.locator(".child-issues-section");
   await expect(childIssues.getByRole("heading", { name: "Child issues" })).toBeVisible();
@@ -241,12 +247,16 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(page.locator(`.relation-section a[href="#/issues/${createdID}"]`)).toHaveCount(0);
   const showClosedChildren = childIssues.getByRole("checkbox", { name: "Show closed" });
   await expect(showClosedChildren).toBeChecked();
+  await expect.poll(() => childListingRequests.at(-1)?.searchParams.get("include-closed")).toBe("true");
   await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
   await showClosedChildren.uncheck();
+  await expect.poll(() => childListingRequests.at(-1)?.searchParams.get("include-closed")).toBe("false");
   await expect(childIssues.locator("tbody .status-closed")).toHaveCount(0);
   await page.reload();
   await expect(showClosedChildren).not.toBeChecked();
+  await expect.poll(() => childListingRequests.at(-1)?.searchParams.get("include-closed")).toBe("false");
   await showClosedChildren.check();
+  await expect.poll(() => childListingRequests.at(-1)?.searchParams.get("include-closed")).toBe("true");
   await expect(childIssues.locator("tbody .status-closed")).not.toHaveCount(0);
   const priorityHeading = childIssues.getByRole("columnheader", { name: "Priority" });
   await priorityHeading.getByRole("button").click();
