@@ -417,12 +417,13 @@ test("epic and status filters compose, and page normalization does not refetch t
   const labelRow = page.locator(".dynamic-filter-group", {
     has: page.getByText("labels", { exact: true }),
   });
-  const labelSelector = labelRow.getByRole("combobox", {
-    name: "Filter by label",
+  await labelRow.getByRole("button", { name: "Add label filter" }).click();
+  const labelDialog = page.getByRole("dialog", { name: "Add label filter" });
+  const labelSelector = labelDialog.getByRole("combobox", {
+    name: "Search labels",
   });
   await labelSelector.fill("front");
-  await labelRow.getByRole("option", { name: /#frontend/ }).click();
-  await labelRow.getByRole("button", { name: "Add", exact: true }).click();
+  await labelDialog.getByRole("option", { name: /#frontend/ }).click();
   await expect(page).toHaveURL(/label=frontend/);
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
   await labelRow
@@ -432,14 +433,15 @@ test("epic and status filters compose, and page normalization does not refetch t
   await expect(page.locator(".filter-count")).toHaveText("4 issues");
 
   const epicRow = page.locator(".dynamic-filter-group", {
-    has: page.getByText("epics", { exact: true }),
+    has: page.getByText("epic", { exact: true }),
   });
-  const epicSelector = epicRow.getByRole("combobox", {
-    name: "Filter by epic",
+  await epicRow.getByRole("button", { name: "Choose epic filter" }).click();
+  let epicDialog = page.getByRole("dialog", { name: "Choose epic filter" });
+  let epicSelector = epicDialog.getByRole("combobox", {
+    name: "Search epics",
   });
   await epicSelector.fill("Filter epic");
-  await epicRow.getByRole("option", { name: /Filter epic/ }).click();
-  await epicRow.getByRole("button", { name: "Add", exact: true }).click();
+  await epicDialog.getByRole("option", { name: /Filter epic/ }).click();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
   expect(requests.at(-1).searchParams.get("parent")).toBe(epic.id);
   expect(requests.at(-1).searchParams.get("recursive")).toBe("true");
@@ -460,9 +462,11 @@ test("epic and status filters compose, and page normalization does not refetch t
   await expect(
     epicRow.getByRole("button", { name: `Remove epic ${epic.id}` }),
   ).toBeVisible();
+  await epicRow.getByRole("button", { name: "Choose epic filter" }).click();
+  epicDialog = page.getByRole("dialog", { name: "Choose epic filter" });
+  epicSelector = epicDialog.getByRole("combobox", { name: "Search epics" });
   await epicSelector.fill("No epic");
-  await epicRow.getByRole("option", { name: "No epic", exact: true }).click();
-  await epicRow.getByRole("button", { name: "Add", exact: true }).click();
+  await epicDialog.getByRole("option", { name: "No epic", exact: true }).click();
   await trigger.click();
   await statuses.getByRole("button", { name: "Reset", exact: true }).click();
   await statuses.getByRole("button", { name: "Done", exact: true }).click();

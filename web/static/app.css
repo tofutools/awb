@@ -1161,19 +1161,32 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .dynamic-filter-selected { flex: 0 1 auto; }
 .dynamic-filter-selected:empty { display: none; }
 .dynamic-filter-selected .facet { border-radius: 999px 0 0 999px; }
+.dynamic-filter-epic .facet { max-width: min(20rem, 45vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dynamic-filter-selected .chip-remove { border-radius: 0 999px 999px 0; }
-.dynamic-filter-editor { flex: 0 1 17rem; min-width: 12rem; margin: 0; flex-wrap: nowrap; gap: 0.35rem; }
-.dynamic-filter-editor .autocomplete { flex-basis: 12rem; }
-.dynamic-filter-editor input {
-  padding: 0.25rem 0.4rem;
+.dynamic-filter-trigger {
+  min-height: 1.5rem;
+  padding: 0.1rem 0.45rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
-  color: var(--fg);
+  color: var(--accent);
+  cursor: pointer;
   font: inherit;
   font-size: 0.8em;
 }
-.dynamic-filter-editor .quiet-action { padding: 0.2rem 0.45rem; font-size: 0.8em; }
+.dynamic-filter-trigger:hover, .dynamic-filter-trigger[aria-expanded="true"] { border-color: var(--accent); }
+.dynamic-filter-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dynamic-filter-popover { padding: 0.55rem; }
+.dynamic-filter-popover .autocomplete > input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85em;
+}
+.dynamic-filter-popover .autocomplete > input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent); }
 .parent-inspector-values { flex-wrap: nowrap; min-width: 0; }
 .parent-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-remove {

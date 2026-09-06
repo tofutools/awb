@@ -11,11 +11,13 @@ export function Autocomplete({
   load,
   value,
   onValue,
+  onSuggestion,
   ...props
 }: Omit<JSX.InputHTMLAttributes<HTMLInputElement>, "value" | "onInput"> & {
   load: (query: string, signal: AbortSignal) => Promise<Suggestion[]>;
   value: string;
   onValue: (value: string) => void;
+  onSuggestion?: (suggestion: Suggestion) => void;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -40,6 +42,7 @@ export function Autocomplete({
   }, []);
   const select = (row: Suggestion) => {
     onValue(row.value);
+    onSuggestion?.(row);
     setOpen(false);
     search.current?.close();
     input.current?.focus();
