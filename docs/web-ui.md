@@ -87,5 +87,13 @@ available. Dialogs, autocomplete, board controls, and the command palette expose
 keyboard and screen-reader semantics; the browser test suite pins down the core
 flows.
 
+The responsive web UI is also the mobile client; there is no separate phone app
+to install or keep in sync. Publish the server through an authenticated HTTPS
+deployment as described in [Server and API](server.md), open that URL on the
+phone, and use the browser's **Add to Home Screen** or **Install app** action for
+standalone launch and an AWB home-screen icon. The installed UI remains
+server-backed and needs a network connection; it does not cache issue data or
+mutations for offline use.
+
 For remote access and user permissions, continue with
 [Server and API](server.md).

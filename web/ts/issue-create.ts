@@ -1,3 +1,5 @@
+import type { IssueCreate } from "./api.js";
+
 const labelPattern = /^[a-z0-9._/-]+$/;
 
 export type StagedLabelResult =
@@ -13,4 +15,22 @@ export function stagedLabel(raw: string, existing: readonly string[]): StagedLab
   }
   if (existing.includes(label)) return { error: "That label is already staged." };
   return { label };
+}
+
+/** Build the deliberately minimal create request used by rapid child entry.
+ * The backend supplies the ordinary issue defaults, just as it does for a
+ * title-only CLI create. Whitespace alone is not a title and never starts a
+ * request. */
+export function inlineChildIssueCreate(
+  workspace: string,
+  parent: string,
+  rawTitle: string,
+): IssueCreate | undefined {
+  const title = rawTitle.trim();
+  if (title === "") return undefined;
+  return {
+    workspace,
+    title,
+    relations: [{ type: "has-parent", other: parent }],
+  };
 }

@@ -22,6 +22,7 @@ func issueResponse(issue *domain.Issue) *api.IssueHeaders {
 func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 	*api.IssueCreatedHeaders, error) {
 	create := backend.IssueCreate{
+		Backlog:        req.Backlog.Or(false),
 		Workspace:      string(req.Workspace),
 		Title:          req.Title,
 		Description:    req.Description.Or(""),
