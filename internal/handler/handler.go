@@ -348,14 +348,6 @@ func toIssueSummaries(issues []domain.IssueSummary) []api.IssueSummary {
 	return out
 }
 
-func summarizeIssues(issues []domain.Issue) []domain.IssueSummary {
-	out := make([]domain.IssueSummary, len(issues))
-	for i := range issues {
-		out[i] = issues[i].Summary()
-	}
-	return out
-}
-
 // IssueTree is allOf Issue in the document, so ogen flattens it into a struct
 // that repeats every Issue field rather than embedding one, and a node has to
 // be copied across field by field. A field left out here is not a decoding
