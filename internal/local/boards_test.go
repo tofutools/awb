@@ -243,6 +243,39 @@ func TestBoardUsesIgnoredScopeFiltersAndIndependentPaging(t *testing.T) {
 	assert.Len(t, second.Lanes[0].Columns[0].Issues, 1)
 }
 
+func TestBoardPagesEveryLaneIndependentlyAndKeepsTotalsAtZeroLimit(t *testing.T) {
+	root, ctx := newInstance(t)
+	epic, err := root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "Epic", Type: domain.TypeEpic})
+	require.NoError(t, err)
+	for _, title := range []string{"first epic card", "second epic card"} {
+		_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: title,
+			Relations: []backend.NewRelation{{Type: domain.RelHasParent, Other: epic.ID}}})
+		require.NoError(t, err)
+	}
+	for _, title := range []string{"first loose card", "second loose card"} {
+		_, err = root.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: title})
+		require.NoError(t, err)
+	}
+
+	zero := 0
+	board, err := root.GetBoard(ctx, "default", backend.BoardQuery{CardLimit: &zero})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 2)
+	for _, lane := range board.Lanes {
+		assert.Equal(t, 2, lane.Columns[0].Total)
+		assert.Empty(t, lane.Columns[0].Issues)
+	}
+
+	one := 1
+	board, err = root.GetBoard(ctx, "default", backend.BoardQuery{CardLimit: &one, CardOffset: &one})
+	require.NoError(t, err)
+	require.Len(t, board.Lanes, 2)
+	for _, lane := range board.Lanes {
+		assert.Equal(t, 2, lane.Columns[0].Total)
+		assert.Len(t, lane.Columns[0].Issues, 1)
+	}
+}
+
 func TestBoardGroupsCardsByVisibleSameWorkspaceEpics(t *testing.T) {
 	root, ctx := newInstance(t)
 	addUser(t, root, ctx, "alice", false, false)

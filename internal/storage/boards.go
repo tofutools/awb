@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"slices"
@@ -8,6 +9,18 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
 )
+
+// BoardColumnKey identifies one independently paged board column.
+type BoardColumnKey struct {
+	Epic   string
+	Status domain.Status
+}
+
+// BoardColumnPage is one board column's bounded cards and unpaged total.
+type BoardColumnPage struct {
+	Issues []domain.Issue
+	Total  int
+}
 
 // ListBoardEpics returns visible epic issues in the workspaces and optional
 // explicit epic set selected by a board. A nil set means every value allowed
@@ -22,6 +35,155 @@ func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
 		IncludeClosed: true, ClosedAfter: closedAfter, ExcludeBacklog: !includeBacklog,
 	})
+}
+
+// ListBoardColumns reads every requested epic/status column as one set. Counts
+// and card pages remain independent per column, but the issue selection and
+// backlog graph traversal run once rather than once for every column.
+func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Status, closedAfter string,
+	labels, assignees []string, priorityMax int, includeBacklog bool, limit, offset *int,
+) (map[BoardColumnKey]BoardColumnPage, error) {
+	result := make(map[BoardColumnKey]BoardColumnPage, len(epics)*len(statuses))
+	if len(epics) == 0 || len(statuses) == 0 {
+		return result, nil
+	}
+
+	filter := &domain.Filter{
+		Workspaces: workspaces, Types: []domain.Type{domain.TypeFeature, domain.TypeBug, domain.TypeTask, domain.TypeChore},
+		Statuses: statuses, ClosedAfter: closedAfter, ExcludeBacklog: !includeBacklog,
+		Labels: labels, Assignees: assignees, PriorityMax: &priorityMax, Sort: domain.DefaultSort,
+	}
+	c := t.selection(filter)
+	laneSet := make(map[string]bool, len(epics))
+	selectedEpics := make([]string, 0, len(epics))
+	includeNoEpic := false
+	for _, epic := range epics {
+		laneSet[epic] = true
+		if epic == "" {
+			includeNoEpic = true
+		} else {
+			selectedEpics = append(selectedEpics, epic)
+		}
+	}
+	type candidate struct {
+		id        string
+		order     int
+		priority  int
+		updatedAt string
+	}
+	candidates := make(map[BoardColumnKey][]candidate, len(epics)*len(statuses))
+	readCandidates := func(query string, args []any) error {
+		rows, err := t.q.QueryContext(t.ctx, query, args...)
+		if err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
+		}
+		for rows.Next() {
+			var card candidate
+			var key BoardColumnKey
+			if err := rows.Scan(&card.id, &key.Status, &card.order, &card.priority, &card.updatedAt, &key.Epic); err != nil {
+				_ = rows.Close()
+				return awberr.Wrap(awberr.Runtime, err, "list board columns")
+			}
+			if !laneSet[key.Epic] {
+				continue
+			}
+			candidates[key] = append(candidates[key], card)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
+		}
+		if err := rows.Close(); err != nil {
+			return awberr.Wrap(awberr.Runtime, err, "list board columns")
+		}
+		return nil
+	}
+	if includeNoEpic {
+		if err := readCandidates(`
+			SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, ''
+			  FROM issues i
+			  LEFT JOIN relations er ON er.subject = i.id AND er.type = 'has-parent'
+			  LEFT JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
+			                         AND parent.workspace = i.workspace
+			 WHERE `+c.where()+` AND parent.id IS NULL`, c.args); err != nil {
+			return nil, err
+		}
+	}
+	if len(selectedEpics) > 0 {
+		args := append(append([]any{}, c.args...), anyArgs(selectedEpics)...)
+		if err := readCandidates(`
+			SELECT i.id, i.status, i.issue_order, i.priority, i.updated_at, parent.id
+			  FROM relations er INDEXED BY idx_relations_other
+			  JOIN issues i ON i.id = er.subject
+			  JOIN issues parent ON parent.id = er.other AND parent.type = 'epic'
+			                    AND parent.workspace = i.workspace
+			 WHERE `+c.where()+` AND er.type = 'has-parent'
+			   AND er.other IN (`+placeholders(len(selectedEpics))+`)`, args); err != nil {
+			return nil, err
+		}
+	}
+
+	cardOffset, cardLimit := 0, 0
+	if offset != nil {
+		cardOffset = *offset
+	}
+	if limit != nil {
+		cardLimit = *limit
+	}
+	selected := make(map[BoardColumnKey][]string, len(candidates))
+	allSelected := []string{}
+	for key, cards := range candidates {
+		slices.SortFunc(cards, func(a, b candidate) int {
+			if (a.order == 0) != (b.order == 0) {
+				if a.order == 0 {
+					return 1
+				}
+				return -1
+			}
+			if a.order != b.order {
+				return cmp.Compare(a.order, b.order)
+			}
+			if a.priority != b.priority {
+				return cmp.Compare(a.priority, b.priority)
+			}
+			if a.updatedAt != b.updatedAt {
+				return cmp.Compare(b.updatedAt, a.updatedAt)
+			}
+			return cmp.Compare(a.id, b.id)
+		})
+		page := BoardColumnPage{Total: len(cards)}
+		start := min(cardOffset, len(cards))
+		end := min(start+cardLimit, len(cards))
+		for _, card := range cards[start:end] {
+			selected[key] = append(selected[key], card.id)
+			allSelected = append(allSelected, card.id)
+		}
+		result[key] = page
+	}
+
+	byID := make(map[string]domain.Issue, len(allSelected))
+	const chunkSize = 400
+	for start := 0; start < len(allSelected); start += chunkSize {
+		end := min(start+chunkSize, len(allSelected))
+		ids := allSelected[start:end]
+		issues, err := t.queryIssues(`SELECT `+issueColumns+` FROM issues i WHERE i.id IN (`+
+			placeholders(len(ids))+`)`, anyArgs(ids))
+		if err != nil {
+			return nil, err
+		}
+		for _, issue := range issues {
+			byID[issue.ID] = issue
+		}
+	}
+	for key, ids := range selected {
+		page := result[key]
+		page.Issues = make([]domain.Issue, 0, len(ids))
+		for _, id := range ids {
+			page.Issues = append(page.Issues, byID[id])
+		}
+		result[key] = page
+	}
+	return result, nil
 }
 
 // ListVisibleEpicIDs filters a saved view's configured epic IDs through the
