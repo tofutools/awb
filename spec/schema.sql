@@ -231,3 +231,6 @@ CREATE TABLE board_view_columns (
 		PRIMARY KEY (view, status),
 		UNIQUE (view, position)
 	) STRICT, WITHOUT ROWID;
+
+CREATE INDEX idx_issues_board_candidates
+		ON issues (type, status, priority, workspace, closed_at, issue_order, updated_at, id);
