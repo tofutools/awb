@@ -138,7 +138,7 @@ func TestV23AddsCoveringBoardCandidateIndex(t *testing.T) {
 	require.NoError(t, db.SQL().QueryRowContext(t.Context(), `
 		SELECT group_concat(name, ',' ORDER BY seqno)
 		  FROM pragma_index_info('idx_issues_board_candidates')`).Scan(&columns))
-	assert.Equal(t, "type,status,priority,workspace,closed_at,issue_order,updated_at,id", columns)
+	assert.Equal(t, "type,status,workspace,priority,closed_at,issue_order,updated_at,id", columns)
 }
 
 // openAtVersion builds a real historical database shape from the batches that

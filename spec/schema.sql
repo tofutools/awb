@@ -233,4 +233,4 @@ CREATE TABLE board_view_columns (
 	) STRICT, WITHOUT ROWID;
 
 CREATE INDEX idx_issues_board_candidates
-		ON issues (type, status, priority, workspace, closed_at, issue_order, updated_at, id);
+		ON issues (type, status, workspace, priority, closed_at, issue_order, updated_at, id);

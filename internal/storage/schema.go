@@ -48,7 +48,7 @@ var migrations = [][]string{
 // after assigning each one to an epic lane.
 var schemaV23 = []string{
 	`CREATE INDEX idx_issues_board_candidates
-		ON issues (type, status, priority, workspace, closed_at, issue_order, updated_at, id)`,
+		ON issues (type, status, workspace, priority, closed_at, issue_order, updated_at, id)`,
 }
 
 // schemaV22 lets each saved board choose its workflow columns. Existing views
