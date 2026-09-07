@@ -20,6 +20,7 @@ type FilterFlags struct {
 	Statuses      []string `long:"status" collection:"array" optional:"true" alts:"backlog,open,in_progress,closed" help:"select this status; repeatable (backlog, open, in_progress, closed)"`
 	IncludeClosed bool     `long:"include-closed" optional:"true" help:"widen the status set to include closed issues"`
 	Types         []string `long:"type" collection:"array" optional:"true" alts:"epic,feature,bug,task,chore" help:"select this type; repeatable (epic, feature, bug, task, chore)"`
+	ExcludeEpic   bool     `long:"exclude-epic" optional:"true" help:"exclude issues of type epic"`
 	Priorities    []int    `long:"priority" optional:"true" alts:"0,1,2,3,4" help:"select this priority exactly; repeatable (0 highest to 4 lowest)"`
 	PriorityMax   *int     `long:"priority-max" alts:"0,1,2,3,4" help:"select issues at least this urgent, inclusive (0 highest)"`
 	Labels        []string `long:"label" collection:"array" optional:"true" help:"select this label; repeatable"`
@@ -164,7 +165,14 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 		}
 		filter.Statuses = append(filter.Statuses, status)
 	}
-	for _, s := range f.Types {
+	if f.ExcludeEpic && cmd.Flags().Changed("type") {
+		return nil, awberr.Usagef("--type and --exclude-epic are mutually exclusive")
+	}
+	types := f.Types
+	if f.ExcludeEpic {
+		types = []string{"feature", "bug", "task", "chore"}
+	}
+	for _, s := range types {
 		issueType, err := domain.ParseType(s)
 		if err != nil {
 			return nil, err
