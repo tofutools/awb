@@ -165,14 +165,20 @@ func (f *FilterFlags) build(e *env, cmd *cobra.Command, opts filterOptions) (*do
 		}
 		filter.Statuses = append(filter.Statuses, status)
 	}
-	if f.ExcludeEpic && cmd.Flags().Changed("type") {
-		return nil, awberr.Usagef("--type and --exclude-epic are mutually exclusive")
-	}
-	types := f.Types
+	// --exclude-epic is deliberately only a CLI shorthand for the existing
+	// inclusive type filter. Derive it from the domain vocabulary so a new type
+	// is included automatically, without adding an HTTP or backend option.
 	if f.ExcludeEpic {
-		types = []string{"feature", "bug", "task", "chore"}
+		if cmd.Flags().Changed("type") {
+			return nil, awberr.Usagef("--type and --exclude-epic are mutually exclusive")
+		}
+		for _, issueType := range domain.Types {
+			if issueType != domain.TypeEpic {
+				filter.Types = append(filter.Types, issueType)
+			}
+		}
 	}
-	for _, s := range types {
+	for _, s := range f.Types {
 		issueType, err := domain.ParseType(s)
 		if err != nil {
 			return nil, err
