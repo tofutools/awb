@@ -339,7 +339,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 55)
+	require.Len(t, operations, 56)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]
@@ -355,6 +355,10 @@ func TestOperations(t *testing.T) {
 		"status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
 		"assignee", "unassigned", "workspace", "parent", "parent-type", "recursive", "include-parent", "filter", "sort", "limit", "offset",
 	}, names("listIssues"))
+	assert.ElementsMatch(t, []string{
+		"q", "status", "include-closed", "include-archived", "type", "priority", "priority-max", "label",
+		"assignee", "unassigned", "workspace", "parent", "parent-type", "recursive", "include-parent", "filter", "readiness", "sort", "limit", "offset",
+	}, names("listFullIssues"))
 	assert.ElementsMatch(t, []string{
 		"type", "priority", "priority-max", "label", "workspace", "parent", "parent-type", "recursive", "include-parent", "filter", "sort",
 		"limit", "offset",
