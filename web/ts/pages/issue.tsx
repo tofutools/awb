@@ -1,7 +1,7 @@
 import { Icon } from "../components/icon.js";
 import { useRef, useState, useLayoutEffect } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { api, type Issue, type Activity, type IssueTree } from "../api.js";
+import { api, type Issue, type IssueSummary, type Activity, type IssueTree } from "../api.js";
 import { inspectorParent, inspectorStatusAction } from "../inspector.js";
 import { issueEditorShortcut, commentSubmitShortcut } from "../keyboard.js";
 import {
@@ -245,7 +245,7 @@ function Children({
   reload,
 }: {
   parent: Issue;
-  issues: Issue[];
+  issues: IssueSummary[];
   showClosed: boolean;
   onShowClosedChange: (showClosed: boolean) => void;
   mutable: boolean;
@@ -257,7 +257,7 @@ function Children({
   const state = sortState(sort, keys, "order");
   const rows = issues.filter((i) => showClosed || i.status !== "closed");
   if (state.explicit) {
-    const value = (i: Issue): string | number =>
+    const value = (i: IssueSummary): string | number =>
       state.key === "priority"
         ? i.priority
         : state.key === "type"

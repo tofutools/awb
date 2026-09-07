@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { api, type Issue } from "../api.js";
+import { api, type IssueSummary } from "../api.js";
 import {
   epicSelectionFrom,
   initialFilterSuggestions,
@@ -344,18 +344,18 @@ export function EpicFilterRow({
   initialEpics,
 }: {
   route: Route;
-  initialEpics: Issue[];
+  initialEpics: IssueSummary[];
 }) {
   const selected = epicSelectionFrom(route.query);
   const workspaces = route.query.getAll("workspace");
   const includeArchived = route.query.get("include-archived") === "true";
   const scope = JSON.stringify([workspaces, includeArchived]);
-  const [loaded, setLoaded] = useState<{ scope: string; epics: Issue[] }>({
+  const [loaded, setLoaded] = useState<{ scope: string; epics: IssueSummary[] }>({
     scope,
     epics: initialEpics,
   });
   const epics = loaded.scope === scope ? loaded.epics : initialEpics;
-  const choices = (rows: Issue[]): DynamicFilterChoice[] => [
+  const choices = (rows: IssueSummary[]): DynamicFilterChoice[] => [
     { value: noEpicSelection, label: "No epic" },
     ...rankEpicFilterSuggestions(rows).map((epic) => ({
       value: epic.id,

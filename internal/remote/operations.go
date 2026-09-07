@@ -143,6 +143,20 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 	if err := domain.ValidateParentFilter(filter); err != nil {
 		return backend.IssuePage{}, err
 	}
+	path := "/api/issues/full"
+	issues := []domain.Issue{}
+	header, err := b.call(ctx, http.MethodGet, b.endpoint(path, filterQuery(filter, path)),
+		nil, "", &issues)
+	if err != nil {
+		return backend.IssuePage{}, err
+	}
+	return backend.IssuePage{Issues: issues, Total: totalCount(header, len(issues))}, nil
+}
+
+func (b *Backend) ListIssueSummaries(ctx context.Context, filter *domain.Filter) (backend.IssueSummaryPage, error) {
+	if err := domain.ValidateParentFilter(filter); err != nil {
+		return backend.IssueSummaryPage{}, err
+	}
 	path := "/api/issues"
 	switch filter.Readiness {
 	case domain.ReadinessReady:
@@ -155,13 +169,13 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 		}
 	}
 
-	issues := []domain.Issue{}
+	issues := []domain.IssueSummary{}
 	header, err := b.call(ctx, http.MethodGet, b.endpoint(path, filterQuery(filter, path)),
 		nil, "", &issues)
 	if err != nil {
-		return backend.IssuePage{}, err
+		return backend.IssueSummaryPage{}, err
 	}
-	return backend.IssuePage{Issues: issues, Total: totalCount(header, len(issues))}, nil
+	return backend.IssueSummaryPage{Issues: issues, Total: totalCount(header, len(issues))}, nil
 }
 
 func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssuePage, error) {
@@ -244,6 +258,14 @@ func filterQuery(filter *domain.Filter, path string) url.Values {
 		query.Set("filter", filter.ListingFilter)
 	}
 	if path == "/api/labels" || path == "/api/assignees" {
+		switch filter.Readiness {
+		case domain.ReadinessReady:
+			query.Set("readiness", "ready")
+		case domain.ReadinessBlocked:
+			query.Set("readiness", "blocked")
+		}
+	}
+	if path == "/api/issues/full" {
 		switch filter.Readiness {
 		case domain.ReadinessReady:
 			query.Set("readiness", "ready")

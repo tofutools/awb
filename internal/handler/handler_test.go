@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -681,6 +683,34 @@ func TestPaging(t *testing.T) {
 		resp, _ := a.do(http.MethodGet, "/api/issues?"+query, "")
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, query)
 	}
+}
+
+func TestIssueListingsReturnSummariesAndFullListingRetainsRecords(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes","description":"Large detail body","commit_hash":"abcdef12","pull_request_url":"https://example.com/pull/1"}`)
+
+	resp, payload := a.do(http.MethodGet, "/api/issues", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var summaries []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(payload), &summaries))
+	require.Len(t, summaries, 1)
+	assert.ElementsMatch(t, []string{
+		"id", "workspace", "title", "type", "status", "priority", "labels", "assignees",
+		"updated_at", "blocked", "blockers", "parent", "parent_title",
+	}, slices.Collect(maps.Keys(summaries[0])))
+	assert.NotContains(t, summaries[0], "description")
+	assert.NotContains(t, summaries[0], "attachments")
+	assert.NotContains(t, summaries[0], "relations")
+
+	resp, payload = a.do(http.MethodGet, "/api/issues/full", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var full []domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &full))
+	require.Len(t, full, 1)
+	assert.Equal(t, issue.ID, full[0].ID)
+	assert.Equal(t, "Large detail body", full[0].Description)
+	assert.Equal(t, "abcdef12", full[0].CommitHash)
+	assert.Equal(t, "https://example.com/pull/1", full[0].PullRequestURL)
 }
 
 func TestPagingAppliesAfterIssueSorting(t *testing.T) {

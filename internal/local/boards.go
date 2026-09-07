@@ -613,7 +613,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 		if query.LaneOffset != nil {
 			laneOffset = *query.LaneOffset
 		}
-		laneEpics := []*domain.Issue{}
+		laneEpics := []*domain.IssueSummary{}
 		if query.Epic != nil {
 			if (*query.Epic == "none" && (!includeNoEpic || !canShowNoEpic)) ||
 				(*query.Epic != "none" && !allEpics && !slices.Contains(selectedEpics, *query.Epic)) {
@@ -623,12 +623,15 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 			}
 			result.LaneTotal = 1
-			var epic *domain.Issue
+			var epic *domain.IssueSummary
 			if *query.Epic != "none" {
-				epic, err = load(tx, *query.Epic)
+				fullEpic, loadErr := load(tx, *query.Epic)
+				err = loadErr
 				if err != nil {
 					return err
 				}
+				summary := fullEpic.Summary()
+				epic = &summary
 				if !includeBacklog {
 					_, total, err := tx.ListIssues(&domain.Filter{IDs: []string{epic.ID}, IncludeClosed: true, ExcludeBacklog: true})
 					if err != nil {
@@ -642,7 +645,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 				if err != nil {
 					return err
 				}
-				if !active || !boardEpicVisible(epic, epicClosedAfter) ||
+				if !active || !boardEpicVisible(fullEpic, epicClosedAfter) ||
 					(laneSelection != nil && !slices.Contains(laneSelection, epic.Workspace)) {
 					return awberr.NotFoundf("no such board epic: %s", *query.Epic)
 				}
@@ -723,7 +726,7 @@ func (b *Backend) GetBoard(ctx context.Context, ref string, query backend.BoardQ
 			for _, status := range statuses {
 				page := columnPages[storage.BoardColumnKey{Epic: epicID, Status: status}]
 				if page.Issues == nil {
-					page.Issues = []domain.Issue{}
+					page.Issues = []domain.IssueSummary{}
 				}
 				lane.Columns = append(lane.Columns, domain.BoardColumn{Status: status, Issues: page.Issues, Total: page.Total})
 			}

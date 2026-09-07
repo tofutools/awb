@@ -60,6 +60,7 @@ type Backend interface {
 	CreateIssue(ctx context.Context, req IssueCreate) (*domain.Issue, error)
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
+	ListIssueSummaries(ctx context.Context, filter *domain.Filter) (IssueSummaryPage, error)
 	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
 	MoveIssue(ctx context.Context, ref string, req IssueMove, ifMatch string) (*domain.Issue, error)
@@ -141,6 +142,11 @@ func ETag(updatedAt string) string { return `"` + updatedAt + `"` }
 // a UI can show "1–50 of 214".
 type IssuePage struct {
 	Issues []domain.Issue
+	Total  int
+}
+
+type IssueSummaryPage struct {
+	Issues []domain.IssueSummary
 	Total  int
 }
 

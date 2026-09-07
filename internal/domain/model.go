@@ -74,6 +74,56 @@ type Issue struct {
 	relationTitles map[string]string
 }
 
+// IssueSummary is the issue shape used by collections and boards. It carries
+// only fields those views render or need for interaction; GetIssue remains the
+// complete representation used for editing, inspection and export.
+type IssueSummary struct {
+	ID          string   `json:"id"`
+	Workspace   string   `json:"workspace"`
+	Title       string   `json:"title"`
+	Type        Type     `json:"type"`
+	Status      Status   `json:"status"`
+	Priority    int      `json:"priority"`
+	Labels      []string `json:"labels"`
+	Assignees   []string `json:"assignees"`
+	UpdatedAt   string   `json:"updated_at"`
+	Blocked     bool     `json:"blocked"`
+	Blockers    []string `json:"blockers"`
+	Parent      string   `json:"parent"`
+	ParentTitle string   `json:"parent_title"`
+}
+
+// Normalize makes the summary deterministic and keeps collection fields
+// non-null on the wire.
+func (i *IssueSummary) Normalize() {
+	slices.Sort(i.Labels)
+	slices.Sort(i.Blockers)
+	if i.Assignees == nil {
+		i.Assignees = []string{}
+	}
+	if i.Labels == nil {
+		i.Labels = []string{}
+	}
+	if i.Blockers == nil {
+		i.Blockers = []string{}
+	}
+}
+
+// Summary projects a complete issue without changing either representation.
+func (i *Issue) Summary() IssueSummary {
+	summary := IssueSummary{
+		ID: i.ID, Workspace: i.Workspace, Title: i.Title, Type: i.Type,
+		Status: i.Status, Priority: i.Priority, Labels: slices.Clone(i.Labels),
+		Assignees: slices.Clone(i.Assignees), UpdatedAt: i.UpdatedAt,
+		Blocked: i.Blocked, Blockers: slices.Clone(i.Blockers), Parent: i.Parent,
+	}
+	if summary.Parent != "" {
+		summary.ParentTitle = i.RelationTitle(summary.Parent)
+	}
+	summary.Normalize()
+	return summary
+}
+
 // UnmarshalJSON reads the complete HTTP issue shape, including relation title
 // metadata, so a remote backend carries the same information as a direct one.
 func (i *Issue) UnmarshalJSON(data []byte) error {
@@ -230,17 +280,15 @@ type Board struct {
 }
 
 type BoardLane struct {
-	// Epic is nil for the single No epic lane. An epic is returned as the
-	// complete issue shape so its immutable workspace and title need no second
-	// representation.
-	Epic    *Issue        `json:"epic,omitempty"`
+	// Epic is nil for the single No epic lane.
+	Epic    *IssueSummary `json:"epic,omitempty"`
 	Columns []BoardColumn `json:"columns"`
 }
 
 type BoardColumn struct {
-	Status Status  `json:"status"`
-	Issues []Issue `json:"issues"`
-	Total  int     `json:"total"`
+	Status Status         `json:"status"`
+	Issues []IssueSummary `json:"issues"`
+	Total  int            `json:"total"`
 }
 
 // Facet is a distinct value in use with the number of issues carrying it,

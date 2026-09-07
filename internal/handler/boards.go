@@ -217,11 +217,11 @@ func (h *Handler) GetBoard(ctx context.Context, params api.GetBoardParams) (*api
 	for i, lane := range board.Lanes {
 		columns := make([]api.BoardColumn, len(lane.Columns))
 		for j, column := range lane.Columns {
-			columns[j] = api.BoardColumn{Status: api.Status(column.Status), Issues: toIssues(column.Issues), Total: column.Total}
+			columns[j] = api.BoardColumn{Status: api.Status(column.Status), Issues: toIssueSummaries(column.Issues), Total: column.Total}
 		}
 		result.Lanes[i] = api.BoardLane{Columns: columns}
 		if lane.Epic != nil {
-			result.Lanes[i].Epic = api.NewOptIssue(toIssue(lane.Epic))
+			result.Lanes[i].Epic = api.NewOptIssueSummary(toIssueSummary(lane.Epic))
 		}
 	}
 	return result, nil

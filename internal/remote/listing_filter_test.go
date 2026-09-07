@@ -15,10 +15,11 @@ import (
 
 func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 	want := map[string]string{
-		"/api/issues":     "needle frontend",
-		"/api/labels":     "needle frontend",
-		"/api/workspaces": "agent tracking",
-		"/api/users":      "alice awb",
+		"/api/issues":      "needle frontend",
+		"/api/issues/full": "needle frontend",
+		"/api/labels":      "needle frontend",
+		"/api/workspaces":  "agent tracking",
+		"/api/users":       "alice awb",
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, want[r.URL.Path], r.URL.Query().Get("filter"), r.URL.Path)
@@ -28,7 +29,7 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 			assert.Equal(t, "none", r.URL.Query().Get("parent"))
 			assert.Equal(t, "epic", r.URL.Query().Get("parent-type"))
 			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
-		case "/api/issues":
+		case "/api/issues", "/api/issues/full":
 			assert.Equal(t, "awb-a1b2c3", r.URL.Query().Get("parent"))
 			assert.Equal(t, "true", r.URL.Query().Get("recursive"))
 			assert.Equal(t, "true", r.URL.Query().Get("include-parent"))
@@ -46,6 +47,10 @@ func TestListingFiltersAreSentByEveryRemoteBackendInput(t *testing.T) {
 
 	parent := "awb-a1b2c3"
 	_, err = client.ListIssues(t.Context(), &domain.Filter{
+		ListingFilter: want["/api/issues/full"], Parent: &parent, Recursive: true, IncludeParent: true,
+	})
+	require.NoError(t, err)
+	_, err = client.ListIssueSummaries(t.Context(), &domain.Filter{
 		ListingFilter: want["/api/issues"], Parent: &parent, Recursive: true, IncludeParent: true,
 	})
 	require.NoError(t, err)

@@ -190,7 +190,7 @@ func TestBoardHidesExpiredClosedIssues(t *testing.T) {
 	require.Len(t, board.Lanes, 1)
 }
 
-func issueIDs(issues []domain.Issue) []string {
+func issueIDs(issues []domain.IssueSummary) []string {
 	ids := make([]string, len(issues))
 	for i := range issues {
 		ids[i] = issues[i].ID

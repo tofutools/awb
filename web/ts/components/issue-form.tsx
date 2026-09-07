@@ -176,8 +176,8 @@ export function IssueCreateButton({
 }: {
   label?: string;
   workspace?: string;
-  epic?: Issue;
-  parent?: Issue;
+  epic?: Pick<Issue, "id" | "workspace" | "title">;
+  parent?: Pick<Issue, "id" | "workspace" | "title">;
   backlog?: boolean;
   disabled?: boolean;
   assignToMe?: boolean;
@@ -220,8 +220,8 @@ function CreateIssue({
   onCreated,
 }: {
   workspace?: string;
-  epic?: Issue;
-  parent?: Issue;
+  epic?: Pick<Issue, "id" | "workspace" | "title">;
+  parent?: Pick<Issue, "id" | "workspace" | "title">;
   backlog: boolean;
   assignToMe: boolean;
   onClose: () => void;
