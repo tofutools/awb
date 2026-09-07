@@ -1525,6 +1525,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent) 8%, var(--panel));
 }
+.app-notice a { text-decoration: underline; }
 .app-notice-error {
   border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
