@@ -342,6 +342,42 @@ func TestWorkedExample(t *testing.T) {
 		"closing the blocker makes the blocked issue ready, with no write to it")
 }
 
+// --exclude-epic is a CLI convenience shared by every issue listing. It is
+// translated to the existing inclusive type filter, so direct and remote mode
+// still use the same backend operation and the HTTP API gains no new option.
+func TestListingsExcludeEpics(t *testing.T) {
+	h := newHarness(t)
+	blocker := h.create("Shared blocker", "--workspace", "awb")
+	epic := h.create("Shared roadmap", "--workspace", "awb", "--type", "epic")
+	feature := h.create("Shared deliverable", "--workspace", "awb", "--type", "feature")
+	bug := h.create("Shared defect", "--workspace", "awb", "--type", "bug")
+	chore := h.create("Shared maintenance", "--workspace", "awb", "--type", "chore")
+	blockedEpic := h.create("Shared blocked roadmap", "--workspace", "awb",
+		"--type", "epic", "--blocked-by", blocker)
+	blockedTask := h.create("Shared blocked task", "--workspace", "awb", "--blocked-by", blocker)
+
+	for _, tt := range []struct {
+		args    []string
+		absent  string
+		present []string
+	}{
+		{[]string{"list", "--exclude-epic", "--compact"}, epic, []string{feature, bug, blockedTask, chore}},
+		{[]string{"ready", "--exclude-epic", "--compact"}, epic, []string{feature, bug, chore}},
+		{[]string{"blocked", "--exclude-epic", "--compact"}, blockedEpic, []string{blockedTask}},
+		{[]string{"search", "Shared", "--exclude-epic", "--compact"}, epic, []string{feature, bug, blockedTask, chore}},
+	} {
+		out := h.mustRun(tt.args...)
+		assert.NotContains(t, out, tt.absent, tt.args)
+		for _, id := range tt.present {
+			assert.Contains(t, out, id, tt.args)
+		}
+	}
+
+	_, stderr, code := h.run("list", "--type", "epic", "--exclude-epic")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--type and --exclude-epic are mutually exclusive")
+}
+
 // Mutating commands print nothing on success in the default and compact modes,
 // except create, which prints the new ID, and the deleting commands and demo,
 // which print a one-line summary.
