@@ -303,9 +303,15 @@ function CreateIssue({
                   : [],
               );
               notify(
-                failures.length
-                  ? `Issue ${created.id} was created, but attachment uploads failed: ${failures.join(", ")}`
-                  : `Issue ${created.id} was created.`,
+                <>
+                  Issue{" "}
+                  <a href={`#/issues/${encodeURIComponent(created.id)}`}>
+                    {created.id}
+                  </a>
+                  {failures.length
+                    ? ` was created, but attachment uploads failed: ${failures.join(", ")}`
+                    : " was created."}
+                </>,
                 failures.length > 0,
               );
               await onCreated();

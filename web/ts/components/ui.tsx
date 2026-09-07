@@ -47,7 +47,7 @@ export interface AppContextValue {
   identity: string;
   mayManageUsers: boolean;
   refreshCaller: () => Promise<void>;
-  notify: (message: string, error?: boolean) => void;
+  notify: (message: ComponentChildren, error?: boolean) => void;
 }
 export const AppContext = createContext<AppContextValue>({
   identity: "",

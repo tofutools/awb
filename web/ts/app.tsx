@@ -1,4 +1,4 @@
-import { render } from "preact";
+import { render, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.js";
 import { namedDestinations, workspaceScopedHref } from "./navigation.js";
@@ -24,7 +24,7 @@ function App() {
   const [route, setRoute] = useState(parseRoute);
   const [caller, setCaller] = useState({ identity: "", mayManageUsers: false });
   const [notice, setNotice] = useState<{
-    message: string;
+    message: ComponentChildren;
     error: boolean;
   } | null>(null);
   const [ready, setReady] = useState(false);
