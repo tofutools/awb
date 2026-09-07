@@ -35,6 +35,7 @@ func (t *Tx) ListIssueSummaries(f *domain.Filter) (issues []domain.IssueSummary,
 	query := `SELECT ` + issueSummaryColumns + ` FROM issues i WHERE ` + c.where()
 	args := c.args
 	if match != "" {
+		c = t.selection(f)
 		query = `SELECT ` + issueSummaryColumns + `
 			FROM issues i
 			JOIN (SELECT rowid, bm25(issues_fts, 10.0, 1.0) AS relevance
