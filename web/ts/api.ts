@@ -19,8 +19,10 @@
 
 import type { components, operations } from "./api-types.js";
 
-/** The one issue shape both surfaces return. */
+/** A complete issue for detail and mutation responses. */
 export type Issue = components["schemas"]["Issue"];
+/** The bounded issue shape used by listings and boards. */
+export type IssueSummary = components["schemas"]["IssueSummary"];
 export type Relation = components["schemas"]["Relation"];
 export type Link = components["schemas"]["Link"];
 export type Attachment = components["schemas"]["Attachment"];
@@ -247,13 +249,13 @@ export const api = {
   board: async (ref: string, filters: BoardFilters = {}, signal?: AbortSignal) =>
     getResponse<Board>(await request(`api/boards/${encodeURIComponent(ref)}${toQuery(filters)}`, { signal })),
   issues: (filters: IssueFilters = {}, signal?: AbortSignal) =>
-    getPage<Issue>(`api/issues${toQuery(filters)}`, { signal }),
+    getPage<IssueSummary>(`api/issues${toQuery(filters)}`, { signal }),
   ready: (filters: ReadyFilters = {}, signal?: AbortSignal) =>
-    getPage<Issue>(`api/ready${toQuery(filters)}`, { signal }),
+    getPage<IssueSummary>(`api/ready${toQuery(filters)}`, { signal }),
   blocked: (filters: BlockedFilters = {}, signal?: AbortSignal) =>
-    getPage<Issue>(`api/blocked${toQuery(filters)}`, { signal }),
+    getPage<IssueSummary>(`api/blocked${toQuery(filters)}`, { signal }),
   search: (filters: SearchFilters, signal?: AbortSignal) =>
-    getPage<Issue>(`api/search${toQuery(filters)}`, { signal }),
+    getPage<IssueSummary>(`api/search${toQuery(filters)}`, { signal }),
   issueSuggestions: (query: string, signal?: AbortSignal) =>
     getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   navigation: async (query: string, signal?: AbortSignal) =>

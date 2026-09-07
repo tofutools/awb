@@ -773,6 +773,50 @@ func listWith(t *testing.T, db *storage.DB, f *domain.Filter) ([]domain.Issue, i
 	return issues, total, err
 }
 
+func TestIssueSummariesHydrateOnlyListingRelationships(t *testing.T) {
+	db := newDB(t)
+	add := seed(t, db)
+	parent := add("Release epic", func(i *domain.Issue) { i.Type = domain.TypeEpic })
+	blocker := add("Blocking work")
+	child := add("Parser crashes", func(i *domain.Issue) {
+		i.Type = domain.TypeBug
+		i.Status = domain.StatusInProgress
+		i.Priority = 1
+		i.Description = "detail-only body"
+		i.Assignees = []string{"alice"}
+	})
+	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
+		issue, err := tx.GetIssue(child)
+		if err != nil {
+			return err
+		}
+		if err := tx.AddLabel(issue, "parser"); err != nil {
+			return err
+		}
+		if err := tx.InsertRelation(child, domain.RelHasParent, parent); err != nil {
+			return err
+		}
+		return tx.InsertRelation(child, domain.RelBlockedBy, blocker)
+	}))
+
+	var summaries []domain.IssueSummary
+	var total int
+	require.NoError(t, db.Read(t.Context(), func(tx *storage.Tx) error {
+		var err error
+		summaries, total, err = tx.ListIssueSummaries(&domain.Filter{IDs: []string{child}, IncludeClosed: true})
+		return err
+	}))
+	require.Len(t, summaries, 1)
+	assert.Equal(t, 1, total)
+	assert.Equal(t, child, summaries[0].ID)
+	assert.Equal(t, []string{"alice"}, summaries[0].Assignees)
+	assert.Equal(t, []string{"parser"}, summaries[0].Labels)
+	assert.True(t, summaries[0].Blocked)
+	assert.Equal(t, []string{blocker}, summaries[0].Blockers)
+	assert.Equal(t, parent, summaries[0].Parent)
+	assert.Equal(t, "Release epic", summaries[0].ParentTitle)
+}
+
 func TestListFiltersAndDefaults(t *testing.T) {
 	db := newDB(t)
 	add := seed(t, db)

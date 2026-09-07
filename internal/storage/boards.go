@@ -18,18 +18,18 @@ type BoardColumnKey struct {
 
 // BoardColumnPage is one board column's bounded cards and unpaged total.
 type BoardColumnPage struct {
-	Issues []domain.Issue
+	Issues []domain.IssueSummary
 	Total  int
 }
 
 // ListBoardEpics returns visible epic issues in the workspaces and optional
 // explicit epic set selected by a board. A nil set means every value allowed
 // by the transaction; a non-nil empty set means none.
-func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter string, includeBacklog bool, limit, offset *int) ([]domain.Issue, int, error) {
+func (t *Tx) ListBoardEpics(workspaces, epics, hiddenEpics []string, closedAfter string, includeBacklog bool, limit, offset *int) ([]domain.IssueSummary, int, error) {
 	if (workspaces != nil && len(workspaces) == 0) || (epics != nil && len(epics) == 0) {
-		return []domain.Issue{}, 0, nil
+		return []domain.IssueSummary{}, 0, nil
 	}
-	return t.ListIssues(&domain.Filter{
+	return t.ListIssueSummaries(&domain.Filter{
 		Workspaces: workspaces, ExcludeIDs: hiddenEpics, Types: []domain.Type{domain.TypeEpic},
 		IDs:   epics,
 		Limit: limit, Offset: offset, Sort: domain.Sort{Key: domain.SortID},
@@ -161,12 +161,12 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 		result[key] = page
 	}
 
-	byID := make(map[string]domain.Issue, len(allSelected))
+	byID := make(map[string]domain.IssueSummary, len(allSelected))
 	const chunkSize = 400
 	for start := 0; start < len(allSelected); start += chunkSize {
 		end := min(start+chunkSize, len(allSelected))
 		ids := allSelected[start:end]
-		issues, err := t.queryIssues(`SELECT `+issueColumns+` FROM issues i WHERE i.id IN (`+
+		issues, err := t.queryIssueSummaries(`SELECT `+issueSummaryColumns+` FROM issues i WHERE i.id IN (`+
 			placeholders(len(ids))+`)`, anyArgs(ids))
 		if err != nil {
 			return nil, err
@@ -177,7 +177,7 @@ func (t *Tx) ListBoardColumns(workspaces, epics []string, statuses []domain.Stat
 	}
 	for key, ids := range selected {
 		page := result[key]
-		page.Issues = make([]domain.Issue, 0, len(ids))
+		page.Issues = make([]domain.IssueSummary, 0, len(ids))
 		for _, id := range ids {
 			page.Issues = append(page.Issues, byID[id])
 		}

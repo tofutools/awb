@@ -7,7 +7,7 @@ import {
   type BoardView,
   type BoardViewCreate,
   type BoardFilters,
-  type Issue,
+  type IssueSummary,
 } from "../api.js";
 import { type Route } from "../routing/route.js";
 import {
@@ -61,7 +61,7 @@ export function BoardsPage({ route }: { route: Route }) {
     source: BoardView;
     mode: "default" | "edit" | "new" | "duplicate" | "presentation";
   } | null>(null);
-  const [drag, setDrag] = useState<Issue | null>(null);
+  const [drag, setDrag] = useState<IssueSummary | null>(null);
   const [moveError, setMoveError] = useState<{
     id: string;
     error: unknown;
@@ -104,7 +104,7 @@ export function BoardsPage({ route }: { route: Route }) {
   const reload = async () => {
     await resource.reload();
   };
-  const move = async (issue: Issue, target: Drop) => {
+  const move = async (issue: IssueSummary, target: Drop) => {
     setDrag(null);
     setDrop(null);
     setMoveError(null);
@@ -359,11 +359,11 @@ interface LaneProps {
   filters: BoardFilters;
   reload: () => Promise<void>;
   hide: () => void;
-  drag: Issue | null;
-  setDrag: (i: Issue | null) => void;
+  drag: IssueSummary | null;
+  setDrag: (i: IssueSummary | null) => void;
   drop: Drop | null;
   setDrop: (d: Drop | null) => void;
-  move: (issue: Issue, target: Drop) => Promise<void>;
+  move: (issue: IssueSummary, target: Drop) => Promise<void>;
 }
 function BoardLane(props: LaneProps) {
   const { lane, boardRef, hide } = props;
@@ -506,7 +506,7 @@ function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
     legalBoardTargets().includes(column.status);
   const target =
     drop?.lane === epic && drop.status === column.status ? drop : null;
-  const card = (issue: Issue) => (
+  const card = (issue: IssueSummary) => (
     <article
       key={issue.id}
       data-issue={issue.id}

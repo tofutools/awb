@@ -39,6 +39,16 @@ var migrations = [][]string{
 	schemaV20,
 	schemaV21,
 	schemaV22,
+	schemaV23,
+}
+
+// schemaV23 lets board candidate selection stay in a narrow index instead of
+// reading table pages that also carry descriptions and integration metadata.
+// The remaining columns are included because the board ranks candidates in Go
+// after assigning each one to an epic lane.
+var schemaV23 = []string{
+	`CREATE INDEX idx_issues_board_candidates
+		ON issues (type, status, workspace, priority, closed_at, issue_order, updated_at, id)`,
 }
 
 // schemaV22 lets each saved board choose its workflow columns. Existing views

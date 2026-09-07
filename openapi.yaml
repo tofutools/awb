@@ -176,7 +176,50 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 500 }
         - $ref: '#/components/parameters/limit'
       responses:
-        '200': { $ref: '#/components/responses/IssueList' }
+        '200': { $ref: '#/components/responses/IssueFullList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/issues/full:
+    get:
+      tags: [issues]
+      operationId: listFullIssues
+      summary: List complete issue records
+      description: |
+        The compatibility and export form of issue listing. Ordinary listing,
+        ready, blocked and search views return IssueSummary instead, avoiding
+        detail-only data and hydration work. This operation accepts their
+        combined selection vocabulary so a remote CLI can retain the complete
+        JSON and dump representations.
+      parameters:
+        - name: q
+          in: query
+          description: One literal full-text search term; repeat for several.
+          schema:
+            type: array
+            items: { type: string, minLength: 1, maxLength: 500 }
+          style: form
+          explode: true
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/includeClosed'
+        - $ref: '#/components/parameters/includeArchived'
+        - $ref: '#/components/parameters/type'
+        - $ref: '#/components/parameters/priority'
+        - $ref: '#/components/parameters/priorityMax'
+        - $ref: '#/components/parameters/label'
+        - $ref: '#/components/parameters/assignee'
+        - $ref: '#/components/parameters/unassigned'
+        - $ref: '#/components/parameters/workspace'
+        - $ref: '#/components/parameters/parent'
+        - $ref: '#/components/parameters/parentType'
+        - $ref: '#/components/parameters/recursive'
+        - $ref: '#/components/parameters/includeParent'
+        - $ref: '#/components/parameters/listingFilter'
+        - $ref: '#/components/parameters/readiness'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200': { $ref: '#/components/responses/IssueFullList' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}:
@@ -1664,6 +1707,15 @@ components:
         application/json:
           schema:
             type: array
+            items: { $ref: '#/components/schemas/IssueSummary' }
+    IssueFullList:
+      description: The matching complete issue records.
+      headers:
+        X-Total-Count: { $ref: '#/components/headers/XTotalCount' }
+      content:
+        application/json:
+          schema:
+            type: array
             items: { $ref: '#/components/schemas/Issue' }
     BoardView:
       description: The board view.
@@ -2020,7 +2072,7 @@ components:
       description: An epic swimlane. An absent epic is the single No epic lane.
       required: [columns]
       properties:
-        epic: { $ref: '#/components/schemas/Issue' }
+        epic: { $ref: '#/components/schemas/IssueSummary' }
         columns:
           type: array
           items: { $ref: '#/components/schemas/BoardColumn' }
@@ -2033,7 +2085,7 @@ components:
         status: { $ref: '#/components/schemas/Status' }
         issues:
           type: array
-          items: { $ref: '#/components/schemas/Issue' }
+          items: { $ref: '#/components/schemas/IssueSummary' }
         total: { type: integer, minimum: 0 }
 
     FacetReadiness:
@@ -2362,6 +2414,48 @@ components:
             **Markdown** above describes. Must not be blank, and bounded like a
             description at 64 KiB of UTF-8.
           minLength: 1
+
+    IssueSummary:
+      type: object
+      description: |
+        The bounded issue representation returned by collection and board
+        views. Detail-only content is available from `GET /api/issues/{id}`.
+      additionalProperties: false
+      required:
+        [id, workspace, title, type, status, priority, labels, assignees,
+         updated_at, blocked, blockers, parent, parent_title]
+      properties:
+        id:
+          type: string
+          description: '`<workspace-key>-<hash>`, assigned at creation and immutable.'
+          examples: [awb-5c1d84]
+        workspace: { $ref: '#/components/schemas/WorkspaceKey' }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        type: { $ref: '#/components/schemas/Type' }
+        status: { $ref: '#/components/schemas/Status' }
+        priority: { $ref: '#/components/schemas/Priority' }
+        labels:
+          type: array
+          description: Sorted.
+          items: { $ref: '#/components/schemas/Label' }
+        assignees:
+          type: array
+          description: The complete assignment set, in claim order.
+          items: { $ref: '#/components/schemas/Assignee' }
+        updated_at: { $ref: '#/components/schemas/Timestamp' }
+        blocked:
+          type: boolean
+          description: True when at least one non-closed issue blocks this non-closed issue.
+        blockers:
+          type: array
+          description: Visible active blocker IDs, sorted.
+          items: { $ref: '#/components/schemas/IssueID' }
+        parent:
+          type: string
+          description: The direct parent ID, or empty when there is no presented parent.
+        parent_title:
+          type: string
+          description: The parent's title when visible to the caller, otherwise empty.
 
     Issue:
       type: object

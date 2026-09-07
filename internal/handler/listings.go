@@ -175,6 +175,28 @@ func (h *Handler) ListIssues(ctx context.Context, params api.ListIssuesParams) (
 	return h.listIssues(ctx, filter)
 }
 
+func (h *Handler) ListFullIssues(ctx context.Context, params api.ListFullIssuesParams) (
+	*api.IssueFullListHeaders, error) {
+	filter, err := selection{
+		statuses: params.Status, includeClosed: params.IncludeClosed.Or(false),
+		includeArchived: params.IncludeArchived.Or(false), types: params.Type,
+		priorities: params.Priority, priorityMax: params.PriorityMax, labels: params.Label,
+		assignees: params.Assignee, unassigned: params.Unassigned.Or(false),
+		workspaces: params.Workspace, parent: params.Parent, parentType: params.ParentType,
+		recursive: params.Recursive.Or(false), includeParent: params.IncludeParent.Or(false),
+		sort: string(params.Sort.Or("")), limit: params.Limit, offset: params.Offset,
+		terms: params.Q, listingFilter: params.Filter.Or(""), readiness: params.Readiness,
+	}.filter(len(params.Q) > 0)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.backendFor(ctx).ListIssues(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return &api.IssueFullListHeaders{XTotalCount: api.NewOptInt(page.Total), Response: toIssues(page.Issues)}, nil
+}
+
 // ListReady lists the issues that are open and not blocked, and only the
 // unassigned ones: it fixes the status set and the assignee filter for itself,
 // which is why it declares neither.
@@ -262,7 +284,7 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 }
 
 func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesParams) (
-	*api.IssueListHeaders, error) {
+	*api.IssueFullListHeaders, error) {
 	query, err := domain.ValidateSearchTerm(params.Q)
 	if err != nil {
 		return nil, err
@@ -271,7 +293,7 @@ func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesPar
 	if err != nil {
 		return nil, err
 	}
-	return &api.IssueListHeaders{
+	return &api.IssueFullListHeaders{
 		XTotalCount: api.NewOptInt(page.Total),
 		Response:    toIssues(page.Issues),
 	}, nil
@@ -282,13 +304,13 @@ func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesPar
 // without loading everything.
 func (h *Handler) listIssues(ctx context.Context, filter *domain.Filter) (
 	*api.IssueListHeaders, error) {
-	page, err := h.backendFor(ctx).ListIssues(ctx, filter)
+	page, err := h.backendFor(ctx).ListIssueSummaries(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 	return &api.IssueListHeaders{
 		XTotalCount: api.NewOptInt(page.Total),
-		Response:    toIssues(page.Issues),
+		Response:    toIssueSummaries(page.Issues),
 	}, nil
 }
 

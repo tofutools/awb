@@ -217,6 +217,30 @@ func (b *Backend) ListIssues(ctx context.Context, filter *domain.Filter) (backen
 	return page, nil
 }
 
+// ListIssueSummaries runs the same listing without hydrating detail-only issue
+// fields.
+func (b *Backend) ListIssueSummaries(ctx context.Context, filter *domain.Filter) (backend.IssueSummaryPage, error) {
+	var page backend.IssueSummaryPage
+	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+		if err := checkFilterWorkspaces(tx, filter); err != nil {
+			return err
+		}
+		if err := resolveFilterReferences(tx, filter); err != nil {
+			return err
+		}
+		var err error
+		page.Issues, page.Total, err = tx.ListIssueSummaries(filter)
+		return err
+	})
+	if err != nil {
+		return backend.IssueSummaryPage{}, err
+	}
+	if page.Issues == nil {
+		page.Issues = []domain.IssueSummary{}
+	}
+	return page, nil
+}
+
 // SuggestIssues finds visible issues by a literal ID or title fragment for
 // reference editors. Closed issues are included because relations may name one.
 func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssuePage, error) {

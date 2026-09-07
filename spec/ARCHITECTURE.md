@@ -89,10 +89,14 @@ An issue belongs to exactly one workspace and carries:
 - relations, attachment metadata, and extracted Markdown links;
 - creation and update timestamps.
 
-The complete issue representation is shared by both surfaces. Collections are
-normalized and deterministic, and absent collections are empty arrays rather
-than null. Blocked state, blockers, relations, parent, links, and attachments
-are read-only derived fields; their own operations change them.
+Issue detail, mutation responses, CLI JSON, and export use the complete issue
+representation. Listing and board collections use a fixed summary projection:
+identity and workflow fields, labels and assignees, active blockers, and the
+direct parent. This keeps descriptions, attachment metadata, extracted links,
+integration metadata, and the complete relation graph out of collection reads.
+Both representations are normalized and deterministic, and absent collections
+are empty arrays rather than null. Derived fields are read-only; their own
+operations change them.
 
 IDs have the form `<workspace>-<hash>`. The hash is derived from creation data
 rather than a global sequence, allowing a local caller to mint an ID without a
@@ -206,7 +210,7 @@ bytes.
 
 ### Boards, views, and preferences
 
-The board is a projection of issues into epic lanes and status columns. “No
+The board projects issue summaries into epic lanes and status columns. “No
 epic” is a derived lane rather than a special issue. Board pages and each column
 are bounded independently so a large installation cannot create an unbounded
 response.

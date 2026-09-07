@@ -1,8 +1,7 @@
 import { useDragSurface } from "./drag.js";
 import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { api, type Issue } from "../api.js";
-import { inspectorParent } from "../inspector.js";
+import { api, type IssueSummary } from "../api.js";
 import { listingParentTitle, listingRelationshipRole } from "../listings.js";
 import {
   NameLink,
@@ -22,7 +21,8 @@ export function Badge({
 }) {
   return <span class={`listing-badge ${className}`}>{children}</span>;
 }
-export function IssueBadges({ issue }: { issue: Issue }) {
+type BadgeIssue = Pick<IssueSummary, "priority" | "status" | "blocked" | "assignees" | "labels">;
+export function IssueBadges({ issue }: { issue: BadgeIssue }) {
   const { identity } = useApp();
   return (
     <span class="badges">
@@ -93,13 +93,13 @@ export function IssueTable({
   onReload,
   mutable = true,
 }: {
-  issues: Issue[];
+  issues: IssueSummary[];
   kind?: ListingKind;
   sortKey?: string;
   direction?: string;
   onSort?: (key: string) => void;
   children?: boolean;
-  actions?: (issue: Issue) => ComponentChildren;
+  actions?: (issue: IssueSummary) => ComponentChildren;
   onReload?: () => Promise<void>;
   mutable?: boolean;
 }) {
@@ -112,14 +112,14 @@ export function IssueTable({
     null,
   );
   const family = hovered ?? focused;
-  const [drag, setDrag] = useState<Issue | null>(null);
+  const [drag, setDrag] = useState<IssueSummary | null>(null);
   const [target, setTarget] = useState<{ id: string; after: boolean } | null>(
     null,
   );
   const mutation = useMutation();
   const columns = issueColumns(kind, children);
   if (actions) columns.push(["actions", ""]);
-  const cell = (issue: Issue, key: string) => {
+  const cell = (issue: IssueSummary, key: string) => {
     if (key === "id")
       return (
         <span class="issue-name-cell">
@@ -141,12 +141,9 @@ export function IssueTable({
         </span>
       );
     if (key === "parent") {
-      const relation = issue.relations.find(
-        (r) => r.type === "has-parent" && r.direction === "out",
-      );
-      if (!relation) return <span class="muted">—</span>;
-      const parent = relation.other;
-      const title = relation.other_title ?? "";
+      if (!issue.parent) return <span class="muted">—</span>;
+      const parent = issue.parent;
+      const title = issue.parent_title;
       const full = title ? `${title} (${parent})` : parent;
       return (
         <a
@@ -254,7 +251,7 @@ export function IssueTable({
             const role = family
               ? listingRelationshipRole(
                   issue.id,
-                  inspectorParent(issue.relations),
+                  issue.parent,
                   family.id,
                   family.parent,
                 )
