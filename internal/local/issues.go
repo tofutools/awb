@@ -472,31 +472,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			}
 		}
 		fields := storage.Fields(issue)
-		switch {
-		case status == issue.Status:
-		case (issue.Status == domain.StatusOpen || issue.Status == domain.StatusBacklog) && status == domain.StatusInProgress:
-			if issue.Blocked {
-				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
-			}
-			assignee, err := movingAssignee(tx, caller)
-			if err != nil {
-				return err
-			}
-			fields.Assignees = []string{assignee}
-		// Parking work clears active assignments, just like moving to open.
-		case status == domain.StatusOpen || status == domain.StatusBacklog:
-			fields.Assignees = nil
-		case status == domain.StatusClosed:
-		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
-			assignee, err := movingAssignee(tx, caller)
-			if err != nil {
-				return err
-			}
-			fields.Assignees = []string{assignee}
-		default:
-			return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
+		if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
+			return err
 		}
-		fields.Status = status
 		if err := tx.UpdateIssue(issue, fields); err != nil {
 			return err
 		}
@@ -536,6 +514,55 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 		return nil, err
 	}
 	return result, nil
+}
+
+func applyStatus(tx *storage.Tx, caller domain.Caller, issue *domain.Issue,
+	status domain.Status, fields *storage.IssueFields) error {
+	switch {
+	case status == issue.Status:
+	case (issue.Status == domain.StatusOpen || issue.Status == domain.StatusBacklog) && status == domain.StatusInProgress:
+		if issue.Blocked {
+			return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
+		}
+		assignee, err := movingAssignee(tx, caller)
+		if err != nil {
+			return err
+		}
+		fields.Assignees = []string{assignee}
+	// Parking work clears active assignments, just like moving to open.
+	case status == domain.StatusOpen || status == domain.StatusBacklog:
+		fields.Assignees = nil
+	case status == domain.StatusClosed:
+	case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
+		assignee, err := movingAssignee(tx, caller)
+		if err != nil {
+			return err
+		}
+		fields.Assignees = []string{assignee}
+	default:
+		return awberr.Usagef("cannot change %s from %s to %s", issue.ID, issue.Status, status)
+	}
+	fields.Status = status
+	return nil
+}
+
+// SetStatus applies the same workflow and assignment rules as a move without
+// changing epic membership or manual position. Repeating the stored status is
+// a true no-op, including its timestamp and activity stream.
+func (b *Backend) SetStatus(ctx context.Context, ref string, status domain.Status,
+	ifMatch string) (*domain.Issue, error) {
+	status, err := domain.ParseStatus(string(status))
+	if err != nil {
+		return nil, err
+	}
+	return b.mutateAs(ctx, ref, ifMatch, "status_set", "",
+		func(tx *storage.Tx, caller domain.Caller, issue *domain.Issue) error {
+			fields := storage.Fields(issue)
+			if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
+				return err
+			}
+			return tx.UpdateIssue(issue, fields)
+		})
 }
 
 // checkUnchanged enforces the "may appear but may not change" rule: a patch
@@ -693,6 +720,12 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 // fields as they are after the change.
 func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody string,
 	apply func(*storage.Tx, *domain.Issue) error) (*domain.Issue, error) {
+	return b.mutateAs(ctx, ref, ifMatch, action, activityBody,
+		func(tx *storage.Tx, _ domain.Caller, issue *domain.Issue) error { return apply(tx, issue) })
+}
+
+func (b *Backend) mutateAs(ctx context.Context, ref, ifMatch, action, activityBody string,
+	apply func(*storage.Tx, domain.Caller, *domain.Issue) error) (*domain.Issue, error) {
 	var result *domain.Issue
 	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
@@ -709,7 +742,7 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody
 		before.Labels = slices.Clone(issue.Labels)
 		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
-		if err := apply(tx, issue); err != nil {
+		if err := apply(tx, caller, issue); err != nil {
 			return err
 		}
 		result, err = tx.GetIssue(issue.ID)

@@ -103,6 +103,13 @@ func ParseStatus(s string) (Status, error) {
 	return "", awberr.Usagef("invalid status %q: must be one of %s", s, join(Statuses))
 }
 
+// CanMakeReady reports whether make-ready may target the status. Backlog is
+// activated and open is the idempotent case; active and completed work require
+// their own explicit transition.
+func CanMakeReady(status Status) bool {
+	return status == StatusBacklog || status == StatusOpen
+}
+
 // NotClosedStatuses are the statuses an issue that is still live can hold.
 // It is the status set awb blocked fixes for itself, and the one every listing
 // falls back to when closed issues are hidden.

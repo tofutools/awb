@@ -109,9 +109,11 @@ The workflow has four states: `backlog`, `open`, `in_progress`, and `closed`.
 
 Backlog parks future work of any type. `create --backlog` creates unassigned
 parked work; it cannot be combined with assignees. `move --status backlog`
-parks existing work and clears assignments. Claim explicitly starts it; reopen
-or move to open activates it without an assignee. Release leaves backlog
-unchanged. Closing backlog works like closing any other unfinished issue.
+parks existing work and clears assignments. Claim explicitly starts it; reopen,
+make-ready, or move to open activates it without an assignee. Make-ready is the
+guarded form: it leaves open unchanged and refuses in-progress and closed work.
+It does not change blockers. Release leaves backlog unchanged. Closing backlog
+works like closing any other unfinished issue.
 
 Backlog stays visible in ordinary listings, but backlog issues and their
 complete `has-parent` subtrees are excluded from readiness and boards by

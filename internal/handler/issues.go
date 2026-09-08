@@ -219,6 +219,17 @@ func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams)
 	return issueResponse(issue), nil
 }
 
+func (h *Handler) SetIssueStatus(ctx context.Context, req *api.StatusRequest,
+	params api.SetIssueStatusParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).SetStatus(ctx, params.ID, domain.Status(req.Status),
+		params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return issueResponse(issue), nil
+}
+
 func (h *Handler) AddLabel(ctx context.Context, req *api.LabelRequest,
 	params api.AddLabelParams) (*api.IssueHeaders, error) {
 	issue, err := h.backendFor(ctx).AddLabel(ctx, params.ID, string(req.Label),

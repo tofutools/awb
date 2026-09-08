@@ -2,10 +2,12 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -35,6 +37,10 @@ type relationBody struct {
 	Type  domain.RelationType `json:"type"`
 	Other string              `json:"other"`
 	Force bool                `json:"force,omitempty"`
+}
+
+type statusBody struct {
+	Status domain.Status `json:"status"`
 }
 
 type issuePatchBody struct {
@@ -317,6 +323,12 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			Direction: req.Direction}, ifMatch)
 }
 
+func (b *Backend) SetStatus(ctx context.Context, ref string, status domain.Status,
+	ifMatch string) (*domain.Issue, error) {
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/status",
+		statusBody{Status: status}, ifMatch)
+}
+
 func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backend.DeletedIssue, error) {
 	issue, err := b.issueCall(ctx, http.MethodDelete, "/api/issues/"+url.PathEscape(ref), nil, ifMatch)
 	if err != nil {
@@ -347,6 +359,27 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
+}
+
+func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		issue, err := b.GetIssue(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		if !domain.CanMakeReady(issue.Status) {
+			return nil, awberr.Conflictf("%s is %s", issue.ID, issue.Status)
+		}
+		match := ifMatch
+		if match == "" {
+			match = backend.ETag(issue.UpdatedAt)
+		}
+		ready, err := b.SetStatus(ctx, ref, domain.StatusOpen, match)
+		if err == nil || ifMatch != "" || !errors.Is(err, awberr.ErrPreconditionFailed) {
+			return ready, err
+		}
+	}
+	return nil, awberr.PreconditionFailed("the issue")
 }
 
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {

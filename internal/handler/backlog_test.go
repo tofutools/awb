@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/remote"
@@ -93,18 +94,30 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 				}
 			}
 			assert.ElementsMatch(t, []string{child.ID, grandchild.ID, parked.ID, active.ID}, ids)
-			issue, err := be.Release(ctx, parked.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
+			issue, err := be.MakeReady(ctx, parked.ID, "")
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusOpen, issue.Status)
+			unchanged, err := be.SetStatus(ctx, parked.ID, domain.StatusOpen, "")
+			require.NoError(t, err)
+			assert.Equal(t, issue.UpdatedAt, unchanged.UpdatedAt)
+			_, err = be.SetStatus(ctx, parked.ID, domain.StatusBacklog, "")
+			require.NoError(t, err)
+			issue, err = be.Release(ctx, parked.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
 			require.NoError(t, err)
 			assert.Equal(t, domain.StatusBacklog, issue.Status)
 			issue, err = be.Claim(ctx, parked.ID, backend.ClaimRequest{Assignee: "mikael"}, "")
 			require.NoError(t, err)
 			assert.Equal(t, domain.StatusInProgress, issue.Status)
+			_, err = be.MakeReady(ctx, parked.ID, "")
+			assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
 			issue, err = be.MoveIssue(ctx, parked.ID, backend.IssueMove{Status: domain.StatusBacklog}, "")
 			require.NoError(t, err)
 			assert.Empty(t, issue.Assignees)
 			issue, err = be.CloseIssue(ctx, parked.ID, backend.CloseRequest{}, "")
 			require.NoError(t, err)
 			assert.NotEmpty(t, issue.ClosedAt)
+			_, err = be.MakeReady(ctx, parked.ID, "")
+			assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
 			issue, err = be.MoveIssue(ctx, parked.ID, backend.IssueMove{Status: domain.StatusBacklog}, "")
 			require.NoError(t, err)
 			assert.Empty(t, issue.ClosedAt)
