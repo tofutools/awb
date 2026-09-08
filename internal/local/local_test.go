@@ -652,6 +652,10 @@ func TestMakeReady(t *testing.T) {
 	assert.Equal(t, domain.StatusOpen, ready.Status)
 	assert.True(t, ready.Blocked, "activating an issue does not clear its blockers")
 	assert.Equal(t, []string{blocker.ID}, ready.Blockers)
+	activity, err := b.ListActivity(ctx, parked.ID, domain.ActivityKindChange, nil, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, activity.Activity)
+	assert.Equal(t, "status_set", activity.Activity[0].Action)
 
 	again, err := b.MakeReady(ctx, parked.ID, "")
 	require.NoError(t, err)

@@ -540,7 +540,7 @@ func applyStatus(tx *storage.Tx, caller domain.Caller, issue *domain.Issue,
 		}
 		fields.Assignees = []string{assignee}
 	default:
-		return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
+		return awberr.Usagef("cannot change %s from %s to %s", issue.ID, issue.Status, status)
 	}
 	fields.Status = status
 	return nil
@@ -555,45 +555,14 @@ func (b *Backend) SetStatus(ctx context.Context, ref string, status domain.Statu
 	if err != nil {
 		return nil, err
 	}
-	var result *domain.Issue
-	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		issue, err := load(tx, ref)
-		if err != nil {
-			return err
-		}
-		if err := ensureIssueWritable(tx, issue); err != nil {
-			return err
-		}
-		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
-			return err
-		}
-		before := *issue
-		before.Assignees = slices.Clone(issue.Assignees)
-		fields := storage.Fields(issue)
-		if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
-			return err
-		}
-		if err := tx.UpdateIssue(issue, fields); err != nil {
-			return err
-		}
-		result, err = tx.GetIssue(issue.ID)
-		if err != nil {
-			return err
-		}
-		changes := activityChanges(&before, result)
-		if len(changes) == 0 {
-			return nil
-		}
-		action := "status_set"
-		if before.Status == domain.StatusBacklog && status == domain.StatusOpen {
-			action = "made_ready"
-		}
-		return recordChange(tx, caller, issue.ID, action, changes)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return b.mutateAs(ctx, ref, ifMatch, "status_set", "",
+		func(tx *storage.Tx, caller domain.Caller, issue *domain.Issue) error {
+			fields := storage.Fields(issue)
+			if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
+				return err
+			}
+			return tx.UpdateIssue(issue, fields)
+		})
 }
 
 // checkUnchanged enforces the "may appear but may not change" rule: a patch
@@ -751,6 +720,12 @@ func (b *Backend) facets(ctx context.Context, filter *domain.Filter,
 // fields as they are after the change.
 func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody string,
 	apply func(*storage.Tx, *domain.Issue) error) (*domain.Issue, error) {
+	return b.mutateAs(ctx, ref, ifMatch, action, activityBody,
+		func(tx *storage.Tx, _ domain.Caller, issue *domain.Issue) error { return apply(tx, issue) })
+}
+
+func (b *Backend) mutateAs(ctx context.Context, ref, ifMatch, action, activityBody string,
+	apply func(*storage.Tx, domain.Caller, *domain.Issue) error) (*domain.Issue, error) {
 	var result *domain.Issue
 	err := b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
 		issue, err := load(tx, ref)
@@ -767,7 +742,7 @@ func (b *Backend) mutate(ctx context.Context, ref, ifMatch, action, activityBody
 		before.Labels = slices.Clone(issue.Labels)
 		before.Assignees = slices.Clone(issue.Assignees)
 		before.Relations = slices.Clone(issue.Relations)
-		if err := apply(tx, issue); err != nil {
+		if err := apply(tx, caller, issue); err != nil {
 			return err
 		}
 		result, err = tx.GetIssue(issue.ID)

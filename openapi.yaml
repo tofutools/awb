@@ -340,7 +340,7 @@ paths:
       description: |
         Applies the same workflow and assignment rules as move without changing
         epic membership or manual position. Repeating the same status is
-        idempotent.
+        idempotent. Read the current value from the issue representation.
       requestBody:
         required: true
         content:
@@ -2139,8 +2139,9 @@ components:
     Status:
       type: string
       description: |
-        Changed only by creating with assignees and by the claim, release,
-        close and reopen endpoints, so it never drifts from the assignment set.
+        Changed only by workflow operations such as claim, release, close,
+        reopen, move and set-status, which update assignments in the same
+        transaction so the two never drift apart.
       enum: [backlog, open, in_progress, closed]
 
     Priority:

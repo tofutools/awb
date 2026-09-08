@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/remote"
@@ -107,12 +108,16 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 			issue, err = be.Claim(ctx, parked.ID, backend.ClaimRequest{Assignee: "mikael"}, "")
 			require.NoError(t, err)
 			assert.Equal(t, domain.StatusInProgress, issue.Status)
+			_, err = be.MakeReady(ctx, parked.ID, "")
+			assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
 			issue, err = be.MoveIssue(ctx, parked.ID, backend.IssueMove{Status: domain.StatusBacklog}, "")
 			require.NoError(t, err)
 			assert.Empty(t, issue.Assignees)
 			issue, err = be.CloseIssue(ctx, parked.ID, backend.CloseRequest{}, "")
 			require.NoError(t, err)
 			assert.NotEmpty(t, issue.ClosedAt)
+			_, err = be.MakeReady(ctx, parked.ID, "")
+			assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
 			issue, err = be.MoveIssue(ctx, parked.ID, backend.IssueMove{Status: domain.StatusBacklog}, "")
 			require.NoError(t, err)
 			assert.Empty(t, issue.ClosedAt)

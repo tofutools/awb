@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -361,20 +362,24 @@ func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issu
 }
 
 func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
-	issue, err := b.GetIssue(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	switch issue.Status {
-	case domain.StatusOpen, domain.StatusBacklog:
+	for attempt := 0; attempt < 2; attempt++ {
+		issue, err := b.GetIssue(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		if !domain.CanMakeReady(issue.Status) {
+			return nil, awberr.Conflictf("%s is %s", issue.ID, issue.Status)
+		}
 		match := ifMatch
 		if match == "" {
 			match = backend.ETag(issue.UpdatedAt)
 		}
-		return b.SetStatus(ctx, ref, domain.StatusOpen, match)
-	default:
-		return nil, awberr.Conflictf("%s is %s", issue.ID, issue.Status)
+		ready, err := b.SetStatus(ctx, ref, domain.StatusOpen, match)
+		if err == nil || ifMatch != "" || !errors.Is(err, awberr.ErrPreconditionFailed) {
+			return ready, err
+		}
 	}
+	return nil, awberr.PreconditionFailed("the issue")
 }
 
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
