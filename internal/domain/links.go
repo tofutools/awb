@@ -23,6 +23,9 @@ import (
 // It is exported so that the one place the dialect is decided is also the one
 // every surface reads: the command line renders a description for a terminal
 // with this parser rather than a second one of its own.
+//
+// ExtractLinks' fast-path predicate depends on this exact extension set; a
+// dialect change and that predicate must be reviewed together.
 var Markdown = sync.OnceValue(func() goldmark.Markdown {
 	return goldmark.New(goldmark.WithExtensions(extension.GFM))
 })

@@ -41,7 +41,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 	// checked here at all — whether it is taken is exactly the kind of question
 	// that has to be asked inside the write lock.
 	if err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		issue, err := load(tx, issueRef)
+		issue, err := loadRow(tx, issueRef)
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ func (b *Backend) AddAttachment(ctx context.Context, issueRef string,
 		Sha256:      staged.Sha256,
 	}
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
-		issue, err := load(tx, issueRef)
+		issue, err := loadRow(tx, issueRef)
 		if err != nil {
 			return err
 		}

@@ -10,14 +10,26 @@ import (
 
 // The fast-path predicate must be a superset: it may parse prose that has no
 // links, but it must never skip Markdown from which the pinned parser extracts
-// one. Generated Markdown-shaped input exercises the predicate against the
-// unconditional parser rather than duplicating its rules in the test.
+// one. Generated surrounding text exercises every predicate marker against the
+// unconditional parser, which remains the oracle for whether each case links.
 func TestExtractLinksFastPathMatchesParser(t *testing.T) {
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 []()<@:/._-*`\\\n"
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-*`\\\n"
+	markers := []string{
+		"plain prose",
+		"[label](destination)",
+		"<https://example.com/path>",
+		"name@example.com",
+		"https://example.com/path",
+		"www.example.com/path",
+	}
 	rng := rand.New(rand.NewPCG(1, 2))
-	for range 200_000 {
+	for i := range 5_000 {
 		var description strings.Builder
-		for range rng.IntN(100) {
+		for range rng.IntN(50) {
+			description.WriteByte(alphabet[rng.IntN(len(alphabet))])
+		}
+		description.WriteString(markers[i%len(markers)])
+		for range rng.IntN(50) {
 			description.WriteByte(alphabet[rng.IntN(len(alphabet))])
 		}
 		source := description.String()
