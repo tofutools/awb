@@ -14,9 +14,18 @@
 // what neither of them does, which is notice a response that may carry no body
 // at all: a 204 or a 304 compressed by either would be answered with a
 // Content-Encoding it does not use and a gzip stream net/http refuses to
-// write. Both of awb's are answered in front of it — the CORS preflight by the
-// middleware outside the router, the not-modified by the two handlers that
-// serve the UI — which is why the compressor never sees one.
+// write.
+//
+// Nothing awb answers arrives here as one, and each for a reason of its own.
+// The CORS preflight is 204 and is answered by the middleware outside the
+// router; the not-modified is 304 and is answered by the two handlers that
+// serve the UI, before either reaches their compressor. The third is not
+// awb's: the generated server answers an OPTIONS request to a path it routes
+// with 204, and awb never takes that branch, because it supplies its own
+// method-not-allowed and an OPTIONS request into the API is therefore 405 with
+// a body. That last one is a property of how the server is assembled rather
+// than of anything visible here, so TestOptionsIntoTheAPICarriesABody pins it;
+// it is what keeps this paragraph true.
 //
 // It is deliberately a local copy of go-server-common's httputil.Gzip, against
 // the rule that cross-cutting middleware comes from there, and it is

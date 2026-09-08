@@ -1168,7 +1168,9 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 // The threshold is a fraction of what one compressor per response would cost
 // rather than a figure, because what is being pinned is the shape of the cost.
 // It measured about 3% of it when it was written, so the headroom is wide and
-// only a real regression closes it.
+// only a real regression closes it. It is a measurement of allocation and so
+// says nothing under the race detector, which allocates on its own account;
+// the build runs neither this nor anything else under it.
 func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 	const (
 		requests           = 200
@@ -1197,6 +1199,47 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 	assert.Less(t, allocated, uint64(allowed),
 		"%d compressed responses allocated %d bytes: a compressor is being made for each one",
 		requests, allocated)
+}
+
+// An OPTIONS request into the API is answered with a body.
+//
+// This is here for internal/httpgzip, which compresses whatever it is given
+// and would put a Content-Encoding on a response that may carry no body. The
+// generated server answers OPTIONS on a path it routes with 204, which is
+// exactly such a response; awb does not, because it supplies its own
+// method-not-allowed, and that is the whole of why the compressor never sees
+// one. It is a property of how the server is assembled, invisible from the
+// middleware, and this is what keeps it from being lost.
+//
+// The CORS preflight is the other 204, and it is answered by the middleware
+// outside the router; it reaches this only when the origin is not one the
+// server allows, and is then an ordinary refusal like any other OPTIONS.
+func TestOptionsIntoTheAPICarriesABody(t *testing.T) {
+	h := newServeHandler(t)
+
+	for _, request := range []struct {
+		what   string
+		path   string
+		status int
+	}{
+		{"a routed path", "/api/issues", http.StatusMethodNotAllowed},
+		{"a path nothing serves", "/api/nope", http.StatusNotFound},
+	} {
+		resp, body := get(t, h, http.MethodOptions, request.path)
+		assert.Equal(t, request.status, resp.StatusCode, "OPTIONS on %s", request.what)
+		assert.NotEqual(t, http.StatusNoContent, resp.StatusCode,
+			"OPTIONS on %s is answered without a body, which nothing may compress",
+			request.what)
+		assert.NotEmpty(t, body, "OPTIONS on %s answered with no body", request.what)
+	}
+
+	// A preflight from an origin the server does not allow is not the CORS
+	// middleware's to answer, so it arrives here as an ordinary OPTIONS.
+	resp, body := get(t, h, http.MethodOptions, "/api/issues",
+		"Origin", "https://elsewhere.example",
+		"Access-Control-Request-Method", "GET")
+	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+	assert.NotEmpty(t, body)
 }
 
 // A name that needs escaping survives the round trip through remote mode, and
