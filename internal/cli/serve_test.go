@@ -1156,6 +1156,49 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	assert.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
 }
 
+// Compressing a response does not cost a compressor.
+//
+// A gzip.Writer carries about 800 kB of hash tables and window whatever it is
+// about to compress, and a browser asks for gzip on every request, so a server
+// that made one per response would allocate that to answer a request the size
+// of this one. This runs the whole serve chain and fails if the cost of a
+// response scales with the compressor rather than with the body; see
+// internal/httpgzip.
+//
+// The threshold is a fraction of what one compressor per response would cost
+// rather than a figure, because what is being pinned is the shape of the cost.
+// It measured about 3% of it when it was written, so the headroom is wide and
+// only a real regression closes it.
+func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
+	const (
+		requests           = 200
+		perFreshCompressor = 800 << 10
+		allowed            = requests * perFreshCompressor / 10
+	)
+
+	h := newServeHandler(t)
+	resp, body := send(t, h, http.MethodPost, "/api/workspaces", `{"key":"awb"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, body)
+
+	// The response is left compressed rather than read back through a gzip
+	// reader, which would allocate a decompressor here and measure the test
+	// rather than the server.
+	before := totalAlloc()
+	for range requests {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
+	}
+	allocated := totalAlloc() - before
+
+	assert.Less(t, allocated, uint64(allowed),
+		"%d compressed responses allocated %d bytes: a compressor is being made for each one",
+		requests, allocated)
+}
+
 // A name that needs escaping survives the round trip through remote mode, and
 // so does a server published under a base path.
 //
