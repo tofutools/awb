@@ -67,6 +67,7 @@ func (d *DescriptionFlags) read(e *env) ([]byte, error) {
 
 type createParams struct {
 	Backlog bool `long:"backlog" help:"create in backlog; cannot be combined with assignees"`
+	Claim   bool `long:"claim" optional:"true" help:"atomically assign the issue to your identity"`
 	DescriptionFlags
 	Title          string   `positional:"true" required:"true"`
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
@@ -90,7 +91,8 @@ func newCreateCommand(e *env) *cobra.Command {
 			"The relation flags read \"the new issue — relation — the named issue\",\n" +
 			"the single convention of the whole tool.\n\n" +
 			"Creating with one or more assignees is an atomic create-and-claim:\n" +
-			"--assignee is repeatable and also sets the status to in_progress.",
+			"--claim assigns your identity, while --assignee assigns the named person and\n" +
+			"is repeatable. Both also set the status to in_progress.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *createParams, cmd *cobra.Command) error {
 			if err := describe("issue")(ctx, &p.DescriptionFlags, cmd); err != nil {
@@ -102,6 +104,13 @@ func newCreateCommand(e *env) *cobra.Command {
 			cfg, err := e.config()
 			if err != nil {
 				return err
+			}
+			if p.Claim {
+				identity, err := e.identity()
+				if err != nil {
+					return err
+				}
+				p.Assignees = append(p.Assignees, identity)
 			}
 
 			// The workspace is resolved as --workspace, else AWB_WORKSPACE, else the local
