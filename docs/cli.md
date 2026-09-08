@@ -73,6 +73,7 @@ awb create "Implement cache eviction" --type feature --priority 1 \
 awb claim app-a3f9c1
 awb release app-a3f9c1
 awb close app-a3f9c1 --reason "Merged and verified"
+awb make-ready app-a3f9c1
 awb reopen app-a3f9c1
 ```
 
@@ -83,6 +84,8 @@ The transitions preserve a few deliberate invariants:
 - releasing removes one assignee — your own, or the one `--as` names — and
   reopens the issue when the last leaves;
 - closing preserves the assignee list;
+- making ready moves backlog to open without clearing blockers, and refuses
+  in-progress or closed work;
 - reopening clears every assignee;
 - a close reason is one typed activity entry committed with the transition.
 

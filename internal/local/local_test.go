@@ -639,6 +639,36 @@ func TestReopenLeavesLiveWorkAlone(t *testing.T) {
 	assert.Equal(t, issue.UpdatedAt, unchanged.UpdatedAt)
 }
 
+func TestMakeReady(t *testing.T) {
+	b, ctx := newBackend(t)
+	blocker := create(t, b, ctx, "blocker")
+	parked := create(t, b, ctx, "parked", func(r *backend.IssueCreate) {
+		r.Backlog = true
+		r.Relations = []backend.NewRelation{{Type: domain.RelBlockedBy, Other: blocker.ID}}
+	})
+
+	ready, err := b.MakeReady(ctx, parked.ID, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusOpen, ready.Status)
+	assert.True(t, ready.Blocked, "activating an issue does not clear its blockers")
+	assert.Equal(t, []string{blocker.ID}, ready.Blockers)
+
+	again, err := b.MakeReady(ctx, parked.ID, "")
+	require.NoError(t, err)
+	assert.Equal(t, ready.UpdatedAt, again.UpdatedAt, "open is a no-op")
+
+	inProgress := create(t, b, ctx, "in progress", func(r *backend.IssueCreate) {
+		r.Assignees = []string{"mikael"}
+	})
+	_, err = b.MakeReady(ctx, inProgress.ID, "")
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
+
+	closed, err := b.CloseIssue(ctx, blocker.ID, backend.CloseRequest{}, "")
+	require.NoError(t, err)
+	_, err = b.MakeReady(ctx, closed.ID, "")
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
+}
+
 func TestCyclesAreRefused(t *testing.T) {
 	b, ctx := newBackend(t)
 	a := create(t, b, ctx, "a")

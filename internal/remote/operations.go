@@ -349,6 +349,10 @@ func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issu
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
 }
 
+func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
+	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/make-ready", nil, ifMatch)
+}
+
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/labels",
 		labelBody{Label: label}, ifMatch)

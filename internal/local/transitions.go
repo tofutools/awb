@@ -166,6 +166,27 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 	})
 }
 
+// MakeReady activates parked work by changing backlog to open. Open issues are
+// already active and therefore succeed unchanged. In-progress and closed issues
+// require their own explicit workflow transitions and are refused.
+//
+// Blockers are deliberately untouched: making an issue active does not imply
+// that the work it depends on has been completed.
+func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
+	return b.mutate(ctx, ref, ifMatch, "made_ready", "", func(tx *storage.Tx, issue *domain.Issue) error {
+		switch issue.Status {
+		case domain.StatusBacklog:
+			fields := storage.Fields(issue)
+			fields.Status = domain.StatusOpen
+			return tx.UpdateIssue(issue, fields)
+		case domain.StatusOpen:
+			return nil
+		default:
+			return awberr.Conflictf("%s is %s", issue.ID, issue.Status)
+		}
+	})
+}
+
 // Reopen sets status to open and clears the assignees, so the issue returns to
 // the pool awb ready draws from. Its close-reason comment remains in history.
 //

@@ -329,6 +329,21 @@ paths:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/issues/{id}/make-ready:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: makeIssueReady
+      summary: Move a backlog issue to open
+      description: |
+        Acts on backlog issues and leaves open issues unchanged. In-progress and
+        closed issues conflict. Relations, including blockers, are untouched.
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/issues/{id}/move:
     parameters:
       - $ref: '#/components/parameters/issueId'

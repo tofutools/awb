@@ -648,6 +648,25 @@ func newReopenCommand(e *env) *cobra.Command {
 		})
 }
 
+func newMakeReadyCommand(e *env) *cobra.Command {
+	return idCommand("make-ready",
+		"Move a backlog issue to open",
+		"Make parked work active by moving it from backlog to open.\n\n"+
+			"An issue already open succeeds unchanged. In-progress and closed issues are\n"+
+			"refused. Blockers are left alone, so the issue may still not appear in ready.",
+		func(cmd *cobra.Command, id string) error {
+			be, err := e.backend(cmd.Context())
+			if err != nil {
+				return err
+			}
+			issue, err := be.MakeReady(cmd.Context(), id, "")
+			if err != nil {
+				return err
+			}
+			return e.mutated(issue)
+		})
+}
+
 func newDeleteCommand(e *env) *cobra.Command {
 	return boa.CmdT[forceParams]{
 		Use:   "delete",

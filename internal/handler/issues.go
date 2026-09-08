@@ -219,6 +219,15 @@ func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams)
 	return issueResponse(issue), nil
 }
 
+func (h *Handler) MakeIssueReady(ctx context.Context, params api.MakeIssueReadyParams) (
+	*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).MakeReady(ctx, params.ID, params.IfMatch.Or(""))
+	if err != nil {
+		return nil, err
+	}
+	return issueResponse(issue), nil
+}
+
 func (h *Handler) AddLabel(ctx context.Context, req *api.LabelRequest,
 	params api.AddLabelParams) (*api.IssueHeaders, error) {
 	issue, err := h.backendFor(ctx).AddLabel(ctx, params.ID, string(req.Label),

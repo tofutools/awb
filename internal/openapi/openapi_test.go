@@ -339,7 +339,7 @@ func TestEveryOperationDeclaresTheDefaultError(t *testing.T) {
 func TestOperations(t *testing.T) {
 	operations, err := read(t).Operations()
 	require.NoError(t, err)
-	require.Len(t, operations, 56)
+	require.Len(t, operations, 57)
 
 	names := func(id string) []string {
 		operation, ok := operations[id]

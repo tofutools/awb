@@ -390,6 +390,7 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 		{"release", id},
 		{"close", id},
 		{"reopen", id},
+		{"make-ready", id},
 		{"update", id, "--priority", "0"},
 		{"move", id, "--status", "open"},
 		{"label", "add", id, "x"},
@@ -404,6 +405,24 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 	stdout, _, code := h.run("delete", id, "--force")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Deleted "+id)
+}
+
+func TestMakeReadyCommand(t *testing.T) {
+	h := newHarness(t)
+	parked := h.create("parked", "--workspace", "awb", "--backlog")
+	h.mustRun("make-ready", parked)
+	assert.Contains(t, h.mustRun("show", parked, "--json"), `"status": "open"`)
+	h.mustRun("make-ready", parked)
+
+	h.mustRun("claim", parked)
+	_, stderr, code := h.run("make-ready", parked)
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "is in_progress")
+
+	h.mustRun("close", parked)
+	_, stderr, code = h.run("make-ready", parked)
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "is closed")
 }
 
 func TestMoveKeepsWorkspaceAndIDWhileChangingEpicAndPosition(t *testing.T) {

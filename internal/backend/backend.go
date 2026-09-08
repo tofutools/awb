@@ -69,6 +69,7 @@ type Backend interface {
 	Claim(ctx context.Context, ref string, req ClaimRequest, ifMatch string) (*domain.Issue, error)
 	Release(ctx context.Context, ref string, req ReleaseRequest, ifMatch string) (*domain.Issue, error)
 	CloseIssue(ctx context.Context, ref string, req CloseRequest, ifMatch string) (*domain.Issue, error)
+	MakeReady(ctx context.Context, ref string, ifMatch string) (*domain.Issue, error)
 	Reopen(ctx context.Context, ref string, ifMatch string) (*domain.Issue, error)
 
 	AddLabel(ctx context.Context, ref, label string, ifMatch string) (*domain.Issue, error)
