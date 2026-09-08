@@ -669,6 +669,35 @@ func TestMakeReady(t *testing.T) {
 	assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
 }
 
+func TestSetStatusUsesWorkflowAssignmentRules(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "status")
+
+	parked, err := b.SetStatus(ctx, issue.ID, domain.StatusBacklog, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusBacklog, parked.Status)
+	assert.Empty(t, parked.Assignees)
+
+	started, err := b.SetStatus(ctx, issue.ID, domain.StatusInProgress, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusInProgress, started.Status)
+	assert.Equal(t, []string{"mikael"}, started.Assignees)
+
+	closed, err := b.SetStatus(ctx, issue.ID, domain.StatusClosed, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusClosed, closed.Status)
+	assert.Equal(t, started.Assignees, closed.Assignees)
+
+	opened, err := b.SetStatus(ctx, issue.ID, domain.StatusOpen, "")
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusOpen, opened.Status)
+	assert.Empty(t, opened.Assignees)
+
+	unchanged, err := b.SetStatus(ctx, issue.ID, domain.StatusOpen, "")
+	require.NoError(t, err)
+	assert.Equal(t, opened.UpdatedAt, unchanged.UpdatedAt)
+}
+
 func TestCyclesAreRefused(t *testing.T) {
 	b, ctx := newBackend(t)
 	a := create(t, b, ctx, "a")

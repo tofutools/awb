@@ -64,6 +64,7 @@ type Backend interface {
 	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
 	MoveIssue(ctx context.Context, ref string, req IssueMove, ifMatch string) (*domain.Issue, error)
+	SetStatus(ctx context.Context, ref string, status domain.Status, ifMatch string) (*domain.Issue, error)
 	DeleteIssue(ctx context.Context, ref string, ifMatch string) (*DeletedIssue, error)
 
 	Claim(ctx context.Context, ref string, req ClaimRequest, ifMatch string) (*domain.Issue, error)

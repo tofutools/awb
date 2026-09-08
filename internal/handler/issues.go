@@ -219,9 +219,11 @@ func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams)
 	return issueResponse(issue), nil
 }
 
-func (h *Handler) MakeIssueReady(ctx context.Context, params api.MakeIssueReadyParams) (
+func (h *Handler) SetIssueStatus(ctx context.Context, req *api.StatusRequest,
+	params api.SetIssueStatusParams) (
 	*api.IssueHeaders, error) {
-	issue, err := h.backendFor(ctx).MakeReady(ctx, params.ID, params.IfMatch.Or(""))
+	issue, err := h.backendFor(ctx).SetStatus(ctx, params.ID, domain.Status(req.Status),
+		params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
 	}

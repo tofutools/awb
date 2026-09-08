@@ -472,31 +472,9 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			}
 		}
 		fields := storage.Fields(issue)
-		switch {
-		case status == issue.Status:
-		case (issue.Status == domain.StatusOpen || issue.Status == domain.StatusBacklog) && status == domain.StatusInProgress:
-			if issue.Blocked {
-				return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
-			}
-			assignee, err := movingAssignee(tx, caller)
-			if err != nil {
-				return err
-			}
-			fields.Assignees = []string{assignee}
-		// Parking work clears active assignments, just like moving to open.
-		case status == domain.StatusOpen || status == domain.StatusBacklog:
-			fields.Assignees = nil
-		case status == domain.StatusClosed:
-		case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
-			assignee, err := movingAssignee(tx, caller)
-			if err != nil {
-				return err
-			}
-			fields.Assignees = []string{assignee}
-		default:
-			return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
+		if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
+			return err
 		}
-		fields.Status = status
 		if err := tx.UpdateIssue(issue, fields); err != nil {
 			return err
 		}
@@ -531,6 +509,86 @@ func (b *Backend) MoveIssue(ctx context.Context, ref string, req backend.IssueMo
 			return nil
 		}
 		return recordChange(tx, caller, issue.ID, "moved", changes)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func applyStatus(tx *storage.Tx, caller domain.Caller, issue *domain.Issue,
+	status domain.Status, fields *storage.IssueFields) error {
+	switch {
+	case status == issue.Status:
+	case (issue.Status == domain.StatusOpen || issue.Status == domain.StatusBacklog) && status == domain.StatusInProgress:
+		if issue.Blocked {
+			return awberr.Conflictf("%s is blocked by %v", issue.ID, issue.Blockers)
+		}
+		assignee, err := movingAssignee(tx, caller)
+		if err != nil {
+			return err
+		}
+		fields.Assignees = []string{assignee}
+	// Parking work clears active assignments, just like moving to open.
+	case status == domain.StatusOpen || status == domain.StatusBacklog:
+		fields.Assignees = nil
+	case status == domain.StatusClosed:
+	case issue.Status == domain.StatusClosed && status == domain.StatusInProgress:
+		assignee, err := movingAssignee(tx, caller)
+		if err != nil {
+			return err
+		}
+		fields.Assignees = []string{assignee}
+	default:
+		return awberr.Usagef("cannot move %s from %s to %s", issue.ID, issue.Status, status)
+	}
+	fields.Status = status
+	return nil
+}
+
+// SetStatus applies the same workflow and assignment rules as a move without
+// changing epic membership or manual position. Repeating the stored status is
+// a true no-op, including its timestamp and activity stream.
+func (b *Backend) SetStatus(ctx context.Context, ref string, status domain.Status,
+	ifMatch string) (*domain.Issue, error) {
+	status, err := domain.ParseStatus(string(status))
+	if err != nil {
+		return nil, err
+	}
+	var result *domain.Issue
+	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
+		issue, err := load(tx, ref)
+		if err != nil {
+			return err
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
+			return err
+		}
+		if err := checkIfMatch(ifMatch, issue.UpdatedAt, "the issue"); err != nil {
+			return err
+		}
+		before := *issue
+		before.Assignees = slices.Clone(issue.Assignees)
+		fields := storage.Fields(issue)
+		if err := applyStatus(tx, caller, issue, status, &fields); err != nil {
+			return err
+		}
+		if err := tx.UpdateIssue(issue, fields); err != nil {
+			return err
+		}
+		result, err = tx.GetIssue(issue.ID)
+		if err != nil {
+			return err
+		}
+		changes := activityChanges(&before, result)
+		if len(changes) == 0 {
+			return nil
+		}
+		action := "status_set"
+		if before.Status == domain.StatusBacklog && status == domain.StatusOpen {
+			action = "made_ready"
+		}
+		return recordChange(tx, caller, issue.ID, action, changes)
 	})
 	if err != nil {
 		return nil, err

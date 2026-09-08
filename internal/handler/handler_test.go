@@ -1088,7 +1088,7 @@ func TestNoBodyNeedsNoContentType(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
-	for _, path := range []string{"/claim", "/release", "/close", "/reopen", "/make-ready"} {
+	for _, path := range []string{"/claim", "/release", "/close", "/reopen"} {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
 			a.server.URL+"/api/issues/"+issue.ID+path, nil)
 		require.NoError(t, err)

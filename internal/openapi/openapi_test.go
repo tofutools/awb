@@ -396,6 +396,7 @@ func TestOperations(t *testing.T) {
 	assert.True(t, operations["addWorkspaceMember"].DeclaresJSONBody())
 	assert.True(t, operations["addComment"].DeclaresJSONBody())
 	assert.True(t, operations["claimIssue"].TakesBody, "an optional body is still a body")
+	assert.True(t, operations["setIssueStatus"].DeclaresJSONBody())
 	assert.False(t, operations["reopenIssue"].TakesBody)
 	assert.False(t, operations["deleteIssue"].TakesBody)
 	assert.False(t, operations["listIssues"].TakesBody)

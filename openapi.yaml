@@ -329,17 +329,23 @@ paths:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/issues/{id}/make-ready:
+  /api/issues/{id}/status:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
-      operationId: makeIssueReady
-      summary: Move a backlog issue to open
+      operationId: setIssueStatus
+      summary: Set an issue's workflow status
       description: |
-        Acts on backlog issues and leaves open issues unchanged. In-progress and
-        closed issues conflict. Relations, including blockers, are untouched.
+        Applies the same workflow and assignment rules as move without changing
+        epic membership or manual position. Repeating the same status is
+        idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusRequest' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
@@ -2925,6 +2931,13 @@ components:
           type: string
           enum: [earlier, later]
           description: Move one place in the transaction-time destination scope.
+
+    StatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/Status' }
 
     ClaimRequest:
       type: object
