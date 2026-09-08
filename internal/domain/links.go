@@ -23,6 +23,9 @@ import (
 // It is exported so that the one place the dialect is decided is also the one
 // every surface reads: the command line renders a description for a terminal
 // with this parser rather than a second one of its own.
+//
+// ExtractLinks' fast-path predicate depends on this exact extension set; a
+// dialect change and that predicate must be reviewed together.
 var Markdown = sync.OnceValue(func() goldmark.Markdown {
 	return goldmark.New(goldmark.WithExtensions(extension.GFM))
 })
@@ -44,10 +47,20 @@ var Markdown = sync.OnceValue(func() goldmark.Markdown {
 // <a href=...> written out by hand is raw HTML to the parser and not a
 // Markdown link.
 func ExtractLinks(description string) []Link {
-	if description == "" {
+	// Every link in the pinned dialect needs at least one of these markers:
+	// CommonMark inline and reference links use [, CommonMark autolinks use <,
+	// and GFM autolinks use @, :// or www. This is deliberately a superset
+	// test: false positives only cost a parse, while false negatives would
+	// change the specified links output.
+	if !strings.ContainsAny(description, "[<@") &&
+		!strings.Contains(description, "://") &&
+		!strings.Contains(description, "www.") {
 		return []Link{}
 	}
+	return extractLinks(description)
+}
 
+func extractLinks(description string) []Link {
 	source := []byte(description)
 	doc := Markdown().Parser().Parse(text.NewReader(source))
 

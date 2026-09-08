@@ -138,6 +138,17 @@ func load(tx *storage.Tx, ref string) (*domain.Issue, error) {
 	return tx.GetIssue(id)
 }
 
+// loadRow resolves a reference and reads only its stored issue fields. It is
+// used when an operation needs an existence and authorization check but does
+// not return the issue or inspect its derived fields.
+func loadRow(tx *storage.Tx, ref string) (*domain.Issue, error) {
+	id, err := resolve(tx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return tx.GetIssueRow(id)
+}
+
 func ensureWorkspaceActive(tx *storage.Tx, key string) error {
 	workspace, err := tx.GetWorkspace(key)
 	if err != nil {
