@@ -67,12 +67,12 @@ func (d *DescriptionFlags) read(e *env) ([]byte, error) {
 
 type createParams struct {
 	Backlog bool `long:"backlog" help:"create in backlog; cannot be combined with assignees"`
-	Claim   bool `long:"claim" optional:"true" help:"atomically assign the issue to your identity"`
 	DescriptionFlags
 	Title          string   `positional:"true" required:"true"`
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	CommitHash     string   `long:"commit-hash" optional:"true" help:"implementing commit hash"`
+	Claim          bool     `long:"claim" help:"atomically assign the issue to your identity"`
 	PullRequestURL string   `long:"pull-request-url" optional:"true" help:"implementing pull request URL"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`

@@ -78,6 +78,7 @@ awb reopen app-a3f9c1
 
 The transitions preserve a few deliberate invariants:
 
+- creating with `--claim` assigns your identity and starts the issue atomically;
 - creating with one or more `--assignee` values also starts the issue;
 - claiming adds an assignee and changes the status to `in_progress` atomically;
 - releasing removes one assignee — your own, or the one `--as` names — and
