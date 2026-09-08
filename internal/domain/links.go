@@ -44,10 +44,20 @@ var Markdown = sync.OnceValue(func() goldmark.Markdown {
 // <a href=...> written out by hand is raw HTML to the parser and not a
 // Markdown link.
 func ExtractLinks(description string) []Link {
-	if description == "" {
+	// Every link in the pinned dialect needs at least one of these markers:
+	// CommonMark inline and reference links use [, CommonMark autolinks use <,
+	// and GFM autolinks use @, :// or www. This is deliberately a superset
+	// test: false positives only cost a parse, while false negatives would
+	// change the specified links output.
+	if !strings.ContainsAny(description, "[<@") &&
+		!strings.Contains(description, "://") &&
+		!strings.Contains(description, "www.") {
 		return []Link{}
 	}
+	return extractLinks(description)
+}
 
+func extractLinks(description string) []Link {
 	source := []byte(description)
 	doc := Markdown().Parser().Parse(text.NewReader(source))
 

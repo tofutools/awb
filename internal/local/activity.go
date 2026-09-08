@@ -25,7 +25,7 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	}
 	var activity domain.Activity
 	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		issue, err := load(tx, ref)
+		issue, err := loadRow(tx, ref)
 		if err != nil {
 			return err
 		}
@@ -57,7 +57,7 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 	}
 	var page backend.ActivityPage
 	err := b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
-		issue, err := load(tx, ref)
+		issue, err := loadRow(tx, ref)
 		if err != nil {
 			return err
 		}

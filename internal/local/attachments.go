@@ -162,7 +162,7 @@ func (b *Backend) DeleteAttachment(ctx context.Context, issueRef, name string) (
 		if err != nil {
 			return err
 		}
-		issue, err := tx.GetIssue(attachment.Issue)
+		issue, err := tx.GetIssueRow(attachment.Issue)
 		if err != nil {
 			return err
 		}

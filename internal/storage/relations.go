@@ -307,7 +307,7 @@ func (t *Tx) Children(id string) ([]*domain.Issue, error) {
 // fields of every node are filled in before any of them is copied into the
 // tree.
 func (t *Tx) Tree(id string) (*domain.IssueTree, error) {
-	root, err := t.getIssueRow(id)
+	root, err := t.GetIssueRow(id)
 	if err != nil {
 		return nil, err
 	}

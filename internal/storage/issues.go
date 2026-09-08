@@ -29,7 +29,7 @@ func scanIssue(row rowScanner) (*domain.Issue, error) {
 
 // GetIssue reads one issue by its exact ID, complete with its derived fields.
 func (t *Tx) GetIssue(id string) (*domain.Issue, error) {
-	issue, err := t.getIssueRow(id)
+	issue, err := t.GetIssueRow(id)
 	if err != nil {
 		return nil, err
 	}
@@ -53,12 +53,14 @@ func (t *Tx) IssueWorkspaceState(id string) (domain.WorkspaceState, error) {
 	return state, awberr.Wrap(awberr.Runtime, err, "read workspace state of issue %s", id)
 }
 
-// getIssueRow reads the stored half of one issue by its exact ID.
+// GetIssueRow reads the stored half of one issue by its exact ID without
+// hydrating any derived fields. It is for operations that need only to check
+// existence, authorization or the issue's workspace.
 //
 // An issue in a workspace outside the transaction's scope is not found rather
 // than refused, exactly as such a workspace itself is: a caller who is not a
 // member is not told that the issue exists.
-func (t *Tx) getIssueRow(id string) (*domain.Issue, error) {
+func (t *Tx) GetIssueRow(id string) (*domain.Issue, error) {
 	visible, args := t.visibleClause("issues.workspace")
 	issue, err := scanIssue(t.q.QueryRowContext(t.ctx,
 		`SELECT `+issueColumns+` FROM issues WHERE id = ? AND `+visible,
