@@ -448,6 +448,28 @@ func TestJSONMutationsPrintTheObject(t *testing.T) {
 	assert.Len(t, deleted.Relations, 1)
 }
 
+// --claim uses the configured client identity and sends it as part of creation,
+// so creation and assignment remain one backend operation in direct and remote mode.
+func TestCreateClaimAssignsTheConfiguredIdentity(t *testing.T) {
+	h := newHarness(t)
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("create", "claimed at creation",
+		"--workspace", "awb", "--claim", "--json")), &issue))
+	assert.Equal(t, domain.StatusInProgress, issue.Status)
+	assert.Equal(t, []string{"mikael"}, issue.Assignees)
+
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("create", "claimed at creation",
+		"--workspace", "awb", "--claim", "--assignee", "claude-1", "--json")), &issue))
+	assert.Equal(t, domain.StatusInProgress, issue.Status)
+	assert.Equal(t, []string{"claude-1", "mikael"}, issue.Assignees)
+
+	// Adding --claim must not take the established -c shorthand from commit-hash.
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("create", "with commit",
+		"--workspace", "awb", "-c", "01234567", "--json")), &issue))
+	assert.Equal(t, "01234567", issue.CommitHash)
+}
+
 // An empty list is success and renders as an empty table, no compact output,
 // or [].
 func TestEmptyListings(t *testing.T) {

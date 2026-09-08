@@ -18,4 +18,6 @@ func TestBacklogCLI(t *testing.T) {
 	assert.NotContains(t, h.mustRun("ready", "--compact"), child)
 	_, _, code := h.run("create", "Ambiguous", "--backlog", "--assignee", "alice")
 	assert.NotEqual(t, 0, code)
+	_, _, code = h.run("create", "Ambiguous", "--backlog", "--claim")
+	assert.NotEqual(t, 0, code)
 }

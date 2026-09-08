@@ -72,6 +72,7 @@ type createParams struct {
 	Type           string   `long:"type" default:"task" optional:"true" alts:"epic,feature,bug,task,chore" help:"epic, feature, bug, task or chore"`
 	Priority       int      `long:"priority" default:"2" optional:"true" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	CommitHash     string   `long:"commit-hash" optional:"true" help:"implementing commit hash"`
+	Claim          bool     `long:"claim" help:"atomically assign the issue to your identity"`
 	PullRequestURL string   `long:"pull-request-url" optional:"true" help:"implementing pull request URL"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
@@ -90,7 +91,8 @@ func newCreateCommand(e *env) *cobra.Command {
 			"The relation flags read \"the new issue — relation — the named issue\",\n" +
 			"the single convention of the whole tool.\n\n" +
 			"Creating with one or more assignees is an atomic create-and-claim:\n" +
-			"--assignee is repeatable and also sets the status to in_progress.",
+			"--claim assigns your identity, while --assignee assigns the named person and\n" +
+			"is repeatable. Both also set the status to in_progress.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *createParams, cmd *cobra.Command) error {
 			if err := describe("issue")(ctx, &p.DescriptionFlags, cmd); err != nil {
@@ -102,6 +104,13 @@ func newCreateCommand(e *env) *cobra.Command {
 			cfg, err := e.config()
 			if err != nil {
 				return err
+			}
+			if p.Claim {
+				identity, err := e.identity()
+				if err != nil {
+					return err
+				}
+				p.Assignees = append(p.Assignees, identity)
 			}
 
 			// The workspace is resolved as --workspace, else AWB_WORKSPACE, else the local
