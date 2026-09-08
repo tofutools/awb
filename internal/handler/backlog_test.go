@@ -93,7 +93,12 @@ func TestBacklogWorkflowAndBoardParity(t *testing.T) {
 				}
 			}
 			assert.ElementsMatch(t, []string{child.ID, grandchild.ID, parked.ID, active.ID}, ids)
-			issue, err := be.Release(ctx, parked.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
+			issue, err := be.MakeReady(ctx, parked.ID, "")
+			require.NoError(t, err)
+			assert.Equal(t, domain.StatusOpen, issue.Status)
+			_, err = be.MoveIssue(ctx, parked.ID, backend.IssueMove{Status: domain.StatusBacklog}, "")
+			require.NoError(t, err)
+			issue, err = be.Release(ctx, parked.ID, backend.ReleaseRequest{Assignee: "mikael"}, "")
 			require.NoError(t, err)
 			assert.Equal(t, domain.StatusBacklog, issue.Status)
 			issue, err = be.Claim(ctx, parked.ID, backend.ClaimRequest{Assignee: "mikael"}, "")

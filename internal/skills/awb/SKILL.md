@@ -76,11 +76,13 @@ awb attach delete <id> trace.txt --force
 
 - type: `epic` `feature` `bug` `task` `chore` (default `task`)
 - status: `backlog` `open` `in_progress` `closed` — changed through create,
-  claim, release, close, reopen and move, never by `awb update`.
+  claim, release, close, make-ready, reopen and move, never by `awb update`.
   `awb create "Future work" --backlog` creates parked, unassigned work;
   `awb move <id> --status backlog` parks existing work and clears assignees.
-  Claim starts it, reopen activates it as open, and release leaves it parked.
-  Backlog issues and their complete parent subtree are excluded from ready.
+  Claim starts it, `awb make-ready <id>` activates it as open, reopen activates
+  backlog or closed work as open, and release leaves it parked. Make-ready
+  refuses in-progress and closed issues and does not clear blockers. Backlog
+  issues and their complete parent subtree are excluded from ready.
 - priority: `0` (highest) to `4` (lowest), default `2`
 - relations: `blocked-by` `has-parent` `discovered-from` `related`, each read
   "subject — relation — other". `blocked-by` determines blocking; `has-parent`

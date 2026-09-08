@@ -350,9 +350,10 @@ func newUpdateCommand(e *env) *cobra.Command {
 			"A description file must first be fetched with awb description get, whose\n" +
 			"receipt prevents overwriting a concurrent edit. --force deliberately\n" +
 			"replaces a description without that precondition.\n\n" +
-			"update cannot change the status or the assignee: claim, release, close and\n" +
-			"reopen are the only transitions of either, which keeps in_progress and an\n" +
-			"assignee from drifting apart and keeps a claim from being taken silently.\n\n" +
+			"update cannot change the status or the assignee: claim, release, close,\n" +
+			"make-ready, reopen and move are the transitions of either. Keeping them\n" +
+			"separate stops in_progress and an assignee from drifting apart and stops a\n" +
+			"claim from being taken silently.\n\n" +
 			"Giving no field flag at all succeeds and changes nothing.",
 		ParamEnrich: boaParams,
 		InitFuncCtx: func(ctx *boa.HookContext, p *updateParams, cmd *cobra.Command) error {
@@ -633,7 +634,7 @@ func newReopenCommand(e *env) *cobra.Command {
 		"Set the status to open and clear the assignee",
 		"Reopen a closed issue, returning it to the pool awb ready draws from.\n\n"+
 			"Its historical close-reason comment remains in the activity stream.\n\n"+
-			"It acts only on a closed issue: on one that is not closed it succeeds and\n"+
+			"It acts on closed or backlog issues: on any other status it succeeds and\n"+
 			"changes nothing, whatever its assignee, so it can never take a claim away\n"+
 			"from somebody who is working.", func(cmd *cobra.Command, id string) error {
 			be, err := e.backend(cmd.Context())

@@ -390,7 +390,6 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 		{"release", id},
 		{"close", id},
 		{"reopen", id},
-		{"make-ready", id},
 		{"update", id, "--priority", "0"},
 		{"move", id, "--status", "open"},
 		{"label", "add", id, "x"},
@@ -401,8 +400,13 @@ func TestMutatingCommandsAreSilent(t *testing.T) {
 		assert.Empty(t, stdout, args)
 		assert.Empty(t, stderr, args)
 	}
+	parked := h.create("parked", "--workspace", "awb", "--backlog")
+	stdout, stderr, code := h.run("make-ready", parked)
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
 
-	stdout, _, code := h.run("delete", id, "--force")
+	stdout, _, code = h.run("delete", id, "--force")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "Deleted "+id)
 }

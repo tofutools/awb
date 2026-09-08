@@ -359,7 +359,7 @@ paths:
         visible anchor. These position choices are mutually exclusive. Omitting
         all of them appends it to that manually ranked sequence. Workspace
         and issue ID are immutable. Status changes apply the same assignment
-        safety rules as claim, release, close and reopen.
+        safety rules as claim, release, close, make-ready and reopen.
       requestBody:
         required: true
         content:
