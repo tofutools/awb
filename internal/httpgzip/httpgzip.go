@@ -10,13 +10,20 @@
 //
 // Nothing else about it differs from the middleware it stands in for: the same
 // header is set and the same one removed, the body is the same bytes, and a
-// client that does not ask for gzip is passed through untouched. That includes
-// what neither of them does, which is notice a response that may carry no body
-// at all: a 204 or a 304 compressed by either would be answered with a
-// Content-Encoding it does not use and a gzip stream net/http refuses to
-// write.
+// client that does not ask for gzip is passed through untouched. That is
+// deliberate down to the two things neither of them does, which are inherited
+// rather than introduced and belong wherever the pooling ends up, not in a
+// copy that is going away.
 //
-// Nothing awb answers arrives here as one, and each for a reason of its own.
+// The first is the quality value. Asking whether the header contains "gzip"
+// reads "gzip;q=0" — a client saying it will not take gzip — as permission to
+// send it. Answering that correctly is a change in what the server does rather
+// than in what a response costs, which is not what this package is for.
+//
+// The second is a response that may carry no body at all: a 204 or a 304
+// compressed by either would be answered with a Content-Encoding it does not
+// use and a gzip stream net/http refuses to write. Nothing awb answers arrives
+// here as one, and each for a reason of its own.
 // The CORS preflight is 204 and is answered by the middleware outside the
 // router; the not-modified is 304 and is answered by the two handlers that
 // serve the UI, before either reaches their compressor. The third is not
