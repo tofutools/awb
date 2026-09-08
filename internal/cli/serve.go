@@ -29,6 +29,7 @@ import (
 	"github.com/tofutools/awb/internal/config"
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/handler"
+	"github.com/tofutools/awb/internal/httpgzip"
 	"github.com/tofutools/awb/internal/local"
 	"github.com/tofutools/awb/internal/openapi"
 	"github.com/tofutools/awb/internal/storage"
@@ -856,8 +857,8 @@ func buildRoutes(apiHandler http.Handler, document *openapi.Document,
 
 	root := http.NewServeMux()
 	root.Handle("/api/", apiHandler)
-	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
-	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
+	root.Handle("GET /openapi.json", recovery.Middleware(httpgzip.Gzip(document.JSONHandler())))
+	root.Handle("GET /openapi.yaml", recovery.Middleware(httpgzip.Gzip(document.YAMLHandler())))
 	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS, shell)))
 	return root, nil
 }
@@ -931,10 +932,9 @@ func matchPath(r *http.Request, pattern ...string) bool {
 // The one it skips is an attachment's content. Everything else the API answers
 // is JSON, which compresses to a fraction of itself; an attachment is opaque
 // bytes the server never looks at, and is as likely as not already compressed
-// — a screenshot, a zip, a captured core. Compressing those spends the time
-// and about a megabyte of compressor state per download to make them no
-// smaller, and the state is per concurrent request, which is exactly where a
-// server should not be spending memory.
+// — a screenshot, a zip, a captured core. Compressing those spends the time to
+// make them no smaller, and holds one of the pooled compressors for as long as
+// the download takes; see internal/httpgzip for what a compressor costs.
 //
 // That response is also the only one that states its own Content-Length, and
 // compressing it would leave that header describing a body of another length:
@@ -943,7 +943,7 @@ func matchPath(r *http.Request, pattern ...string) bool {
 // content back through the compressor would need the header dropped in the
 // same change.
 func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
-	compressed := httputil.Gzip(next)
+	compressed := httpgzip.Gzip(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if skip(r) {
 			next.ServeHTTP(w, r)
