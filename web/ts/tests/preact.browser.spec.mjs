@@ -176,6 +176,28 @@ test("editing, inspector mutations and comments retain DOM identity and viewing 
   await title.fill("Stable issue edited");
   await expect(page.locator(".cm-content")).toBeVisible();
   const view = await page.locator(".issue-view").elementHandle();
+  // A save that fails keeps the editor, its draft and its focus, and reports
+  // the failure inside the form.
+  const failSave = async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: '{"error":"simulated save failure"}',
+    });
+  };
+  await page.route(`**/api/issues/${issue.id}`, failSave);
+  await page.keyboard.press("Control+Enter");
+  await expect(page.locator(".issue-edit-form .edit-error")).toHaveText(
+    "simulated save failure",
+  );
+  await expect(title).toHaveValue("Stable issue edited");
+  await expect(title).toBeFocused();
+  await expect(page.locator("h1")).toHaveText("Stable issue");
+  await page.unroute(`**/api/issues/${issue.id}`, failSave);
   await page
     .locator(".issue-edit-form")
     .getByRole("button", { name: "Save changes" })
@@ -421,6 +443,31 @@ test("the workspace description editor keeps focus in its text area", async ({
   // A <label> around the editor would forward this click to the toolbar's
   // heading select, the first labelable element inside it.
   await expect(editor).toBeFocused();
+  // A save that fails keeps the editor open and reports the failure in it.
+  const failWorkspaceSave = async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: '{"error":"simulated workspace save failure"}',
+    });
+  };
+  await page.route(`**/api/workspaces/${workspace}`, failWorkspaceSave);
+  await page
+    .getByRole("button", { name: "Save changes", exact: true })
+    .click();
+  await expect(page.locator(".workspace-edit-form .edit-error")).toHaveText(
+    "simulated workspace save failure",
+  );
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  // The toggle still reads "Hide editor", and did not take focus back.
+  await expect(
+    page.getByRole("button", { name: "Hide editor" }),
+  ).not.toBeFocused();
+  await page.unroute(`**/api/workspaces/${workspace}`, failWorkspaceSave);
   await page
     .getByRole("button", { name: "Save changes", exact: true })
     .click();
