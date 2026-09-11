@@ -118,3 +118,26 @@ export function MarkdownInput({
     </div>
   );
 }
+
+/** The caption is a plain span, never a `<label>`: a label forwards a click
+ * anywhere inside it to its first labelable descendant, which here is the
+ * toolbar's heading select, so every click in the text area would take focus
+ * out of the editor. */
+export function MarkdownField({
+  label,
+  editorLabel,
+  ...input
+}: {
+  label: string;
+  editorLabel: string;
+  value: string;
+  name?: string;
+  onInput?: (value: string) => void;
+}) {
+  return (
+    <div class="edit-field">
+      <span class="edit-field-label">{label}</span>
+      <MarkdownInput label={editorLabel} {...input} />
+    </div>
+  );
+}

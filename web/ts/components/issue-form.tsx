@@ -5,7 +5,7 @@ import { stagedLabel } from "../issue-create.js";
 import {
   Button,
   Field,
-  MarkdownInput,
+  MarkdownField,
   Modal,
   ErrorMessage,
   Loading,
@@ -36,14 +36,12 @@ export function IssueFields({
           autofocus
         />
       </Field>
-      <div class="edit-field">
-        <span class="edit-field-label">Description (Markdown)</span>
-        <MarkdownInput
-          value={issue?.description ?? ""}
-          name="description"
-          label="Issue description (Markdown)"
-        />
-      </div>
+      <MarkdownField
+        label="Description (Markdown)"
+        editorLabel="Issue description (Markdown)"
+        name="description"
+        value={issue?.description ?? ""}
+      />
       <div class="edit-field-row">
         <Field label="Commit">
           <input

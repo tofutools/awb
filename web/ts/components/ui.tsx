@@ -15,7 +15,7 @@ import {
   useState,
 } from "preact/hooks";
 import { renderMarkdown } from "../markdown.js";
-export { MarkdownInput } from "./markdown-input.js";
+export { MarkdownField } from "./markdown-input.js";
 import { initialFor, relativeTime } from "../presentation.js";
 import {
   formatUpdated,

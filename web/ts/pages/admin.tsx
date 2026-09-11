@@ -22,7 +22,7 @@ import {
   Field,
   Loading,
   Markdown,
-  MarkdownInput,
+  MarkdownField,
   NameLink,
   Pagination,
   SearchInput,
@@ -308,13 +308,12 @@ function WorkspaceCreateForm({ hidden }: { hidden: boolean }) {
       <Field label="Name (optional)">
         <input name="name" maxLength={500} />
       </Field>
-      <Field label="Description (Markdown)">
-        <MarkdownInput
-          name="description"
-          value=""
-          label="Workspace description (Markdown)"
-        />
-      </Field>
+      <MarkdownField
+        label="Description (Markdown)"
+        editorLabel="Workspace description (Markdown)"
+        name="description"
+        value=""
+      />
       <Button type="submit" class="primary-button" disabled={mutation.busy}>
         Create workspace
       </Button>
@@ -1211,13 +1210,12 @@ function WorkspaceEditForm({
       <Field label="Name">
         <input name="name" defaultValue={workspace.name} maxLength={500} />
       </Field>
-      <Field label="Description (Markdown)">
-        <MarkdownInput
-          name="description"
-          value={workspace.description}
-          label="Workspace description (Markdown)"
-        />
-      </Field>
+      <MarkdownField
+        label="Description (Markdown)"
+        editorLabel="Workspace description (Markdown)"
+        name="description"
+        value={workspace.description}
+      />
       <Button type="submit" class="primary-button" disabled={mutation.busy}>
         Save changes
       </Button>
