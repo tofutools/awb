@@ -396,6 +396,29 @@ test("Markdown changes notify once and still bubble input", async ({
   expect(await page.evaluate(() => window.editorInputEvents)).toBe(1);
 });
 
+test("the workspace description editor keeps focus in its text area", async ({
+  page,
+}) => {
+  const workspace = await fixture(page, "e");
+  await page.goto(`${baseURL}/#/workspaces/${workspace}`);
+  await page.getByRole("button", { name: "Edit workspace" }).click();
+  const editor = page.locator(".workspace-edit-form .cm-content");
+  await editor.click();
+  await expect(editor).toBeFocused();
+  await page.keyboard.type("Described in place");
+  await expect(editor).toBeFocused();
+  await editor.click();
+  // A <label> around the editor would forward this click to the toolbar's
+  // heading select, the first labelable element inside it.
+  await expect(editor).toBeFocused();
+  await page
+    .getByRole("button", { name: "Save changes", exact: true })
+    .click();
+  await expect(
+    page.locator(".workspace-detail-description .markdown"),
+  ).toHaveText("Described in place");
+});
+
 test("epic, status, and type filters compose without duplicate page fetches", async ({
   page,
 }) => {
