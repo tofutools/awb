@@ -175,7 +175,6 @@ test("editing, inspector mutations and comments retain DOM identity and viewing 
   await expect(title).toBeFocused();
   await title.fill("Stable issue edited");
   await expect(page.locator(".cm-content")).toBeVisible();
-  const editor = await page.locator(".cm-content").elementHandle();
   const view = await page.locator(".issue-view").elementHandle();
   await page
     .locator(".issue-edit-form")
@@ -184,20 +183,24 @@ test("editing, inspector mutations and comments retain DOM identity and viewing 
   const before = await page.evaluate(() => scrollY);
   await page.keyboard.press("Control+Enter");
   await expect(page.locator("h1")).toHaveText("Stable issue edited");
-  expect(
-    await page
-      .locator(".cm-content")
-      .evaluate((node, original) => node === original, editor),
-  ).toBe(true);
+  // A saved edit hides the editor and hands focus back to the button that
+  // opened it, on the page that was already mounted.
+  await expect(page.locator(".issue-edit-form")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Edit issue", exact: true }),
+  ).toBeFocused();
   expect(
     await page
       .locator(".issue-view")
       .evaluate((node, original) => node === original, view),
   ).toBe(true);
-  // Keyboard save does not move focus or invoke compensating scroll recovery.
+  // Keyboard save does not invoke compensating scroll recovery: what stood
+  // above the editor stays where it was.
   expect(Math.abs((await page.evaluate(() => scrollY)) - before)).toBeLessThan(
     3,
   );
+  await page.getByRole("button", { name: "Edit issue", exact: true }).click();
+  await expect(title).toBeFocused();
   await title.press("Escape");
   await expect(page.locator(".issue-edit-form")).toHaveCount(0);
   await expect(
@@ -211,6 +214,9 @@ test("editing, inspector mutations and comments retain DOM identity and viewing 
   await popover.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.locator(".issue-sidebar")).toContainText("stable");
   await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Edit issue", exact: true }).click();
+  await expect(page.locator(".cm-content")).toHaveCount(1);
+  const editor = await page.locator(".cm-content").elementHandle();
   const comment = page.getByRole("textbox", { name: "Comment", exact: true });
   await comment.fill("Comment keeps the mounted page.");
   await comment.press("Control+Enter");
@@ -224,8 +230,12 @@ test("editing, inspector mutations and comments retain DOM identity and viewing 
       .locator(".issue-view")
       .evaluate((node, original) => node === original, view),
   ).toBe(true);
-  await page.getByRole("button", { name: "Edit issue", exact: true }).click();
-  await expect(page.locator(".cm-content")).toHaveCount(1);
+  // A reload from another mutation leaves the open editor mounted.
+  expect(
+    await page
+      .locator(".cm-content")
+      .evaluate((node, original) => node === original, editor),
+  ).toBe(true);
   await page.getByRole("link", { name: "Boards", exact: true }).click();
   await expect(page.locator(".cm-editor")).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -417,6 +427,12 @@ test("the workspace description editor keeps focus in its text area", async ({
   await expect(
     page.locator(".workspace-detail-description .markdown"),
   ).toHaveText("Described in place");
+  // A saved edit hides the editor and hands focus back to the button that
+  // opened it.
+  await expect(page.locator(".workspace-edit-form")).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Edit workspace" }),
+  ).toBeFocused();
 });
 
 test("epic, status, and type filters compose without duplicate page fetches", async ({

@@ -1173,14 +1173,18 @@ function useWorkspaceBundle(key: string) {
   }, [key, identity]);
 }
 
+/** A saved edit hides the editor: the updated description below it is the
+ * confirmation, and onSaved returns focus to the button that opened it. */
 function WorkspaceEditForm({
   workspace,
   reload,
   hidden,
+  onSaved,
 }: {
   workspace: Workspace;
   reload: () => Promise<void>;
   hidden: boolean;
+  onSaved: () => void;
 }) {
   const mutation = useMutation();
   const formRef = useRef<HTMLFormElement>(null);
@@ -1202,8 +1206,10 @@ function WorkspaceEditForm({
           await mutation.run(() =>
             api.updateWorkspace(workspace.key, { name, description }),
           )
-        )
+        ) {
           await reload();
+          onSaved();
+        }
       }}
     >
       <h2>Edit workspace</h2>
@@ -1597,6 +1603,7 @@ export function WorkspacePage({ route }: PageProps) {
   const key = decodeURIComponent(route.path[1] ?? "");
   const resource = useWorkspaceBundle(key);
   const [editorOpen, setEditorOpen] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
   if (resource.error !== undefined)
     return <ErrorMessage error={resource.error} />;
   if (resource.data === undefined) return <Loading />;
@@ -1616,7 +1623,10 @@ export function WorkspacePage({ route }: PageProps) {
           <h1>{workspace.name}</h1>
         </div>
         {canManage && workspace.state === "active" && (
-          <Button onClick={() => setEditorOpen(!editorOpen)}>
+          <Button
+            buttonRef={editButton}
+            onClick={() => setEditorOpen(!editorOpen)}
+          >
             {editorOpen ? "Hide editor" : "Edit workspace"}
           </Button>
         )}
@@ -1625,6 +1635,10 @@ export function WorkspacePage({ route }: PageProps) {
         workspace={workspace}
         reload={resource.reload}
         hidden={!editorOpen}
+        onSaved={() => {
+          setEditorOpen(false);
+          editButton.current?.focus({ preventScroll: true });
+        }}
       />
       <section class="workspace-detail-description">
         <h2>Description</h2>
