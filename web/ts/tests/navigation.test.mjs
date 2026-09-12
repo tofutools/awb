@@ -8,6 +8,11 @@ import {
   workspaceScopedHref,
 } from "../../static/navigation.js";
 
+test("Issues is the first primary destination", () => {
+  assert.equal(namedDestinations[0].id, "issues");
+  assert.equal(namedDestinations[0].path, "#/issues");
+});
+
 test("issue listing tabs preserve selected workspace filters", () => {
   const current = new URLSearchParams("workspace=awb&workspace=other%2Fteam&label=frontend&sort=-updated");
 

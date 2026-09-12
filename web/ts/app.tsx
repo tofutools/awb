@@ -58,7 +58,7 @@ function App() {
       }}
     >
       <header class="app-header">
-        <a href="#/ready" class="brand">
+        <a href="#/issues" class="brand">
           <img src="awb-mark.png" alt="" class="brand-mark" />
           Agent Work Board
         </a>
@@ -66,7 +66,7 @@ function App() {
           {namedDestinations.map((d) => (
             <a
               key={d.id}
-              class={(route.path[0] ?? "ready") === d.id ? "active" : ""}
+              class={(route.path[0] ?? "issues") === d.id ? "active" : ""}
               href={
                 d.workspaceScoped
                   ? workspaceScopedHref(d.workspaceScoped, route.query)
@@ -130,6 +130,7 @@ function App() {
 function RouteView({ route }: { route: Route }) {
   switch (route.path[0]) {
     case undefined:
+      return <ListingPage route={route} kind="issues" />;
     case "ready":
       return <ListingPage route={route} kind="ready" />;
     case "issues":
@@ -168,7 +169,7 @@ function RouteView({ route }: { route: Route }) {
       return (
         <div class="error">
           <h1>No such page</h1>
-          <a href="#/ready">Go to Ready</a>
+          <a href="#/issues">Go to Issues</a>
         </div>
       );
   }
