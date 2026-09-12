@@ -366,11 +366,13 @@ export function Modal({
   onClose,
   children,
   className = "",
+  dismissOnBackdrop = false,
 }: {
   title: string;
   onClose: () => void;
   children: ComponentChildren;
   className?: string;
+  dismissOnBackdrop?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose);
@@ -389,6 +391,12 @@ export function Modal({
       ref={dialog}
       class={className}
       aria-label={title}
+      onClick={(e) => {
+        if (!dismissOnBackdrop || e.target !== e.currentTarget) return;
+        const bounds = e.currentTarget.getBoundingClientRect();
+        if (e.clientX < bounds.left || e.clientX > bounds.right ||
+            e.clientY < bounds.top || e.clientY > bounds.bottom) close.current();
+      }}
       onCancel={(e) => {
         e.preventDefault();
         close.current();

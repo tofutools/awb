@@ -19,6 +19,65 @@ async function fixture(page, suffix) {
   expect(response.ok(), await response.text()).toBe(true);
   return key;
 }
+
+for (const width of [1440, 390]) {
+  test(`command palette opens without clipping at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(baseURL);
+    const trigger = page.getByRole("button", { name: /^Commands/ });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Commands", exact: true });
+    const search = dialog.getByRole("combobox", { name: "Search commands" });
+    await expect(search).toBeFocused();
+
+    // Visibility alone does not detect a dialog clipped to a header control's height.
+    const assertUnclipped = async () => {
+      expect(await dialog.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+      await expect(search).toBeInViewport();
+      await expect(dialog.getByRole("option").last()).toBeInViewport();
+      await expect(dialog.locator("footer")).toBeInViewport();
+    };
+    await assertUnclipped();
+    const options = dialog.getByRole("option");
+    const highlight = await options.first().evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(highlight).not.toBe("rgba(0, 0, 0, 0)");
+    await page.keyboard.press("ArrowDown");
+    await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+    await expect(options.nth(1)).toHaveCSS("background-color", highlight);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await page.mouse.click(2, 2);
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await page.keyboard.press("Control+k");
+    await expect(search).toBeFocused();
+    await assertUnclipped();
+    await search.fill("boards");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/boards$/);
+  });
+}
+
+test("command palette keeps search and shortcuts visible while results scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 400 });
+  await page.goto(baseURL);
+  await page.getByRole("button", { name: /^Commands/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Commands", exact: true });
+  const search = dialog.getByRole("combobox", { name: "Search commands" });
+  const list = dialog.getByRole("listbox");
+  expect(await list.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await page.keyboard.press("End");
+  await expect(dialog.getByRole("option").last()).toHaveAttribute("aria-selected", "true");
+  await expect(dialog.getByRole("option").last()).toBeInViewport();
+  await expect(search).toBeInViewport();
+  await expect(dialog.locator("footer")).toBeInViewport();
+  expect(await dialog.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+});
 async function createIssue(page, workspace, title, extra = {}) {
   const response = await page.request.post(`${baseURL}/api/issues`, {
     data: { workspace, title, ...extra },
