@@ -72,8 +72,7 @@ func (h *Handler) ListAttachments(ctx context.Context, params api.ListAttachment
 //
 // Content-Length is the recorded size rather than one measured on the way
 // past, so a stored file that no longer matches its metadata breaks the
-// transfer instead of arriving as a plausible short one. It can be sent at all
-// only because this is the response serve does not compress; see gzipExcept.
+// transfer instead of arriving as a plausible short one.
 //
 // The reader is closed by the generated encoder once the body has been
 // written.

@@ -409,8 +409,8 @@ tells browser security checks which origin is real.
 Cross-site writes are checked, external CORS origins are opt-in, state-changing
 responses are not cached, and attachment downloads are always opaque
 attachments rather than same-origin renderable content. Attachment responses
-are the one type not gzipped, preserving streaming behavior and a useful
-content length.
+are the one type not gzipped, avoiding wasted compression work while preserving
+streaming behavior.
 
 ## Compatibility boundaries
 
