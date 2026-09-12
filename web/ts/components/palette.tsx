@@ -187,7 +187,7 @@ function PaletteDialog({
             )}
             <div
               id={`palette-option-${index}`}
-              class={`command-palette-option ${index === selected ? "active" : ""}`}
+              class={`command-palette-option ${index === selected ? "selected" : ""}`}
               role="option"
               aria-selected={index === selected}
               onPointerMove={() => setSelected(index)}

@@ -81,7 +81,8 @@ nav a.active::after {
 }
 
 @media (min-width: 701px) {
-  .app-header > * { height: var(--control-height); }
+  /* Dialogs mounted by header controls size themselves to their content. */
+  .app-header > :not(dialog) { height: var(--control-height); }
   nav a { box-sizing: border-box; height: 100%; }
   main > :not(.issue-view) { margin-inline: 1rem; }
 }
