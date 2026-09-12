@@ -102,12 +102,12 @@ func TestValidateDescription(t *testing.T) {
 
 func TestValidateImplementationLinks(t *testing.T) {
 	t.Run("commit hash", func(t *testing.T) {
-		for _, value := range []string{"", "01234567", strings.Repeat("A", domain.MaxCommitHashLen)} {
+		for _, value := range []string{"", "0123456", strings.Repeat("A", domain.MaxCommitHashLen)} {
 			got, err := domain.ValidateCommitHash(value)
 			require.NoError(t, err)
 			assert.Equal(t, value, got)
 		}
-		for _, value := range []string{"1234567", "1234567g", strings.Repeat("a", domain.MaxCommitHashLen+1)} {
+		for _, value := range []string{"123456", "1234567g", strings.Repeat("a", domain.MaxCommitHashLen+1)} {
 			_, err := domain.ValidateCommitHash(value)
 			assertUsage(t, err, value)
 		}

@@ -138,8 +138,8 @@ func TestCreateIssueUsesTheDirectModeDefaults(t *testing.T) {
 
 func TestIssueImplementationLinks(t *testing.T) {
 	a := newAPI(t)
-	issue := a.createIssue(`{"workspace":"awb","title":"Linked","commit_hash":"01234567","pull_request_url":"https://example.com/issues/42"}`)
-	assert.Equal(t, "01234567", issue.CommitHash)
+	issue := a.createIssue(`{"workspace":"awb","title":"Linked","commit_hash":"0123456","pull_request_url":"https://example.com/issues/42"}`)
+	assert.Equal(t, "0123456", issue.CommitHash)
 	assert.Equal(t, "https://example.com/issues/42", issue.PullRequestURL)
 
 	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
@@ -151,7 +151,7 @@ func TestIssueImplementationLinks(t *testing.T) {
 	assert.Equal(t, "http://example.com/pull/43", updated.PullRequestURL)
 
 	for _, body := range []string{
-		`{"commit_hash":"1234567"}`,
+		`{"commit_hash":"123456"}`,
 		`{"commit_hash":"1234567g"}`,
 		`{"pull_request_url":"ssh://example.com/repo"}`,
 		`{"pull_request_url":"https://:443/issues/42"}`,
