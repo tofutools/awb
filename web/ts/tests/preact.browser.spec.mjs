@@ -30,9 +30,11 @@ async function createIssue(page, workspace, title, extra = {}) {
 async function closeIssue(page, issue) {
   const current = await page.request.get(`${baseURL}/api/issues/${issue.id}`);
   expect(current.ok(), await current.text()).toBe(true);
+  const etag = current.headers().etag;
+  expect(etag).toBeTruthy();
   const response = await page.request.post(
     `${baseURL}/api/issues/${issue.id}/close`,
-    { data: {}, headers: { "If-Match": current.headers().etag } },
+    { data: {}, headers: { "If-Match": etag } },
   );
   expect(response.ok(), await response.text()).toBe(true);
 }
