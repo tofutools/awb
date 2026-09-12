@@ -29,6 +29,17 @@ test("explicit selections are canonical, unique, and ignore unknown values", () 
   assert.deepEqual(selectedIssueStatuses(query), ["open", "closed"]);
 });
 
+test("a stale selection falls back to defaults unless it carries the empty marker", () => {
+  assert.deepEqual(
+    selectedIssueStatuses(new URLSearchParams("status=in-progress&status=removed")),
+    defaultIssueStatuses,
+  );
+  assert.deepEqual(
+    selectedIssueStatuses(new URLSearchParams("status=removed&status=")),
+    [],
+  );
+});
+
 test("legacy include-closed widens an explicit status selection in the UI too", () => {
   const query = new URLSearchParams("status=open&include-closed=true");
   assert.deepEqual(selectedIssueStatuses(query), ["open", "closed"]);

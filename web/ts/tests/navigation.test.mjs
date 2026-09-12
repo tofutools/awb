@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  defaultDestination,
   legacyIssueSearchHref,
   namedDestinations,
   navigationPath,
@@ -9,8 +10,9 @@ import {
 } from "../../static/navigation.js";
 
 test("Issues is the first primary destination", () => {
-  assert.equal(namedDestinations[0].id, "issues");
-  assert.equal(namedDestinations[0].path, "#/issues");
+  assert.equal(defaultDestination.id, "issues");
+  assert.equal(defaultDestination.path, "#/issues");
+  assert.equal(namedDestinations[0], defaultDestination);
 });
 
 test("issue listing tabs preserve selected workspace filters", () => {

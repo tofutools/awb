@@ -1,7 +1,11 @@
 import { render, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api } from "./api.js";
-import { namedDestinations, workspaceScopedHref } from "./navigation.js";
+import {
+  defaultDestination,
+  namedDestinations,
+  workspaceScopedHref,
+} from "./navigation.js";
 import { accountMenuItems } from "./preferences.js";
 import { parseRoute, type Route } from "./routing/route.js";
 import { AppContext, Avatar, ErrorMessage, Popover } from "./components/ui.js";
@@ -58,7 +62,7 @@ function App() {
       }}
     >
       <header class="app-header">
-        <a href="#/issues" class="brand">
+        <a href={defaultDestination.path} class="brand">
           <img src="awb-mark.png" alt="" class="brand-mark" />
           Agent Work Board
         </a>
@@ -66,7 +70,7 @@ function App() {
           {namedDestinations.map((d) => (
             <a
               key={d.id}
-              class={(route.path[0] ?? "issues") === d.id ? "active" : ""}
+              class={(route.path[0] ?? defaultDestination.id) === d.id ? "active" : ""}
               href={
                 d.workspaceScoped
                   ? workspaceScopedHref(d.workspaceScoped, route.query)
@@ -130,7 +134,7 @@ function App() {
 function RouteView({ route }: { route: Route }) {
   switch (route.path[0]) {
     case undefined:
-      return <ListingPage route={route} kind="issues" />;
+      return <ListingPage route={route} kind={defaultDestination.id} />;
     case "ready":
       return <ListingPage route={route} kind="ready" />;
     case "issues":
@@ -169,7 +173,7 @@ function RouteView({ route }: { route: Route }) {
       return (
         <div class="error">
           <h1>No such page</h1>
-          <a href="#/issues">Go to Issues</a>
+          <a href={defaultDestination.path}>Go to {defaultDestination.label}</a>
         </div>
       );
   }

@@ -27,6 +27,40 @@ async function createIssue(page, workspace, title, extra = {}) {
   return response.json();
 }
 
+async function closeIssue(page, issue) {
+  const current = await page.request.get(`${baseURL}/api/issues/${issue.id}`);
+  expect(current.ok(), await current.text()).toBe(true);
+  const response = await page.request.post(
+    `${baseURL}/api/issues/${issue.id}/close`,
+    { data: {}, headers: { "If-Match": current.headers().etag } },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+test("the root opens Issues first and the status view can show closed work", async ({
+  page,
+}) => {
+  const workspace = await fixture(page, "s");
+  const open = await createIssue(page, workspace, "Open status target");
+  const closed = await createIssue(page, workspace, "Closed status target");
+  await closeIssue(page, closed);
+
+  await page.goto(baseURL);
+  await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
+  const tabs = page.locator(".app-header nav a");
+  await expect(tabs.first()).toHaveText("Issues");
+  await expect(tabs.first()).toHaveClass(/active/);
+
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  await expect(page.getByRole("link", { name: new RegExp(open.id) })).toBeVisible();
+  await expect(page.getByRole("link", { name: new RegExp(closed.id) })).toHaveCount(0);
+  await page.getByRole("button", { name: "Configure issue view" }).click();
+  const view = page.getByRole("dialog", { name: "Issue view options" });
+  await view.getByRole("checkbox", { name: "Closed", exact: true }).check();
+  await view.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("link", { name: new RegExp(closed.id) })).toBeVisible();
+});
+
 test("direct links, reload and history preserve URL state and mounted filter controls", async ({
   page,
 }) => {
