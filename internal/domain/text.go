@@ -9,7 +9,7 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// The length maxima. Everything but a description is counted in Unicode code
+// The length bounds. Everything but a description is counted in Unicode code
 // points, after trimming for the two fields that are trimmed; a description,
 // the one field meant to hold prose, is bounded in bytes instead, because that
 // is the size that matters for a blob nobody counts characters in.
