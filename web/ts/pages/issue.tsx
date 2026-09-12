@@ -128,7 +128,7 @@ export function IssuePage({ route }: { route: Route }) {
         </div>
         <ErrorMessage error={resource.error} />
         {editing && mutable && (
-          <IssueEditor issue={issue} reload={resource.reload} />
+          <IssueEditor issue={issue} reload={resource.reload} onSaved={hide} />
         )}
         <section class="issue-description">
           <h2>Description</h2>
@@ -188,19 +188,21 @@ export function IssuePage({ route }: { route: Route }) {
     </div>
   );
 }
+/** A saved edit hides the editor: the updated issue below it is the
+ * confirmation, and onSaved returns focus to the button that opened it. */
 function IssueEditor({
   issue,
   reload,
+  onSaved,
 }: {
   issue: Issue;
   reload: () => Promise<void>;
+  onSaved: () => void;
 }) {
   const mutation = useMutation();
-  const [saved, setSaved] = useState(false);
   return (
     <form
       class="edit-panel issue-edit-form"
-      onInput={() => setSaved(false)}
       onKeyDown={(e) => {
         if (issueEditorShortcut(e) === "save") {
           e.preventDefault();
@@ -210,11 +212,15 @@ function IssueEditor({
       onSubmit={(e) => {
         e.preventDefault();
         const patch = issueFields(e.currentTarget);
-        void mutation.run(async () => {
-          await api.updateIssue(issue.id, patch);
-          await reload();
-          setSaved(true);
-        });
+        void (async () => {
+          if (
+            await mutation.run(async () => {
+              await api.updateIssue(issue.id, patch);
+              await reload();
+            })
+          )
+            onSaved();
+        })();
       }}
     >
       <h2>Edit issue</h2>
@@ -224,7 +230,6 @@ function IssueEditor({
         <span class="edit-shortcut-hint">
           Esc to hide · Ctrl/⌘+Enter to save
         </span>
-        {saved && <span role="status">Saved.</span>}
         <Button
           type="submit"
           class="primary-button"
