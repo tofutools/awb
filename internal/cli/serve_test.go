@@ -153,9 +153,17 @@ func TestResponsesAreCompressedOnce(t *testing.T) {
 	for _, path := range []string{"/", "/app.js", "/app.css", "/api/identity", "/openapi.json"} {
 		resp, body := get(t, h, http.MethodGet, path, "Accept-Encoding", "gzip")
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		require.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), path)
 
 		// After a single decode the body must be the real thing, not more gzip.
 		assert.False(t, strings.HasPrefix(body, "\x1f\x8b"), "%s is compressed twice", path)
+		assert.NotEmpty(t, body, path)
+
+		// A zero quality value is an explicit refusal, including for static
+		// assets compressed by StaticHandler's own middleware.
+		resp, body = get(t, h, http.MethodGet, path, "Accept-Encoding", "gzip;q=0")
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.Empty(t, resp.Header.Get("Content-Encoding"), path)
 		assert.NotEmpty(t, body, path)
 	}
 }
@@ -1163,7 +1171,7 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 // that made one per response would allocate that to answer a request the size
 // of this one. This runs the whole serve chain and fails if the cost of a
 // response scales with the compressor rather than with the body; see
-// internal/httpgzip.
+// the gzip middleware.
 //
 // The threshold is a fraction of what one compressor per response would cost
 // rather than a figure, because what is being pinned is the shape of the cost.
@@ -1203,13 +1211,10 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 
 // An OPTIONS request into the API is answered with a body.
 //
-// This is here for internal/httpgzip, which compresses whatever it is given
-// and would put a Content-Encoding on a response that may carry no body. The
-// generated server answers OPTIONS on a path it routes with 204, which is
-// exactly such a response; awb does not, because it supplies its own
-// method-not-allowed, and that is the whole of why the compressor never sees
-// one. It is a property of how the server is assembled, invisible from the
-// middleware, and this is what keeps it from being lost.
+// The generated server would answer OPTIONS on a path it routes with 204, but
+// awb supplies its own method-not-allowed response. Keep that server behaviour
+// explicit: clients receive the same useful 405 response on routed API paths
+// and an ordinary 404 elsewhere.
 //
 // The CORS preflight is the other 204, and it is answered by the middleware
 // outside the router; it reaches this only when the origin is not one the

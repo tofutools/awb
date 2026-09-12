@@ -11,7 +11,7 @@ require (
 	github.com/go-faster/errors v0.8.0
 	github.com/go-faster/jx v1.2.0
 	github.com/goccy/go-yaml v1.19.2
-	github.com/mikaelstaldal/go-server-common v1.10.0
+	github.com/mikaelstaldal/go-server-common v1.11.0
 	github.com/ogen-go/ogen v1.24.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1

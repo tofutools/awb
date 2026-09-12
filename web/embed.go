@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tofutools/awb/internal/httpgzip"
+	"github.com/mikaelstaldal/go-server-common/httputil"
 )
 
 //go:embed all:static
@@ -62,7 +62,7 @@ func Shell(basePath string) ([]byte, error) {
 func SPAHandler(files http.Handler, staticFS fs.FS, shell []byte) http.Handler {
 	sum := sha256.Sum256(shell)
 	etag := `"` + base64.RawURLEncoding.EncodeToString(sum[:]) + `"`
-	shellBody := httpgzip.Gzip(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	shellBody := httputil.Gzip(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(shell)
 	}))
 

@@ -53,7 +53,6 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/remote` | The same interface over HTTP, for `--db https://…`. |
 | `internal/cli` | The cobra tree, the three output modes, `serve`, the `demo` data set. |
 | `internal/handler` | The JSON API: the implementation of the generated server interface. |
-| `internal/httpgzip` | The response compressor, pooled. **Temporary**: it belongs upstream. |
 | `internal/config` | The two config files, precedence, identity, colour. |
 | `internal/awberr` | The error taxonomy both surfaces report. |
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
@@ -93,12 +92,6 @@ Three structural rules hold the design together:
 * Cross-cutting HTTP middleware — auth, CSRF, gzip, security headers, recovery,
   static serving, SQLite opening and migration — comes from
   `github.com/mikaelstaldal/go-server-common`. Prefer it over reimplementing.
-  `internal/httpgzip` is the one exception, and a temporary one: it is that
-  library's gzip middleware with the compressors pooled, because a `gzip.Writer`
-  costs about 800 kB whatever it compresses and a browser asks for gzip on every
-  request. It goes away when the pooling has moved upstream, where it would also
-  reach the static assets `httputil.StaticHandler` compresses through its own
-  copy of that middleware.
 * Tests use `testify`: `require` for fatal assertions, `assert` for non-fatal.
 * Frontend tests are `node --test` over `web/ts/tests/*.test.mjs`.
 * A `default` schema value is inherited by every field that references the
