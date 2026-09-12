@@ -24,7 +24,7 @@ const (
 	MaxWorkspaceKeyLen   = 16
 	MaxBoardViewNameLen  = 100
 	MaxCommitHashLen     = 128
-	MinCommitHashLen     = 8
+	MinCommitHashLen     = 7
 	MaxPullRequestURLLen = 1000
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.

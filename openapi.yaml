@@ -2278,7 +2278,7 @@ components:
     CommitHash:
       type: string
       description: An optional hexadecimal commit identifier, stored exactly as supplied.
-      pattern: '^(|[0-9A-Fa-f]{8,128})$'
+      pattern: '^(|[0-9A-Fa-f]{7,128})$'
 
     PullRequestURL:
       type: string
