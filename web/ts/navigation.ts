@@ -12,9 +12,17 @@ export interface NamedDestination {
 
 /** Named destinations are data rather than palette branches, so a future
  * board or view is one registry entry instead of another dialog flow. */
+export const defaultDestination = {
+  id: "issues",
+  label: "Issues",
+  path: "#/issues",
+  keywords: "tickets work items",
+  workspaceScoped: "issues",
+} as const satisfies NamedDestination;
+
 export const namedDestinations: readonly NamedDestination[] = [
+  defaultDestination,
   { id: "ready", label: "Ready", path: "#/ready", keywords: "board unassigned available", workspaceScoped: "ready" },
-  { id: "issues", label: "Issues", path: "#/issues", keywords: "tickets work items", workspaceScoped: "issues" },
   { id: "blocked", label: "Blocked", path: "#/blocked", keywords: "dependencies waiting", workspaceScoped: "blocked" },
   { id: "boards", label: "Boards", path: "#/boards", keywords: "kanban scrum swimlanes views", workspaceScoped: "boards" },
   { id: "workspaces", label: "Workspaces", path: "#/workspaces", keywords: "workspaces boards", workspaceScoped: "workspaces" },

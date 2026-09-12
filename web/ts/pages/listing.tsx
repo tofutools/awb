@@ -158,7 +158,7 @@ export function ListingPage({
   };
   const titles = { issues: "Issues", ready: "Ready", blocked: "Blocked" };
   const ledes = {
-    issues: "All issues in the selected workspaces.",
+    issues: "Non-closed issues in the selected workspaces, unless the view includes closed work.",
     ready: "Open, unblocked and unassigned. Pick one up.",
     blocked: "Work waiting on something else.",
   };

@@ -35,7 +35,12 @@ export function selectedIssueStatuses(query: URLSearchParams): IssueStatusValue[
       ? [...issueStatusVocabulary]
       : [...defaultIssueStatuses];
   }
-  const selected = canonicalStatuses(query.getAll("status"));
+  const values = query.getAll("status");
+  let selected = canonicalStatuses(values);
+  // Only the explicit empty marker means "nothing". A stale or misspelled
+  // shared URL falls back to the ordinary live-work set, as other filters do.
+  if (selected.length === 0 && !values.includes(""))
+    selected = [...defaultIssueStatuses];
   if (query.get("include-closed") === "true" && selected.length > 0 && !selected.includes("closed")) {
     return issueStatusVocabulary.filter((status) => selected.includes(status) || status === "closed");
   }

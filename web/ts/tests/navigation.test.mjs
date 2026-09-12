@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  defaultDestination,
   legacyIssueSearchHref,
   namedDestinations,
   navigationPath,
   workspaceScopedHref,
 } from "../../static/navigation.js";
+
+test("Issues is the first primary destination", () => {
+  assert.equal(defaultDestination.id, "issues");
+  assert.equal(defaultDestination.path, "#/issues");
+  assert.equal(namedDestinations[0], defaultDestination);
+});
 
 test("issue listing tabs preserve selected workspace filters", () => {
   const current = new URLSearchParams("workspace=awb&workspace=other%2Fteam&label=frontend&sort=-updated");
