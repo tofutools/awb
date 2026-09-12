@@ -103,18 +103,21 @@ function PaletteDialog({
       ?.scrollIntoView({ block: "nearest" });
   }, [selected]);
   return (
-    <Modal title="Commands" className="command-palette" onClose={onClose}>
+    <Modal title="Commands" className="command-palette" onClose={onClose} dismissOnBackdrop>
       <div class="command-palette-search search-control">
         <input
           ref={input}
           autofocus
           type="text"
+          autoComplete="off"
+          spellcheck={false}
           value={query}
           placeholder="Search commands, issues, workspaces, users…"
           aria-label="Search commands"
           role="combobox"
           aria-expanded="true"
           aria-controls="palette-results"
+          aria-autocomplete="list"
           aria-activedescendant={
             commands.length ? `palette-option-${selected}` : undefined
           }
@@ -199,6 +202,12 @@ function PaletteDialog({
           </div>
         ))}
       </div>
+      <footer aria-label="Keyboard shortcuts">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>PgUp</kbd><kbd>PgDn</kbd> jump</span>
+        <span><kbd>↵</kbd> run</span>
+        <span><kbd>esc</kbd> close</span>
+      </footer>
     </Modal>
   );
 }

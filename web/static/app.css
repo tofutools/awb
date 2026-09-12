@@ -122,7 +122,7 @@ nav a.active::after {
 }
 .command-palette {
   width: min(40rem, calc(100vw - 2rem));
-  max-height: min(38rem, calc(100vh - 4rem));
+  max-height: calc(88vh - 1rem);
   margin-top: 12vh;
   padding: 0;
   overflow: hidden;
@@ -132,15 +132,11 @@ nav a.active::after {
   color: var(--fg);
   box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
 }
+.command-palette[open] { display: flex; flex-direction: column; }
+.command-palette > :not(.command-palette-results) { flex-shrink: 0; }
 .command-palette::backdrop { background: rgb(0 0 0 / 42%); }
 .command-palette h2 {
-  margin: 0;
-  padding: 0.75rem 1rem 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  display: none;
 }
 .command-palette-search { position: relative; display: block; }
 .command-palette-search > input {
@@ -151,9 +147,10 @@ nav a.active::after {
   outline: 0;
   background: transparent;
   color: inherit;
-  font: 1.05rem inherit;
+  font: inherit;
+  font-size: 1rem;
 }
-.command-palette-results { max-height: min(25rem, 52vh); padding: 0.35rem; overflow-y: auto; }
+.command-palette-results { min-height: 0; max-height: 50vh; padding: 0.35rem; overflow-y: auto; }
 .command-palette-group {
   padding: 0.55rem 0.65rem 0.25rem;
   color: var(--muted);
@@ -177,6 +174,7 @@ nav a.active::after {
 .command-palette-status { min-height: 1.7rem; padding: 0.15rem 1rem; color: var(--muted); font-size: 0.78rem; }
 .command-palette footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   padding: 0.55rem 1rem;
   border-top: 1px solid var(--line);
