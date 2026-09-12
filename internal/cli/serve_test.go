@@ -154,6 +154,7 @@ func TestResponsesAreCompressedOnce(t *testing.T) {
 		resp, body := get(t, h, http.MethodGet, path, "Accept-Encoding", "gzip")
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
 		require.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), path)
+		assert.Equal(t, []string{"Accept-Encoding"}, resp.Header.Values("Vary"), path)
 
 		// After a single decode the body must be the real thing, not more gzip.
 		assert.False(t, strings.HasPrefix(body, "\x1f\x8b"), "%s is compressed twice", path)
@@ -164,6 +165,7 @@ func TestResponsesAreCompressedOnce(t *testing.T) {
 		resp, body = get(t, h, http.MethodGet, path, "Accept-Encoding", "gzip;q=0")
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
 		assert.Empty(t, resp.Header.Get("Content-Encoding"), path)
+		assert.Equal(t, []string{"Accept-Encoding"}, resp.Header.Values("Vary"), path)
 		assert.NotEmpty(t, body, path)
 	}
 }
@@ -1190,23 +1192,27 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 	resp, body := send(t, h, http.MethodPost, "/api/workspaces", `{"key":"awb"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, body)
 
-	// The response is left compressed rather than read back through a gzip
-	// reader, which would allocate a decompressor here and measure the test
-	// rather than the server.
-	before := totalAlloc()
-	for range requests {
-		req := httptest.NewRequest(http.MethodGet, "/api/workspaces", nil)
-		req.Header.Set("Accept-Encoding", "gzip")
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
-	}
-	allocated := totalAlloc() - before
+	for _, path := range []string{"/api/workspaces", "/app.js"} {
+		t.Run(path, func(t *testing.T) {
+			// The response is left compressed rather than read back through a
+			// gzip reader, which would allocate a decompressor here and measure
+			// the test rather than the server.
+			before := totalAlloc()
+			for range requests {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("Accept-Encoding", "gzip")
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				require.Equal(t, http.StatusOK, rec.Code)
+				require.Equal(t, "gzip", rec.Header().Get("Content-Encoding"))
+			}
+			allocated := totalAlloc() - before
 
-	assert.Less(t, allocated, uint64(allowed),
-		"%d compressed responses allocated %d bytes: a compressor is being made for each one",
-		requests, allocated)
+			assert.Less(t, allocated, uint64(allowed),
+				"%d compressed responses from %s allocated %d bytes: a compressor is being made for each one",
+				requests, path, allocated)
+		})
+	}
 }
 
 // An OPTIONS request into the API is answered with a body.
@@ -1216,9 +1222,9 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 // explicit: clients receive the same useful 405 response on routed API paths
 // and an ordinary 404 elsewhere.
 //
-// The CORS preflight is the other 204, and it is answered by the middleware
-// outside the router; it reaches this only when the origin is not one the
-// server allows, and is then an ordinary refusal like any other OPTIONS.
+// An allowed CORS preflight is answered with 204 by middleware outside the
+// router. A preflight reaches this handler only when its origin is not allowed,
+// and is then an ordinary refusal like any other OPTIONS.
 func TestOptionsIntoTheAPICarriesABody(t *testing.T) {
 	h := newServeHandler(t)
 
@@ -1232,9 +1238,6 @@ func TestOptionsIntoTheAPICarriesABody(t *testing.T) {
 	} {
 		resp, body := get(t, h, http.MethodOptions, request.path)
 		assert.Equal(t, request.status, resp.StatusCode, "OPTIONS on %s", request.what)
-		assert.NotEqual(t, http.StatusNoContent, resp.StatusCode,
-			"OPTIONS on %s is answered without a body, which nothing may compress",
-			request.what)
 		assert.NotEmpty(t, body, "OPTIONS on %s answered with no body", request.what)
 	}
 

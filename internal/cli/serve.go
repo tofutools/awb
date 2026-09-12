@@ -935,13 +935,6 @@ func matchPath(r *http.Request, pattern ...string) bool {
 // make them no smaller, and holds one of the pooled compressors for as long as
 // the download takes; a gzip.Writer carries about 800 kB of state regardless
 // of the response it compresses.
-//
-// That response is also the only one that states its own Content-Length, and
-// compressing it would leave that header describing a body of another length:
-// this middleware clears the header on its way in, and the generated encoder
-// sets it again on the way out. So the two belong together — putting the
-// content back through the compressor would need the header dropped in the
-// same change.
 func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 	compressed := httputil.Gzip(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
