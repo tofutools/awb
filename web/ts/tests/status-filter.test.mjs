@@ -38,6 +38,10 @@ test("a stale selection falls back to defaults unless it carries the empty marke
     selectedIssueStatuses(new URLSearchParams("status=removed&status=")),
     [],
   );
+  assert.deepEqual(
+    selectedIssueStatuses(new URLSearchParams("status=removed&include-closed=true")),
+    issueStatusVocabulary,
+  );
 });
 
 test("legacy include-closed widens an explicit status selection in the UI too", () => {
