@@ -4,6 +4,15 @@ export interface Route {
   path: string[];
   query: URLSearchParams;
 }
+/** Viewing and editing an issue share a mounted page so history navigation
+ * preserves its data and viewing position. Other paths identify distinct pages. */
+export function routeKey(route: Route): string {
+  const path =
+    route.path[0] === "issues" && route.path.length === 3 && route.path[2] === "edit"
+      ? route.path.slice(0, 2)
+      : route.path;
+  return path.join("/");
+}
 export function routeHref(route: Route, query = route.query): string {
   const suffix = query.toString();
   return `#/${route.path.join("/")}${suffix ? `?${suffix}` : ""}`;

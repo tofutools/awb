@@ -253,6 +253,36 @@ test("issue creation retains drafts, stages resources and uploads attachments", 
   ).toHaveValue("1");
 });
 
+test("issue edit URLs support Back, Forward and direct loading without replacing the page", async ({ page }) => {
+  const workspace = await fixture(page, "nav");
+  const issue = await createIssue(page, workspace, "Issue navigation");
+  const viewURL = `${baseURL}/#/issues/${issue.id}`;
+  await page.goto(viewURL);
+  const view = await page.locator(".issue-view").elementHandle();
+  await page.getByRole("button", { name: "Edit issue", exact: true }).click();
+  await expect(page).toHaveURL(`${viewURL}/edit`);
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.locator(".issue-edit-form")).toHaveCount(0);
+  await page.goForward();
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  expect(await page.locator(".issue-view").evaluate((node, original) => node === original, view)).toBe(true);
+
+  await page.reload();
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.getByRole("button", { name: "Edit issue", exact: true })).toBeFocused();
+
+  await page.goto(`${viewURL}/edit`);
+  await page.locator(".issue-edit-form input[name=title]").fill("Saved navigation");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.locator("h1")).toHaveText("Saved navigation");
+  await expect(page.locator(".issue-edit-form")).toHaveCount(0);
+});
+
 test("editing, inspector mutations and comments retain DOM identity and viewing position", async ({
   page,
 }) => {

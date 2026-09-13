@@ -7,7 +7,7 @@ import {
   workspaceScopedHref,
 } from "./navigation.js";
 import { accountMenuItems } from "./preferences.js";
-import { parseRoute, type Route } from "./routing/route.js";
+import { parseRoute, routeKey, type Route } from "./routing/route.js";
 import { AppContext, Avatar, ErrorMessage, Popover } from "./components/ui.js";
 import { Icon, type IconName } from "./components/icon.js";
 import { Palette } from "./components/palette.js";
@@ -119,7 +119,7 @@ function App() {
           </p>
         )}
         {ready ? (
-          <RouteView route={route} key={route.path.join("/")} />
+          <RouteView route={route} key={routeKey(route)} />
         ) : (
           <p class="route-loading" role="status">
             Loading…

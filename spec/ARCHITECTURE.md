@@ -331,7 +331,10 @@ other client does.
 
 `web/ts/app.tsx` owns the application shell and caller context. `routing/`
 parses the existing hash URLs; page identity follows the path while query
-changes update the same component. `pages/` contains issue, listing, board,
+changes update the same component. Issue view and `#/issues/<id>/edit`
+share a mounted page; opening the editor adds a history entry so Back closes
+it and Forward reopens it. Saving or hiding replaces the edit entry with the
+issue view. Leaving edit mode discards its unsaved form draft. `pages/` contains issue, listing, board,
 and administration workflows. `components/` holds shared controls, forms,
 Markdown/editor integration, and issue tables. `state/` holds persisted board
 preferences; the root TypeScript modules hold API access, generated API types,
