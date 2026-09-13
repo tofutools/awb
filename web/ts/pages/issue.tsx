@@ -206,6 +206,11 @@ function IssueEditor({
   onSaved: () => void;
 }) {
   const mutation = useMutation();
+  const mounted = useRef(true);
+  useLayoutEffect(() => () => {
+    mounted.current = false;
+  }, []);
+  const editorURL = location.hash;
   return (
     <form
       class="edit-panel issue-edit-form"
@@ -224,8 +229,11 @@ function IssueEditor({
               await api.updateIssue(issue.id, patch);
               await reload();
             })
-          )
-            onSaved();
+          ) {
+            // A save may finish after navigation or after a new editor opens.
+            // Only the editor that submitted it may change the current route.
+            if (mounted.current && location.hash === editorURL) onSaved();
+          }
         })();
       }}
     >

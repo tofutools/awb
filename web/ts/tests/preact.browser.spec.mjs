@@ -283,6 +283,39 @@ test("issue edit URLs support Back, Forward and direct loading without replacing
   await expect(page.locator(".issue-edit-form")).toHaveCount(0);
 });
 
+test("a save finishing after navigation does not reopen the issue", async ({ page }) => {
+  const workspace = await fixture(page, "late");
+  const issue = await createIssue(page, workspace, "Delayed save");
+  await page.goto(`${baseURL}/#/issues/${issue.id}/edit`);
+  let releaseSave;
+  const pendingSave = new Promise((resolve) => { releaseSave = resolve; });
+  let saveStarted;
+  const started = new Promise((resolve) => { saveStarted = resolve; });
+  await page.route(`**/api/issues/${issue.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const response = await route.fetch();
+    saveStarted();
+    await pendingSave;
+    await route.fulfill({ response });
+  });
+  await page.locator(".issue-edit-form input[name=title]").fill("Saved later");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await started;
+  await page.evaluate(() => { location.hash = "#/issues"; });
+  await expect(page.locator(".issue-view")).toHaveCount(0);
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/issues/${issue.id}`) && response.request().method() === "GET");
+  const workspaceRefreshed = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/workspaces/${workspace}`));
+  releaseSave();
+  await refreshed;
+  // The post-save workspace refresh completes before onSaved could navigate.
+  await workspaceRefreshed;
+  await page.waitForTimeout(100);
+  await expect(page).toHaveURL(`${baseURL}/#/issues`);
+  await expect(page.locator(".issue-view")).toHaveCount(0);
+});
+
 test("editing, inspector mutations and comments retain DOM identity and viewing position", async ({
   page,
 }) => {
