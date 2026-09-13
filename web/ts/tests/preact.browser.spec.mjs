@@ -586,6 +586,90 @@ test("Markdown changes notify once and still bubble input", async ({
   expect(await page.evaluate(() => window.editorInputEvents)).toBe(1);
 });
 
+test("workspace edit URLs support history, direct loading and Escape", async ({ page }) => {
+  const workspace = await fixture(page, "wnav");
+  const viewURL = `${baseURL}/#/workspaces/${workspace}`;
+  await page.goto(viewURL);
+  const view = await page.locator(".workspace-view").elementHandle();
+  await page.getByRole("button", { name: "Edit workspace", exact: true }).click();
+  await expect(page).toHaveURL(`${viewURL}/edit`);
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator(".workspace-edit-form")).toBeHidden();
+  await page.goForward();
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  expect(await page.locator(".workspace-view").evaluate((node, original) => node === original, view)).toBe(true);
+  await page.reload();
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.getByRole("button", { name: "Edit workspace" })).toBeFocused();
+});
+
+test("board dialog URLs support history, direct loading and saved-view editing", async ({ page }) => {
+  const workspace = await fixture(page, "bnav");
+  const boardURL = `${baseURL}/#/boards?workspace=${workspace}`;
+  await page.goto(boardURL);
+  const board = await page.locator(".board-page").elementHandle();
+  await page.getByRole("button", { name: "Edit view", exact: true }).click();
+  await expect(page).toHaveURL(`${baseURL}/#/boards/default/edit?workspace=${workspace}`);
+  const editor = page.getByRole("dialog", { name: "Edit default board" });
+  await expect(editor).toBeVisible();
+  await page.goBack();
+  await expect(editor).toHaveCount(0);
+  await page.goForward();
+  await expect(editor).toBeVisible();
+  expect(await page.locator(".board-page").evaluate((node, original) => node === original, board)).toBe(true);
+  await page.reload();
+  await expect(editor).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(boardURL);
+  await page.getByRole("button", { name: "Save as view" }).click();
+  await expect(page).toHaveURL(`${baseURL}/#/boards/default/new?workspace=${workspace}`);
+  await page.reload();
+  const create = page.getByRole("dialog", { name: "Save board view" });
+  await expect(create).toBeVisible();
+  await create.getByLabel("Name", { exact: true }).fill("Navigation view");
+  await create.getByRole("button", { name: "Save view", exact: true }).click();
+  await expect(create).toHaveCount(0);
+  const savedURL = page.url();
+  await expect(page).toHaveURL(/#\/boards\/[^/?]+$/);
+  await page.getByRole("button", { name: "Edit view", exact: true }).click();
+  await expect(page).toHaveURL(`${savedURL}/edit`);
+  await page.reload();
+  const saved = page.getByRole("dialog", { name: "Edit board view" });
+  await saved.getByLabel("Name", { exact: true }).fill("Renamed navigation view");
+  await saved.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page).toHaveURL(savedURL);
+  await expect(page.getByRole("combobox", { name: "Board view" })).toContainText("Renamed navigation view");
+
+  // Shared views owned by another account expose duplication and personal settings.
+  await page.route("**/api/boards/*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.view.owner = "another-user";
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  for (const [button, mode, title] of [
+    ["Duplicate", "duplicate", "Duplicate board view"],
+    ["View settings", "settings", "View settings"],
+  ]) {
+    await page.getByRole("button", { name: button, exact: true }).click();
+    await expect(page).toHaveURL(`${savedURL}/${mode}`);
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog).toBeVisible();
+    await page.goBack();
+    await expect(dialog).toHaveCount(0);
+    await page.goForward();
+    await expect(dialog).toBeVisible();
+    await page.reload();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page).toHaveURL(savedURL);
+  }
+});
+
 test("the workspace description editor keeps focus in its text area", async ({
   page,
 }) => {

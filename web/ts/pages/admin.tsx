@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import {
   api,
@@ -1187,6 +1187,8 @@ function WorkspaceEditForm({
   onSaved: () => void;
 }) {
   const mutation = useMutation();
+  const generation = useRef(0);
+  useLayoutEffect(() => () => { generation.current++; }, [hidden]);
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (!hidden)
@@ -1200,6 +1202,8 @@ function WorkspaceEditForm({
       aria-busy={mutation.busy || undefined}
       onSubmit={async (event) => {
         event.preventDefault();
+        const submittedGeneration = generation.current;
+        const submittedURL = location.hash;
         const name = formValue(event.currentTarget, "name");
         const description = formValue(event.currentTarget, "description");
         if (
@@ -1208,7 +1212,9 @@ function WorkspaceEditForm({
           )
         ) {
           await reload();
-          onSaved();
+          // Hiding/reopening or leaving this page invalidates its pending navigation.
+          if (generation.current === submittedGeneration && location.hash === submittedURL)
+            onSaved();
         }
       }}
     >
@@ -1602,7 +1608,11 @@ function WorkspaceMembershipSection({
 export function WorkspacePage({ route }: PageProps) {
   const key = decodeURIComponent(route.path[1] ?? "");
   const resource = useWorkspaceBundle(key);
-  const [editorOpen, setEditorOpen] = useState(false);
+  const editorOpen = route.path.length === 3 && route.path[2] === "edit";
+  const hideEditor = () => {
+    replaceRoute({ ...route, path: route.path.slice(0, 2) });
+    editButton.current?.focus({ preventScroll: true });
+  };
   const editButton = useRef<HTMLButtonElement>(null);
   if (resource.error !== undefined)
     return <ErrorMessage error={resource.error} />;
@@ -1610,7 +1620,12 @@ export function WorkspacePage({ route }: PageProps) {
   const { workspace, activity, members, currentUser, canManage } =
     resource.data;
   return (
-    <div class="workspace-view">
+    <div class="workspace-view" onKeyDown={(event) => {
+      if (editorOpen && event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+        event.preventDefault();
+        hideEditor();
+      }
+    }}>
       {workspace.state === "archived" && (
         <div class="workspace-archive-banner" role="status">
           <strong>Archived</strong>This workspace is retained as read-only
@@ -1625,7 +1640,12 @@ export function WorkspacePage({ route }: PageProps) {
         {canManage && workspace.state === "active" && (
           <Button
             buttonRef={editButton}
-            onClick={() => setEditorOpen(!editorOpen)}
+            onClick={() => {
+              if (editorOpen) hideEditor();
+              else location.hash = routeHref({
+                ...route, path: [...route.path.slice(0, 2), "edit"],
+              });
+            }}
           >
             {editorOpen ? "Hide editor" : "Edit workspace"}
           </Button>
@@ -1634,11 +1654,8 @@ export function WorkspacePage({ route }: PageProps) {
       <WorkspaceEditForm
         workspace={workspace}
         reload={resource.reload}
-        hidden={!editorOpen}
-        onSaved={() => {
-          setEditorOpen(false);
-          editButton.current?.focus({ preventScroll: true });
-        }}
+        hidden={!editorOpen || !canManage || workspace.state !== "active"}
+        onSaved={hideEditor}
       />
       <section class="workspace-detail-description">
         <h2>Description</h2>

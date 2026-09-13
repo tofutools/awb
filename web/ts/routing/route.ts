@@ -4,13 +4,17 @@ export interface Route {
   path: string[];
   query: URLSearchParams;
 }
-/** Viewing and editing an issue share a mounted page so history navigation
- * preserves its data and viewing position. Other paths identify distinct pages. */
+/** Editor paths share their underlying page identity so history navigation
+ * preserves loaded data and viewing position. */
 export function routeKey(route: Route): string {
-  const path =
-    route.path[0] === "issues" && route.path.length === 3 && route.path[2] === "edit"
-      ? route.path.slice(0, 2)
-      : route.path;
+  let path = route.path;
+  if (
+    path.length === 3 &&
+    (((path[0] === "issues" || path[0] === "workspaces") && path[2] === "edit") ||
+      (path[0] === "boards" && ["edit", "new", "duplicate", "settings"].includes(path[2])))
+  ) path = path.slice(0, 2);
+  if (path[0] === "boards" && path.length === 2 && path[1] === "default")
+    path = path.slice(0, 1);
   return path.join("/");
 }
 export function routeHref(route: Route, query = route.query): string {
