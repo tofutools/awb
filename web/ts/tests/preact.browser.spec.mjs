@@ -670,6 +670,47 @@ test("board dialog URLs support history, direct loading and saved-view editing",
   }
 });
 
+for (const kind of ["workspace", "board"]) {
+  test(`a late ${kind} save cannot redirect subsequent navigation`, async ({ page }) => {
+    const workspace = await fixture(page, kind === "workspace" ? "wl" : "bl");
+    if (kind === "workspace") {
+      await page.goto(`${baseURL}/#/workspaces/${workspace}/edit`);
+      await page.locator(".workspace-edit-form input[name=name]").fill("Saved later");
+    } else {
+      await page.goto(`${baseURL}/#/boards/default/new?workspace=${workspace}`);
+      await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("Saved later");
+    }
+    const endpoint = kind === "workspace" ? `/api/workspaces/${workspace}` : "/api/board-views";
+    const method = kind === "workspace" ? "PATCH" : "POST";
+    let releaseSave;
+    const pending = new Promise((resolve) => { releaseSave = resolve; });
+    let saveStarted;
+    const started = new Promise((resolve) => { saveStarted = resolve; });
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== method) return route.continue();
+      const response = await route.fetch();
+      saveStarted();
+      await pending;
+      await route.fulfill({ response });
+    });
+    await page.getByRole("button", {
+      name: kind === "workspace" ? "Save changes" : "Save view", exact: true,
+    }).click();
+    await started;
+    await page.evaluate(() => { location.hash = "#/issues"; });
+    await expect(page.locator(kind === "workspace" ? ".workspace-view" : ".board-page")).toHaveCount(0);
+    const completed = page.waitForResponse((response) =>
+      response.url().endsWith(endpoint) && response.request().method() === method);
+    const refreshed = kind === "workspace" ? page.waitForResponse((response) =>
+      response.url().endsWith(endpoint) && response.request().method() === "GET") : Promise.resolve();
+    releaseSave();
+    await completed;
+    await refreshed;
+    await page.waitForTimeout(100);
+    await expect(page).toHaveURL(`${baseURL}/#/issues`);
+  });
+}
+
 test("the workspace description editor keeps focus in its text area", async ({
   page,
 }) => {
