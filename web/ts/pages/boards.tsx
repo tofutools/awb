@@ -1,6 +1,6 @@
 import { Fragment } from "preact";
 import { useDragSurface } from "../components/drag.js";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import {
   api,
   type Board,
@@ -9,7 +9,7 @@ import {
   type BoardFilters,
   type IssueSummary,
 } from "../api.js";
-import { type Route } from "../routing/route.js";
+import { replaceRoute, routeHref, type Route } from "../routing/route.js";
 import {
   legalBoardTargets,
   splitBoardFilter,
@@ -57,10 +57,13 @@ export function BoardsPage({ route }: { route: Route }) {
   const ref = route.path[1] ?? "default";
   const [laneLimit, setLaneLimit] = useState(10);
   const [revision, setRevision] = useState(0);
-  const [editor, setEditor] = useState<{
-    source: BoardView;
-    mode: "default" | "edit" | "new" | "duplicate" | "presentation";
-  } | null>(null);
+  const editorPath = route.path.length === 3 ? route.path[2] : undefined;
+  const openEditor = (mode: string) => {
+    location.hash = routeHref({ ...route, path: ["boards", ref, mode] });
+  };
+  const closeEditor = () => {
+    replaceRoute({ ...route, path: ref === "default" ? ["boards"] : ["boards", ref] });
+  };
   const [drag, setDrag] = useState<IssueSummary | null>(null);
   const [moveError, setMoveError] = useState<{
     id: string;
@@ -188,54 +191,15 @@ export function BoardsPage({ route }: { route: Route }) {
           </label>
           {!saved ? (
             <>
-              <Button
-                onClick={() =>
-                  setEditor({
-                    source: effectiveDefaultBoardView(identity, route),
-                    mode: "new",
-                  })
-                }
-              >
-                Save as view
-              </Button>
-              <Button
-                onClick={() =>
-                  setEditor({
-                    source: defaultBoardView(identity),
-                    mode: "default",
-                  })
-                }
-              >
-                Edit view
-              </Button>
+              <Button onClick={() => openEditor("new")}>Save as view</Button>
+              <Button onClick={() => openEditor("edit")}>Edit view</Button>
             </>
           ) : saved.owner === identity ? (
-            <Button
-              onClick={() =>
-                void mutation.run(async () =>
-                  setEditor({
-                    source: await api.boardView(saved.id),
-                    mode: "edit",
-                  }),
-                )
-              }
-            >
-              Edit view
-            </Button>
+            <Button onClick={() => openEditor("edit")}>Edit view</Button>
           ) : (
             <>
-              <Button
-                onClick={() => setEditor({ source: saved, mode: "duplicate" })}
-              >
-                Duplicate
-              </Button>
-              <Button
-                onClick={() =>
-                  setEditor({ source: saved, mode: "presentation" })
-                }
-              >
-                View settings
-              </Button>
+              <Button onClick={() => openEditor("duplicate")}>Duplicate</Button>
+              <Button onClick={() => openEditor("settings")}>View settings</Button>
             </>
           )}
           {saved?.shared && (
@@ -338,14 +302,21 @@ export function BoardsPage({ route }: { route: Route }) {
       ) : (
         !resource.error && <Loading />
       )}
-      {editor && (
-        <BoardEditor
-          source={editor.source}
-          mode={editor.mode}
-          onClose={() => setEditor(null)}
-          onSaved={async () => {
-            setRevision(revision + 1);
-            setEditor(null);
+      {data && editorPath && ["edit", "new", "duplicate", "settings"].includes(editorPath) && (
+        <BoardEditorRoute
+          key={editorPath}
+          source={saved ?? (editorPath === "new"
+            ? effectiveDefaultBoardView(identity, route)
+            : defaultBoardView(identity))}
+          mode={!saved
+            ? (editorPath === "new" ? "new" : "default")
+            : editorPath === "edit" && saved.owner === identity ? "edit"
+            : editorPath === "duplicate" ? "duplicate" : "presentation"}
+          onClose={closeEditor}
+          onSaved={async (destination?: string) => {
+            setRevision((value) => value + 1);
+            if (destination) replaceRoute({ path: ["boards", destination], query: new URLSearchParams() });
+            else closeEditor();
           }}
         />
       )}
@@ -657,19 +628,36 @@ function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
     </section>
   );
 }
+type BoardEditorProps = {
+  source: BoardView;
+  mode: "default" | "edit" | "new" | "duplicate" | "presentation";
+  onClose: () => void;
+  onSaved: (destination?: string) => Promise<void>;
+};
+/** Editing a saved view reads its current ETag before mounting the form,
+ * including when the dialog is reached through a direct URL or Forward. */
+function BoardEditorRoute(props: BoardEditorProps) {
+  const resource = useResource(async () =>
+    props.mode === "edit" ? api.boardView(props.source.id) : props.source,
+    [props.source.id, props.mode]);
+  if (!resource.data) return <><ErrorMessage error={resource.error} />{!resource.error && <Loading />}</>;
+  return <BoardEditor {...props} source={resource.data} />;
+}
 function BoardEditor({
   source,
   mode,
   onClose,
   onSaved,
-}: {
-  source: BoardView;
-  mode: "default" | "edit" | "new" | "duplicate" | "presentation";
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
+}: BoardEditorProps) {
   const { identity } = useApp();
   const mutation = useMutation();
+  const mounted = useRef(true);
+  useLayoutEffect(() => () => { mounted.current = false; }, []);
+  const editorURL = location.hash;
+  const finish = async (destination?: string) => {
+    // A dialog that has closed cannot redirect a later page or editor.
+    if (mounted.current && location.hash === editorURL) await onSaved(destination);
+  };
   const editDefault = mode === "default";
   const presentation = mode === "presentation";
   const resource = useResource(async () => {
@@ -764,7 +752,7 @@ function BoardEditor({
             void mutation.run(async () => {
               if (presentation) {
                 saveHiddenBoardEpics(identity, source.id, new Set(hidden));
-                await onSaved();
+                await finish();
                 return;
               }
               const labels = splitBoardFilter(String(form.get("labels")));
@@ -807,7 +795,7 @@ function BoardEditor({
               if (editDefault) {
                 saveDefaultBoardPreferences(identity, { ...source, ...body });
                 saveHiddenBoardEpics(identity, "default", new Set(hidden));
-                await onSaved();
+                await finish();
                 return;
               }
               const saved =
@@ -815,8 +803,7 @@ function BoardEditor({
                   ? await api.updateBoardView(source.id, body)
                   : await api.createBoardView(body);
               saveHiddenBoardEpics(identity, saved.id, new Set(hidden));
-              await onSaved();
-              location.hash = `#/boards/${saved.id}`;
+              await finish(saved.id);
             });
           }}
         >
@@ -1101,8 +1088,7 @@ function BoardEditor({
                   )
                     void mutation.run(async () => {
                       await api.deleteBoardView(source.id);
-                      onClose();
-                      location.hash = "#/boards";
+                      await finish("default");
                     });
                 }}
               >

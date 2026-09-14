@@ -253,6 +253,69 @@ test("issue creation retains drafts, stages resources and uploads attachments", 
   ).toHaveValue("1");
 });
 
+test("issue edit URLs support Back, Forward and direct loading without replacing the page", async ({ page }) => {
+  const workspace = await fixture(page, "nav");
+  const issue = await createIssue(page, workspace, "Issue navigation");
+  const viewURL = `${baseURL}/#/issues/${issue.id}`;
+  await page.goto(viewURL);
+  const view = await page.locator(".issue-view").elementHandle();
+  await page.getByRole("button", { name: "Edit issue", exact: true }).click();
+  await expect(page).toHaveURL(`${viewURL}/edit`);
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.locator(".issue-edit-form")).toHaveCount(0);
+  await page.goForward();
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  expect(await page.locator(".issue-view").evaluate((node, original) => node === original, view)).toBe(true);
+
+  await page.reload();
+  await expect(page.locator(".issue-edit-form")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.getByRole("button", { name: "Edit issue", exact: true })).toBeFocused();
+
+  await page.goto(`${viewURL}/edit`);
+  await page.locator(".issue-edit-form input[name=title]").fill("Saved navigation");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.locator("h1")).toHaveText("Saved navigation");
+  await expect(page.locator(".issue-edit-form")).toHaveCount(0);
+});
+
+test("a save finishing after navigation does not reopen the issue", async ({ page }) => {
+  const workspace = await fixture(page, "late");
+  const issue = await createIssue(page, workspace, "Delayed save");
+  await page.goto(`${baseURL}/#/issues/${issue.id}/edit`);
+  let releaseSave;
+  const pendingSave = new Promise((resolve) => { releaseSave = resolve; });
+  let saveStarted;
+  const started = new Promise((resolve) => { saveStarted = resolve; });
+  await page.route(`**/api/issues/${issue.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const response = await route.fetch();
+    saveStarted();
+    await pendingSave;
+    await route.fulfill({ response });
+  });
+  await page.locator(".issue-edit-form input[name=title]").fill("Saved later");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await started;
+  await page.evaluate(() => { location.hash = "#/issues"; });
+  await expect(page.locator(".issue-view")).toHaveCount(0);
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/issues/${issue.id}`) && response.request().method() === "GET");
+  const workspaceRefreshed = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/workspaces/${workspace}`));
+  releaseSave();
+  await refreshed;
+  // The post-save workspace refresh completes before onSaved could navigate.
+  await workspaceRefreshed;
+  await page.waitForTimeout(100);
+  await expect(page).toHaveURL(`${baseURL}/#/issues`);
+  await expect(page.locator(".issue-view")).toHaveCount(0);
+});
+
 test("editing, inspector mutations and comments retain DOM identity and viewing position", async ({
   page,
 }) => {
@@ -522,6 +585,131 @@ test("Markdown changes notify once and still bubble input", async ({
     .toEqual(["one change"]);
   expect(await page.evaluate(() => window.editorInputEvents)).toBe(1);
 });
+
+test("workspace edit URLs support history, direct loading and Escape", async ({ page }) => {
+  const workspace = await fixture(page, "wnav");
+  const viewURL = `${baseURL}/#/workspaces/${workspace}`;
+  await page.goto(viewURL);
+  const view = await page.locator(".workspace-view").elementHandle();
+  await page.getByRole("button", { name: "Edit workspace", exact: true }).click();
+  await expect(page).toHaveURL(`${viewURL}/edit`);
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator(".workspace-edit-form")).toBeHidden();
+  await page.goForward();
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  expect(await page.locator(".workspace-view").evaluate((node, original) => node === original, view)).toBe(true);
+  await page.reload();
+  await expect(page.locator(".workspace-edit-form")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(viewURL);
+  await expect(page.getByRole("button", { name: "Edit workspace" })).toBeFocused();
+});
+
+test("board dialog URLs support history, direct loading and saved-view editing", async ({ page }) => {
+  const workspace = await fixture(page, "bnav");
+  const boardURL = `${baseURL}/#/boards?workspace=${workspace}`;
+  await page.goto(boardURL);
+  const board = await page.locator(".board-page").elementHandle();
+  await page.getByRole("button", { name: "Edit view", exact: true }).click();
+  await expect(page).toHaveURL(`${baseURL}/#/boards/default/edit?workspace=${workspace}`);
+  const editor = page.getByRole("dialog", { name: "Edit default board" });
+  await expect(editor).toBeVisible();
+  await page.goBack();
+  await expect(editor).toHaveCount(0);
+  await page.goForward();
+  await expect(editor).toBeVisible();
+  expect(await page.locator(".board-page").evaluate((node, original) => node === original, board)).toBe(true);
+  await page.reload();
+  await expect(editor).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(boardURL);
+  await page.getByRole("button", { name: "Save as view" }).click();
+  await expect(page).toHaveURL(`${baseURL}/#/boards/default/new?workspace=${workspace}`);
+  await page.reload();
+  const create = page.getByRole("dialog", { name: "Save board view" });
+  await expect(create).toBeVisible();
+  await create.getByLabel("Name", { exact: true }).fill("Navigation view");
+  await create.getByRole("button", { name: "Save view", exact: true }).click();
+  await expect(create).toHaveCount(0);
+  const savedURL = page.url();
+  await expect(page).toHaveURL(/#\/boards\/[^/?]+$/);
+  await page.getByRole("button", { name: "Edit view", exact: true }).click();
+  await expect(page).toHaveURL(`${savedURL}/edit`);
+  await page.reload();
+  const saved = page.getByRole("dialog", { name: "Edit board view" });
+  await saved.getByLabel("Name", { exact: true }).fill("Renamed navigation view");
+  await saved.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page).toHaveURL(savedURL);
+  await expect(page.getByRole("combobox", { name: "Board view" })).toContainText("Renamed navigation view");
+
+  // Shared views owned by another account expose duplication and personal settings.
+  await page.route("**/api/boards/*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.view.owner = "another-user";
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  for (const [button, mode, title] of [
+    ["Duplicate", "duplicate", "Duplicate board view"],
+    ["View settings", "settings", "View settings"],
+  ]) {
+    await page.getByRole("button", { name: button, exact: true }).click();
+    await expect(page).toHaveURL(`${savedURL}/${mode}`);
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog).toBeVisible();
+    await page.goBack();
+    await expect(dialog).toHaveCount(0);
+    await page.goForward();
+    await expect(dialog).toBeVisible();
+    await page.reload();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page).toHaveURL(savedURL);
+  }
+});
+
+for (const kind of ["workspace", "board"]) {
+  test(`a late ${kind} save cannot redirect subsequent navigation`, async ({ page }) => {
+    const workspace = await fixture(page, kind === "workspace" ? "wl" : "bl");
+    if (kind === "workspace") {
+      await page.goto(`${baseURL}/#/workspaces/${workspace}/edit`);
+      await page.locator(".workspace-edit-form input[name=name]").fill("Saved later");
+    } else {
+      await page.goto(`${baseURL}/#/boards/default/new?workspace=${workspace}`);
+      await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("Saved later");
+    }
+    const endpoint = kind === "workspace" ? `/api/workspaces/${workspace}` : "/api/board-views";
+    const method = kind === "workspace" ? "PATCH" : "POST";
+    let releaseSave;
+    const pending = new Promise((resolve) => { releaseSave = resolve; });
+    let saveStarted;
+    const started = new Promise((resolve) => { saveStarted = resolve; });
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== method) return route.continue();
+      const response = await route.fetch();
+      saveStarted();
+      await pending;
+      await route.fulfill({ response });
+    });
+    await page.getByRole("button", {
+      name: kind === "workspace" ? "Save changes" : "Save view", exact: true,
+    }).click();
+    await started;
+    await page.evaluate(() => { location.hash = "#/issues"; });
+    await expect(page.locator(kind === "workspace" ? ".workspace-view" : ".board-page")).toHaveCount(0);
+    const completed = page.waitForResponse((response) =>
+      response.url().endsWith(endpoint) && response.request().method() === method);
+    const refreshed = kind === "workspace" ? page.waitForResponse((response) =>
+      response.url().endsWith(endpoint) && response.request().method() === "GET") : Promise.resolve();
+    releaseSave();
+    await completed;
+    await refreshed;
+    await page.waitForTimeout(100);
+    await expect(page).toHaveURL(`${baseURL}/#/issues`);
+  });
+}
 
 test("the workspace description editor keeps focus in its text area", async ({
   page,

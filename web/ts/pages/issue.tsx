@@ -13,7 +13,7 @@ import { inlineChildIssueCreate } from "../issue-create.js";
 import { childIssueFilters } from "../issue-children.js";
 import { HistoryChange } from "../components/history-diff.js";
 import { nextSortValue, sortState } from "../listings.js";
-import { type Route } from "../routing/route.js";
+import { replaceRoute, routeHref, type Route } from "../routing/route.js";
 import {
   Button,
   ErrorMessage,
@@ -62,7 +62,7 @@ export function IssuePage({ route }: { route: Route }) {
       workspace,
     };
   }, [id, showClosedChildren]);
-  const [editing, setEditing] = useState(false);
+  const editing = route.path.length === 3 && route.path[2] === "edit";
   const [collapsed, setCollapsed] = useState(() =>
     issueSidebarCollapsed(issueSidebarStorage(window)),
   );
@@ -77,7 +77,7 @@ export function IssuePage({ route }: { route: Route }) {
   const { issue, activity, children, workspace } = resource.data;
   const mutable = workspace.state === "active";
   const hide = () => {
-    setEditing(false);
+    replaceRoute({ ...route, path: route.path.slice(0, 2) });
     editButton.current?.focus({ preventScroll: true });
   };
   return (
@@ -119,7 +119,13 @@ export function IssuePage({ route }: { route: Route }) {
             {mutable && (
               <Button
                 buttonRef={editButton}
-                onClick={() => setEditing(!editing)}
+                onClick={() => {
+                  if (editing) hide();
+                  else location.hash = routeHref({
+                    ...route,
+                    path: [...route.path.slice(0, 2), "edit"],
+                  });
+                }}
               >
                 {editing ? "Hide editor" : "Edit issue"}
               </Button>
@@ -200,6 +206,11 @@ function IssueEditor({
   onSaved: () => void;
 }) {
   const mutation = useMutation();
+  const mounted = useRef(true);
+  useLayoutEffect(() => () => {
+    mounted.current = false;
+  }, []);
+  const editorURL = location.hash;
   return (
     <form
       class="edit-panel issue-edit-form"
@@ -218,8 +229,11 @@ function IssueEditor({
               await api.updateIssue(issue.id, patch);
               await reload();
             })
-          )
-            onSaved();
+          ) {
+            // A save may finish after navigation or after a new editor opens.
+            // Only the editor that submitted it may change the current route.
+            if (mounted.current && location.hash === editorURL) onSaved();
+          }
         })();
       }}
     >

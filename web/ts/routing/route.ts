@@ -4,6 +4,19 @@ export interface Route {
   path: string[];
   query: URLSearchParams;
 }
+/** Editor paths share their underlying page identity so history navigation
+ * preserves loaded data and viewing position. */
+export function routeKey(route: Route): string {
+  let path = route.path;
+  if (
+    path.length === 3 &&
+    (((path[0] === "issues" || path[0] === "workspaces") && path[2] === "edit") ||
+      (path[0] === "boards" && ["edit", "new", "duplicate", "settings"].includes(path[2])))
+  ) path = path.slice(0, 2);
+  if (path[0] === "boards" && path.length === 2 && path[1] === "default")
+    path = path.slice(0, 1);
+  return path.join("/");
+}
 export function routeHref(route: Route, query = route.query): string {
   const suffix = query.toString();
   return `#/${route.path.join("/")}${suffix ? `?${suffix}` : ""}`;

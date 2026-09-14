@@ -331,7 +331,17 @@ other client does.
 
 `web/ts/app.tsx` owns the application shell and caller context. `routing/`
 parses the existing hash URLs; page identity follows the path while query
-changes update the same component. `pages/` contains issue, listing, board,
+changes update the same component. Issue view and `#/issues/<id>/edit`
+share a mounted page; opening the editor adds a history entry so Back closes
+it and Forward reopens it. Saving or hiding replaces the edit entry with the
+issue view. Leaving issue edit mode discards its unsaved form draft.
+Workspace editing uses `#/workspaces/<key>/edit` with the same navigation
+behavior; its hidden form retains drafts while the workspace page stays mounted.
+Board dialogs use `#/boards/<ref>/edit`, `new`, `duplicate`, or `settings`
+(with `default` as the default board reference), retaining the underlying board
+while history opens or closes the dialog. Saving or cancelling replaces the
+dialog entry with the destination board. Late saves never redirect a page the
+user has since navigated to. `pages/` contains issue, listing, board,
 and administration workflows. `components/` holds shared controls, forms,
 Markdown/editor integration, and issue tables. `state/` holds persisted board
 preferences; the root TypeScript modules hold API access, generated API types,
