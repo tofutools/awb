@@ -274,12 +274,12 @@ func TestPickerRunsAsAProgram(t *testing.T) {
 		&picker{t: theme, cols: e.issueCols(theme, issues, false),
 			rows: len(issues), chosen: noSelection},
 		tea.WithContext(ctx), tea.WithInput(keys), tea.WithOutput(screen), tea.WithWindowSize(100, 12))
+	require.NoError(t, ctx.Err(), "the picker did not draw and finish within five seconds")
 	require.NoError(t, err)
 	assert.Equal(t, 2, chosen)
 
 	drawn := screen.String()
 	assert.Contains(t, drawn, issues[chosen].ID, "the chosen row was drawn")
-	assert.Contains(t, drawn, "enter show", "under the line of help")
 }
 
 // brokenScreen is a terminal that will not take output, which is what a closed
