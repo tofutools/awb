@@ -37,8 +37,9 @@ import (
 )
 
 // Server fixtures copy a closed, migrated database so each test retains its own
-// file and transactions without replaying migrations. Migration coverage belongs
-// to storage and the CLI init tests.
+// file and transactions without replaying migrations. Closing the template
+// checkpoints and removes its WAL, so the database file is complete on its own.
+// Migration coverage belongs to storage and the CLI init tests.
 var serverTestDatabase = sync.OnceValues(func() ([]byte, error) {
 	dir, err := os.MkdirTemp("", "awb-server-test-")
 	if err != nil {
@@ -1086,9 +1087,6 @@ func totalAlloc() uint64 {
 // 7% for the download when it was written, so the headroom is wide and only a
 // real regression closes it.
 func TestAttachmentContentIsStreamed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: transfers 24 MiB and measures allocations")
-	}
 	const (
 		size    = 24 << 20
 		allowed = size / 4
@@ -1218,9 +1216,6 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 // says nothing under the race detector, which allocates on its own account;
 // the build runs neither this nor anything else under it.
 func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: measures allocations across hundreds of compressed responses")
-	}
 	const (
 		requests           = 200
 		perFreshCompressor = 800 << 10
@@ -1368,9 +1363,6 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 // job of the tests that name an expected sequence — TestListOrderIsTotal and
 // the per-listing tests in internal/storage.
 func TestEveryAPIListingIsDeterministic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: exhaustively compares every API listing and sort order")
-	}
 	h, be := newServeHandlerOn(t,
 		serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 	ctx := t.Context()
