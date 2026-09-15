@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -225,6 +229,22 @@ func TestPickerCursorSurvivesColourBeingOff(t *testing.T) {
 	assert.NotContains(t, rows[1], "\x1b[", "and the headings are never the cursor")
 }
 
+// pickerProgramScreen signals when the listing is rendered, so input cannot
+// quit the program before its asynchronous renderer has drawn the first frame.
+type pickerProgramScreen struct {
+	strings.Builder
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (s *pickerProgramScreen) Write(p []byte) (int, error) {
+	n, err := s.Builder.Write(p)
+	if strings.Contains(s.String(), "enter show") {
+		s.once.Do(func() { close(s.ready) })
+	}
+	return n, err
+}
+
 // The whole program, run as it is run for real, only attached to a pipe and a
 // buffer rather than to a terminal: keys go in, the alternate screen and the
 // listing come out, and the row chosen is the one enter was pressed on.
@@ -234,20 +254,32 @@ func TestPickerRunsAsAProgram(t *testing.T) {
 		cfg: &config.Config{Color: config.ColorAlways}}
 	theme := e.theme()
 
-	var screen strings.Builder
-	// Down twice, then enter.
-	keys := strings.NewReader("\x1b[B\x1b[B\r")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	screen := &pickerProgramScreen{ready: make(chan struct{})}
+	keys, input := io.Pipe()
+	defer keys.Close()
+	defer input.Close()
+	go func() {
+		select {
+		case <-screen.ready:
+			// Down twice, then enter, after the first listing is drawn.
+			_, _ = io.WriteString(input, "\x1b[B\x1b[B\r")
+		case <-ctx.Done():
+		}
+		_ = input.Close()
+	}()
 
 	chosen, err := runPicker(
 		&picker{t: theme, cols: e.issueCols(theme, issues, false),
 			rows: len(issues), chosen: noSelection},
-		tea.WithInput(keys), tea.WithOutput(&screen), tea.WithWindowSize(100, 12))
+		tea.WithContext(ctx), tea.WithInput(keys), tea.WithOutput(screen), tea.WithWindowSize(100, 12))
+	require.NoError(t, ctx.Err(), "the picker did not draw and finish within five seconds")
 	require.NoError(t, err)
 	assert.Equal(t, 2, chosen)
 
 	drawn := screen.String()
 	assert.Contains(t, drawn, issues[chosen].ID, "the chosen row was drawn")
-	assert.Contains(t, drawn, "enter show", "under the line of help")
 }
 
 // brokenScreen is a terminal that will not take output, which is what a closed
