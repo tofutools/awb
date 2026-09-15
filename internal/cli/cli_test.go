@@ -659,6 +659,9 @@ func TestOutputIsDeterministic(t *testing.T) {
 // job of the tests that name an expected sequence, in internal/storage and
 // beside the feature each listing belongs to.
 func TestEveryListingIsDeterministic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: exhaustively compares every CLI listing, output mode and sort order")
+	}
 	h := newHarness(t)
 	h.mustRun("workspace", "create", "web", "--name", "Agent Work Board")
 
@@ -698,8 +701,8 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 	h.mustRun("workspace", "restore", "old")
 	h.mustRun("workspace", "archive", "old")
 
-	h.mustRunStdin("hunter2\n", "user", "add", "alice", "--password")
-	h.mustRunStdin("hunter2\n", "user", "add", "bob", "--password")
+	h.mustRun("user", "add", "alice")
+	h.mustRun("user", "add", "bob")
 	h.mustRun("workspace", "grant", "awb", "bob")
 	h.mustRun("workspace", "grant", "awb", "alice")
 	h.mustRun("workspace", "grant", "web", "alice")

@@ -310,7 +310,7 @@ func TestTheAPIAnswersWithTheCallersPermissions(t *testing.T) {
 // reports the same thing through a server as it would on a file.
 func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -522,7 +522,7 @@ func TestDescriptionReceiptWorkflowIsTheSameOverRemoteBackend(t *testing.T) {
 // does on a file, which is what one interface with two implementations buys.
 func TestRemoteModeManagesUsers(t *testing.T) {
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 

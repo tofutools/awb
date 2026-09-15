@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/tofutools/awb/internal/domain"
 	"github.com/tofutools/awb/internal/local"
@@ -34,6 +35,38 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 	"github.com/tofutools/awb/web"
 )
+
+// Server fixtures copy a closed, migrated database so each test retains its own
+// file and transactions without replaying migrations. Migration coverage belongs
+// to storage and the CLI init tests.
+var serverTestDatabase = sync.OnceValues(func() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "awb-server-test-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "awb.db")
+	db, err := storage.Init(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Close(); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
+})
+
+func newServerTestDatabase(t *testing.T, path string) (*storage.DB, error) {
+	t.Helper()
+	data, err := serverTestDatabase()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return nil, err
+	}
+	return storage.Open(t.Context(), path)
+}
 
 func newServeHandler(t *testing.T, corsOrigins ...string) http.Handler {
 	t.Helper()
@@ -77,7 +110,7 @@ func newServeHandlerAuthenticating(t *testing.T, opts serveOptions, authenticate
 	http.Handler, *local.Backend) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -1053,13 +1086,16 @@ func totalAlloc() uint64 {
 // 7% for the download when it was written, so the headroom is wide and only a
 // real regression closes it.
 func TestAttachmentContentIsStreamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: transfers 24 MiB and measures allocations")
+	}
 	const (
 		size    = 24 << 20
 		allowed = size / 4
 	)
 
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -1182,6 +1218,9 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 // says nothing under the race detector, which allocates on its own account;
 // the build runs neither this nor anything else under it.
 func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: measures allocations across hundreds of compressed responses")
+	}
 	const (
 		requests           = 200
 		perFreshCompressor = 800 << 10
@@ -1260,7 +1299,7 @@ func TestOptionsIntoTheAPICarriesABody(t *testing.T) {
 // answered 404 by a server that holds it.
 func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	dir := t.TempDir()
-	db, err := storage.Init(t.Context(), filepath.Join(dir, "awb.db"))
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -1329,17 +1368,25 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 // job of the tests that name an expected sequence — TestListOrderIsTotal and
 // the per-listing tests in internal/storage.
 func TestEveryAPIListingIsDeterministic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: exhaustively compares every API listing and sort order")
+	}
 	h, be := newServeHandlerOn(t,
 		serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 	ctx := t.Context()
 
-	_, err := be.CreateUser(ctx, backend.UserCreate{
-		Name: "mikael", Password: "hunter2", WorkspaceAdmin: true, UserAdmin: true})
+	// This test exercises authenticated listing order, not password strength.
+	// An imported minimum-cost hash keeps real authentication and authorization
+	// on every request without paying the production bcrypt cost repeatedly.
+	hash, err := bcrypt.GenerateFromPassword([]byte("hunter2"), bcrypt.MinCost)
+	require.NoError(t, err)
+	_, err = be.CreateUser(ctx, backend.UserCreate{
+		Name: "mikael", PasswordHash: string(hash), WorkspaceAdmin: true, UserAdmin: true})
 	require.NoError(t, err)
 	// Two of these share a prefix with the awb workspace key and with the ids of
 	// the issues in it, so one navigation query reaches all three of its groups.
 	for _, name := range []string{"adam", "zoe", "awbot", "awbee"} {
-		_, err := be.CreateUser(ctx, backend.UserCreate{Name: name, Password: "hunter2"})
+		_, err := be.CreateUser(ctx, backend.UserCreate{Name: name})
 		require.NoError(t, err)
 	}
 	for _, key := range []string{"awb", "web"} {
