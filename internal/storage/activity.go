@@ -34,7 +34,8 @@ func (t *Tx) InsertActivity(a *domain.Activity) error {
 }
 
 // InsertKeyedActivity appends an entry carrying a client-selected comment key.
-// Callers check for an existing key first; the unique index closes the race.
+// The unique index backs up the transactionally serialized lookup performed by
+// the caller and protects the invariant from other storage callers.
 func (t *Tx) InsertKeyedActivity(a *domain.Activity, key string) error {
 	a.Normalize()
 	encoded, err := json.Marshal(a.Changes)
@@ -61,9 +62,9 @@ func (t *Tx) InsertKeyedActivity(a *domain.Activity, key string) error {
 }
 
 // ActivityByCommentKey returns the activity assigned to key, if any.
-func (t *Tx) ActivityByCommentKey(issue, key string) (*domain.Activity, error) {
+func (t *Tx) ActivityByCommentKey(issue, actor, key string) (*domain.Activity, error) {
 	row := t.q.QueryRowContext(t.ctx, `SELECT `+activityColumns+
-		` FROM issue_activity WHERE issue = ? AND comment_key = ?`, issue, key)
+		` FROM issue_activity WHERE issue = ? AND actor = ? AND comment_key = ?`, issue, actor, key)
 	a, err := scanActivity(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

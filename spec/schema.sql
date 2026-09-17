@@ -236,4 +236,4 @@ CREATE INDEX idx_issues_board_candidates
 		ON issues (type, status, workspace, priority, closed_at, issue_order, updated_at, id);
 
 CREATE UNIQUE INDEX idx_issue_activity_comment_key
-		ON issue_activity (issue, comment_key) WHERE comment_key <> '';
+		ON issue_activity (issue, actor, comment_key) WHERE comment_key <> '';

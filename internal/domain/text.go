@@ -64,8 +64,8 @@ func ValidateCommentKey(s string) (string, error) {
 	if s == "" {
 		return "", awberr.Usagef("comment key must not be empty")
 	}
-	if utf8.RuneCountInString(s) > MaxCommentKeyLen {
-		return "", awberr.Usagef("comment key is too long: maximum %d characters", MaxCommentKeyLen)
+	if err := checkMaxRunes("comment key", s, MaxCommentKeyLen); err != nil {
+		return "", err
 	}
 	return s, nil
 }

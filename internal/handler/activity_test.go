@@ -70,6 +70,12 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	assert.Equal(t, 1, page.Total)
 	require.Len(t, page.Activity, 1)
 	assert.Equal(t, comment.ID, page.Activity[0].ID)
+
+	keyed, err := client.PutComment(t.Context(), issue.ID, "request/with slash", "keyed remote comment")
+	require.NoError(t, err)
+	retry, err := client.PutComment(t.Context(), issue.ID, "request/with slash", "keyed remote comment")
+	require.NoError(t, err)
+	assert.Equal(t, keyed, retry)
 }
 
 func TestCommentAndActivityRefusals(t *testing.T) {

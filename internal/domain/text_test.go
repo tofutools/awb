@@ -55,6 +55,17 @@ func TestValidateTitle(t *testing.T) {
 	})
 }
 
+func TestValidateCommentKey(t *testing.T) {
+	got, err := domain.ValidateCommentKey("client/opaque key")
+	require.NoError(t, err)
+	assert.Equal(t, "client/opaque key", got)
+
+	for _, value := range []string{"", "tab\tkey", strings.Repeat("x", domain.MaxCommentKeyLen+1), string([]byte{0xff})} {
+		_, err := domain.ValidateCommentKey(value)
+		assertUsage(t, err, value)
+	}
+}
+
 func TestValidateCloseReason(t *testing.T) {
 	got, err := domain.ValidateCloseReason("  done  ")
 	require.NoError(t, err)

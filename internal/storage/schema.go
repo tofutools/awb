@@ -49,7 +49,7 @@ var migrations = [][]string{
 var schemaV24 = []string{
 	`ALTER TABLE issue_activity ADD COLUMN comment_key TEXT NOT NULL DEFAULT ''`,
 	`CREATE UNIQUE INDEX idx_issue_activity_comment_key
-		ON issue_activity (issue, comment_key) WHERE comment_key <> ''`,
+		ON issue_activity (issue, actor, comment_key) WHERE comment_key <> ''`,
 }
 
 // schemaV23 lets board candidate selection stay in a narrow index instead of

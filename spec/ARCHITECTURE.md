@@ -181,9 +181,10 @@ before and after values, while resource actions such as attaching a file have a
 stable action name.
 
 The HTTP API also accepts a comment under a client-generated key. The key is
-unique within its issue, so retrying the same PUT returns the original entry;
-reusing it for different content conflicts. Ordinary POST comments and all
-other activity have no client key.
+unique within its issue and author, so independent clients do not collide and
+retrying the same PUT returns the original entry; reusing it for different
+content conflicts. Ordinary POST comments and all other activity have no
+client key.
 
 A non-empty close reason is one typed comment committed with the transition. It
 therefore remains meaningful after reopen without introducing another mutable

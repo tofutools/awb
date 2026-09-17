@@ -141,6 +141,40 @@ func TestV23AddsCoveringBoardCandidateIndex(t *testing.T) {
 	assert.Equal(t, "type,status,workspace,priority,closed_at,issue_order,updated_at,id", columns)
 }
 
+func TestV24AddsAuthorScopedCommentKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "awb.db")
+	raw := openAtVersion(t, path, 23)
+	_, err := raw.ExecContext(t.Context(), `
+		INSERT INTO workspaces (key, name, created_at, updated_at)
+		VALUES ('awb', 'AWB', '2026-09-17T08:00:00.000Z', '2026-09-17T08:00:00.000Z');
+		INSERT INTO issues (id, workspace, title, type, status, priority, created_at, updated_at)
+		VALUES ('awb-aaaaaa', 'awb', 'Existing', 'task', 'open', 2,
+		        '2026-09-17T08:00:00.000Z', '2026-09-17T08:00:00.000Z');
+		INSERT INTO issue_activity (issue, kind, actor, body, created_at)
+		VALUES ('awb-aaaaaa', 'comment', 'alice', 'old one', '2026-09-17T08:00:00.000Z'),
+		       ('awb-aaaaaa', 'comment', 'bob', 'old two', '2026-09-17T08:00:01.000Z')`)
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	var blank int
+	require.NoError(t, db.SQL().QueryRowContext(t.Context(),
+		`SELECT count(*) FROM issue_activity WHERE comment_key = ''`).Scan(&blank))
+	assert.Equal(t, 2, blank)
+
+	_, err = db.SQL().ExecContext(t.Context(), `
+		INSERT INTO issue_activity (issue, kind, actor, body, created_at, comment_key)
+		VALUES ('awb-aaaaaa', 'comment', 'alice', 'new one', '2026-09-17T08:00:02.000Z', 'request-1'),
+		       ('awb-aaaaaa', 'comment', 'bob', 'new two', '2026-09-17T08:00:03.000Z', 'request-1')`)
+	require.NoError(t, err, "different authors may reuse their client-local key")
+	_, err = db.SQL().ExecContext(t.Context(), `
+		INSERT INTO issue_activity (issue, kind, actor, body, created_at, comment_key)
+		VALUES ('awb-aaaaaa', 'comment', 'alice', 'duplicate', '2026-09-17T08:00:04.000Z', 'request-1')`)
+	require.Error(t, err)
+}
+
 // openAtVersion builds a real historical database shape from the batches that
 // made it, so a migration is tested against what it will actually meet rather
 // than against current code with a pragma set.

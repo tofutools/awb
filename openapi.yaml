@@ -633,7 +633,8 @@ paths:
       operationId: putComment
       summary: Add a Markdown comment idempotently.
       description: |
-        The client chooses an opaque key for the logical comment. The first
+        The client chooses an opaque key for the logical comment. Keys are
+        scoped to the authenticated identity and issue. The first
         request stores the comment; repetitions with the same key and body
         return that original activity entry without adding another comment or
         moving the issue's `updated_at`. Reusing a key with a different body
@@ -2474,6 +2475,7 @@ components:
 
     CommentKey:
       type: string
+      description: An opaque client-generated idempotency key for a comment.
       minLength: 1
       maxLength: 100
 

@@ -69,6 +69,12 @@ func TestPutCommentIsIdempotent(t *testing.T) {
 	page, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindComment, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, page.Total)
+
+	bob := b.WithIdentity("bob")
+	third, err := bob.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	assert.Equal(t, "bob", third.Actor)
+	assert.NotEqual(t, first.ID, third.ID)
 }
 
 func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {

@@ -47,8 +47,9 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	return &activity, nil
 }
 
-// PutComment appends a client-keyed comment once. A retry returns the original
-// entry; a different body under the same key is a conflict.
+// PutComment appends a client-keyed comment once for the current identity. A
+// retry returns the original entry even if its workspace has since become
+// read-only; a different body under the same identity and key is a conflict.
 func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error) {
 	validatedKey, err := domain.ValidateCommentKey(key)
 	if err != nil {
@@ -68,7 +69,7 @@ func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domai
 		if err != nil {
 			return err
 		}
-		existing, err := tx.ActivityByCommentKey(issue.ID, validatedKey)
+		existing, err := tx.ActivityByCommentKey(issue.ID, actor, validatedKey)
 		if err != nil {
 			return err
 		}
