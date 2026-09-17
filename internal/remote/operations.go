@@ -432,6 +432,17 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	return &activity, nil
 }
 
+func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error) {
+	var activity domain.Activity
+	_, err := b.call(ctx, http.MethodPut,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/comments/"+url.PathEscape(key), nil),
+		commentBody{Body: body}, "", &activity)
+	if err != nil {
+		return nil, err
+	}
+	return &activity, nil
+}
+
 func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
 	limit, offset *int) (backend.ActivityPage, error) {
 	query := pageQuery(limit, offset)

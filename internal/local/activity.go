@@ -47,6 +47,54 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	return &activity, nil
 }
 
+// PutComment appends a client-keyed comment once. A retry returns the original
+// entry; a different body under the same key is a conflict.
+func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error) {
+	validatedKey, err := domain.ValidateCommentKey(key)
+	if err != nil {
+		return nil, err
+	}
+	validatedBody, err := domain.ValidateComment(body)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := b.Identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var activity *domain.Activity
+	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
+		issue, err := loadRow(tx, ref)
+		if err != nil {
+			return err
+		}
+		existing, err := tx.ActivityByCommentKey(issue.ID, validatedKey)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.Body != validatedBody {
+				return awberr.Conflictf("comment key %q is already used with a different body", validatedKey)
+			}
+			activity = existing
+			return nil
+		}
+		if err := ensureIssueWritable(tx, issue); err != nil {
+			return err
+		}
+		activity = &domain.Activity{Issue: issue.ID, Kind: domain.ActivityKindComment,
+			Actor: actor, Body: validatedBody}
+		if err := tx.InsertKeyedActivity(activity, validatedKey); err != nil {
+			return err
+		}
+		return tx.TouchIssue(issue)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return activity, nil
+}
+
 // ListActivity reads an issue timeline. Resolving the issue first is both the
 // not-found behavior and the authorization check; the activity table is never
 // queried without that scoped read.

@@ -35,6 +35,25 @@ func TestCommentsAndActivityAPI(t *testing.T) {
 	assert.Equal(t, comment.ID, entries[0].ID)
 }
 
+func TestPutCommentIsIdempotentAPI(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"Retry-safe comment"}`)
+	path := "/api/issues/" + issue.ID + "/comments/request-1"
+
+	resp, first := a.do(http.MethodPut, path, `{"body":"only once"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, first)
+	resp, second := a.do(http.MethodPut, path, `{"body":"only once"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, second)
+	assert.JSONEq(t, first, second)
+
+	resp, _ = a.do(http.MethodPut, path, `{"body":"changed"}`)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	resp, payload := a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/activity?kind=comment", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+}
+
 func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Remote timeline"}`)

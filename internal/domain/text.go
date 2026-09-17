@@ -26,6 +26,7 @@ const (
 	MaxCommitHashLen     = 128
 	MinCommitHashLen     = 7
 	MaxPullRequestURLLen = 1000
+	MaxCommentKeyLen     = 100
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
 	MaxDescriptionBytes = 64 * 1024
@@ -47,6 +48,24 @@ func ValidateCommitHash(s string) (string, error) {
 		default:
 			return "", awberr.Usagef("commit hash must contain only hexadecimal characters")
 		}
+	}
+	return s, nil
+}
+
+// ValidateCommentKey accepts the opaque identifier a client assigns to one
+// logical comment so retrying its PUT cannot append the comment twice.
+func ValidateCommentKey(s string) (string, error) {
+	if err := checkUTF8("comment key", s); err != nil {
+		return "", err
+	}
+	if err := checkNoControls("comment key", s); err != nil {
+		return "", err
+	}
+	if s == "" {
+		return "", awberr.Usagef("comment key must not be empty")
+	}
+	if utf8.RuneCountInString(s) > MaxCommentKeyLen {
+		return "", awberr.Usagef("comment key is too long: maximum %d characters", MaxCommentKeyLen)
 	}
 	return s, nil
 }

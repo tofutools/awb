@@ -670,7 +670,11 @@ func TestV21BacklogPreservesIssueDependants(t *testing.T) {
 	snapshot := func(db *sql.DB) map[string][][]any {
 		result := map[string][][]any{}
 		for _, table := range []string{"issues", "issue_assignees", "issue_labels", "relations", "attachments", "issue_activity", "board_view_epics"} {
-			rows, err := db.QueryContext(t.Context(), "SELECT * FROM "+table)
+			query := "SELECT * FROM " + table
+			if table == "issue_activity" {
+				query = "SELECT id, issue, kind, actor, body, action, changes, created_at FROM issue_activity"
+			}
+			rows, err := db.QueryContext(t.Context(), query)
 			require.NoError(t, err)
 			columns, err := rows.Columns()
 			require.NoError(t, err)

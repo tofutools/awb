@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -46,6 +47,28 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 		Field: "title", From: json.RawMessage(`"old title"`), To: json.RawMessage(`"new title"`),
 	}}, page.Activity[0].Changes)
 	assert.Greater(t, page.Activity[0].ID, page.Activity[1].ID)
+}
+
+func TestPutCommentIsIdempotent(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "keyed comment")
+
+	first, err := b.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	beforeRetry, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	second, err := b.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	afterRetry, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+	assert.Equal(t, beforeRetry.UpdatedAt, afterRetry.UpdatedAt)
+
+	_, err = b.PutComment(ctx, issue.ID, "client-request-1", "different body")
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
+	page, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindComment, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, page.Total)
 }
 
 func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {

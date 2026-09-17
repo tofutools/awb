@@ -19,6 +19,16 @@ func (h *Handler) AddComment(ctx context.Context, req *api.CommentCreate,
 	return &response, nil
 }
 
+func (h *Handler) PutComment(ctx context.Context, req *api.CommentCreate,
+	params api.PutCommentParams) (*api.Activity, error) {
+	activity, err := h.backendFor(ctx).PutComment(ctx, params.ID, string(params.Key), req.Body)
+	if err != nil {
+		return nil, err
+	}
+	response := toActivity(activity)
+	return &response, nil
+}
+
 func (h *Handler) ListIssueActivity(ctx context.Context, params api.ListIssueActivityParams) (
 	*api.ActivityListHeaders, error) {
 	kind := domain.ActivityKind("")
