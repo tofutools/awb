@@ -52,7 +52,7 @@ func CORS(allowedOrigins []string, next http.Handler) http.Handler {
 			if r.Method == http.MethodOptions {
 				header.Set("Access-Control-Allow-Methods",
 					strings.Join([]string{
-						http.MethodGet, http.MethodPost, http.MethodPatch,
+						http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch,
 						http.MethodDelete, http.MethodOptions,
 					}, ", "))
 				header.Set("Access-Control-Allow-Headers", "Content-Type, If-Match, Authorization")

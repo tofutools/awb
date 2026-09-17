@@ -349,11 +349,15 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
+	reason := ""
+	if req.Reason != nil {
+		reason = *req.Reason
+	}
 	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/status",
 		struct {
 			Status domain.Status `json:"status"`
-			Reason *string       `json:"reason,omitempty"`
-		}{Status: domain.StatusClosed, Reason: req.Reason}, ifMatch)
+			Reason string        `json:"reason"`
+		}{Status: domain.StatusClosed, Reason: reason}, ifMatch)
 }
 
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {

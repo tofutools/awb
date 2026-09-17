@@ -465,6 +465,7 @@ func TestCORS(t *testing.T) {
 	resp, _ = get(t, allowed, http.MethodOptions, "/api/issues", "Origin", "https://ui.example.com")
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Access-Control-Allow-Methods"), http.MethodPatch)
+	assert.Contains(t, resp.Header.Get("Access-Control-Allow-Methods"), http.MethodPut)
 	for _, header := range []string{"Content-Type", "If-Match", "Authorization"} {
 		assert.Contains(t, resp.Header.Get("Access-Control-Allow-Headers"), header)
 	}
