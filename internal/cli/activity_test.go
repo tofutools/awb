@@ -15,8 +15,8 @@ func TestCommentAndActivityCommands(t *testing.T) {
 	h := newHarness(t)
 	id := h.create("Timeline", "--workspace", "awb")
 
-	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "hello **world**"))
-	assert.Empty(t, h.mustRunStdin("from stdin\n", "comment", "add", id, "--body-file", "-"))
+	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "hello **world**", "--key", "hello"))
+	assert.Empty(t, h.mustRunStdin("from stdin\n", "comment", "add", id, "--body-file", "-", "--key", "stdin"))
 	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "retry-safe", "--key", "request-1"))
 	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "retry-safe", "--key", "request-1"))
 
@@ -41,6 +41,8 @@ func TestCommentRequiresExactlyOneBodySource(t *testing.T) {
 	_, _, code := h.run("comment", "add", id)
 	assert.Equal(t, 2, code)
 	_, _, code = h.run("comment", "add", id, "--body", "x", "--body-file", "-")
+	assert.Equal(t, 2, code)
+	_, _, code = h.run("comment", "add", id, "--body", "x")
 	assert.Equal(t, 2, code)
 	_, _, code = h.run("comment", "add", id, "--body", "x", "--key", "")
 	assert.Equal(t, 2, code)

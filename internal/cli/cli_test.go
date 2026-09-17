@@ -684,8 +684,8 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 	h.mustRun("claim", ids[5], "--as", "zoe")
 	h.mustRun("claim", ids[5], "--as", "adam")
 	h.mustRun("claim", ids[6], "--as", "mikael")
-	h.mustRun("comment", "add", blocker, "--body", "one")
-	h.mustRun("comment", "add", blocker, "--body", "two")
+	h.mustRun("comment", "add", blocker, "--body", "one", "--key", "one")
+	h.mustRun("comment", "add", blocker, "--body", "two", "--key", "two")
 
 	path := filepath.Join(h.dir, "trace.txt")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
@@ -991,7 +991,7 @@ func TestMarkdownGateInDirectMode(t *testing.T) {
 		{"create", "t", "--workspace", "awb", "--description", "[a](javascript:alert(1))"},
 		{"create", "t", "--workspace", "awb", "--description", "![a](data:image/svg+xml,x)"},
 		{"update", id, "--force", "--description", "<b>no</b>"},
-		{"comment", "add", id, "--body", "<b>no</b>"},
+		{"comment", "add", id, "--body", "<b>no</b>", "--key", "markdown"},
 		{"close", id, "--reason", "see [why](javascript:alert(1))"},
 		{"workspace", "create", "web", "--description", "<style>body{}</style>"},
 		{"workspace", "update", "awb", "--description", "<!-- hidden -->"},

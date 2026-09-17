@@ -149,7 +149,7 @@ caller changed the issue meanwhile, the update refuses instead of overwriting
 their work. Workspace descriptions have the same workflow under
 `awb workspace description`.
 
-Each new comment is appended to the activity stream. Supply `--key` and reuse
+Each new comment is appended to the activity stream. `--key` is required; reuse
 it after an indeterminate failure to make a retry return the original comment
 instead of appending a duplicate:
 

@@ -923,9 +923,9 @@ function ActivitySection({
               const pending = pendingComment(pendingCommentRef.current, body);
               pendingCommentRef.current = pending;
               await api.putComment(issue, pending.key, body);
+              await reload();
               pendingCommentRef.current = null;
               setBody("");
-              await reload();
               textarea.current?.focus({ preventScroll: true });
             });
           }}

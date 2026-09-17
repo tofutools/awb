@@ -26,7 +26,6 @@ awb create "Title" --type bug --priority 1 --label parser
 awb create "Title" --claim              # create and take it in one operation
 awb create "Follow-up" --discovered-from <id> --blocked-by <id>
 awb dep add <id> --blocked-by <other>  # reads "id blocked-by other"
-awb comment add <id> --body "I reproduced this on Linux."
 awb comment add <id> --body "I reproduced this on Linux." --key <request-key> # reuse after an indeterminate failure
 awb activity <id> --compact            # comments and recorded changes
 ```

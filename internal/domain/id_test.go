@@ -55,17 +55,6 @@ func TestNewSalt(t *testing.T) {
 	assert.NotEqual(t, a, b, "two salts in a row must differ")
 }
 
-func TestNewCommentKey(t *testing.T) {
-	a, err := domain.NewCommentKey()
-	require.NoError(t, err)
-	assert.Len(t, a, domain.CommentKeyBytes*2)
-	assert.True(t, domain.IsHex(a))
-
-	b, err := domain.NewCommentKey()
-	require.NoError(t, err)
-	assert.NotEqual(t, a, b)
-}
-
 func TestSplitIDUsesTheLastHyphen(t *testing.T) {
 	cases := []struct {
 		id        string
