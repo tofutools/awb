@@ -2309,7 +2309,12 @@ components:
         A caller-owned JSON object an issue carries beside the fields awb
         itself gives meaning to. awb never reads what is under a key, so a
         value is any JSON — a string, a number, a nested object, an array —
-        stored and returned verbatim.
+        kept whole rather than interpreted.
+
+        Kept whole is a promise about the value, not about its bytes: what is
+        returned is the canonical encoding of what was sent, so a value comes
+        back compacted and may carry different escapes. A parser reads the
+        same value out of either.
 
         The top level is always an object. An issue that has never been given
         any carries `{}`, so this is never `null` and never absent.

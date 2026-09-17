@@ -16,7 +16,12 @@ const MaxMetadataBytes = 64 * 1024
 // Metadata is the caller-owned JSON object an issue carries beside the fields
 // awb itself gives meaning to. The top level is always an object; awb never
 // reads what is under a key, so a value is any JSON — including a nested
-// object or an array — stored and returned verbatim.
+// object or an array — kept whole rather than interpreted.
+//
+// Kept whole is a promise about the value, not about its bytes. What is stored
+// is the canonical encoding, so a value comes back compacted and escaped as
+// encoding/json writes it: every parser reads the same value out of both, and
+// two encodings of one object are the same bytes.
 //
 // An issue that has never been given any carries an empty object. That is
 // structural rather than remembered: MarshalJSON writes {} for a nil map, so

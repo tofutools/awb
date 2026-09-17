@@ -63,6 +63,28 @@ func TestParseMetadataKeepsValuesVerbatim(t *testing.T) {
 		"a null value is a value the caller stored, not an absent key")
 }
 
+// The canonical encoding is encoding/json's, which escapes <, > and & inside a
+// value. That changes the bytes and not the value: what comes back out of a
+// parser is what went in, and one object always encodes to one byte sequence.
+func TestMetadataValuesSurviveReEscaping(t *testing.T) {
+	parsed, err := domain.ParseMetadata([]byte(`{"html":"<b>&</b>","unicode":"café ☕"}`))
+	require.NoError(t, err)
+
+	stored := encodedMetadata(t, parsed)
+	assert.Equal(t, `{"html":"\u003cb\u003e\u0026\u003c/b\u003e","unicode":"café ☕"}`, stored,
+		"the bytes are encoding/json's, which escapes <, > and & and leaves other runes alone")
+
+	var readBack map[string]string
+	require.NoError(t, json.Unmarshal([]byte(stored), &readBack))
+	assert.Equal(t, map[string]string{"html": "<b>&</b>", "unicode": "café ☕"}, readBack)
+
+	// And re-encoding what was stored is a fixed point, so a value does not
+	// drift further with each write.
+	reparsed, err := domain.ParseMetadata([]byte(stored))
+	require.NoError(t, err)
+	assert.Equal(t, stored, encodedMetadata(t, reparsed))
+}
+
 // The stored form has its keys sorted, because that is what a Go map encodes
 // to, so two encodings of the same object are the same bytes.
 func TestEncodeMetadataIsCanonical(t *testing.T) {
