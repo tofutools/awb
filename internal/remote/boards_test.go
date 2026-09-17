@@ -25,7 +25,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/board-views":
 			_, _ = w.Write([]byte("[" + view + "]"))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/board-views":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/board-views/"+id:
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 			assert.JSONEq(t, `{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"all_epics":true,"epics":null,"include_no_epic":true,"labels":null,"assignees":null,"columns":["open","in_progress","closed"],"priority_max":4,"card_limit":8,"closed_days":30,"epic_closed_days":0}`, string(body))
@@ -77,7 +77,7 @@ func TestBoardLifecycleAndPagingUseTheRemoteWireContract(t *testing.T) {
 	views, err := client.ListBoardViews(t.Context())
 	require.NoError(t, err)
 	require.Len(t, views, 1)
-	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{Name: "Release", Shared: true,
+	created, err := client.CreateBoardView(t.Context(), backend.BoardViewCreate{ID: id, Name: "Release", Shared: true,
 		AllWorkspaces: false, Workspaces: []string{"awb"}, AllEpics: true, IncludeNoEpic: true, PriorityMax: 4,
 		ClosedDays: 30})
 	require.NoError(t, err)

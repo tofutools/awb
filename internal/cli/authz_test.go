@@ -301,7 +301,7 @@ func TestTheAPIAnswersWithTheCallersPermissions(t *testing.T) {
 	resp, _ = get(t, h, http.MethodGet, "/api/workspaces/web", basicAuth("bob", "hunter2")...)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
-	resp, _ = send(t, h, http.MethodPost, "/api/workspaces", `{"key":"third"}`,
+	resp, _ = send(t, h, http.MethodPut, "/api/workspaces/third", `{"key":"third"}`,
 		append(basicAuth("bob", "hunter2"), "Origin", "http://127.0.0.1:7777")...)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }

@@ -21,8 +21,8 @@ func TestUserLifecyclePreservesTheRemoteContract(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch calls {
 		case 1:
-			assert.Equal(t, http.MethodPost, r.Method)
-			assert.Equal(t, "/api/users", r.URL.Path)
+			assert.Equal(t, http.MethodPut, r.Method)
+			assert.Equal(t, "/api/users/alice", r.URL.Path)
 			var body map[string]any
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			assert.Equal(t, "safe password", body["password"])

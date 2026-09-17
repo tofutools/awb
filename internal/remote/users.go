@@ -56,7 +56,7 @@ func (b *Backend) CreateUser(ctx context.Context, req backend.UserCreate) (*doma
 		WorkspaceAdmin: req.WorkspaceAdmin,
 		UserAdmin:      req.UserAdmin,
 	}
-	return b.userCall(ctx, http.MethodPost, "/api/users", body, "")
+	return b.userCall(ctx, http.MethodPut, "/api/users/"+url.PathEscape(req.Name), body, "")
 }
 
 func (b *Backend) GetUser(ctx context.Context, name string) (*domain.User, error) {

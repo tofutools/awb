@@ -267,7 +267,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
       operationId: claimIssue
       summary: Atomically add an assignee and set status to in_progress
@@ -285,7 +285,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
       operationId: releaseIssue
       summary: Remove an assignee; open the issue when none remain
@@ -297,27 +297,11 @@ paths:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/issues/{id}/close:
-    parameters:
-      - $ref: '#/components/parameters/issueId'
-      - $ref: '#/components/parameters/ifMatch'
-    post:
-      tags: [issues]
-      operationId: closeIssue
-      summary: Set the status to closed
-      requestBody:
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CloseRequest' }
-      responses:
-        '200': { $ref: '#/components/responses/Issue' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/issues/{id}/reopen:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
       operationId: reopenIssue
       summary: Set the status to open and clear every assignee
@@ -379,7 +363,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
       operationId: addLabel
       summary: Add one label
@@ -789,19 +773,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BoardViewList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [boards]
-      operationId: createBoardView
-      summary: Save a named board view
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/BoardViewCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/BoardViewCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/board-views/{id}:
     parameters:
       - name: id
@@ -814,6 +785,18 @@ paths:
       summary: Get an owned or shared board view
       responses:
         '200': { $ref: '#/components/responses/BoardView' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [boards]
+      operationId: createBoardView
+      summary: Save a named board view with a client-chosen ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BoardViewCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/BoardViewCreated' }
         default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [boards]
@@ -993,19 +976,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/WorkspaceList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [workspaces]
-      operationId: createWorkspace
-      summary: Create a workspace
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/WorkspaceCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/WorkspaceCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/workspaces/{key}:
     parameters:
       - name: key
@@ -1018,6 +988,18 @@ paths:
       summary: Read one workspace
       responses:
         '200': { $ref: '#/components/responses/Workspace' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace at its natural key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/WorkspaceCreated' }
         default: { $ref: '#/components/responses/Error' }
 
     patch:
@@ -1278,26 +1260,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/UserList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [users]
-      operationId: createUser
-      summary: Create a user
-      description: |
-        Requires the `user_admin` flag.
-
-        Creating the first user of a database that has a password turns
-        authentication on, from the next request onwards. One created without
-        a password does not: it is an assignee the tracker knows, and nothing
-        authenticates as it.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UserCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/UserCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/users/{name}:
     parameters:
       - name: name
@@ -1314,6 +1276,25 @@ paths:
         they are permitted to do.
       responses:
         '200': { $ref: '#/components/responses/User' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [users]
+      operationId: createUser
+      summary: Create a user at their natural name
+      description: |
+        Requires the `user_admin` flag.
+
+        Creating the first user of a database that has a password turns
+        authentication on, from the next request onwards. One created without
+        a password does not: it is an assignee the tracker knows, and nothing
+        authenticates as it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/UserCreated' }
         default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [users]
@@ -2939,6 +2920,12 @@ components:
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/Status' }
+        reason:
+          type: string
+          maxLength: 500
+          description: |
+            When status is closed, a non-empty reason becomes a typed Markdown
+            comment in the same transaction. It is refused for other statuses.
 
     ClaimRequest:
       type: object
@@ -2976,19 +2963,6 @@ components:
             assignment naming somebody who is no longer a user is taken off an
             issue.
         force: { type: boolean, default: false }
-
-    CloseRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        reason:
-          type: string
-          maxLength: 500
-          description: |
-            A non-empty reason becomes a typed Markdown comment whose `action`
-            is `closed`, in the same transaction as the transition, and is
-            validated as **Markdown** above describes. Empty or absent records
-            no reason comment.
 
     LabelRequest:
       type: object

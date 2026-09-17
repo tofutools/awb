@@ -95,8 +95,8 @@ test("user administration creates and version-deletes accounts", async (t) => {
   await api.createUser({ name: "new-user", password: "safe password", user_admin: true });
   await api.deleteUser("a/b");
 
-  assert.equal(calls[1].path, "api/users");
-  assert.equal(calls[1].init.method, "POST");
+  assert.equal(calls[1].path, "api/users/new-user");
+  assert.equal(calls[1].init.method, "PUT");
   assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
   assert.deepEqual(JSON.parse(calls[1].init.body), {
     name: "new-user",
@@ -295,7 +295,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.deepEqual(JSON.parse(requests[1].init.body), { title: "Changed" });
 
   assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels");
-  assert.equal(requests[2].init.method, "POST");
+  assert.equal(requests[2].init.method, "PUT");
   assert.deepEqual(JSON.parse(requests[2].init.body), { label: "team/web" });
   assert.equal(new Headers(requests[2].init.headers).get("If-Match"), '"issue-version"');
 
@@ -303,7 +303,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(requests[3].init.method, "DELETE");
 
   assert.equal(requests[4].input, "api/issues/awb-a%2Fb/release");
-  assert.equal(requests[4].init.method, "POST");
+  assert.equal(requests[4].init.method, "PUT");
   assert.deepEqual(JSON.parse(requests[4].init.body), { assignee: "operator", force: true });
   assert.equal(new Headers(requests[4].init.headers).get("If-Match"), '"issue-version"');
 
@@ -369,8 +369,8 @@ test("workspace creation and lifecycle use stable paths and advance the workspac
   await api.restoreWorkspace("team/web");
   await api.workspaceActivity("team/web");
 
-  assert.equal(calls[0].path, "api/workspaces");
-  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].path, "api/workspaces/team%2Fweb");
+  assert.equal(calls[0].init.method, "PUT");
   assert.equal(calls[1].path, "api/workspaces/team%2Fweb");
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"v1"');
   assert.equal(calls[2].path, "api/workspaces/team%2Fweb/archive");

@@ -199,17 +199,6 @@ func (h *Handler) ReleaseIssue(ctx context.Context, req api.OptReleaseRequest,
 	return issueResponse(issue), nil
 }
 
-func (h *Handler) CloseIssue(ctx context.Context, req api.OptCloseRequest,
-	params api.CloseIssueParams) (*api.IssueHeaders, error) {
-	body := req.Or(api.CloseRequest{})
-	issue, err := h.backendFor(ctx).CloseIssue(ctx, params.ID,
-		backend.CloseRequest{Reason: optString(body.Reason)}, params.IfMatch.Or(""))
-	if err != nil {
-		return nil, err
-	}
-	return issueResponse(issue), nil
-}
-
 func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams) (
 	*api.IssueHeaders, error) {
 	issue, err := h.backendFor(ctx).Reopen(ctx, params.ID, params.IfMatch.Or(""))
@@ -222,8 +211,19 @@ func (h *Handler) ReopenIssue(ctx context.Context, params api.ReopenIssueParams)
 func (h *Handler) SetIssueStatus(ctx context.Context, req *api.StatusRequest,
 	params api.SetIssueStatusParams) (
 	*api.IssueHeaders, error) {
-	issue, err := h.backendFor(ctx).SetStatus(ctx, params.ID, domain.Status(req.Status),
-		params.IfMatch.Or(""))
+	status := domain.Status(req.Status)
+	reason := optString(req.Reason)
+	if reason != nil && status != domain.StatusClosed {
+		return nil, awberr.Usagef("a close reason requires closed status")
+	}
+	var issue *domain.Issue
+	var err error
+	if status == domain.StatusClosed {
+		issue, err = h.backendFor(ctx).CloseIssue(ctx, params.ID,
+			backend.CloseRequest{Reason: reason}, params.IfMatch.Or(""))
+	} else {
+		issue, err = h.backendFor(ctx).SetStatus(ctx, params.ID, status, params.IfMatch.Or(""))
+	}
 	if err != nil {
 		return nil, err
 	}
