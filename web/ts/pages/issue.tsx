@@ -509,7 +509,6 @@ function IssueSidebar({
   const [parentValue, setParent] = useState("");
   const [label, setLabel] = useState("");
   const [assignee, setAssignee] = useState("");
-  const [closing, setClosing] = useState(false);
   const parent = inspectorParent(issue.relations);
   const change = (operation: () => Promise<unknown>) =>
     mutation.run(async () => {
@@ -639,7 +638,7 @@ function IssueSidebar({
                   const action = inspectorStatusAction(issue.status, target);
                   if (action === "none") return;
                   if (action === "close") {
-                    setClosing(true);
+                    void change(() => api.setIssueStatus(issue.id, "closed"));
                     return;
                   }
                   if (
@@ -669,33 +668,6 @@ function IssueSidebar({
                   <option key={s}>{s}</option>
                 ))}
               </select>
-              {closing && (
-                <form
-                  class="close-editor"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const reason = String(
-                      new FormData(e.currentTarget).get("reason") ?? "",
-                    );
-                    void change(async () => {
-                      await api.closeIssue(issue.id, reason ? { reason } : {});
-                      setClosing(false);
-                    });
-                  }}
-                >
-                  <input
-                    name="reason"
-                    placeholder="Close reason (optional)"
-                    aria-label="Close reason"
-                    maxLength={500}
-                    autofocus
-                  />
-                  <Button type="submit" class="danger-button">
-                    Close
-                  </Button>
-                  <Button onClick={() => setClosing(false)}>Cancel</Button>
-                </form>
-              )}
             </>,
           )}
           {fact(

@@ -77,10 +77,6 @@ type releaseBody struct {
 	Force    bool   `json:"force,omitempty"`
 }
 
-type closeBody struct {
-	Reason *string `json:"reason,omitempty"`
-}
-
 type labelBody struct {
 	Label string `json:"label"`
 }
@@ -342,23 +338,26 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
 	body := claimBody{Assignee: req.Assignee, Force: req.Force}
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/claim", body, ifMatch)
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/claim", body, ifMatch)
 }
 
 func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRequest,
 	ifMatch string) (*domain.Issue, error) {
 	body := releaseBody{Assignee: req.Assignee, Force: req.Force}
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/release", body, ifMatch)
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/release", body, ifMatch)
 }
 
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/close",
-		closeBody{Reason: req.Reason}, ifMatch)
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/status",
+		struct {
+			Status domain.Status `json:"status"`
+			Reason *string       `json:"reason,omitempty"`
+		}{Status: domain.StatusClosed, Reason: req.Reason}, ifMatch)
 }
 
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
 }
 
 func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
@@ -383,7 +382,7 @@ func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.I
 }
 
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/labels",
+	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/labels",
 		labelBody{Label: label}, ifMatch)
 }
 
@@ -451,7 +450,7 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCreate) (*domain.Workspace, error) {
 	body := workspaceCreateBody{Key: req.Key, Name: req.Name, Description: req.Description}
 	var workspace domain.Workspace
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/workspaces", nil), body, "", &workspace)
+	_, err := b.call(ctx, http.MethodPut, b.endpoint("/api/workspaces/"+url.PathEscape(req.Key), nil), body, "", &workspace)
 	if err != nil {
 		return nil, err
 	}

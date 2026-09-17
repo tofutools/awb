@@ -31,8 +31,12 @@ func (h *Handler) ListUsers(ctx context.Context, params api.ListUsersParams) (
 	}, nil
 }
 
-func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate) (
+func (h *Handler) CreateUser(ctx context.Context, req *api.UserCreate,
+	params api.CreateUserParams) (
 	*api.UserCreatedHeaders, error) {
+	if string(req.Name) != string(params.Name) {
+		return nil, awberr.Usagef("a username in the body must match the path")
+	}
 	user, err := h.backendFor(ctx).CreateUser(ctx, backend.UserCreate{
 		Name:           string(req.Name),
 		FullName:       string(req.FullName.Or("")),

@@ -12,10 +12,14 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// createUser posts a user and returns it.
+// createUser puts a user at its natural-key resource and returns it.
 func (a *api) createUser(body string) domain.User {
 	a.t.Helper()
-	resp, payload := a.do(http.MethodPost, "/api/users", body)
+	var create struct {
+		Name string `json:"name"`
+	}
+	require.NoError(a.t, json.Unmarshal([]byte(body), &create))
+	resp, payload := a.do(http.MethodPut, "/api/users/"+create.Name, body)
 	require.Equal(a.t, http.StatusCreated, resp.StatusCode, payload)
 
 	var user domain.User
@@ -25,7 +29,7 @@ func (a *api) createUser(body string) domain.User {
 
 func TestCreateUser(t *testing.T) {
 	a := newAPI(t)
-	resp, payload := a.do(http.MethodPost, "/api/users",
+	resp, payload := a.do(http.MethodPut, "/api/users/alice",
 		`{"name":"alice","full_name":"Alice Andersson","password":"hunter2","user_admin":true}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
@@ -43,6 +47,9 @@ func TestCreateUser(t *testing.T) {
 	// The response says nothing about the credential, in either form.
 	assert.NotContains(t, payload, "password")
 	assert.NotContains(t, payload, "hunter2")
+
+	resp, payload = a.do(http.MethodPut, "/api/users/bob", `{"name":"alice"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 }
 
 // A pre-computed bcrypt hash sets the password without the plaintext reaching
@@ -59,7 +66,7 @@ func TestCreateUserWithAPasswordHash(t *testing.T) {
 		`{"name":"bob","password":"hunter2","password_hash":"$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by"}`,
 		`{"name":"bob","password_hash":"hunter2"}`,
 	} {
-		resp, payload := a.do(http.MethodPost, "/api/users", body)
+		resp, payload := a.do(http.MethodPut, "/api/users/bob", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
@@ -81,7 +88,7 @@ func TestCreateUserRejectsUnknownFields(t *testing.T) {
 		`{"name":"alice","password":""}`,
 		`{"name":"alice","password":null}`,
 	} {
-		resp, payload := a.do(http.MethodPost, "/api/users", body)
+		resp, payload := a.do(http.MethodPut, "/api/users/bob", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
