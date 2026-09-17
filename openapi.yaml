@@ -1564,7 +1564,8 @@ components:
       required: true
       description: |
         An opaque client-generated idempotency key, percent-encoded. It is
-        unique within the issue and is not exposed in activity representations.
+        unique for the authenticated identity within the issue and is not
+        exposed in activity representations.
       schema: { $ref: '#/components/schemas/CommentKey' }
     ifMatch:
       name: If-Match
