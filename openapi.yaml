@@ -386,11 +386,11 @@ paths:
       description: |
         Labels are added and removed individually, because a whole-set replace
         would silently discard a concurrent edit.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/LabelRequest' }
+      parameters:
+        - name: label
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Label' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
@@ -3009,13 +3009,6 @@ components:
             assignment naming somebody who is no longer a user is taken off an
             issue.
         force: { type: boolean, default: false }
-
-    LabelRequest:
-      type: object
-      additionalProperties: false
-      required: [label]
-      properties:
-        label: { $ref: '#/components/schemas/Label' }
 
     RelationRequest:
       type: object

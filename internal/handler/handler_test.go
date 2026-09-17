@@ -596,7 +596,7 @@ func TestMutationsReturnTheObject(t *testing.T) {
 	other := a.createIssue(`{"workspace":"awb","title":"other"}`)
 
 	cases := []struct{ method, path, body string }{
-		{http.MethodPut, "/api/issues/" + issue.ID + "/labels", `{"label":"y"}`},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/labels?label=y", ""},
 		{http.MethodDelete, "/api/issues/" + issue.ID + "/labels?label=x", ""},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/relations",
 			`{"type":"related","other":"` + other.ID + `"}`},

@@ -77,10 +77,6 @@ type releaseBody struct {
 	Force    bool   `json:"force,omitempty"`
 }
 
-type labelBody struct {
-	Label string `json:"label"`
-}
-
 type workspaceCreateBody struct {
 	Key         string `json:"key"`
 	Name        string `json:"name,omitempty"`
@@ -381,8 +377,12 @@ func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.I
 }
 
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/labels",
-		labelBody{Label: label}, ifMatch)
+	target := b.endpoint("/api/issues/"+url.PathEscape(ref)+"/labels", url.Values{"label": {label}})
+	var issue domain.Issue
+	if _, err := b.call(ctx, http.MethodPut, target, nil, ifMatch, &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }
 
 // RemoveLabel sends the label as a query parameter rather than a path segment,

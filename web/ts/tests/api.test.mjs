@@ -312,9 +312,9 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"issue-version"');
   assert.deepEqual(JSON.parse(requests[1].init.body), { title: "Changed" });
 
-  assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels");
+  assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels?label=team%2Fweb");
   assert.equal(requests[2].init.method, "PUT");
-  assert.deepEqual(JSON.parse(requests[2].init.body), { label: "team/web" });
+  assert.equal(requests[2].init.body, undefined);
   assert.equal(new Headers(requests[2].init.headers).get("If-Match"), '"issue-version"');
 
   assert.equal(requests[3].input, "api/issues/awb-a%2Fb/relations/blocked-by/awb-c%20d");

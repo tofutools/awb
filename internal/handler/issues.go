@@ -230,9 +230,8 @@ func (h *Handler) SetIssueStatus(ctx context.Context, req *api.StatusRequest,
 	return issueResponse(issue), nil
 }
 
-func (h *Handler) AddLabel(ctx context.Context, req *api.LabelRequest,
-	params api.AddLabelParams) (*api.IssueHeaders, error) {
-	issue, err := h.backendFor(ctx).AddLabel(ctx, params.ID, string(req.Label),
+func (h *Handler) AddLabel(ctx context.Context, params api.AddLabelParams) (*api.IssueHeaders, error) {
+	issue, err := h.backendFor(ctx).AddLabel(ctx, params.ID, string(params.Label),
 		params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err

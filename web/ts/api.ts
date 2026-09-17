@@ -297,7 +297,7 @@ export const api = {
   reopenIssue: (id: string) =>
     issueMutation<Issue>(id, "/reopen", "POST"),
   addLabel: (id: string, label: string) =>
-    issueMutation<Issue>(id, "/labels", "PUT", { label }),
+    issueMutation<Issue>(id, `/labels${toQuery({ label })}`, "PUT"),
   removeLabel: (id: string, label: string) =>
     issueMutation<Issue>(id, `/labels${toQuery({ label })}`, "DELETE"),
   addRelation: (id: string, body: RelationRequest) =>
