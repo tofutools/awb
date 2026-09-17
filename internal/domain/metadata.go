@@ -65,10 +65,13 @@ func ParseMetadata(encoded []byte) (Metadata, error) {
 	return ValidateMetadata(parsed)
 }
 
-// DecodeMetadata reads metadata back from the canonical form EncodeMetadata
-// writes. It checks the syntax and nothing else: the size bound and the
-// per-value normalization were applied before the value was stored, so a
-// listing does not pay for them again on every row.
+// DecodeMetadata reads an object's keys and its values' bytes, and checks
+// nothing else.
+//
+// That is the whole of what reading the stored column needs: what is in it was
+// canonicalized and bounded before it was written, so a listing does not pay
+// for either again on every row. A caller's own bytes reach it through
+// ParseMetadata, which follows it with the checks.
 func DecodeMetadata(encoded string) (Metadata, error) {
 	if encoded == "" || encoded == "{}" {
 		return Metadata{}, nil
