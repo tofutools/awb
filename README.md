@@ -74,7 +74,7 @@ app-a3f9c1 P1 open bug "Parser crashes on empty input" #parser
 
 $ awb claim app-a3f9c1
 $ awb show app-a3f9c1 --json
-$ awb comment add app-a3f9c1 --body "Reproduced with an empty token stream."
+$ awb comment add app-a3f9c1 --body "Reproduced with an empty token stream." --key reproduce-empty-input
 $ awb close app-a3f9c1 --reason "Guard against the empty token stream"
 ```
 

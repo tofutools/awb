@@ -12,10 +12,15 @@ import (
 	"github.com/tofutools/awb/internal/storage"
 )
 
-// AddComment appends Markdown prose to an issue as the current caller and
-// moves the issue's updated_at in the same transaction.
-func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Activity, error) {
-	validated, err := domain.ValidateComment(body)
+// PutComment appends a client-keyed comment once for the current identity. A
+// retry returns the original entry even if its workspace has since become
+// read-only; a different body under the same identity and key is a conflict.
+func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error) {
+	validatedKey, err := domain.ValidateCommentKey(key)
+	if err != nil {
+		return nil, err
+	}
+	validatedBody, err := domain.ValidateComment(body)
 	if err != nil {
 		return nil, err
 	}
@@ -23,20 +28,29 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	if err != nil {
 		return nil, err
 	}
-	var activity domain.Activity
+	var activity *domain.Activity
 	err = b.write(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		issue, err := loadRow(tx, ref)
 		if err != nil {
 			return err
 		}
+		existing, err := tx.ActivityByCommentKey(issue.ID, actor, validatedKey)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			if existing.Body != validatedBody {
+				return awberr.Conflictf("comment key %q is already used with a different body", validatedKey)
+			}
+			activity = existing
+			return nil
+		}
 		if err := ensureIssueWritable(tx, issue); err != nil {
 			return err
 		}
-		activity = domain.Activity{
-			Issue: issue.ID, Kind: domain.ActivityKindComment,
-			Actor: actor, Body: validated,
-		}
-		if err := tx.InsertActivity(&activity); err != nil {
+		activity = &domain.Activity{Issue: issue.ID, Kind: domain.ActivityKindComment,
+			Actor: actor, Body: validatedBody}
+		if err := tx.InsertKeyedActivity(activity, validatedKey); err != nil {
 			return err
 		}
 		return tx.TouchIssue(issue)
@@ -44,7 +58,7 @@ func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Act
 	if err != nil {
 		return nil, err
 	}
-	return &activity, nil
+	return activity, nil
 }
 
 // ListActivity reads an issue timeline. Resolving the issue first is both the

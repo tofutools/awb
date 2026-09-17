@@ -208,7 +208,7 @@ CREATE TABLE issue_activity (
 		body       TEXT NOT NULL DEFAULT '',
 		action     TEXT NOT NULL DEFAULT '',
 		changes    TEXT NOT NULL DEFAULT '[]',
-		created_at TEXT NOT NULL,
+		created_at TEXT NOT NULL, comment_key TEXT NOT NULL DEFAULT '',
 		CHECK (kind IN ('comment', 'change')),
 		CHECK ((kind = 'comment' AND body <> '' AND action IN ('', 'closed')) OR
 		       (kind = 'change' AND body = '' AND action <> '')),
@@ -234,3 +234,6 @@ CREATE TABLE board_view_columns (
 
 CREATE INDEX idx_issues_board_candidates
 		ON issues (type, status, workspace, priority, closed_at, issue_order, updated_at, id);
+
+CREATE UNIQUE INDEX idx_issue_activity_comment_key
+		ON issue_activity (issue, actor, comment_key) WHERE comment_key <> '';

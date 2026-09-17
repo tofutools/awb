@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/domain"
 )
@@ -24,7 +25,7 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 	assert.Equal(t, "mikael", created.Activity[0].Actor)
 
 	body := "A **Markdown** comment.\n"
-	comment, err := b.AddComment(ctx, issue.ID, body)
+	comment, err := b.PutComment(ctx, issue.ID, "markdown", body)
 	require.NoError(t, err)
 	assert.Equal(t, body, comment.Body, "comment bytes round-trip unchanged")
 	assert.Equal(t, "mikael", comment.Actor)
@@ -48,6 +49,34 @@ func TestIssueActivityRecordsCommentsAndChanges(t *testing.T) {
 	assert.Greater(t, page.Activity[0].ID, page.Activity[1].ID)
 }
 
+func TestPutCommentIsIdempotent(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue := create(t, b, ctx, "keyed comment")
+
+	first, err := b.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	beforeRetry, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	second, err := b.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	afterRetry, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+	assert.Equal(t, beforeRetry.UpdatedAt, afterRetry.UpdatedAt)
+
+	_, err = b.PutComment(ctx, issue.ID, "client-request-1", "different body")
+	assert.Equal(t, awberr.Conflict, awberr.KindOf(err))
+	page, err := b.ListActivity(ctx, issue.ID, domain.ActivityKindComment, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, page.Total)
+
+	bob := b.WithIdentity("bob")
+	third, err := bob.PutComment(ctx, issue.ID, "client-request-1", "same body")
+	require.NoError(t, err)
+	assert.Equal(t, "bob", third.Actor)
+	assert.NotEqual(t, first.ID, third.ID)
+}
+
 func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {
 	b, ctx := newBackend(t)
 	commented := create(t, b, ctx, "commented")
@@ -55,9 +84,9 @@ func TestCommentMovesIssueInUpdatedOrder(t *testing.T) {
 
 	// A second comment guarantees this issue's per-row timestamp has advanced
 	// past another issue created in the same clock tick.
-	_, err := b.AddComment(ctx, commented.ID, "first")
+	_, err := b.PutComment(ctx, commented.ID, "first", "first")
 	require.NoError(t, err)
-	_, err = b.AddComment(ctx, commented.ID, "second")
+	_, err = b.PutComment(ctx, commented.ID, "second", "second")
 	require.NoError(t, err)
 
 	page, err := b.ListIssues(ctx, &domain.Filter{
@@ -79,7 +108,7 @@ func TestNoOpAndFailedMutationsProduceNoActivity(t *testing.T) {
 	badPriority := 9
 	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Priority: &badPriority}, "")
 	require.Error(t, err)
-	_, err = b.AddComment(ctx, issue.ID, " \n\t")
+	_, err = b.PutComment(ctx, issue.ID, "blank", " \n\t")
 	require.Error(t, err)
 
 	page, err := b.ListActivity(ctx, issue.ID, "", nil, nil)
@@ -90,9 +119,9 @@ func TestNoOpAndFailedMutationsProduceNoActivity(t *testing.T) {
 func TestActivityKindAndPaging(t *testing.T) {
 	b, ctx := newBackend(t)
 	issue := create(t, b, ctx, "title")
-	_, err := b.AddComment(ctx, issue.ID, "first")
+	_, err := b.PutComment(ctx, issue.ID, "first", "first")
 	require.NoError(t, err)
-	_, err = b.AddComment(ctx, issue.ID, "second")
+	_, err = b.PutComment(ctx, issue.ID, "second", "second")
 	require.NoError(t, err)
 
 	limit, offset := 1, 1

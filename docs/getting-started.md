@@ -69,7 +69,7 @@ Descriptions and comments are Markdown. Use files for substantial text:
 
 ```console
 awb update app-a3f9c1 --description-file investigation.md
-awb comment add app-a3f9c1 --body-file findings.md
+awb comment add app-a3f9c1 --body-file findings.md --key findings-v1
 awb attach add app-a3f9c1 failing-input.txt
 ```
 

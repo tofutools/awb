@@ -429,9 +429,9 @@ func TestCommentInvalidatesIssueETag(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 	tag := backend.ETag(issue.UpdatedAt)
 
-	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
+	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/comments/etag",
 		`{"body":"new information"}`)
-	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID,
 		`{"title":"renamed"}`, "If-Match", tag)
@@ -1672,7 +1672,7 @@ func TestMarkdownGateOverHTTP(t *testing.T) {
 		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"[a](javascript:alert(1))"}`},
 		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"![a](data:image/svg+xml,<svg/>)"}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":"<b>no</b>"}`},
-		{http.MethodPost, "/api/issues/" + issue.ID + "/comments", `{"body":"<b>no</b>"}`},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/comments/markdown", `{"body":"<b>no</b>"}`},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":"see [why](javascript:alert(1))"}`},
 		{http.MethodPost, "/api/workspaces", `{"key":"web","description":"<style>body{}</style>"}`},
 		{http.MethodPatch, "/api/workspaces/awb", `{"description":"<math></math>"}`},

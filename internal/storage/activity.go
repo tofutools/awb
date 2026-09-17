@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/domain"
@@ -28,6 +30,13 @@ func scanActivity(row rowScanner) (*domain.Activity, error) {
 // InsertActivity appends one entry and fills its database-assigned id and
 // creation time. It is called inside the transaction of the action it records.
 func (t *Tx) InsertActivity(a *domain.Activity) error {
+	return t.InsertKeyedActivity(a, "")
+}
+
+// InsertKeyedActivity appends an entry carrying a client-selected comment key.
+// The unique index backs up the transactionally serialized lookup performed by
+// the caller and protects the invariant from other storage callers.
+func (t *Tx) InsertKeyedActivity(a *domain.Activity, key string) error {
 	a.Normalize()
 	encoded, err := json.Marshal(a.Changes)
 	if err != nil {
@@ -35,9 +44,9 @@ func (t *Tx) InsertActivity(a *domain.Activity) error {
 	}
 	a.CreatedAt = Now()
 	result, err := t.q.ExecContext(t.ctx, `
-		INSERT INTO issue_activity (issue, kind, actor, body, action, changes, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.Issue, a.Kind, a.Actor, a.Body, a.Action, string(encoded), a.CreatedAt)
+		INSERT INTO issue_activity (issue, kind, actor, body, action, changes, created_at, comment_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.Issue, a.Kind, a.Actor, a.Body, a.Action, string(encoded), a.CreatedAt, key)
 	if err != nil {
 		if isCheckViolation(err) {
 			return awberr.Runtimef("refusing to store inconsistent activity: %s", err.Error())
@@ -50,6 +59,20 @@ func (t *Tx) InsertActivity(a *domain.Activity) error {
 	}
 	a.Normalize()
 	return nil
+}
+
+// ActivityByCommentKey returns the activity assigned to key, if any.
+func (t *Tx) ActivityByCommentKey(issue, actor, key string) (*domain.Activity, error) {
+	row := t.q.QueryRowContext(t.ctx, `SELECT `+activityColumns+
+		` FROM issue_activity WHERE issue = ? AND actor = ? AND comment_key = ?`, issue, actor, key)
+	a, err := scanActivity(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, awberr.Wrap(awberr.Runtime, err, "read comment %q of %s", key, issue)
+	}
+	return a, nil
 }
 
 // ListActivity returns an issue's newest activity first. An empty kind means

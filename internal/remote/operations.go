@@ -421,10 +421,10 @@ func (b *Backend) Tree(ctx context.Context, ref string) (*domain.IssueTree, erro
 	return &tree, nil
 }
 
-func (b *Backend) AddComment(ctx context.Context, ref, body string) (*domain.Activity, error) {
+func (b *Backend) PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error) {
 	var activity domain.Activity
-	_, err := b.call(ctx, http.MethodPost,
-		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/comments", nil),
+	_, err := b.call(ctx, http.MethodPut,
+		b.endpoint("/api/issues/"+url.PathEscape(ref)+"/comments/"+url.PathEscape(key), nil),
 		commentBody{Body: body}, "", &activity)
 	if err != nil {
 		return nil, err

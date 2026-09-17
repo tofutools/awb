@@ -84,7 +84,8 @@ type Backend interface {
 
 	// Activity is append-only. Comments are explicit writes; change entries are
 	// produced by the mutations above inside their own transactions.
-	AddComment(ctx context.Context, ref, body string) (*domain.Activity, error)
+	// PutComment is the retry-safe comment operation used by every client.
+	PutComment(ctx context.Context, ref, key, body string) (*domain.Activity, error)
 	ListActivity(ctx context.Context, ref string, kind domain.ActivityKind,
 		limit, offset *int) (ActivityPage, error)
 

@@ -40,6 +40,16 @@ var migrations = [][]string{
 	schemaV21,
 	schemaV22,
 	schemaV23,
+	schemaV24,
+}
+
+// schemaV24 gives client-keyed comments their retry-safe identity. Empty is
+// reserved for activity created before this migration and for non-comment
+// activity, which has no client key.
+var schemaV24 = []string{
+	`ALTER TABLE issue_activity ADD COLUMN comment_key TEXT NOT NULL DEFAULT ''`,
+	`CREATE UNIQUE INDEX idx_issue_activity_comment_key
+		ON issue_activity (issue, actor, comment_key) WHERE comment_key <> ''`,
 }
 
 // schemaV23 lets board candidate selection stay in a narrow index instead of

@@ -610,19 +610,27 @@ paths:
               schema: { $ref: '#/components/schemas/IssueTree' }
         default: { $ref: '#/components/responses/Error' }
 
-  /api/issues/{id}/comments:
+  /api/issues/{id}/comments/{key}:
     parameters:
       - $ref: '#/components/parameters/issueId'
-    post:
-      operationId: addComment
-      summary: Add a Markdown comment to an issue.
+      - $ref: '#/components/parameters/commentKey'
+    put:
+      operationId: putComment
+      summary: Add a Markdown comment idempotently.
+      description: |
+        The client chooses an opaque key for the logical comment. Keys are
+        scoped to the authenticated identity and issue. The first
+        request stores the comment; repetitions with the same key and body
+        return that original activity entry without adding another comment or
+        moving the issue's `updated_at`. Reusing a key with a different body
+        is a conflict.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CommentCreate' }
       responses:
-        '201': { $ref: '#/components/responses/ActivityCreated' }
+        '200': { $ref: '#/components/responses/ActivityEntry' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}/activity:
@@ -1535,6 +1543,15 @@ components:
         issue does not hold is a 404, and one outside the name rules is a 400,
         since it is a name that could never have been stored.
       schema: { $ref: '#/components/schemas/AttachmentName' }
+    commentKey:
+      name: key
+      in: path
+      required: true
+      description: |
+        An opaque client-generated idempotency key, percent-encoded. It is
+        unique for the authenticated identity within the issue and is not
+        exposed in activity representations.
+      schema: { $ref: '#/components/schemas/CommentKey' }
     ifMatch:
       name: If-Match
       in: header
@@ -1760,8 +1777,8 @@ components:
           schema:
             type: array
             items: { $ref: '#/components/schemas/BoardView' }
-    ActivityCreated:
-      description: The new comment activity entry.
+    ActivityEntry:
+      description: The keyed comment activity entry.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Activity' }
@@ -2436,6 +2453,12 @@ components:
             **Markdown** above describes. Must not be blank, and bounded like a
             description at 64 KiB of UTF-8.
           minLength: 1
+
+    CommentKey:
+      type: string
+      description: An opaque client-generated idempotency key for a comment.
+      minLength: 1
+      maxLength: 100
 
     IssueSummary:
       type: object

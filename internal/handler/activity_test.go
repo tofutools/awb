@@ -17,9 +17,9 @@ func TestCommentsAndActivityAPI(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
-	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
+	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/comments/markdown",
 		`{"body":"A **Markdown** comment.\n"}`)
-	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var comment domain.Activity
 	require.NoError(t, json.Unmarshal([]byte(payload), &comment))
 	assert.Equal(t, domain.ActivityKindComment, comment.Kind)
@@ -35,6 +35,25 @@ func TestCommentsAndActivityAPI(t *testing.T) {
 	assert.Equal(t, comment.ID, entries[0].ID)
 }
 
+func TestPutCommentIsIdempotentAPI(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"Retry-safe comment"}`)
+	path := "/api/issues/" + issue.ID + "/comments/request-1"
+
+	resp, first := a.do(http.MethodPut, path, `{"body":"only once"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, first)
+	resp, second := a.do(http.MethodPut, path, `{"body":"only once"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, second)
+	assert.JSONEq(t, first, second)
+
+	resp, _ = a.do(http.MethodPut, path, `{"body":"changed"}`)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	resp, payload := a.do(http.MethodGet,
+		"/api/issues/"+issue.ID+"/activity?kind=comment", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Equal(t, "1", resp.Header.Get("X-Total-Count"))
+}
+
 func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Remote timeline"}`)
@@ -43,7 +62,7 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
-	comment, err := client.AddComment(t.Context(), issue.ID, "remote comment")
+	comment, err := client.PutComment(t.Context(), issue.ID, "remote", "remote comment")
 	require.NoError(t, err)
 	assert.Equal(t, "remote comment", comment.Body)
 	page, err := client.ListActivity(t.Context(), issue.ID, domain.ActivityKindComment, nil, nil)
@@ -51,14 +70,22 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	assert.Equal(t, 1, page.Total)
 	require.Len(t, page.Activity, 1)
 	assert.Equal(t, comment.ID, page.Activity[0].ID)
+
+	keyed, err := client.PutComment(t.Context(), issue.ID, "request/with slash", "keyed remote comment")
+	require.NoError(t, err)
+	retry, err := client.PutComment(t.Context(), issue.ID, "request/with slash", "keyed remote comment")
+	require.NoError(t, err)
+	assert.Equal(t, keyed, retry)
 }
 
 func TestCommentAndActivityRefusals(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
-	resp, _ := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments", `{"body":"  "}`)
+	resp, _ := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/comments/blank", `{"body":"  "}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp, _ = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments", `{"body":"old endpoint"}`)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp, _ = a.do(http.MethodGet, "/api/issues/"+issue.ID+"/activity?kind=nope", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp, _ = a.do(http.MethodGet, "/api/issues/"+issue.ID+"/activity?unknown=x", "")

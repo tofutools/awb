@@ -180,6 +180,11 @@ transaction; a failed or no-op operation records none. Field changes carry
 before and after values, while resource actions such as attaching a file have a
 stable action name.
 
+Every comment is accepted under a client-generated key. The key is unique
+within its issue and author, so independent clients do not collide and retrying
+the same operation returns the original entry; reusing it for different
+content conflicts. Other activity has no client key.
+
 A non-empty close reason is one typed comment committed with the transition. It
 therefore remains meaningful after reopen without introducing another mutable
 field.

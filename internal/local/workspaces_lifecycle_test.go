@@ -41,7 +41,7 @@ func TestArchivedWorkspaceIsRetainedReadOnlyAndRestorable(t *testing.T) {
 	got, err := b.GetIssue(ctx, issue.ID)
 	require.NoError(t, err)
 	assert.Equal(t, issue.ID, got.ID, "stable direct reads remain available")
-	_, err = b.AddComment(ctx, issue.ID, "must not change")
+	_, err = b.PutComment(ctx, issue.ID, "archived", "must not change")
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
 	_, err = b.MoveIssue(ctx, issue.ID, backend.IssueMove{Status: domain.StatusOpen}, "")
@@ -72,7 +72,7 @@ func TestArchivedWorkspaceIsRetainedReadOnlyAndRestorable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.WorkspaceActive, restored.State)
 	assert.Empty(t, restored.ArchivedAt)
-	_, err = b.AddComment(ctx, issue.ID, "work resumes")
+	_, err = b.PutComment(ctx, issue.ID, "restored", "work resumes")
 	require.NoError(t, err)
 
 	audit, err := b.ListWorkspaceActivity(ctx, "awb", nil, nil)

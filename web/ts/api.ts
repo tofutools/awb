@@ -307,8 +307,15 @@ export const api = {
     ),
   activity: (id: string, filters: ActivityFilters = {}) =>
     getPage<Activity>(`api/issues/${encodeURIComponent(id)}/activity${toQuery(filters)}`),
-  addComment: (id: string, body: string) =>
-    postOne<Activity>(`api/issues/${encodeURIComponent(id)}/comments`, { body }),
+  putComment: async (id: string, key: string, body: string) =>
+    getResponse<Activity>(await request(
+      `api/issues/${encodeURIComponent(id)}/comments/${encodeURIComponent(key)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      },
+    )),
   tree: (id: string) => getOne<IssueTree>(`api/issues/${encodeURIComponent(id)}/tree`),
   workspaces: (filters: WorkspaceFilters = {}, signal?: AbortSignal) =>
     getPage<Workspace>(`api/workspaces${toQuery(filters)}`, { signal }),

@@ -465,6 +465,7 @@ func TestCORS(t *testing.T) {
 	resp, _ = get(t, allowed, http.MethodOptions, "/api/issues", "Origin", "https://ui.example.com")
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Access-Control-Allow-Methods"), http.MethodPatch)
+	assert.Contains(t, resp.Header.Get("Access-Control-Allow-Methods"), http.MethodPut)
 	for _, header := range []string{"Content-Type", "If-Match", "Authorization"} {
 		assert.Contains(t, resp.Header.Get("Access-Control-Allow-Headers"), header)
 	}
@@ -1431,7 +1432,7 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	_, err = be.Claim(ctx, ids[6], backend.ClaimRequest{Assignee: "mikael"}, "")
 	require.NoError(t, err)
 	for _, body := range []string{"one", "two"} {
-		_, err := be.AddComment(ctx, blocker, body)
+		_, err := be.PutComment(ctx, blocker, body, body)
 		require.NoError(t, err)
 	}
 	for _, name := range []string{"c.txt", "a.txt", "b.txt"} {

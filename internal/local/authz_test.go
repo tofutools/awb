@@ -435,14 +435,14 @@ func TestActivityUsesTheIssueWorkspaceScope(t *testing.T) {
 	require.NoError(t, err)
 
 	bob := root.WithUser("bob")
-	comment, err := bob.AddComment(ctx, visible.ID, "I can see this.")
+	comment, err := bob.PutComment(ctx, visible.ID, "visible", "I can see this.")
 	require.NoError(t, err)
 	assert.Equal(t, "bob", comment.Actor)
 	page, err := bob.ListActivity(ctx, visible.ID, "", nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, page.Activity, 2)
 
-	_, err = bob.AddComment(ctx, hidden.ID, "I cannot see this.")
+	_, err = bob.PutComment(ctx, hidden.ID, "hidden", "I cannot see this.")
 	notFound(t, err)
 	_, err = bob.ListActivity(ctx, hidden.ID, "", nil, nil)
 	notFound(t, err)
