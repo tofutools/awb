@@ -678,7 +678,7 @@ function IssueSidebar({
                       new FormData(e.currentTarget).get("reason") ?? "",
                     );
                     void change(async () => {
-                      await api.setIssueStatus(issue.id, "closed", reason);
+                      await api.closeIssue(issue.id, reason ? { reason } : {});
                       setClosing(false);
                     });
                   }}

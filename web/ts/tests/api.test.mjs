@@ -347,6 +347,20 @@ test("claim adds one assignee while forced release removes every assignee", asyn
   assert.deepEqual(JSON.parse(calls[1].init.body), { assignee: "operator", force: true });
 });
 
+test("closing uses the dedicated endpoint and carries an optional reason", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response("{}", { status: 200 });
+  });
+
+  await api.closeIssue("awb-123", { reason: "Done" });
+
+  assert.equal(calls[0].path, "api/issues/awb-123/close");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { reason: "Done" });
+});
+
 test("workspace edits patch the workspace resource with its ETag", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

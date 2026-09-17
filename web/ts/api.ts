@@ -45,6 +45,7 @@ export type IssueCreate = components["schemas"]["IssueCreate"];
 export type IssueMove = components["schemas"]["IssueMove"];
 export type ClaimRequest = components["schemas"]["ClaimRequest"];
 export type ReleaseRequest = components["schemas"]["ReleaseRequest"];
+export type CloseRequest = components["schemas"]["CloseRequest"];
 export type RelationRequest = components["schemas"]["RelationRequest"];
 export type WorkspacePatch = components["schemas"]["WorkspacePatch"];
 export type Board = components["schemas"]["Board"];
@@ -289,8 +290,10 @@ export const api = {
     issueMutation<Issue>(id, "/claim", "PUT", body),
   releaseIssue: (id: string, body: ReleaseRequest = { force: false }) =>
     issueMutation<Issue>(id, "/release", "PUT", body),
-  setIssueStatus: (id: string, status: Issue["status"], reason?: string) =>
-    issueMutation<Issue>(id, "/status", "PUT", reason === undefined ? { status } : { status, reason }),
+  closeIssue: (id: string, body: CloseRequest = {}) =>
+    issueMutation<Issue>(id, "/close", "POST", body),
+  setIssueStatus: (id: string, status: Issue["status"]) =>
+    issueMutation<Issue>(id, "/status", "PUT", { status }),
   reopenIssue: (id: string) =>
     issueMutation<Issue>(id, "/reopen", "PUT"),
   addLabel: (id: string, label: string) =>

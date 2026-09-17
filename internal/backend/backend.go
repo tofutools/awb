@@ -415,7 +415,7 @@ type ReleaseRequest struct {
 	Force    bool
 }
 
-// CloseRequest is the body of awb close and the closed form of PUT /api/issues/{id}/status.
+// CloseRequest is the body of awb close and POST /api/issues/{id}/close.
 type CloseRequest struct {
 	// A non-empty Reason is recorded as a typed comment on the closing
 	// transition. Nil and a pointer to "" both record no reason comment.

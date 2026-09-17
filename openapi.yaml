@@ -297,6 +297,22 @@ paths:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/issues/{id}/close:
+    parameters:
+      - $ref: '#/components/parameters/issueId'
+      - $ref: '#/components/parameters/ifMatch'
+    post:
+      tags: [issues]
+      operationId: closeIssue
+      summary: Set the status to closed
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Issue' }
+        default: { $ref: '#/components/responses/Error' }
+
   /api/issues/{id}/reopen:
     parameters:
       - $ref: '#/components/parameters/issueId'
@@ -2943,12 +2959,19 @@ components:
       required: [status]
       properties:
         status: { $ref: '#/components/schemas/Status' }
+
+    CloseRequest:
+      type: object
+      additionalProperties: false
+      properties:
         reason:
           type: string
           maxLength: 500
           description: |
-            When status is closed, a non-empty reason becomes a typed Markdown
-            comment in the same transaction. It is refused for other statuses.
+            A non-empty reason becomes a typed Markdown comment whose `action`
+            is `closed`, in the same transaction as the transition, and is
+            validated as **Markdown** above describes. Empty or absent records
+            no reason comment.
 
     ClaimRequest:
       type: object
