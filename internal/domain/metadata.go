@@ -14,14 +14,17 @@ import (
 const MaxMetadataBytes = 64 * 1024
 
 // Metadata is the caller-owned JSON object an issue carries beside the fields
-// awb itself gives meaning to. The top level is always an object; awb never
-// reads what is under a key, so a value is any JSON — including a nested
-// object or an array — kept whole rather than interpreted.
+// awb itself gives meaning to. The top level is always an object; awb gives no
+// meaning to what is under a key, so a value is any JSON — including a nested
+// object or an array — carried rather than interpreted.
 //
-// Kept whole is a promise about the value, not about its bytes. What is stored
-// is the canonical encoding, so a value comes back compacted and escaped as
-// encoding/json writes it: every parser reads the same value out of both, and
-// two encodings of one object are the same bytes.
+// What is kept is the value, not the spelling. Metadata is stored in one
+// canonical form: every object's keys sorted at every depth, every array's
+// order kept, every number the digits the caller wrote, and no insignificant
+// whitespace. Two spellings of one JSON value therefore become one byte
+// sequence, which is what lets an update that re-sends what it read decide it
+// changed nothing, and what keeps a caller's own key order from becoming a
+// version bump.
 //
 // An issue that has never been given any carries an empty object. That is
 // structural rather than remembered: MarshalJSON writes {} for a nil map, so
@@ -36,12 +39,13 @@ func (m Metadata) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]json.RawMessage(m))
 }
 
-// ParseMetadata reads an encoded metadata object — a request body's field, a
-// --metadata argument, or the stored column.
+// ParseMetadata reads an encoded metadata object: a --metadata argument, or a
+// value a caller spelled out rather than one awb wrote.
 //
-// The top level must be an object: an array, a string, a number or null is
-// refused rather than wrapped in one, because a caller who sent one of those
-// did not mean an object of keys.
+// It must be an object, and there must be one. An array, a string, a number,
+// null and nothing at all are each refused rather than turned into an empty
+// object, because a caller that named the value meant to give one; the way to
+// say "no metadata" is to leave the argument out, which never reaches here.
 func ParseMetadata(encoded []byte) (Metadata, error) {
 	// Checked before the decoder sees it, for the reason every other text field
 	// is: a decoder replaces an invalid byte with U+FFFD, which is
@@ -51,10 +55,7 @@ func ParseMetadata(encoded []byte) (Metadata, error) {
 		return nil, err
 	}
 	trimmed := bytes.TrimSpace(encoded)
-	if len(trimmed) == 0 {
-		return Metadata{}, nil
-	}
-	if trimmed[0] != '{' {
+	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return nil, awberr.Usagef("metadata must be a JSON object")
 	}
 	parsed, err := DecodeMetadata(string(trimmed))
@@ -82,26 +83,52 @@ func DecodeMetadata(encoded string) (Metadata, error) {
 	return decoded, nil
 }
 
-// ValidateMetadata normalizes a metadata object into the one form awb stores:
-// each value compacted, and the whole within the size bound. Normalizing here
-// rather than at the boundary is what lets two objects be compared as bytes,
-// which is how an update decides it changed nothing.
+// ValidateMetadata puts a metadata object into the one form awb stores and
+// bounds what that form may weigh. Canonicalizing here rather than at each
+// boundary is what lets two objects be compared as bytes, which is how an
+// update decides it changed nothing.
 func ValidateMetadata(m Metadata) (Metadata, error) {
 	if len(m) == 0 {
 		return Metadata{}, nil
 	}
-	encoded, err := json.Marshal(map[string]json.RawMessage(m))
+	normalized := make(Metadata, len(m))
+	for key, value := range m {
+		canonical, err := canonicalValue(value)
+		if err != nil {
+			return nil, awberr.Usagef("metadata value under %q is not valid JSON: %s", key, err)
+		}
+		normalized[key] = canonical
+	}
+	encoded, err := EncodeMetadata(normalized)
 	if err != nil {
-		return nil, awberr.Usagef("metadata is not a valid JSON object: %s", err)
+		return nil, err
 	}
 	if len(encoded) > MaxMetadataBytes {
 		return nil, awberr.Usagef("metadata is too large: maximum %d bytes", MaxMetadataBytes)
 	}
-	var normalized Metadata
-	if err := json.Unmarshal(encoded, &normalized); err != nil {
-		return nil, awberr.Usagef("metadata is not a valid JSON object: %s", err)
-	}
 	return normalized, nil
+}
+
+// canonicalValue rewrites one value into the form awb stores it in: every
+// object's keys sorted, every array's order kept, and no insignificant
+// whitespace. It is what makes key order insignificant at every depth rather
+// than only at the top, where a Go map already makes it so.
+//
+// Numbers are decoded as json.Number — their own digits — rather than as
+// float64, so a large integer, a trailing zero or a written exponent comes
+// back as the caller wrote it instead of as a float's nearest rendering.
+func canonicalValue(raw json.RawMessage) (json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	// One value and nothing after it: "1 2" is two, and neither is this one.
+	if decoder.More() {
+		return nil, awberr.Usagef("a metadata value must be one JSON value")
+	}
+	return json.Marshal(value)
 }
 
 // EncodeMetadata renders metadata as it is stored: one JSON object with its

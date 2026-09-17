@@ -10,12 +10,9 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// The top level is an object and nothing else. A caller that sent an array, a
-// string or null did not mean an object of keys, so none of them is wrapped in
-// one.
-// encodedMetadata is the stored form of one metadata object: keys sorted,
-// values compacted. Comparing that string rather than the map is what pins the
-// ordering down as well as the content.
+// encodedMetadata is the stored form of one metadata object: keys sorted at
+// every depth, values compacted. Comparing that string rather than the map is
+// what pins the ordering down as well as the content.
 func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
 	t.Helper()
 	encoded, err := domain.EncodeMetadata(metadata)
@@ -23,18 +20,14 @@ func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
 	return encoded
 }
 
+// The top level is an object and nothing else. A caller that spelled out an
+// array, a string, null — or nothing at all — named a value and did not supply
+// an object of keys, so none of them is wrapped in one. Saying "no metadata" is
+// leaving the argument out, which never reaches here.
 func TestParseMetadataRequiresAnObject(t *testing.T) {
-	for _, value := range []string{"[]", `"text"`, "42", "null", "true", "{", `{"a"}`} {
+	for _, value := range []string{"[]", `"text"`, "42", "null", "true", "{", `{"a"}`, "", "   "} {
 		_, err := domain.ParseMetadata([]byte(value))
 		assertUsage(t, err, value)
-	}
-
-	// Nothing at all is an empty object rather than an error: it is what a
-	// command line flag that was never given carries.
-	for _, value := range []string{"", "   "} {
-		got, err := domain.ParseMetadata([]byte(value))
-		require.NoError(t, err, value)
-		assert.Equal(t, domain.Metadata{}, got, value)
 	}
 }
 
@@ -45,22 +38,53 @@ func TestParseMetadataRefusesInvalidUTF8(t *testing.T) {
 	assertUsage(t, err)
 }
 
-// A value is any JSON and awb never reads into it, so a nested object or array
-// comes back exactly as it went in — only compacted, which is the form stored.
-func TestParseMetadataKeepsValuesVerbatim(t *testing.T) {
+// A value is any JSON, carried rather than interpreted, and stored in one
+// canonical form: objects sorted at every depth, arrays left in their order,
+// numbers the digits the caller wrote.
+func TestParseMetadataCanonicalizesValues(t *testing.T) {
 	got, err := domain.ParseMetadata([]byte(`{
 		"source": "github",
 		"external_id": 4711,
-		"nested": { "b": [1, 2, {"c": null}], "a": true },
+		"nested": { "b": [1, 2, {"d": null, "c": 3}], "a": true },
 		"absent": null
 	}`))
 	require.NoError(t, err)
 
-	assert.JSONEq(t, `"github"`, string(got["source"]))
-	assert.Equal(t, `{"b":[1,2,{"c":null}],"a":true}`, string(got["nested"]),
-		"a value is compacted but never reordered or read into")
+	assert.Equal(t, `"github"`, string(got["source"]))
+	assert.Equal(t, `{"a":true,"b":[1,2,{"c":3,"d":null}]}`, string(got["nested"]),
+		"every object's keys are sorted, at every depth; an array keeps its order")
 	assert.Equal(t, "null", string(got["absent"]),
 		"a null value is a value the caller stored, not an absent key")
+}
+
+// Canonicalizing must not round a number through float64: a value awb gives no
+// meaning to has to come back as the caller wrote it.
+func TestParseMetadataKeepsNumbersAsWritten(t *testing.T) {
+	got, err := domain.ParseMetadata([]byte(
+		`{"big":9007199254740993,"zero":1.0,"exp":1e3,"neg":-0.00000001}`))
+	require.NoError(t, err)
+
+	assert.Equal(t, "9007199254740993", string(got["big"]), "an integer past float64's range")
+	assert.Equal(t, "1.0", string(got["zero"]))
+	assert.Equal(t, "1e3", string(got["exp"]))
+	assert.Equal(t, "-0.00000001", string(got["neg"]))
+}
+
+// Two spellings of one value are one stored object, so re-sending what was read
+// with the keys in another order is not a change. Array order is meaning rather
+// than spelling, so reordering one is.
+func TestMetadataEqualityIgnoresKeyOrderAtEveryDepth(t *testing.T) {
+	first, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"p":1,"q":2}]},"b":2}`))
+	require.NoError(t, err)
+	second, err := domain.ParseMetadata([]byte(`{"b":2,"a":{"y":[{"q":2,"p":1}],"x":1}}`))
+	require.NoError(t, err)
+
+	assert.True(t, domain.EqualMetadata(first, second))
+	assert.Equal(t, encodedMetadata(t, first), encodedMetadata(t, second))
+
+	swapped, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"q":2,"p":1},{"z":0}]},"b":2}`))
+	require.NoError(t, err)
+	assert.False(t, domain.EqualMetadata(first, swapped))
 }
 
 // The canonical encoding is encoding/json's, which escapes <, > and & inside a

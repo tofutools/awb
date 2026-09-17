@@ -337,9 +337,12 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := domain.ParseMetadata([]byte(d.metadata))
-		if err != nil {
-			return nil, err
+		var metadata domain.Metadata
+		if d.metadata != "" {
+			var err error
+			if metadata, err = domain.ParseMetadata([]byte(d.metadata)); err != nil {
+				return nil, err
+			}
 		}
 		priority := d.priority
 		issue, err := be.CreateIssue(ctx, backend.IssueCreate{

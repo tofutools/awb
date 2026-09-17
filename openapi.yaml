@@ -2307,14 +2307,17 @@ components:
       type: object
       description: |
         A caller-owned JSON object an issue carries beside the fields awb
-        itself gives meaning to. awb never reads what is under a key, so a
-        value is any JSON — a string, a number, a nested object, an array —
-        kept whole rather than interpreted.
+        itself gives meaning to. awb gives no meaning to what is under a key,
+        so a value is any JSON — a string, a number, a nested object, an array
+        — carried rather than interpreted.
 
-        Kept whole is a promise about the value, not about its bytes: what is
-        returned is the canonical encoding of what was sent, so a value comes
-        back compacted and may carry different escapes. A parser reads the
-        same value out of either.
+        What is kept is the value, not the spelling. It is stored canonically:
+        every object's keys sorted at every depth, every array's order kept,
+        every number the digits that were sent, and no insignificant
+        whitespace. So a value comes back compacted and possibly reordered or
+        re-escaped, a parser reads the same value out of either, and re-sending
+        what was read does not become a new version because a client's JSON
+        library chose another key order.
 
         The top level is always an object. An issue that has never been given
         any carries `{}`, so this is never `null` and never absent.
@@ -2324,9 +2327,9 @@ components:
         under a key is merged into, so the result follows from the two objects
         alone.
 
-        The encoded object is at most 64 KiB of UTF-8. Its keys are a JSON
-        object's, so their order carries no meaning and is the one thing about
-        an issue response that is not fixed.
+        The encoded object is at most 64 KiB of UTF-8. Key order carries no
+        meaning here, and this object's own keys are the one thing about an
+        issue response whose order is not fixed.
       additionalProperties: true
       examples: [{ source: 'github', external_id: 4711, tags: ['import', 'q3'] }]
 

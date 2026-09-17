@@ -82,7 +82,8 @@ An issue belongs to exactly one workspace and carries:
 
 - a title and Markdown description;
 - optional implementation commit and pull request references;
-- a caller-owned JSON metadata object awb stores but never reads into;
+- a caller-owned JSON metadata object awb stores canonically and gives no
+  meaning to;
 - one fixed type and workflow status;
 - priority from zero through four;
 - a sparse manual order;
@@ -97,8 +98,10 @@ direct parent. This keeps descriptions, attachment metadata, extracted links,
 integration metadata, and the complete relation graph out of collection reads.
 Both representations are normalized and deterministic, and absent collections
 are empty arrays rather than null; an issue given no metadata carries the empty
-object, the one exception to determinism being the order of a metadata object's
-own keys, which JSON does not fix. Derived fields are read-only; their own
+object. Metadata is stored as a value rather than as bytes — every object's
+keys sorted at every depth — so re-sending what was read in another key order
+changes nothing. Its own keys are the one exception to a response's determinism,
+since the generated encoder writes a map in no fixed order. Derived fields are read-only; their own
 operations change them.
 
 IDs have the form `<workspace>-<hash>`. The hash is derived from creation data

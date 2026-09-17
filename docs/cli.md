@@ -104,8 +104,8 @@ named lifecycle commands unless they are deliberately reproducing a board move.
 ## Metadata
 
 An issue carries a caller-owned JSON object beside the fields awb gives meaning
-to. awb stores it and hands it back unread, so what is under a key is whatever
-a tool put there — a string, a number, a nested object, an array:
+to. awb gives no meaning to what is under a key, so a value is whatever a tool
+put there — a string, a number, a nested object, an array:
 
 ```console
 awb create "Import #4711" --metadata '{"source":"github","external_id":4711}'
@@ -117,10 +117,18 @@ values and the keys it does not name are kept, so owning one key does not mean
 reading and resending the others. Nothing under a key is merged into — a nested
 object is replaced whole.
 
-The top level must be an object; the encoded object is at most 64 KiB. An issue
-given no metadata carries `{}`, never `null`. Metadata appears in `--json`
-output and over the API, and is deliberately absent from the default and
-compact presentations and from the web UI.
+What is kept is the value, not the spelling: metadata is stored with every
+object's keys sorted at every depth, arrays in their order, numbers as the
+digits given, and no insignificant whitespace. So writing the same value again
+with its keys in another order changes nothing and does not move the issue's
+version.
+
+The top level must be an object; the encoded object is at most 64 KiB. Leaving
+`--metadata` out means no metadata, while giving it an empty value is naming
+one and not supplying it, which is refused. An issue given no metadata carries
+`{}`, never `null`. Metadata appears in `--json` output and over the API, and
+is deliberately absent from the default and compact presentations and from the
+web UI.
 
 Hard deletion is not recovery or archiving:
 

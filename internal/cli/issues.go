@@ -126,9 +126,15 @@ func newCreateCommand(e *env) *cobra.Command {
 					".awb.yaml or the user configuration file")
 			}
 
-			metadata, err := domain.ParseMetadata([]byte(p.Metadata))
-			if err != nil {
-				return err
+			// Parsed only when the flag was given, so leaving it out is "no
+			// metadata" while giving it an empty value is a caller naming one
+			// and not supplying it, which is refused.
+			var metadata domain.Metadata
+			if cmd.Flags().Changed("metadata") {
+				var err error
+				if metadata, err = domain.ParseMetadata([]byte(p.Metadata)); err != nil {
+					return err
+				}
 			}
 
 			req := backend.IssueCreate{

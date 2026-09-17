@@ -524,6 +524,38 @@ func TestIssueMetadata(t *testing.T) {
 	assert.True(t, found, "a metadata change is recorded like any other")
 }
 
+// Key order is spelling, not meaning, at every depth: re-sending what was read
+// with an inner object's keys in another order changes nothing, so it does not
+// move the version and records no activity. That is what lets a client that
+// rebuilds the object it read save without inventing a new version for
+// everybody else's ETags.
+func TestIssueMetadataReorderingIsNotAChange(t *testing.T) {
+	b, ctx := newBackend(t)
+	created, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "tagged",
+		Metadata: mustMetadata(t, `{"nested":{"a":1,"b":2},"list":[{"p":1,"q":2}]}`),
+	})
+	require.NoError(t, err)
+
+	before, err := b.ListActivity(ctx, created.ID, "", nil, nil)
+	require.NoError(t, err)
+
+	reordered := mustMetadata(t, `{"list":[{"q":2,"p":1}],"nested":{"b":2,"a":1}}`)
+	updated, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &reordered}, "")
+	require.NoError(t, err)
+	assert.Equal(t, created.UpdatedAt, updated.UpdatedAt, "the same value is not a new version")
+
+	after, err := b.ListActivity(ctx, created.ID, "", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, before.Total, after.Total, "a write that changed nothing records nothing")
+
+	// An array's order is meaning, so reordering one is a change.
+	swapped := mustMetadata(t, `{"list":[{"p":1,"q":2},{"z":0}]}`)
+	changed, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &swapped}, "")
+	require.NoError(t, err)
+	assert.Greater(t, changed.UpdatedAt, created.UpdatedAt)
+}
+
 // Too large is a usage error rather than a stored row, and the refusal happens
 // against the merged object, which is the thing that would be stored.
 func TestIssueMetadataIsBounded(t *testing.T) {

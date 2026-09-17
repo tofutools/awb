@@ -1006,10 +1006,14 @@ func TestIssueMetadataFlag(t *testing.T) {
 	assert.NotContains(t, h.mustRun("show", id), "github")
 	assert.NotContains(t, h.mustRun("show", id, "--compact"), "github")
 
-	// The top level is an object; anything else is a usage error before any
-	// write happens.
-	for _, value := range []string{"[]", `"text"`, "null", "{", "not json"} {
+	// Leaving the flag out is "no metadata"; giving it an empty value is naming
+	// one and not supplying it, which is refused before any write happens.
+	for _, value := range []string{"[]", `"text"`, "null", "{", "not json", "", "  "} {
 		_, stderr, code := h.run("update", id, "--metadata", value)
+		assert.Equal(t, 2, code, value)
+		assert.Contains(t, stderr, "metadata", value)
+
+		_, stderr, code = h.run("create", "t", "--workspace", "awb", "--metadata", value)
 		assert.Equal(t, 2, code, value)
 		assert.Contains(t, stderr, "metadata", value)
 	}
