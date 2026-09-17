@@ -41,6 +41,16 @@ var migrations = [][]string{
 	schemaV22,
 	schemaV23,
 	schemaV24,
+	schemaV25,
+}
+
+// schemaV25 gives an issue the caller-owned JSON object it carries beside the
+// fields awb itself gives meaning to. The column holds one encoded object and
+// nothing reads into it, so there is no index and no CHECK beyond its default:
+// an issue that has never been given any carries the empty object, which is
+// what every row written before this migration gets.
+var schemaV25 = []string{
+	`ALTER TABLE issues ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'`,
 }
 
 // schemaV24 gives client-keyed comments their retry-safe identity. Empty is

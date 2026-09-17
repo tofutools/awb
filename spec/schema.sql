@@ -117,7 +117,7 @@ CREATE TABLE "issues" (
 		issue_order INTEGER NOT NULL DEFAULT 0 CHECK (issue_order >= 0),
 		closed_at TEXT NOT NULL DEFAULT '',
 		commit_hash TEXT NOT NULL DEFAULT '',
-		pull_request_url TEXT NOT NULL DEFAULT '',
+		pull_request_url TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '{}',
 		CHECK (type IN ('epic', 'feature', 'bug', 'task', 'chore')),
 		CHECK (status IN ('backlog', 'open', 'in_progress', 'closed')),
 		CHECK (priority BETWEEN 0 AND 4)

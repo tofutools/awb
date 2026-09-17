@@ -2300,6 +2300,36 @@ components:
       maxLength: 1000
       pattern: '^(|https?://[^/\s?#]+(?:[^\s]*)?)$'
 
+    IssueMetadata:
+      type: object
+      description: |
+        A caller-owned JSON object an issue carries beside the fields awb
+        itself gives meaning to. awb gives no meaning to what is under a key,
+        so a value is any JSON — a string, a number, a nested object, an array
+        — carried rather than interpreted.
+
+        What is kept is the value, not the spelling. It is stored canonically:
+        every object's keys sorted at every depth, every array's order kept,
+        every number the digits that were sent, and no insignificant
+        whitespace. So a value comes back compacted and possibly reordered or
+        re-escaped, a parser reads the same value out of either, and re-sending
+        what was read does not become a new version because a client's JSON
+        library chose another key order.
+
+        The top level is always an object. An issue that has never been given
+        any carries `{}`, so this is never `null` and never absent.
+
+        An update merges at the top level only: a key the update names takes
+        the update's value whole, and a key it does not name is kept. Nothing
+        under a key is merged into, so the result follows from the two objects
+        alone.
+
+        The encoded object is at most 64 KiB of UTF-8. Key order carries no
+        meaning here, and this object's own keys are the one thing about an
+        issue response whose order is not fixed.
+      additionalProperties: true
+      examples: [{ source: 'github', external_id: 4711, tags: ['import', 'q3'] }]
+
     ContentType:
       type: string
       description: |
@@ -2509,11 +2539,12 @@ components:
         `labels` and `blockers` are sorted; `relations` is sorted by type, then
         other, then direction; `attachments` is oldest first, then by id;
         `links` keeps the order the links occur in. Two requests against
-        unchanged data therefore produce byte-identical output.
+        unchanged data therefore produce byte-identical output, save for the
+        order of `metadata`'s own keys, which a JSON object does not fix.
       additionalProperties: false
       required:
-        [id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, order, labels,
-         assignees, created_at, updated_at, closed_at, blocked, blockers,
+        [id, workspace, title, description, commit_hash, pull_request_url, metadata, type, status, priority, order,
+         labels, assignees, created_at, updated_at, closed_at, blocked, blockers,
          relations, parent, links, attachments]
       properties:
         id:
@@ -2536,6 +2567,7 @@ components:
             64 KiB of UTF-8.
         commit_hash: { $ref: '#/components/schemas/CommitHash' }
         pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
+        metadata: { $ref: '#/components/schemas/IssueMetadata' }
         type: { $ref: '#/components/schemas/Type' }
         status: { $ref: '#/components/schemas/Status' }
         priority: { $ref: '#/components/schemas/Priority' }
@@ -2852,6 +2884,7 @@ components:
         description: { type: string }
         commit_hash: { $ref: '#/components/schemas/CommitHash' }
         pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
+        metadata: { $ref: '#/components/schemas/IssueMetadata' }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
         assignees:
@@ -2902,6 +2935,7 @@ components:
         description: { type: string }
         commit_hash: { $ref: '#/components/schemas/CommitHash' }
         pull_request_url: { $ref: '#/components/schemas/PullRequestURL' }
+        metadata: { $ref: '#/components/schemas/IssueMetadata' }
         type: { $ref: '#/components/schemas/Type' }
         priority: { $ref: '#/components/schemas/Priority' }
         labels:

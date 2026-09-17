@@ -253,6 +253,57 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 
 // Nothing beyond the recognised fields is accepted: they are rejected rather
 // than ignored.
+// The caller's own object travels the API unread: it is created with the
+// issue, merged at the top level by a PATCH, and always present as an object.
+func TestIssueMetadata(t *testing.T) {
+	a := newAPI(t)
+
+	plain := a.createIssue(`{"workspace":"awb","title":"Plain"}`)
+	assert.Equal(t, domain.Metadata{}, plain.Metadata,
+		"metadata is never null and never absent")
+
+	issue := a.createIssue(`{"workspace":"awb","title":"Tagged",` +
+		`"metadata":{"source":"github","nested":{"a":1,"b":2},"keep":"me"}}`)
+	assert.Equal(t, `{"keep":"me","nested":{"a":1,"b":2},"source":"github"}`,
+		encodedMetadata(t, issue.Metadata))
+
+	resp, payload := a.do(http.MethodPatch, "/api/issues/"+issue.ID,
+		`{"metadata":{"nested":{"a":9},"external_id":4711}}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var updated domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
+	assert.Equal(t, `{"external_id":4711,"keep":"me","nested":{"a":9},"source":"github"}`,
+		encodedMetadata(t, updated.Metadata),
+		"a PATCH merges at the top level and keeps the keys it does not name")
+
+	// A PATCH that does not mention metadata leaves it alone, which is what
+	// lets a client send back the object it read with one other field changed.
+	resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, `{"title":"Renamed"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &updated))
+	assert.Equal(t, `{"external_id":4711,"keep":"me","nested":{"a":9},"source":"github"}`,
+		encodedMetadata(t, updated.Metadata))
+
+	// The top level is an object. Anything else is a 400 rather than a value
+	// wrapped in one.
+	for _, body := range []string{
+		`{"metadata":[]}`, `{"metadata":"text"}`, `{"metadata":42}`, `{"metadata":null}`,
+	} {
+		resp, payload = a.do(http.MethodPatch, "/api/issues/"+issue.ID, body)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body+" -> "+payload)
+	}
+}
+
+// encodedMetadata is the stored form of one metadata object: keys sorted,
+// values compacted. Comparing that string rather than the map is what pins the
+// ordering down as well as the content.
+func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
+	t.Helper()
+	encoded, err := domain.EncodeMetadata(metadata)
+	require.NoError(t, err)
+	return encoded
+}
+
 func TestCreateIssueRejectsUnknownFields(t *testing.T) {
 	a := newAPI(t)
 	for _, body := range []string{

@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-faster/jx"
 	"github.com/ogen-go/ogen/middleware"
 	"github.com/ogen-go/ogen/ogenerrors"
 	"github.com/ogen-go/ogen/validate"
@@ -300,6 +301,7 @@ func toIssue(issue *domain.Issue) api.Issue {
 		Description:    issue.Description,
 		CommitHash:     api.CommitHash(issue.CommitHash),
 		PullRequestURL: api.PullRequestURL(issue.PullRequestURL),
+		Metadata:       toMetadata(issue.Metadata),
 		Type:           api.Type(issue.Type),
 		Status:         api.Status(issue.Status),
 		Priority:       api.Priority(issue.Priority),
@@ -366,6 +368,7 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 		Description:    issue.Description,
 		CommitHash:     issue.CommitHash,
 		PullRequestURL: issue.PullRequestURL,
+		Metadata:       issue.Metadata,
 		Type:           issue.Type,
 		Status:         issue.Status,
 		Priority:       issue.Priority,
@@ -411,6 +414,29 @@ func toFacets(facets []domain.Facet) []api.Facet {
 	out := make([]api.Facet, len(facets))
 	for i, facet := range facets {
 		out[i] = api.Facet{Value: facet.Value, Count: facet.Count}
+	}
+	return out
+}
+
+// toMetadata carries an issue's caller-owned object across without reading
+// into it. The generated type holds each value as raw JSON, which is exactly
+// what the domain stores, so the bytes under a key reach the client unread.
+//
+// An empty object is built rather than left nil so the generated encoder has
+// something to write: the field is required and is {} for an issue that
+// carries none.
+func toMetadata(metadata domain.Metadata) api.IssueMetadata {
+	out := make(api.IssueMetadata, len(metadata))
+	for key, value := range metadata {
+		out[key] = jx.Raw(value)
+	}
+	return out
+}
+
+func fromMetadata(metadata api.IssueMetadata) domain.Metadata {
+	out := make(domain.Metadata, len(metadata))
+	for key, value := range metadata {
+		out[key] = json.RawMessage(value)
 	}
 	return out
 }

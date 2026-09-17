@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -29,6 +30,7 @@ func TestToTreeCarriesEveryIssueField(t *testing.T) {
 		Description:    "A description.",
 		CommitHash:     "01234567",
 		PullRequestURL: "https://example.com/pull/1",
+		Metadata:       domain.Metadata{"source": json.RawMessage(`"github"`)},
 		Type:           domain.TypeBug,
 		Status:         domain.StatusClosed,
 		Priority:       1,

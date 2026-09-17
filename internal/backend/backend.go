@@ -323,8 +323,11 @@ type IssueCreate struct {
 	Description    string
 	CommitHash     string
 	PullRequestURL string
-	Type           domain.Type
-	Priority       *int
+	// Metadata is the caller-owned JSON object the new issue carries. Nil and
+	// empty are the same thing here: an issue is created with an empty one.
+	Metadata domain.Metadata
+	Type     domain.Type
+	Priority *int
 	// Assignees permits an atomic create-and-claim by several people.
 	Assignees []string
 	Labels    []string
@@ -353,6 +356,13 @@ type IssuePatch struct {
 	PullRequestURL *string
 	Type           *domain.Type
 	Priority       *int
+
+	// Metadata is the one field that is merged rather than replaced: the keys
+	// it names take its values and the keys it does not name are kept, so a
+	// caller that owns one key need not read and resend the others. It is
+	// merged at the top level only, which is what makes the result follow from
+	// the stored object and this one alone.
+	Metadata *domain.Metadata
 
 	// The three fields below may appear in a request but may not change: each
 	// is ignored when it equals what is stored and refused when it differs,

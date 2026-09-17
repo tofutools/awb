@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"maps"
 	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -10,8 +11,8 @@ import (
 )
 
 // issueColumns is the stored half of an Issue, in the order scanIssue reads.
-const issueColumns = `id, workspace, title, description, commit_hash, pull_request_url, type, status, priority, issue_order,
-	created_at, updated_at, closed_at`
+const issueColumns = `id, workspace, title, description, commit_hash, pull_request_url, metadata, type, status, priority,
+	issue_order, created_at, updated_at, closed_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -19,10 +20,16 @@ type rowScanner interface {
 
 func scanIssue(row rowScanner) (*domain.Issue, error) {
 	var i domain.Issue
-	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.CommitHash, &i.PullRequestURL, &i.Type, &i.Status,
-		&i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
+	var metadata string
+	err := row.Scan(&i.ID, &i.Workspace, &i.Title, &i.Description, &i.CommitHash, &i.PullRequestURL, &metadata,
+		&i.Type, &i.Status, &i.Priority, &i.Order, &i.CreatedAt, &i.UpdatedAt, &i.ClosedAt)
 	if err != nil {
 		return nil, err
+	}
+	// The column is written from the same encoder that reads it here, so a
+	// value it cannot parse is a corrupt database rather than a bad request.
+	if i.Metadata, err = domain.DecodeMetadata(metadata); err != nil {
+		return nil, awberr.Runtimef("issue %s carries unreadable metadata: %s", i.ID, err)
 	}
 	return &i, nil
 }
@@ -309,6 +316,11 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		return err
 	}
 
+	metadata, encodeErr := domain.EncodeMetadata(issue.Metadata)
+	if encodeErr != nil {
+		return encodeErr
+	}
+
 	for attempt := range maxAttempts {
 		salt, err := domain.NewSalt()
 		if err != nil {
@@ -318,9 +330,9 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 
 		_, err = t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL, issue.Type,
-			issue.Status, issue.Priority, issue.Order,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL,
+			metadata, issue.Type, issue.Status, issue.Priority, issue.Order,
 			issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
 		if err == nil {
 			for position, assignee := range assignees {
@@ -351,6 +363,7 @@ type IssueFields struct {
 	Description    string
 	CommitHash     string
 	PullRequestURL string
+	Metadata       domain.Metadata
 	Type           domain.Type
 	Status         domain.Status
 	Priority       int
@@ -361,7 +374,8 @@ type IssueFields struct {
 // Fields reads the stored half of an issue.
 func Fields(i *domain.Issue) IssueFields {
 	return IssueFields{
-		Title: i.Title, Description: i.Description, CommitHash: i.CommitHash, PullRequestURL: i.PullRequestURL, Type: i.Type, Status: i.Status,
+		Title: i.Title, Description: i.Description, CommitHash: i.CommitHash, PullRequestURL: i.PullRequestURL,
+		Metadata: maps.Clone(i.Metadata), Type: i.Type, Status: i.Status,
 		Priority: i.Priority, Order: i.Order,
 		Assignees: slices.Clone(i.Assignees),
 	}
@@ -376,10 +390,15 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	}
 	before := Fields(issue)
 	if before.Title == fields.Title && before.Description == fields.Description && before.CommitHash == fields.CommitHash && before.PullRequestURL == fields.PullRequestURL &&
+		domain.EqualMetadata(before.Metadata, fields.Metadata) &&
 		before.Type == fields.Type && before.Status == fields.Status &&
 		before.Priority == fields.Priority && before.Order == fields.Order &&
 		slices.Equal(before.Assignees, fields.Assignees) {
 		return nil
+	}
+	metadata, err := domain.EncodeMetadata(fields.Metadata)
+	if err != nil {
+		return err
 	}
 	updated := bumpedTimestamp(issue.UpdatedAt, Now())
 	closedAt := issue.ClosedAt
@@ -396,12 +415,13 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 		}
 	}
 
-	_, err := t.q.ExecContext(t.ctx, `
+	_, err = t.q.ExecContext(t.ctx, `
 		UPDATE issues
-		   SET title = ?, description = ?, commit_hash = ?, pull_request_url = ?, type = ?, status = ?, priority = ?, issue_order = ?,
-		       updated_at = ?, closed_at = ?
+		   SET title = ?, description = ?, commit_hash = ?, pull_request_url = ?, metadata = ?, type = ?, status = ?,
+		       priority = ?, issue_order = ?, updated_at = ?, closed_at = ?
 		 WHERE id = ?`,
-		fields.Title, fields.Description, fields.CommitHash, fields.PullRequestURL, fields.Type, fields.Status, fields.Priority, fields.Order,
+		fields.Title, fields.Description, fields.CommitHash, fields.PullRequestURL,
+		metadata, fields.Type, fields.Status, fields.Priority, fields.Order,
 		updated, closedAt, issue.ID)
 	if err != nil {
 		if isCheckViolation(err) {
@@ -424,6 +444,7 @@ func (t *Tx) UpdateIssue(issue *domain.Issue, fields IssueFields) error {
 	issue.Description = fields.Description
 	issue.CommitHash = fields.CommitHash
 	issue.PullRequestURL = fields.PullRequestURL
+	issue.Metadata = fields.Metadata
 	issue.Type = fields.Type
 	issue.Status = fields.Status
 	issue.Priority = fields.Priority

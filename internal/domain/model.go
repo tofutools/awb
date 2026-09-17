@@ -51,6 +51,7 @@ type Issue struct {
 	Description    string       `json:"description"`
 	CommitHash     string       `json:"commit_hash"`
 	PullRequestURL string       `json:"pull_request_url"`
+	Metadata       Metadata     `json:"metadata"`
 	Type           Type         `json:"type"`
 	Status         Status       `json:"status"`
 	Priority       int          `json:"priority"`
@@ -342,7 +343,7 @@ func SortRelations(rels []Relation) {
 
 // Normalize puts an issue's derived arrays into their specified order and
 // replaces any nil slice with an empty one, so the JSON encoding carries []
-// and never null. It also reads Parent back out of the relations, which is
+// and never null, and gives an unset metadata object the same treatment. It also reads Parent back out of the relations, which is
 // what keeps the two from disagreeing and gives Parent the same visibility
 // the relation it names already has.
 func (i *Issue) Normalize() {
@@ -368,5 +369,8 @@ func (i *Issue) Normalize() {
 	}
 	if i.Attachments == nil {
 		i.Attachments = []Attachment{}
+	}
+	if i.Metadata == nil {
+		i.Metadata = Metadata{}
 	}
 }

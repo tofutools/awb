@@ -61,6 +61,12 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 		Type: domain.RelBlockedBy, Other: created[1].ID,
 	}, "")
 	require.NoError(t, err)
+	// A caller-owned metadata object is part of the stored shape, so a dump
+	// that dropped it would restore an issue that is not the one it copied.
+	metadata, err := domain.ParseMetadata([]byte(`{"source":"dump","nested":{"a":[1,2]}}`))
+	require.NoError(t, err)
+	_, err = source.UpdateIssue(ctx, created[0].ID, backend.IssuePatch{Metadata: &metadata}, "")
+	require.NoError(t, err)
 	attachmentContent := "the bytes in the attachment\n"
 	attachment, err := source.AddAttachment(ctx, created[0].ID, backend.AttachmentCreate{
 		Name: "notes.txt", ContentType: "text/plain; charset=utf-8",

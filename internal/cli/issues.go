@@ -74,6 +74,7 @@ type createParams struct {
 	CommitHash     string   `long:"commit-hash" optional:"true" help:"implementing commit hash"`
 	Claim          bool     `long:"claim" help:"atomically assign the issue to your identity"`
 	PullRequestURL string   `long:"pull-request-url" optional:"true" help:"implementing pull request URL"`
+	Metadata       string   `long:"metadata" optional:"true" help:"caller-owned JSON object to carry on the issue"`
 	Labels         []string `long:"label" collection:"array" optional:"true" help:"add this label; repeatable"`
 	Assignees      []string `long:"assignee" collection:"array" optional:"true" help:"assign this person; repeatable"`
 	Workspace      string   `long:"workspace" optional:"true" help:"the workspace to create the issue in"`
@@ -125,6 +126,17 @@ func newCreateCommand(e *env) *cobra.Command {
 					".awb.yaml or the user configuration file")
 			}
 
+			// Parsed only when the flag was given, so leaving it out is "no
+			// metadata" while giving it an empty value is a caller naming one
+			// and not supplying it, which is refused.
+			var metadata domain.Metadata
+			if cmd.Flags().Changed("metadata") {
+				var err error
+				if metadata, err = domain.ParseMetadata([]byte(p.Metadata)); err != nil {
+					return err
+				}
+			}
+
 			req := backend.IssueCreate{
 				Backlog:        p.Backlog,
 				Workspace:      target,
@@ -133,6 +145,7 @@ func newCreateCommand(e *env) *cobra.Command {
 				Type:           domain.Type(p.Type),
 				CommitHash:     p.CommitHash,
 				PullRequestURL: p.PullRequestURL,
+				Metadata:       metadata,
 			}
 			if !cmd.Flags().Changed("type") {
 				req.Type = ""
@@ -348,6 +361,7 @@ type updateParams struct {
 	Priority       *int    `long:"priority" alts:"0,1,2,3,4" help:"0 (highest) to 4 (lowest)"`
 	CommitHash     *string `long:"commit-hash" help:"implementing commit hash; empty clears it"`
 	PullRequestURL *string `long:"pull-request-url" help:"implementing pull request URL; empty clears it"`
+	Metadata       *string `long:"metadata" help:"JSON object merged into the existing metadata, top level only"`
 	Force          bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
@@ -355,7 +369,10 @@ func newUpdateCommand(e *env) *cobra.Command {
 	return boa.CmdT[updateParams]{
 		Use:   "update",
 		Short: "Change an issue's fields",
-		Long: "Change the title, description, implementation links, type or priority.\n\n" +
+		Long: "Change the title, description, implementation links, metadata, type or priority.\n\n" +
+			"--metadata takes a JSON object and merges it into the issue's own at the\n" +
+			"top level: the keys it names take its values and the keys it does not name\n" +
+			"are kept, so owning one key does not mean resending the others.\n\n" +
 			"A description file must first be fetched with awb description get, whose\n" +
 			"receipt prevents overwriting a concurrent edit. --force deliberately\n" +
 			"replaces a description without that precondition.\n\n" +
@@ -382,6 +399,13 @@ func newUpdateCommand(e *env) *cobra.Command {
 			}
 			patch.CommitHash = p.CommitHash
 			patch.PullRequestURL = p.PullRequestURL
+			if p.Metadata != nil {
+				metadata, err := domain.ParseMetadata([]byte(*p.Metadata))
+				if err != nil {
+					return err
+				}
+				patch.Metadata = &metadata
+			}
 			description, ifMatch, err := p.valueForUpdate(e, "issue", p.ID, p.Force)
 			if err != nil {
 				return err
