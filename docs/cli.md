@@ -149,11 +149,14 @@ caller changed the issue meanwhile, the update refuses instead of overwriting
 their work. Workspace descriptions have the same workflow under
 `awb workspace description`.
 
-Comments are append-only:
+Each new comment is appended to the activity stream. Supply `--key` and reuse
+it after an indeterminate failure to make a retry return the original comment
+instead of appending a duplicate:
 
 ```console
 awb comment add app-a3f9c1 --body "Reproduced on Linux."
 awb comment add app-a3f9c1 --body-file investigation.md
+awb comment add app-a3f9c1 --body-file investigation.md --key investigation-v1
 awb activity app-a3f9c1 --compact
 ```
 

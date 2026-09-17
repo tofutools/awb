@@ -42,4 +42,6 @@ func TestCommentRequiresExactlyOneBodySource(t *testing.T) {
 	assert.Equal(t, 2, code)
 	_, _, code = h.run("comment", "add", id, "--body", "x", "--body-file", "-")
 	assert.Equal(t, 2, code)
+	_, _, code = h.run("comment", "add", id, "--body", "x", "--key", "")
+	assert.Equal(t, 2, code)
 }

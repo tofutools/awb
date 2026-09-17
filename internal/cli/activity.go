@@ -15,12 +15,12 @@ type commentAddParams struct {
 	ID       string  `positional:"true" required:"true"`
 	Body     *string `long:"body" optional:"true" help:"Markdown comment text"`
 	BodyFile *string `long:"body-file" optional:"true" help:"read the comment from this file, or from stdin with \"-\""`
-	Key      string  `long:"key" optional:"true" help:"idempotency key; reuse it when retrying an indeterminate request"`
+	Key      *string `long:"key" optional:"true" help:"idempotency key; reuse it when retrying an indeterminate request"`
 }
 
 func newCommentCommand(e *env) *cobra.Command {
 	return group("comment", "Add and list issue comments",
-		"Comments are append-only Markdown entries in an issue's activity timeline.",
+		"Comments are Markdown entries in an issue's activity timeline. Reusing a key retries the same comment.",
 		newCommentAddCommand(e),
 		newCommentListCommand(e),
 	)
@@ -39,12 +39,14 @@ func newCommentAddCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			key := p.Key
-			if key == "" {
+			var key string
+			if p.Key == nil {
 				key, err = domain.NewCommentKey()
 				if err != nil {
 					return err
 				}
+			} else {
+				key = *p.Key
 			}
 			entry, err := be.PutComment(cmd.Context(), p.ID, key, body)
 			if err != nil {
