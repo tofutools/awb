@@ -66,7 +66,7 @@ func TestCreateUserWithAPasswordHash(t *testing.T) {
 		`{"name":"bob","password":"hunter2","password_hash":"$2y$05$jRQBcZwqnz6rOegEld5p7ODNrLSH7xsVELVgmt0NTTmZBnaiCU2by"}`,
 		`{"name":"bob","password_hash":"hunter2"}`,
 	} {
-		resp, payload := a.do(http.MethodPut, "/api/users/alice", body)
+		resp, payload := a.do(http.MethodPut, "/api/users/bob", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
@@ -88,7 +88,7 @@ func TestCreateUserRejectsUnknownFields(t *testing.T) {
 		`{"name":"alice","password":""}`,
 		`{"name":"alice","password":null}`,
 	} {
-		resp, payload := a.do(http.MethodPut, "/api/users/bob", body)
+		resp, payload := a.do(http.MethodPut, "/api/users/alice", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
