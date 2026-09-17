@@ -279,7 +279,7 @@ func TestNullIsRejected(t *testing.T) {
 	for _, req := range []struct{ method, path, body string }{
 		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":null}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":null}`},
-		{http.MethodPut, "/api/issues/" + issue.ID + "/status", `{"status":null}`},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/status", `{"status":"closed","reason":null}`},
 	} {
 		resp, payload := a.do(req.method, req.path, req.body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, req.body)
@@ -632,6 +632,14 @@ func TestStatusCloseRecordsAReason(t *testing.T) {
 	resp, payload = a.do(http.MethodPut, "/api/issues/"+issue.ID+"/status",
 		`{"status":"open","reason":"not a close"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+
+	withoutReason := a.createIssue(`{"workspace":"awb","title":"without reason"}`)
+	resp, payload = a.do(http.MethodPut, "/api/issues/"+withoutReason.ID+"/status",
+		`{"status":"closed"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+withoutReason.ID+"/activity", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"action":"status_set"`)
 }
 
 // Related is the one relation graph that may contain cycles. Relations in an
@@ -1696,6 +1704,7 @@ func TestMarkdownGateOverHTTP(t *testing.T) {
 		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"![a](data:image/svg+xml,<svg/>)"}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":"<b>no</b>"}`},
 		{http.MethodPut, "/api/issues/" + issue.ID + "/comments/markdown", `{"body":"<b>no</b>"}`},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/status", `{"status":"closed","reason":"see [why](javascript:alert(1))"}`},
 		{http.MethodPut, "/api/workspaces/web", `{"key":"web","description":"<style>body{}</style>"}`},
 		{http.MethodPatch, "/api/workspaces/awb", `{"description":"<math></math>"}`},
 	} {

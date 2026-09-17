@@ -289,8 +289,8 @@ export const api = {
     issueMutation<Issue>(id, "/claim", "PUT", body),
   releaseIssue: (id: string, body: ReleaseRequest = { force: false }) =>
     issueMutation<Issue>(id, "/release", "PUT", body),
-  setIssueStatus: (id: string, status: Issue["status"]) =>
-    issueMutation<Issue>(id, "/status", "PUT", { status }),
+  setIssueStatus: (id: string, status: Issue["status"], reason?: string) =>
+    issueMutation<Issue>(id, "/status", "PUT", reason === undefined ? { status } : { status, reason }),
   reopenIssue: (id: string) =>
     issueMutation<Issue>(id, "/reopen", "PUT"),
   addLabel: (id: string, label: string) =>

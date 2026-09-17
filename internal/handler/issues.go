@@ -212,15 +212,16 @@ func (h *Handler) SetIssueStatus(ctx context.Context, req *api.StatusRequest,
 	params api.SetIssueStatusParams) (
 	*api.IssueHeaders, error) {
 	status := domain.Status(req.Status)
-	reason := optString(req.Reason)
-	if reason != nil && status != domain.StatusClosed {
+	reason, hasReason := req.Reason.Get()
+	if hasReason && status != domain.StatusClosed {
 		return nil, awberr.Usagef("a close reason requires closed status")
 	}
 	var issue *domain.Issue
 	var err error
-	if status == domain.StatusClosed {
+	if hasReason {
+		reasonValue := string(reason)
 		issue, err = h.backendFor(ctx).CloseIssue(ctx, params.ID,
-			backend.CloseRequest{Reason: reason}, params.IfMatch.Or(""))
+			backend.CloseRequest{Reason: &reasonValue}, params.IfMatch.Or(""))
 	} else {
 		issue, err = h.backendFor(ctx).SetStatus(ctx, params.ID, status, params.IfMatch.Or(""))
 	}

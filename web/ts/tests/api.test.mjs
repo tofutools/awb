@@ -192,6 +192,24 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   assert.equal(boardURL.searchParams.get("epic-closed-days"), "5");
 });
 
+test("board view creation puts a client-generated resource ID", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis.crypto, "getRandomValues", (bytes) => {
+    bytes.fill(0xab);
+    return bytes;
+  });
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ id: "view-abababababababababababab" }), { status: 201 });
+  });
+
+  await api.createBoardView({ name: "Release" });
+
+  assert.equal(calls[0].path, "api/board-views/view-abababababababababababab");
+  assert.equal(calls[0].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { name: "Release" });
+});
+
 test("identity exposes the backend's effective account-administration capability", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
     identity: "fixed-name",
