@@ -9,16 +9,6 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-func (h *Handler) AddComment(ctx context.Context, req *api.CommentCreate,
-	params api.AddCommentParams) (*api.Activity, error) {
-	activity, err := h.backendFor(ctx).AddComment(ctx, params.ID, req.Body)
-	if err != nil {
-		return nil, err
-	}
-	response := toActivity(activity)
-	return &response, nil
-}
-
 func (h *Handler) PutComment(ctx context.Context, req *api.CommentCreate,
 	params api.PutCommentParams) (*api.Activity, error) {
 	activity, err := h.backendFor(ctx).PutComment(ctx, params.ID, string(params.Key), req.Body)

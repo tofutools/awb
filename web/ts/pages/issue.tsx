@@ -11,6 +11,7 @@ import {
 } from "../sidebar.js";
 import { inlineChildIssueCreate } from "../issue-create.js";
 import { childIssueFilters } from "../issue-children.js";
+import { pendingComment, type PendingComment } from "../comment-key.js";
 import { HistoryChange } from "../components/history-diff.js";
 import { nextSortValue, sortState } from "../listings.js";
 import { replaceRoute, routeHref, type Route } from "../routing/route.js";
@@ -889,6 +890,7 @@ function ActivitySection({
 }) {
   const [filter, setFilter] = useState("all");
   const [body, setBody] = useState("");
+  const pendingCommentRef = useRef<PendingComment | null>(null);
   const mutation = useMutation();
   const { identity } = useApp();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -918,7 +920,10 @@ function ActivitySection({
           onSubmit={(e) => {
             e.preventDefault();
             void mutation.run(async () => {
-              await api.addComment(issue, body);
+              const pending = pendingComment(pendingCommentRef.current, body);
+              pendingCommentRef.current = pending;
+              await api.putComment(issue, pending.key, body);
+              pendingCommentRef.current = null;
               setBody("");
               await reload();
               textarea.current?.focus({ preventScroll: true });

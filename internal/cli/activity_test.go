@@ -17,19 +17,21 @@ func TestCommentAndActivityCommands(t *testing.T) {
 
 	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "hello **world**"))
 	assert.Empty(t, h.mustRunStdin("from stdin\n", "comment", "add", id, "--body-file", "-"))
+	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "retry-safe", "--key", "request-1"))
+	assert.Empty(t, h.mustRun("comment", "add", id, "--body", "retry-safe", "--key", "request-1"))
 
 	var comments []domain.Activity
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("comment", "list", id, "--json")), &comments))
-	require.Len(t, comments, 2)
-	assert.Equal(t, "from stdin\n", comments[0].Body)
+	require.Len(t, comments, 3)
+	assert.Equal(t, "retry-safe", comments[0].Body)
 
 	reason := "verified"
 	assert.Empty(t, h.mustRun("close", id, "--reason", reason))
 
 	lines := strings.Split(strings.TrimSpace(h.mustRun("activity", id, "--compact")), "\n")
-	assert.Len(t, lines, 4, "creation, two comments and the reasoned close")
+	assert.Len(t, lines, 5, "creation, three comments and the reasoned close")
 	assert.Contains(t, lines[0], `comment @mikael closed "verified" [{"field":"status"`)
-	assert.Contains(t, lines[1], `comment @mikael "from stdin\n"`)
+	assert.Contains(t, lines[1], `comment @mikael "retry-safe"`)
 }
 
 func TestCommentRequiresExactlyOneBodySource(t *testing.T) {

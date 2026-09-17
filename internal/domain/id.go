@@ -23,6 +23,10 @@ const SaltLen = 16
 // unguessable URLs without a workspace prefix or a collision-retry loop.
 const BoardViewIDBytes = 12
 
+// CommentKeyBytes makes generated comment keys collision-resistant while
+// keeping them compact enough to use as a path segment.
+const CommentKeyBytes = 16
+
 // MintHash derives the hash part of an issue ID from the issue's content and a
 // random salt, following the Beads hash-ID scheme:
 //
@@ -67,6 +71,15 @@ func NewBoardViewID() (string, error) {
 		return "", awberr.Wrap(awberr.Runtime, err, "generate board view id")
 	}
 	return "view-" + hex.EncodeToString(raw), nil
+}
+
+// NewCommentKey mints the opaque key a client assigns to one logical comment.
+func NewCommentKey() (string, error) {
+	raw := make([]byte, CommentKeyBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "generate comment key")
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 // ValidateBoardViewID refuses path values that are not IDs awb can mint.

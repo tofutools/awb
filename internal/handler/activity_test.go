@@ -17,9 +17,9 @@ func TestCommentsAndActivityAPI(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
-	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments",
+	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/comments/markdown",
 		`{"body":"A **Markdown** comment.\n"}`)
-	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var comment domain.Activity
 	require.NoError(t, json.Unmarshal([]byte(payload), &comment))
 	assert.Equal(t, domain.ActivityKindComment, comment.Kind)
@@ -62,7 +62,7 @@ func TestCommentsRoundTripThroughRemoteBackend(t *testing.T) {
 	client := remote.New(base, "", "", "mikael", false)
 	t.Cleanup(func() { _ = client.Close() })
 
-	comment, err := client.AddComment(t.Context(), issue.ID, "remote comment")
+	comment, err := client.PutComment(t.Context(), issue.ID, "remote", "remote comment")
 	require.NoError(t, err)
 	assert.Equal(t, "remote comment", comment.Body)
 	page, err := client.ListActivity(t.Context(), issue.ID, domain.ActivityKindComment, nil, nil)
@@ -82,8 +82,10 @@ func TestCommentAndActivityRefusals(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Timeline"}`)
 
-	resp, _ := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments", `{"body":"  "}`)
+	resp, _ := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/comments/blank", `{"body":"  "}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp, _ = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/comments", `{"body":"old endpoint"}`)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp, _ = a.do(http.MethodGet, "/api/issues/"+issue.ID+"/activity?kind=nope", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp, _ = a.do(http.MethodGet, "/api/issues/"+issue.ID+"/activity?unknown=x", "")

@@ -1432,7 +1432,7 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	_, err = be.Claim(ctx, ids[6], backend.ClaimRequest{Assignee: "mikael"}, "")
 	require.NoError(t, err)
 	for _, body := range []string{"one", "two"} {
-		_, err := be.AddComment(ctx, blocker, body)
+		_, err := be.PutComment(ctx, blocker, body, body)
 		require.NoError(t, err)
 	}
 	for _, name := range []string{"c.txt", "a.txt", "b.txt"} {

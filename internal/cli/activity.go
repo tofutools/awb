@@ -15,6 +15,7 @@ type commentAddParams struct {
 	ID       string  `positional:"true" required:"true"`
 	Body     *string `long:"body" optional:"true" help:"Markdown comment text"`
 	BodyFile *string `long:"body-file" optional:"true" help:"read the comment from this file, or from stdin with \"-\""`
+	Key      string  `long:"key" optional:"true" help:"idempotency key; reuse it when retrying an indeterminate request"`
 }
 
 func newCommentCommand(e *env) *cobra.Command {
@@ -38,7 +39,14 @@ func newCommentAddCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entry, err := be.AddComment(cmd.Context(), p.ID, body)
+			key := p.Key
+			if key == "" {
+				key, err = domain.NewCommentKey()
+				if err != nil {
+					return err
+				}
+			}
+			entry, err := be.PutComment(cmd.Context(), p.ID, key, body)
 			if err != nil {
 				return err
 			}
