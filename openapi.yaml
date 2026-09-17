@@ -794,6 +794,11 @@ paths:
       tags: [boards]
       operationId: listBoardViews
       summary: List the current identity's named board views
+      description: |
+        A board view is a persistent, named configuration: it stores which
+        workspaces, epic lanes, workflow columns and cards a board should
+        select. It does not contain the selected issues. Evaluate a view with
+        `GET /api/boards/{ref}` to obtain the current board data.
       responses:
         '200': { $ref: '#/components/responses/BoardViewList' }
         default: { $ref: '#/components/responses/Error' }
@@ -856,6 +861,10 @@ paths:
       operationId: getBoard
       summary: Read a bounded page of the default or a saved board
       description: |
+        A board is the read-only, current result of applying board settings to
+        issue data. It contains epic lanes, workflow columns, cards and totals;
+        a board view is only the persistent configuration used to produce it.
+
         `default` means all active workspaces visible under the caller's normal
         scope. The `workspace` query selects workspaces.
         A saved view is evaluated under that same viewer-specific authorization
@@ -863,6 +872,11 @@ paths:
         dormant until restored. Lane and card totals are calculated before their
         respective offsets and limits.
       parameters:
+        - name: ref
+          in: path
+          description: Either `default` or the id of a persistent BoardView.
+          required: true
+          schema: { type: string, minLength: 1 }
         - name: include-backlog
           in: query
           description: Include backlog issues and descendants, including backlog epic lanes.
@@ -877,10 +891,6 @@ paths:
             items: { $ref: '#/components/schemas/Status' }
           style: form
           explode: true
-        - name: ref
-          in: path
-          required: true
-          schema: { type: string, minLength: 1 }
         - name: lane-limit
           in: query
           schema: { type: integer, minimum: 0, maximum: 50, default: 10 }
@@ -1934,6 +1944,10 @@ components:
 
     BoardView:
       type: object
+      description: |
+        A persistent, named board configuration. Its fields select and arrange
+        issue data but do not include that data. Pass its `id` as the `ref` in
+        `GET /api/boards/{ref}` to evaluate it and receive a Board.
       additionalProperties: false
       required: [id, name, owner, shared, all_workspaces, workspaces, all_epics,
         epics, include_no_epic, labels, columns,
@@ -2091,6 +2105,10 @@ components:
 
     Board:
       type: object
+      description: |
+        A read-only page of current issue data arranged into epic lanes and
+        workflow columns. It is computed from either query parameters when
+        `ref` is `default`, or a persistent BoardView when `ref` is a view ID.
       additionalProperties: false
       required: [lanes, lane_total, workspaces_omitted]
       properties:
