@@ -1293,6 +1293,73 @@ func TestOptionsIntoTheAPICarriesABody(t *testing.T) {
 // of its own, and getting that wrong escapes the name twice — an attachment
 // called "release notes.md" is then asked for as "release%2520notes.md" and
 // answered 404 by a server that holds it.
+// encodedMetadata is the stored form of one metadata object: keys sorted,
+// values compacted. Comparing that string rather than the map is what pins the
+// ordering down as well as the content.
+func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
+	t.Helper()
+	encoded, err := domain.EncodeMetadata(metadata)
+	require.NoError(t, err)
+	return encoded
+}
+
+// Remote mode reaches the same metadata behaviour as direct mode, which is
+// what the one backend interface with two implementations is for: the object
+// goes out on the create body, comes back unread, and a patch merges it.
+func TestRemoteModeCarriesIssueMetadata(t *testing.T) {
+	dir := t.TempDir()
+	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	api, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
+		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+	require.NoError(t, err)
+	server := httptest.NewServer(api)
+	t.Cleanup(server.Close)
+
+	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael", false)
+	t.Cleanup(func() { _ = client.Close() })
+
+	metadata, err := domain.ParseMetadata([]byte(`{"source":"github","nested":{"a":1},"keep":"me"}`))
+	require.NoError(t, err)
+	created, err := client.CreateIssue(t.Context(), backend.IssueCreate{
+		Workspace: "awb", Title: "Tagged", Metadata: metadata,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, `{"keep":"me","nested":{"a":1},"source":"github"}`,
+		encodedMetadata(t, created.Metadata))
+
+	patch, err := domain.ParseMetadata([]byte(`{"nested":{"a":9},"external_id":4711}`))
+	require.NoError(t, err)
+	updated, err := client.UpdateIssue(t.Context(), created.ID,
+		backend.IssuePatch{Metadata: &patch}, "")
+	require.NoError(t, err)
+	assert.Equal(t, `{"external_id":4711,"keep":"me","nested":{"a":9},"source":"github"}`,
+		encodedMetadata(t, updated.Metadata))
+
+	// An issue created without any carries the empty object over the wire too,
+	// and a patch that does not name metadata leaves it alone.
+	plain, err := client.CreateIssue(t.Context(),
+		backend.IssueCreate{Workspace: "awb", Title: "Plain"})
+	require.NoError(t, err)
+	assert.Equal(t, domain.Metadata{}, plain.Metadata)
+
+	title := "Renamed"
+	renamed, err := client.UpdateIssue(t.Context(), created.ID,
+		backend.IssuePatch{Title: &title}, "")
+	require.NoError(t, err)
+	assert.True(t, domain.EqualMetadata(updated.Metadata, renamed.Metadata))
+}
+
 func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	dir := t.TempDir()
 	db, err := newServerTestDatabase(t, filepath.Join(dir, "awb.db"))

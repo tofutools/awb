@@ -705,8 +705,15 @@ func TestV21BacklogPreservesIssueDependants(t *testing.T) {
 		result := map[string][][]any{}
 		for _, table := range []string{"issues", "issue_assignees", "issue_labels", "relations", "attachments", "issue_activity", "board_view_epics"} {
 			query := "SELECT * FROM " + table
+			// The two tables a later migration has since added a column to are
+			// read by name, in the order version 20 held them, so that the new
+			// column does not read as a value this rebuild lost.
 			if table == "issue_activity" {
 				query = "SELECT id, issue, kind, actor, body, action, changes, created_at FROM issue_activity"
+			}
+			if table == "issues" {
+				query = `SELECT id, workspace, title, description, type, status, priority, created_at,
+					updated_at, issue_order, closed_at, commit_hash, pull_request_url FROM issues`
 			}
 			rows, err := db.QueryContext(t.Context(), query)
 			require.NoError(t, err)

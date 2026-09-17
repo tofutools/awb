@@ -28,6 +28,7 @@ func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
 		Description:    req.Description.Or(""),
 		CommitHash:     string(req.CommitHash.Or("")),
 		PullRequestURL: string(req.PullRequestURL.Or("")),
+		Metadata:       optMetadataValue(req.Metadata),
 		Type:           domain.Type(req.Type.Or("")),
 		Priority:       optPriority(req.Priority),
 		Assignees:      fromAssignees(req.Assignees),
@@ -86,6 +87,7 @@ func (h *Handler) UpdateIssue(ctx context.Context, req *api.IssuePatch,
 		Description:    optString(req.Description),
 		CommitHash:     optCommitHash(req.CommitHash),
 		PullRequestURL: optPullRequestURL(req.PullRequestURL),
+		Metadata:       optMetadata(req.Metadata),
 		Type:           optType(req.Type),
 		Priority:       optPriority(req.Priority),
 
@@ -113,6 +115,24 @@ func optCommitHash(value api.OptCommitHash) *string {
 	if got, ok := value.Get(); ok {
 		out := string(got)
 		return &out
+	}
+	return nil
+}
+
+// optMetadata distinguishes a metadata object the caller sent from one it did
+// not: an absent field leaves the stored object alone, and a present one is
+// merged into it, so sending {} is a deliberate no-op rather than a clear.
+func optMetadata(value api.OptIssueMetadata) *domain.Metadata {
+	metadata := optMetadataValue(value)
+	if metadata == nil {
+		return nil
+	}
+	return &metadata
+}
+
+func optMetadataValue(value api.OptIssueMetadata) domain.Metadata {
+	if got, ok := value.Get(); ok {
+		return fromMetadata(got)
 	}
 	return nil
 }

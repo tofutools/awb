@@ -20,17 +20,18 @@ import (
 // is cleared with "" and left alone by omission.
 
 type issueCreateBody struct {
-	Backlog        bool           `json:"backlog,omitempty"`
-	Workspace      string         `json:"workspace"`
-	Title          string         `json:"title"`
-	Description    string         `json:"description,omitempty"`
-	CommitHash     string         `json:"commit_hash,omitempty"`
-	PullRequestURL string         `json:"pull_request_url,omitempty"`
-	Type           domain.Type    `json:"type,omitempty"`
-	Priority       *int           `json:"priority,omitempty"`
-	Assignees      []string       `json:"assignees,omitempty"`
-	Labels         []string       `json:"labels,omitempty"`
-	Relations      []relationBody `json:"relations,omitempty"`
+	Backlog        bool            `json:"backlog,omitempty"`
+	Workspace      string          `json:"workspace"`
+	Title          string          `json:"title"`
+	Description    string          `json:"description,omitempty"`
+	CommitHash     string          `json:"commit_hash,omitempty"`
+	PullRequestURL string          `json:"pull_request_url,omitempty"`
+	Metadata       domain.Metadata `json:"metadata,omitempty"`
+	Type           domain.Type     `json:"type,omitempty"`
+	Priority       *int            `json:"priority,omitempty"`
+	Assignees      []string        `json:"assignees,omitempty"`
+	Labels         []string        `json:"labels,omitempty"`
+	Relations      []relationBody  `json:"relations,omitempty"`
 }
 
 type relationBody struct {
@@ -44,12 +45,13 @@ type statusBody struct {
 }
 
 type issuePatchBody struct {
-	Title          *string      `json:"title,omitempty"`
-	Description    *string      `json:"description,omitempty"`
-	CommitHash     *string      `json:"commit_hash,omitempty"`
-	PullRequestURL *string      `json:"pull_request_url,omitempty"`
-	Type           *domain.Type `json:"type,omitempty"`
-	Priority       *int         `json:"priority,omitempty"`
+	Title          *string          `json:"title,omitempty"`
+	Description    *string          `json:"description,omitempty"`
+	CommitHash     *string          `json:"commit_hash,omitempty"`
+	PullRequestURL *string          `json:"pull_request_url,omitempty"`
+	Metadata       *domain.Metadata `json:"metadata,omitempty"`
+	Type           *domain.Type     `json:"type,omitempty"`
+	Priority       *int             `json:"priority,omitempty"`
 
 	// The fields a caller may send back but may not change. They go on the
 	// wire so the server compares them against what it has stored, which is
@@ -113,6 +115,7 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		Description:    req.Description,
 		CommitHash:     req.CommitHash,
 		PullRequestURL: req.PullRequestURL,
+		Metadata:       req.Metadata,
 		Type:           req.Type,
 		Priority:       req.Priority,
 		Assignees:      req.Assignees,
@@ -306,6 +309,7 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		Description:    req.Description,
 		CommitHash:     req.CommitHash,
 		PullRequestURL: req.PullRequestURL,
+		Metadata:       req.Metadata,
 		Type:           req.Type,
 		Priority:       req.Priority,
 

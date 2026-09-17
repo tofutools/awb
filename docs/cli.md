@@ -101,6 +101,27 @@ are exempt, both on the database file rather than through a server:
 parent, and optional manual position atomically. Most agents should prefer the
 named lifecycle commands unless they are deliberately reproducing a board move.
 
+## Metadata
+
+An issue carries a caller-owned JSON object beside the fields awb gives meaning
+to. awb stores it and hands it back unread, so what is under a key is whatever
+a tool put there — a string, a number, a nested object, an array:
+
+```console
+awb create "Import #4711" --metadata '{"source":"github","external_id":4711}'
+awb update app-a3f9c1 --metadata '{"external_id":4712,"synced_at":"2026-09-17"}'
+```
+
+`awb update --metadata` merges at the top level: the keys it names take its
+values and the keys it does not name are kept, so owning one key does not mean
+reading and resending the others. Nothing under a key is merged into — a nested
+object is replaced whole.
+
+The top level must be an object; the encoded object is at most 64 KiB. An issue
+given no metadata carries `{}`, never `null`. Metadata appears in `--json`
+output and over the API, and is deliberately absent from the default and
+compact presentations and from the web UI.
+
 Hard deletion is not recovery or archiving:
 
 ```console

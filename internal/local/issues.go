@@ -36,6 +36,9 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	if issue.PullRequestURL, err = domain.ValidatePullRequestURL(req.PullRequestURL); err != nil {
 		return nil, err
 	}
+	if issue.Metadata, err = domain.ValidateMetadata(req.Metadata); err != nil {
+		return nil, err
+	}
 	if req.Type != "" {
 		if issue.Type, err = domain.ParseType(string(req.Type)); err != nil {
 			return nil, err
@@ -335,6 +338,17 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 				return err
 			}
 			fields.PullRequestURL = pullRequestURL
+		}
+		// Metadata merges rather than replaces: a caller that owns one key
+		// sends that key alone, and the keys it does not name survive. The
+		// merge happens here, inside the write transaction, so what it merges
+		// into is what the write is about to replace.
+		if req.Metadata != nil {
+			metadata, err := domain.ValidateMetadata(domain.MergeMetadata(issue.Metadata, *req.Metadata))
+			if err != nil {
+				return err
+			}
+			fields.Metadata = metadata
 		}
 		if req.Type != nil {
 			issueType, err := domain.ParseType(string(*req.Type))

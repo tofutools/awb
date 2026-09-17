@@ -2,10 +2,12 @@ package local_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -465,6 +467,98 @@ func TestIssueImplementationLinks(t *testing.T) {
 	assert.Equal(t, 2, exitOf(err))
 	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{PullRequestURL: &badURL}, "")
 	assert.Equal(t, 2, exitOf(err))
+}
+
+// Metadata is the caller's own object: awb stores it, hands it back, and never
+// reads into it. An update merges at the top level, so owning one key does not
+// mean reading and resending the others.
+func TestIssueMetadata(t *testing.T) {
+	b, ctx := newBackend(t)
+
+	plain, err := b.CreateIssue(ctx, backend.IssueCreate{Workspace: "awb", Title: "plain"})
+	require.NoError(t, err)
+	assert.Equal(t, domain.Metadata{}, plain.Metadata, "an issue given none carries the empty object")
+
+	created, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "tagged",
+		Metadata: mustMetadata(t, `{"source":"github","nested":{"a":1,"b":2},"keep":"me"}`),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, `{"keep":"me","nested":{"a":1,"b":2},"source":"github"}`,
+		encodedMetadata(t, created.Metadata))
+
+	// The merge names two keys: one replaces a nested object whole, the other
+	// is new. The key it does not name survives.
+	update := mustMetadata(t, `{"nested":{"a":9},"external_id":4711}`)
+	updated, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &update}, "")
+	require.NoError(t, err)
+	assert.Equal(t, `{"external_id":4711,"keep":"me","nested":{"a":9},"source":"github"}`,
+		encodedMetadata(t, updated.Metadata))
+	assert.Greater(t, updated.UpdatedAt, created.UpdatedAt, "a changed field moves the version")
+
+	// It survives a round trip through storage rather than living in the
+	// object the write returned.
+	reread, err := b.GetIssue(ctx, created.ID)
+	require.NoError(t, err)
+	assert.True(t, domain.EqualMetadata(updated.Metadata, reread.Metadata))
+
+	// An update that merges nothing in changes nothing, so it does not move the
+	// version either.
+	empty := domain.Metadata{}
+	unchanged, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &empty}, "")
+	require.NoError(t, err)
+	assert.Equal(t, updated.UpdatedAt, unchanged.UpdatedAt)
+
+	// And the change is in the issue's timeline, as every other field's is.
+	page, err := b.ListActivity(ctx, created.ID, "", nil, nil)
+	require.NoError(t, err)
+	found := false
+	for _, entry := range page.Activity {
+		for _, change := range entry.Changes {
+			if change.Field == "metadata" {
+				found = true
+				assert.Contains(t, string(change.To), `"external_id":4711`)
+			}
+		}
+	}
+	assert.True(t, found, "a metadata change is recorded like any other")
+}
+
+// Too large is a usage error rather than a stored row, and the refusal happens
+// against the merged object, which is the thing that would be stored.
+func TestIssueMetadataIsBounded(t *testing.T) {
+	b, ctx := newBackend(t)
+	issue, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "tagged",
+		Metadata: mustMetadata(t, `{"small":"value"}`),
+	})
+	require.NoError(t, err)
+
+	huge := domain.Metadata{"big": json.RawMessage(
+		`"` + strings.Repeat("x", domain.MaxMetadataBytes) + `"`)}
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &huge}, "")
+	assert.Equal(t, 2, exitOf(err))
+
+	kept, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, `{"small":"value"}`, encodedMetadata(t, kept.Metadata))
+}
+
+// encodedMetadata is the stored form of one metadata object: keys sorted,
+// values compacted. Comparing that string rather than the map is what pins the
+// ordering down as well as the content.
+func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
+	t.Helper()
+	encoded, err := domain.EncodeMetadata(metadata)
+	require.NoError(t, err)
+	return encoded
+}
+
+func mustMetadata(t *testing.T, encoded string) domain.Metadata {
+	t.Helper()
+	metadata, err := domain.ParseMetadata([]byte(encoded))
+	require.NoError(t, err)
+	return metadata
 }
 
 func TestClaim(t *testing.T) {

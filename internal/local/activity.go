@@ -140,6 +140,9 @@ func activityChanges(before, after *domain.Issue) []domain.ActivityChange {
 	add("description", before.Description, after.Description)
 	add("commit_hash", before.CommitHash, after.CommitHash)
 	add("pull_request_url", before.PullRequestURL, after.PullRequestURL)
+	if !domain.EqualMetadata(before.Metadata, after.Metadata) {
+		add("metadata", before.Metadata, after.Metadata)
+	}
 	add("type", before.Type, after.Type)
 	add("status", before.Status, after.Status)
 	add("priority", before.Priority, after.Priority)

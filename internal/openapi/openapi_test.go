@@ -221,8 +221,8 @@ func TestIssueSchemaCoversEveryField(t *testing.T) {
 	}
 
 	for _, field := range []string{
-		"id", "workspace", "title", "description", "commit_hash", "pull_request_url", "type", "status", "priority",
-		"labels", "assignees", "created_at", "updated_at",
+		"id", "workspace", "title", "description", "commit_hash", "pull_request_url", "metadata",
+		"type", "status", "priority", "labels", "assignees", "created_at", "updated_at",
 		"blocked", "blockers", "relations", "links",
 	} {
 		assert.Contains(t, properties, field)

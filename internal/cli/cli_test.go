@@ -979,6 +979,52 @@ func TestIssueImplementationLinkFlags(t *testing.T) {
 	assert.Equal(t, "http://example.com/pull/43", issue.PullRequestURL)
 }
 
+// --metadata carries the caller's own JSON object onto an issue, and on update
+// merges it into what is stored rather than replacing it. It stays out of the
+// default and compact presentations, which are for reading issues rather than
+// for whatever a tool keeps beside them.
+func TestIssueMetadataFlag(t *testing.T) {
+	h := newHarness(t)
+	id := h.create("tagged", "--workspace", "awb",
+		"--metadata", `{"source":"github","nested":{"a":1,"b":2},"keep":"me"}`)
+
+	var issue domain.Issue
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, `{"keep":"me","nested":{"a":1,"b":2},"source":"github"}`,
+		encodedMetadata(t, issue.Metadata))
+
+	h.mustRun("update", id, "--metadata", `{"nested":{"a":9},"external_id":4711}`)
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", id, "--json")), &issue))
+	assert.Equal(t, `{"external_id":4711,"keep":"me","nested":{"a":9},"source":"github"}`,
+		encodedMetadata(t, issue.Metadata))
+
+	// An issue given none carries the empty object rather than null.
+	plain := h.create("plain", "--workspace", "awb")
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("show", plain, "--json")), &issue))
+	assert.Equal(t, domain.Metadata{}, issue.Metadata)
+
+	assert.NotContains(t, h.mustRun("show", id), "github")
+	assert.NotContains(t, h.mustRun("show", id, "--compact"), "github")
+
+	// The top level is an object; anything else is a usage error before any
+	// write happens.
+	for _, value := range []string{"[]", `"text"`, "null", "{", "not json"} {
+		_, stderr, code := h.run("update", id, "--metadata", value)
+		assert.Equal(t, 2, code, value)
+		assert.Contains(t, stderr, "metadata", value)
+	}
+}
+
+// encodedMetadata is the stored form of one metadata object: keys sorted,
+// values compacted. Comparing that string rather than the map is what pins the
+// ordering down as well as the content.
+func encodedMetadata(t *testing.T, metadata domain.Metadata) string {
+	t.Helper()
+	encoded, err := domain.EncodeMetadata(metadata)
+	require.NoError(t, err)
+	return encoded
+}
+
 // The Markdown gate is the operation layer's, so direct mode gets it from the
 // same place the API does: every command that writes a Markdown field refuses
 // raw HTML and an unsupported link or image scheme, as a usage error.

@@ -58,6 +58,10 @@ type demoIssue struct {
 	// created with its assignees and then closed.
 	closeReason string
 
+	// metadata is the caller-owned JSON object the issue carries. It is the
+	// encoded form rather than a parsed one, so the table stays readable.
+	metadata string
+
 	hasParent      string
 	blockedBy      []string
 	discoveredFrom []string
@@ -164,6 +168,9 @@ var demoIssues = []demoIssue{{
 	labels:      []string{"catalogue", "frontend"},
 	assignees:   []string{"bob"},
 	description: "Opening the catalogue with every widget filtered out renders a nil row.\n",
+	// A bug imported from somewhere else is where metadata earns its place: the
+	// importer keeps what it needs to sync the two, and awb never reads it.
+	metadata: `{"source":"sentry","event_id":"9f2c","first_seen":"2026-09-01","occurrences":18}`,
 	// Found while working on the feature, which is what discovered-from records.
 	discoveredFrom: []string{"catalogue"},
 	// A bug is where an attachment earns its place: the evidence is a file
@@ -330,6 +337,10 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 		if err != nil {
 			return nil, err
 		}
+		metadata, err := domain.ParseMetadata([]byte(d.metadata))
+		if err != nil {
+			return nil, err
+		}
 		priority := d.priority
 		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
 			Backlog:     d.backlog,
@@ -338,6 +349,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 			Description: d.description,
 			Type:        d.issueType,
 			Priority:    &priority,
+			Metadata:    metadata,
 			Assignees:   d.assignees,
 			Labels:      d.labels,
 			Relations:   relations,
