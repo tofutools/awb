@@ -77,14 +77,6 @@ type releaseBody struct {
 	Force    bool   `json:"force,omitempty"`
 }
 
-type closeBody struct {
-	Reason *string `json:"reason,omitempty"`
-}
-
-type labelBody struct {
-	Label string `json:"label"`
-}
-
 type workspaceCreateBody struct {
 	Key         string `json:"key"`
 	Name        string `json:"name,omitempty"`
@@ -354,7 +346,9 @@ func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRe
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
 	ifMatch string) (*domain.Issue, error) {
 	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/close",
-		closeBody{Reason: req.Reason}, ifMatch)
+		struct {
+			Reason *string `json:"reason,omitempty"`
+		}{Reason: req.Reason}, ifMatch)
 }
 
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
@@ -383,8 +377,12 @@ func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.I
 }
 
 func (b *Backend) AddLabel(ctx context.Context, ref, label, ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/labels",
-		labelBody{Label: label}, ifMatch)
+	target := b.endpoint("/api/issues/"+url.PathEscape(ref)+"/labels", url.Values{"label": {label}})
+	var issue domain.Issue
+	if _, err := b.call(ctx, http.MethodPut, target, nil, ifMatch, &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }
 
 // RemoveLabel sends the label as a query parameter rather than a path segment,
@@ -451,7 +449,7 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCreate) (*domain.Workspace, error) {
 	body := workspaceCreateBody{Key: req.Key, Name: req.Name, Description: req.Description}
 	var workspace domain.Workspace
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/workspaces", nil), body, "", &workspace)
+	_, err := b.call(ctx, http.MethodPut, b.endpoint("/api/workspaces/"+url.PathEscape(req.Key), nil), body, "", &workspace)
 	if err != nil {
 		return nil, err
 	}

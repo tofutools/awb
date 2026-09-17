@@ -154,6 +154,7 @@ type IssueSummaryPage struct {
 }
 
 type BoardViewCreate struct {
+	ID             string
 	Name           string
 	Shared         bool
 	AllWorkspaces  bool
@@ -259,7 +260,7 @@ type MemberPage struct {
 	Total   int
 }
 
-// UserCreate is the body of awb user add and of POST /api/users.
+// UserCreate is the body of awb user add and of PUT /api/users/{name}.
 type UserCreate struct {
 	Name     string
 	FullName string
@@ -381,7 +382,7 @@ type IssueMove struct {
 	Direction string
 }
 
-// WorkspaceCreate is the body of awb workspace create and of POST /api/workspaces.
+// WorkspaceCreate is the body of awb workspace create and of PUT /api/workspaces/{key}.
 type WorkspaceCreate struct {
 	Key         string
 	Name        string

@@ -95,8 +95,8 @@ test("user administration creates and version-deletes accounts", async (t) => {
   await api.createUser({ name: "new-user", password: "safe password", user_admin: true });
   await api.deleteUser("a/b");
 
-  assert.equal(calls[1].path, "api/users");
-  assert.equal(calls[1].init.method, "POST");
+  assert.equal(calls[1].path, "api/users/new-user");
+  assert.equal(calls[1].init.method, "PUT");
   assert.equal(new Headers(calls[1].init.headers).get("Content-Type"), "application/json");
   assert.deepEqual(JSON.parse(calls[1].init.body), {
     name: "new-user",
@@ -190,6 +190,24 @@ test("board views use stable encoded paths, ETags and paged board parameters", a
   assert.equal(boardURL.searchParams.get("lane-limit"), "10");
   assert.equal(boardURL.searchParams.get("card-offset"), "8");
   assert.equal(boardURL.searchParams.get("epic-closed-days"), "5");
+});
+
+test("board view creation puts a client-generated resource ID", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis.crypto, "getRandomValues", (bytes) => {
+    bytes.fill(0xab);
+    return bytes;
+  });
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response(JSON.stringify({ id: "view-abababababababababababab" }), { status: 201 });
+  });
+
+  await api.createBoardView({ name: "Release" });
+
+  assert.equal(calls[0].path, "api/board-views/view-abababababababababababab");
+  assert.equal(calls[0].init.method, "PUT");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { name: "Release" });
 });
 
 test("identity exposes the backend's effective account-administration capability", async (t) => {
@@ -294,9 +312,9 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(new Headers(requests[1].init.headers).get("If-Match"), '"issue-version"');
   assert.deepEqual(JSON.parse(requests[1].init.body), { title: "Changed" });
 
-  assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels");
-  assert.equal(requests[2].init.method, "POST");
-  assert.deepEqual(JSON.parse(requests[2].init.body), { label: "team/web" });
+  assert.equal(requests[2].input, "api/issues/awb-a%2Fb/labels?label=team%2Fweb");
+  assert.equal(requests[2].init.method, "PUT");
+  assert.equal(requests[2].init.body, undefined);
   assert.equal(new Headers(requests[2].init.headers).get("If-Match"), '"issue-version"');
 
   assert.equal(requests[3].input, "api/issues/awb-a%2Fb/relations/blocked-by/awb-c%20d");
@@ -324,9 +342,25 @@ test("claim adds one assignee while forced release removes every assignee", asyn
   await api.releaseIssue("awb-123", { assignee: "operator", force: true });
 
   assert.equal(calls[0].path, "api/issues/awb-123/claim");
+  assert.equal(calls[0].init.method, "POST");
   assert.deepEqual(JSON.parse(calls[0].init.body), { assignee: "second", force: false });
   assert.equal(calls[1].path, "api/issues/awb-123/release");
+  assert.equal(calls[1].init.method, "POST");
   assert.deepEqual(JSON.parse(calls[1].init.body), { assignee: "operator", force: true });
+});
+
+test("closing uses the dedicated endpoint and carries an optional reason", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (path, init = {}) => {
+    calls.push({ path, init });
+    return new Response("{}", { status: 200 });
+  });
+
+  await api.closeIssue("awb-123", { reason: "Done" });
+
+  assert.equal(calls[0].path, "api/issues/awb-123/close");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { reason: "Done" });
 });
 
 test("workspace edits patch the workspace resource with its ETag", async () => {
@@ -369,8 +403,8 @@ test("workspace creation and lifecycle use stable paths and advance the workspac
   await api.restoreWorkspace("team/web");
   await api.workspaceActivity("team/web");
 
-  assert.equal(calls[0].path, "api/workspaces");
-  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].path, "api/workspaces/team%2Fweb");
+  assert.equal(calls[0].init.method, "PUT");
   assert.equal(calls[1].path, "api/workspaces/team%2Fweb");
   assert.equal(new Headers(calls[1].init.headers).get("If-Match"), '"v1"');
   assert.equal(calls[2].path, "api/workspaces/team%2Fweb/archive");

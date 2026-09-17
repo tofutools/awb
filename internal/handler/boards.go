@@ -124,8 +124,9 @@ func (h *Handler) ListBoardViews(ctx context.Context) ([]api.BoardView, error) {
 	return toBoardViews(views), nil
 }
 
-func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate) (*api.BoardViewCreatedHeaders, error) {
-	view, err := h.backendFor(ctx).CreateBoardView(ctx, backend.BoardViewCreate{Name: req.Name,
+func (h *Handler) CreateBoardView(ctx context.Context, req *api.BoardViewCreate,
+	params api.CreateBoardViewParams) (*api.BoardViewCreatedHeaders, error) {
+	view, err := h.backendFor(ctx).CreateBoardView(ctx, backend.BoardViewCreate{ID: string(params.ID), Name: req.Name,
 		Shared: req.Shared.Or(false), AllWorkspaces: req.AllWorkspaces.Or(true), Workspaces: stringsFromWorkspaces(req.Workspaces),
 		AllEpics: req.AllEpics.Or(true), Epics: stringsFromIssueIDs(req.Epics), IncludeNoEpic: req.IncludeNoEpic.Or(true),
 		Labels: stringsFromLabels(req.Labels), Assignees: stringsFromAssignees(req.Assignees),

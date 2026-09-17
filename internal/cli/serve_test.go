@@ -418,19 +418,19 @@ func TestSameOriginWrites(t *testing.T) {
 
 	// A request carrying neither header is allowed: that is what every
 	// non-browser client sends, and the CLI is one of them.
-	resp, _ := get(t, h, http.MethodPost, "/api/workspaces")
+	resp, _ := get(t, h, http.MethodPut, "/api/workspaces/awb")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://127.0.0.1:7777")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "http://127.0.0.1:7777")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode, "the server's own origin")
 
-	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://ui.example.com")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "https://ui.example.com")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode, "an allowed --cors-origin")
 
-	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://evil.example.com")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "https://evil.example.com")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "null")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "null")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 	// A GET is never a state change and is exempt.
@@ -452,7 +452,7 @@ func TestCORS(t *testing.T) {
 	// middleware set to exactly the headers that response has.
 	assert.Contains(t, resp.Header.Get("Access-Control-Expose-Headers"), "X-Total-Count")
 
-	resp, _ = send(t, allowed, http.MethodPost, "/api/workspaces", `{"key":"web"}`,
+	resp, _ = send(t, allowed, http.MethodPut, "/api/workspaces/web", `{"key":"web"}`,
 		"Origin", "https://ui.example.com")
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	exposed := resp.Header.Get("Access-Control-Expose-Headers")
@@ -825,7 +825,7 @@ func TestHTTPSAndAnHTTPPublicURLContradictEachOther(t *testing.T) {
 func TestIPv6ListenerHasAnOriginABrowserSends(t *testing.T) {
 	h := newServeHandlerWith(t, serveOptions{addr: "::1", port: 7777})
 
-	resp, _ := get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://[::1]:7777")
+	resp, _ := get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "http://[::1]:7777")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -838,10 +838,10 @@ func TestPublicURLIsTheSameOrigin(t *testing.T) {
 		publicURL: "https://example.com/awb/",
 	})
 
-	resp, _ := get(t, h, http.MethodPost, "/api/workspaces", "Origin", "https://example.com")
+	resp, _ := get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "https://example.com")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPost, "/api/workspaces", "Origin", "http://127.0.0.1:7777")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "http://127.0.0.1:7777")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -981,7 +981,7 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 		return rec
 	}
 
-	rec := call(http.MethodPost, "/api/workspaces", "application/json", `{"key":"awb"}`)
+	rec := call(http.MethodPut, "/api/workspaces/awb", "application/json", `{"key":"awb"}`)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	rec = call(http.MethodPost, "/api/issues", "application/json",
 		`{"workspace":"awb","title":"Parser crashes"}`)
@@ -1167,7 +1167,7 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	}
 
 	// The fixtures ask for no compression, so their bodies can simply be read.
-	rec := call(http.MethodPost, "/api/workspaces", "application/json", `{"key":"awb"}`, false)
+	rec := call(http.MethodPut, "/api/workspaces/awb", "application/json", `{"key":"awb"}`, false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	rec = call(http.MethodPost, "/api/issues", "application/json",
 		`{"workspace":"awb","title":"Parser crashes"}`, false)
@@ -1224,7 +1224,7 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 	)
 
 	h := newServeHandler(t)
-	resp, body := send(t, h, http.MethodPost, "/api/workspaces", `{"key":"awb"}`)
+	resp, body := send(t, h, http.MethodPut, "/api/workspaces/awb", `{"key":"awb"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, body)
 
 	for _, path := range []string{"/api/workspaces", "/app.js"} {

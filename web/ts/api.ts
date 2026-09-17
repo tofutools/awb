@@ -201,6 +201,14 @@ async function postOne<T>(path: string, body: unknown): Promise<T> {
   }));
 }
 
+async function putOne<T>(path: string, body: unknown): Promise<T> {
+  return getResponse<T>(await request(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
 async function patchOne<T>(path: string, body: unknown): Promise<T> {
   const resp = await request(path, {
     method: "PATCH",
@@ -220,7 +228,7 @@ async function deleteEntity<T>(path: string): Promise<T> {
   return getResponse<T>(await request(path, { method: "DELETE", headers: entityHeaders(path) }));
 }
 
-async function issueMutation<T>(id: string, suffix: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
+async function issueMutation<T>(id: string, suffix: string, method: "POST" | "PUT" | "DELETE", body?: unknown): Promise<T> {
   const issuePath = `api/issues/${encodeURIComponent(id)}`;
   const headers = entityHeaders(issuePath);
   let encoded: string | undefined;
@@ -242,7 +250,11 @@ async function getResponse<T>(resp: Response): Promise<T> {
 export const api = {
   boardViews: async () => getResponse<BoardView[]>(await request("api/board-views")),
   boardView: (id: string) => getOne<BoardView>(`api/board-views/${encodeURIComponent(id)}`),
-  createBoardView: (body: BoardViewCreate) => postOne<BoardView>("api/board-views", body),
+  createBoardView: (body: BoardViewCreate) => {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    const id = `view-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    return putOne<BoardView>(`api/board-views/${id}`, body);
+  },
   updateBoardView: (id: string, patch: BoardViewPatch) =>
     patchOne<BoardView>(`api/board-views/${encodeURIComponent(id)}`, patch),
   deleteBoardView: (id: string) => deleteEntity<BoardView>(`api/board-views/${encodeURIComponent(id)}`),
@@ -280,10 +292,12 @@ export const api = {
     issueMutation<Issue>(id, "/release", "POST", body),
   closeIssue: (id: string, body: CloseRequest = {}) =>
     issueMutation<Issue>(id, "/close", "POST", body),
+  setIssueStatus: (id: string, status: Issue["status"]) =>
+    issueMutation<Issue>(id, "/status", "PUT", { status }),
   reopenIssue: (id: string) =>
     issueMutation<Issue>(id, "/reopen", "POST"),
   addLabel: (id: string, label: string) =>
-    issueMutation<Issue>(id, "/labels", "POST", { label }),
+    issueMutation<Issue>(id, `/labels${toQuery({ label })}`, "PUT"),
   removeLabel: (id: string, label: string) =>
     issueMutation<Issue>(id, `/labels${toQuery({ label })}`, "DELETE"),
   addRelation: (id: string, body: RelationRequest) =>
@@ -320,12 +334,13 @@ export const api = {
   workspaces: (filters: WorkspaceFilters = {}, signal?: AbortSignal) =>
     getPage<Workspace>(`api/workspaces${toQuery(filters)}`, { signal }),
   createWorkspace: async (body: WorkspaceCreate) => {
-    const resp = await request("api/workspaces", {
-      method: "POST",
+    const path = `api/workspaces/${encodeURIComponent(body.key)}`;
+    const resp = await request(path, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    return entityResponse<Workspace>(`api/workspaces/${encodeURIComponent(body.key)}`, resp);
+    return entityResponse<Workspace>(path, resp);
   },
   workspaceMembers: (key: string, signal?: AbortSignal) =>
     getPage<Membership>(`api/workspaces/${encodeURIComponent(key)}/members`, { signal }),
@@ -359,7 +374,8 @@ export const api = {
     getPage<Facet>(`api/assignees${toQuery(filters)}`, { signal }),
   identity: () => getOne<components["schemas"]["Identity"]>("api/identity"),
   user: (name: string) => getOne<User>(`api/users/${encodeURIComponent(name)}`),
-  createUser: (body: UserCreate) => postOne<User>("api/users", body),
+  createUser: (body: UserCreate) =>
+    putOne<User>(`api/users/${encodeURIComponent(body.name)}`, body),
   updateUser: (name: string, patch: UserPatch) =>
     patchOne<User>(`api/users/${encodeURIComponent(name)}`, patch),
   deleteUser: (name: string) => deleteEntity<User>(`api/users/${encodeURIComponent(name)}`),

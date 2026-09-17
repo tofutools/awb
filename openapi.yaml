@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Agent Work Board
-  version: 0.7.0
+  version: 0.8.0
   summary: An agent-first issue tracker.
   description: |
     The HTTP API of `awb`. It mirrors the command line one-to-one and is
@@ -379,18 +379,18 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    post:
+    put:
       tags: [issues]
       operationId: addLabel
       summary: Add one label
       description: |
         Labels are added and removed individually, because a whole-set replace
         would silently discard a concurrent edit.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/LabelRequest' }
+      parameters:
+        - name: label
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/Label' }
       responses:
         '200': { $ref: '#/components/responses/Issue' }
         default: { $ref: '#/components/responses/Error' }
@@ -797,19 +797,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/BoardViewList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [boards]
-      operationId: createBoardView
-      summary: Save a named board view
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/BoardViewCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/BoardViewCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/board-views/{id}:
     parameters:
       - name: id
@@ -822,6 +809,18 @@ paths:
       summary: Get an owned or shared board view
       responses:
         '200': { $ref: '#/components/responses/BoardView' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [boards]
+      operationId: createBoardView
+      summary: Save a named board view with a client-chosen ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BoardViewCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/BoardViewCreated' }
         default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [boards]
@@ -1001,19 +1000,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/WorkspaceList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [workspaces]
-      operationId: createWorkspace
-      summary: Create a workspace
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/WorkspaceCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/WorkspaceCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/workspaces/{key}:
     parameters:
       - name: key
@@ -1026,6 +1012,18 @@ paths:
       summary: Read one workspace
       responses:
         '200': { $ref: '#/components/responses/Workspace' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace at its natural key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/WorkspaceCreated' }
         default: { $ref: '#/components/responses/Error' }
 
     patch:
@@ -1286,26 +1284,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/UserList' }
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [users]
-      operationId: createUser
-      summary: Create a user
-      description: |
-        Requires the `user_admin` flag.
-
-        Creating the first user of a database that has a password turns
-        authentication on, from the next request onwards. One created without
-        a password does not: it is an assignee the tracker knows, and nothing
-        authenticates as it.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UserCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/UserCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/users/{name}:
     parameters:
       - name: name
@@ -1322,6 +1300,25 @@ paths:
         they are permitted to do.
       responses:
         '200': { $ref: '#/components/responses/User' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [users]
+      operationId: createUser
+      summary: Create a user at their natural name
+      description: |
+        Requires the `user_admin` flag.
+
+        Creating the first user of a database that has a password turns
+        authentication on, from the next request onwards. One created without
+        a password does not: it is an assignee the tracker knows, and nothing
+        authenticates as it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/UserCreated' }
         default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [users]
@@ -2963,6 +2960,19 @@ components:
       properties:
         status: { $ref: '#/components/schemas/Status' }
 
+    CloseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: |
+            A non-empty reason becomes a typed Markdown comment whose `action`
+            is `closed`, in the same transaction as the transition, and is
+            validated as **Markdown** above describes. Empty or absent records
+            no reason comment.
+
     ClaimRequest:
       type: object
       additionalProperties: false
@@ -2999,26 +3009,6 @@ components:
             assignment naming somebody who is no longer a user is taken off an
             issue.
         force: { type: boolean, default: false }
-
-    CloseRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        reason:
-          type: string
-          maxLength: 500
-          description: |
-            A non-empty reason becomes a typed Markdown comment whose `action`
-            is `closed`, in the same transaction as the transition, and is
-            validated as **Markdown** above describes. Empty or absent records
-            no reason comment.
-
-    LabelRequest:
-      type: object
-      additionalProperties: false
-      required: [label]
-      properties:
-        label: { $ref: '#/components/schemas/Label' }
 
     RelationRequest:
       type: object

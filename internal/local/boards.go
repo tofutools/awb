@@ -132,7 +132,7 @@ func validateBoardView(req backend.BoardViewCreate) (*domain.BoardView, error) {
 }
 
 func boardCreateFrom(view *domain.BoardView) backend.BoardViewCreate {
-	return backend.BoardViewCreate{Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
+	return backend.BoardViewCreate{ID: view.ID, Name: view.Name, Shared: view.Shared, AllWorkspaces: view.AllWorkspaces,
 		Workspaces: view.Workspaces, AllEpics: view.AllEpics, Epics: view.Epics,
 		IncludeNoEpic: view.IncludeNoEpic, Labels: view.Labels, Assignees: view.Assignees,
 		Columns:     view.Columns,
@@ -164,8 +164,12 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 	if err != nil {
 		return nil, err
 	}
-	view.ID, err = domain.NewBoardViewID()
-	if err != nil {
+	if req.ID == "" {
+		view.ID, err = domain.NewBoardViewID()
+		if err != nil {
+			return nil, err
+		}
+	} else if view.ID, err = domain.ValidateBoardViewID(req.ID); err != nil {
 		return nil, err
 	}
 	view.Owner = b.identity

@@ -215,11 +215,12 @@ func TestBoardViewsAndPagedBoard(t *testing.T) {
 	for _, title := range []string{"first", "second"} {
 		a.createIssue(`{"workspace":"awb","title":"` + title + `","labels":["release"]}`)
 	}
-	resp, payload := a.do(http.MethodPost, "/api/board-views",
+	resp, payload := a.do(http.MethodPut, "/api/board-views/view-0123456789abcdef01234567",
 		`{"name":"Release","shared":true,"all_workspaces":false,"workspaces":["awb"],"labels":["release"],"priority_max":4}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 	var view domain.BoardView
 	require.NoError(t, json.Unmarshal([]byte(payload), &view))
+	assert.Equal(t, "view-0123456789abcdef01234567", view.ID)
 	assert.Equal(t, 8, view.CardLimit)
 	assert.Equal(t, "/api/board-views/"+view.ID, resp.Header.Get("Location"))
 	assert.NotEmpty(t, resp.Header.Get("ETag"))
@@ -595,7 +596,7 @@ func TestMutationsReturnTheObject(t *testing.T) {
 	other := a.createIssue(`{"workspace":"awb","title":"other"}`)
 
 	cases := []struct{ method, path, body string }{
-		{http.MethodPost, "/api/issues/" + issue.ID + "/labels", `{"label":"y"}`},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/labels?label=y", ""},
 		{http.MethodDelete, "/api/issues/" + issue.ID + "/labels?label=x", ""},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/relations",
 			`{"type":"related","other":"` + other.ID + `"}`},
@@ -612,6 +613,21 @@ func TestMutationsReturnTheObject(t *testing.T) {
 		assert.Equal(t, issue.ID, result.ID, tc.path)
 		assert.NotEmpty(t, resp.Header.Get("ETag"), tc.path)
 	}
+}
+
+func TestCloseRecordsAReason(t *testing.T) {
+	a := newAPI(t)
+	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
+
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/close",
+		`{"reason":"Finished safely."}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"status":"closed"`)
+
+	resp, payload = a.do(http.MethodGet, "/api/issues/"+issue.ID+"/activity", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"action":"closed"`)
+	assert.Contains(t, payload, `"body":"Finished safely."`)
 }
 
 // Related is the one relation graph that may contain cycles. Relations in an
@@ -791,7 +807,7 @@ func TestParentListingFilterCanBeRecursive(t *testing.T) {
 
 func TestWorkspacePagingAppliesAfterSorting(t *testing.T) {
 	a := newAPI(t)
-	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
+	resp, payload := a.do(http.MethodPut, "/api/workspaces/web", `{"key":"web"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 	a.createIssue(`{"workspace":"awb","title":"active"}`)
 
@@ -938,7 +954,7 @@ func TestIdentity(t *testing.T) {
 func TestWorkspaces(t *testing.T) {
 	a := newAPI(t)
 
-	resp, payload := a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
+	resp, payload := a.do(http.MethodPut, "/api/workspaces/web", `{"key":"web"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 	assert.Equal(t, "/api/workspaces/web", resp.Header.Get("Location"))
 
@@ -946,6 +962,9 @@ func TestWorkspaces(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(payload), &workspace))
 	assert.Equal(t, "web", workspace.Name, "the name defaults to the key")
 	assert.NotEmpty(t, resp.Header.Get("ETag"))
+
+	resp, payload = a.do(http.MethodPut, "/api/workspaces/other", `{"key":"different"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 
 	// A key may appear in a PATCH but may not change.
 	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"key":"web","name":"Web UI"}`)
@@ -960,7 +979,7 @@ func TestWorkspaces(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	// A duplicate is a conflict.
-	resp, _ = a.do(http.MethodPost, "/api/workspaces", `{"key":"web"}`)
+	resp, _ = a.do(http.MethodPut, "/api/workspaces/web", `{"key":"web"}`)
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
 	// Deletion refuses while the workspace holds issues, and cascade is a boolean
@@ -983,7 +1002,7 @@ func TestProjectVocabularyIsNotAnAPICompatibilitySurface(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp, _ = a.do(http.MethodPost, "/api/issues", `{"project":"awb","title":"old client"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	resp, _ = a.do(http.MethodPost, "/api/board-views",
+	resp, _ = a.do(http.MethodPut, "/api/board-views/view-0123456789abcdef01234567",
 		`{"name":"old client","all_projects":false,"projects":["awb"],"priority_max":4}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
@@ -1088,15 +1107,20 @@ func TestNoBodyNeedsNoContentType(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
-	for _, path := range []string{"/claim", "/release", "/close", "/reopen"} {
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-			a.server.URL+"/api/issues/"+issue.ID+path, nil)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/claim"},
+		{http.MethodPost, "/release"},
+		{http.MethodPost, "/close"},
+		{http.MethodPost, "/reopen"},
+	} {
+		req, err := http.NewRequestWithContext(t.Context(), tc.method,
+			a.server.URL+"/api/issues/"+issue.ID+tc.path, nil)
 		require.NoError(t, err)
 
 		resp, err := a.server.Client().Do(req)
 		require.NoError(t, err)
 		_ = resp.Body.Close()
-		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+		assert.Equal(t, http.StatusOK, resp.StatusCode, tc.path)
 	}
 }
 
@@ -1231,7 +1255,7 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPatch, "/api/issues/" + issue.ID},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/claim"},
-		{http.MethodPost, "/api/issues/" + issue.ID + "/close"},
+		{http.MethodPut, "/api/issues/" + issue.ID + "/status"},
 	} {
 		req, err := http.NewRequestWithContext(t.Context(), tc.method,
 			a.server.URL+tc.path, strings.NewReader("  \n "))
@@ -1674,7 +1698,7 @@ func TestMarkdownGateOverHTTP(t *testing.T) {
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":"<b>no</b>"}`},
 		{http.MethodPut, "/api/issues/" + issue.ID + "/comments/markdown", `{"body":"<b>no</b>"}`},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":"see [why](javascript:alert(1))"}`},
-		{http.MethodPost, "/api/workspaces", `{"key":"web","description":"<style>body{}</style>"}`},
+		{http.MethodPut, "/api/workspaces/web", `{"key":"web","description":"<style>body{}</style>"}`},
 		{http.MethodPatch, "/api/workspaces/awb", `{"description":"<math></math>"}`},
 	} {
 		resp, payload := a.do(c.method, c.path, c.body)

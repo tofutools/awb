@@ -74,8 +74,12 @@ func (h *Handler) ListWorkspaceActivity(ctx context.Context, params api.ListWork
 	return &api.WorkspaceActivityListHeaders{XTotalCount: api.NewOptInt(page.Total), Response: entries}, nil
 }
 
-func (h *Handler) CreateWorkspace(ctx context.Context, req *api.WorkspaceCreate) (
+func (h *Handler) CreateWorkspace(ctx context.Context, req *api.WorkspaceCreate,
+	params api.CreateWorkspaceParams) (
 	*api.WorkspaceCreatedHeaders, error) {
+	if string(req.Key) != string(params.Key) {
+		return nil, awberr.Usagef("a workspace key in the body must match the path")
+	}
 	workspace, err := h.backendFor(ctx).CreateWorkspace(ctx, backend.WorkspaceCreate{
 		Key:         string(req.Key),
 		Name:        req.Name.Or(""),

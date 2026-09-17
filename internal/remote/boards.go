@@ -49,6 +49,12 @@ func (b *Backend) ListBoardViews(ctx context.Context) ([]domain.BoardView, error
 	return views, err
 }
 func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCreate) (*domain.BoardView, error) {
+	if req.ID == "" {
+		var err error
+		if req.ID, err = domain.NewBoardViewID(); err != nil {
+			return nil, err
+		}
+	}
 	if !req.AllEpics && req.Epics == nil && !req.IncludeNoEpic {
 		req.AllEpics, req.IncludeNoEpic = true, true
 	}
@@ -58,9 +64,12 @@ func (b *Backend) CreateBoardView(ctx context.Context, req backend.BoardViewCrea
 	if req.Columns == nil {
 		req.Columns = []domain.Status{domain.StatusOpen, domain.StatusInProgress, domain.StatusClosed}
 	}
-	body := boardViewCreateBody(req)
+	body := boardViewCreateBody{Name: req.Name, Shared: req.Shared, AllWorkspaces: req.AllWorkspaces,
+		Workspaces: req.Workspaces, AllEpics: req.AllEpics, Epics: req.Epics, IncludeNoEpic: req.IncludeNoEpic,
+		Labels: req.Labels, Assignees: req.Assignees, Columns: req.Columns, PriorityMax: req.PriorityMax,
+		CardLimit: req.CardLimit, ClosedDays: req.ClosedDays, EpicClosedDays: req.EpicClosedDays}
 	var view domain.BoardView
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/board-views", nil), body, "", &view)
+	_, err := b.call(ctx, http.MethodPut, b.endpoint("/api/board-views/"+url.PathEscape(req.ID), nil), body, "", &view)
 	return &view, err
 }
 func (b *Backend) GetBoardView(ctx context.Context, id string) (*domain.BoardView, error) {
