@@ -530,7 +530,7 @@ func TestClaimDefaultsToTheRequestIdentity(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
-	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/claim", `{}`)
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", `{}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	var claimed domain.Issue
@@ -572,14 +572,14 @@ func TestMultipleAssigneesRoundTripThroughTheAPI(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"t","assignees":["alice","bob"]}`)
 	assert.Equal(t, []string{"alice", "bob"}, issue.Assignees)
 
-	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/claim",
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim",
 		`{"assignee":"carol"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var joined domain.Issue
 	require.NoError(t, json.Unmarshal([]byte(payload), &joined))
 	assert.Equal(t, []string{"alice", "bob", "carol"}, joined.Assignees)
 
-	resp, payload = a.do(http.MethodPut, "/api/issues/"+issue.ID+"/release",
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/release",
 		`{"assignee":"bob"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var left domain.Issue
@@ -602,7 +602,7 @@ func TestMutationsReturnTheObject(t *testing.T) {
 			`{"type":"related","other":"` + other.ID + `"}`},
 		{http.MethodDelete, "/api/issues/" + issue.ID + "/relations/related/" + other.ID, ""},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":"done"}`},
-		{http.MethodPut, "/api/issues/" + issue.ID + "/reopen", ""},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/reopen", ""},
 	}
 	for _, tc := range cases {
 		resp, payload := a.do(tc.method, tc.path, tc.body)
@@ -1108,10 +1108,10 @@ func TestNoBodyNeedsNoContentType(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodPut, "/claim"},
-		{http.MethodPut, "/release"},
+		{http.MethodPost, "/claim"},
+		{http.MethodPost, "/release"},
 		{http.MethodPost, "/close"},
-		{http.MethodPut, "/reopen"},
+		{http.MethodPost, "/reopen"},
 	} {
 		req, err := http.NewRequestWithContext(t.Context(), tc.method,
 			a.server.URL+"/api/issues/"+issue.ID+tc.path, nil)
@@ -1134,7 +1134,7 @@ func TestReopenRefusesABody(t *testing.T) {
 	require.NotEmpty(t, payload)
 
 	for _, body := range []string{`{"nonsense":1}`, `{"reason":"x"}`, `{}`} {
-		resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/reopen", body)
+		resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, "no request body", body)
 	}
@@ -1144,7 +1144,7 @@ func TestReopenRefusesABody(t *testing.T) {
 	assert.Contains(t, payload, `"status":"closed"`)
 
 	// And with no body it works.
-	resp, _ := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/reopen", "")
+	resp, _ := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", "")
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -1158,7 +1158,7 @@ func TestUnchangeableFieldsAreRefusedByTheBackend(t *testing.T) {
 
 	// Claim it, so the stored status and assignees differ from what a client
 	// that read it earlier would send back.
-	_, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/claim", `{"assignee":"claude-1"}`)
+	_, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", `{"assignee":"claude-1"}`)
 	require.Contains(t, payload, "in_progress")
 
 	// A patch carrying the stale values is refused, not silently applied.
@@ -1254,7 +1254,7 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 	// ...but it was carried, so it must declare what it is.
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodPatch, "/api/issues/" + issue.ID},
-		{http.MethodPut, "/api/issues/" + issue.ID + "/claim"},
+		{http.MethodPost, "/api/issues/" + issue.ID + "/claim"},
 		{http.MethodPut, "/api/issues/" + issue.ID + "/status"},
 	} {
 		req, err := http.NewRequestWithContext(t.Context(), tc.method,
@@ -1270,7 +1270,7 @@ func TestWhitespaceBodyCountsAsABody(t *testing.T) {
 
 	// And an endpoint that takes no body refuses it whatever it holds.
 	for _, body := range []string{"   ", "\n", "\t"} {
-		resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/reopen", body)
+		resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/reopen", body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "%q", body)
 		assert.Contains(t, payload, "no request body")
 	}
@@ -1289,11 +1289,11 @@ func TestWhitespaceBodyIsRefusedWhereABodyIsOptional(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
-	resp, payload := a.do(http.MethodPut, "/api/issues/"+issue.ID+"/claim", "  \n ")
+	resp, payload := a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "  \n ")
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 	assert.Contains(t, payload, "holds no JSON value")
 
-	resp, payload = a.do(http.MethodPut, "/api/issues/"+issue.ID+"/claim", "")
+	resp, payload = a.do(http.MethodPost, "/api/issues/"+issue.ID+"/claim", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	var claimed domain.Issue

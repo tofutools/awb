@@ -338,13 +338,13 @@ func (b *Backend) DeleteIssue(ctx context.Context, ref, ifMatch string) (*backen
 func (b *Backend) Claim(ctx context.Context, ref string, req backend.ClaimRequest,
 	ifMatch string) (*domain.Issue, error) {
 	body := claimBody{Assignee: req.Assignee, Force: req.Force}
-	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/claim", body, ifMatch)
+	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/claim", body, ifMatch)
 }
 
 func (b *Backend) Release(ctx context.Context, ref string, req backend.ReleaseRequest,
 	ifMatch string) (*domain.Issue, error) {
 	body := releaseBody{Assignee: req.Assignee, Force: req.Force}
-	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/release", body, ifMatch)
+	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/release", body, ifMatch)
 }
 
 func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseRequest,
@@ -356,7 +356,7 @@ func (b *Backend) CloseIssue(ctx context.Context, ref string, req backend.CloseR
 }
 
 func (b *Backend) Reopen(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {
-	return b.issueCall(ctx, http.MethodPut, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
+	return b.issueCall(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(ref)+"/reopen", nil, ifMatch)
 }
 
 func (b *Backend) MakeReady(ctx context.Context, ref, ifMatch string) (*domain.Issue, error) {

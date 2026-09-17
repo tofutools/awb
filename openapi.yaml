@@ -267,7 +267,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    put:
+    post:
       tags: [issues]
       operationId: claimIssue
       summary: Atomically add an assignee and set status to in_progress
@@ -285,7 +285,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    put:
+    post:
       tags: [issues]
       operationId: releaseIssue
       summary: Remove an assignee; open the issue when none remain
@@ -317,7 +317,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/issueId'
       - $ref: '#/components/parameters/ifMatch'
-    put:
+    post:
       tags: [issues]
       operationId: reopenIssue
       summary: Set the status to open and clear every assignee

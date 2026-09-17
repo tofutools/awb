@@ -321,7 +321,7 @@ test("issue edits use the mutation endpoints and guard the version that was read
   assert.equal(requests[3].init.method, "DELETE");
 
   assert.equal(requests[4].input, "api/issues/awb-a%2Fb/release");
-  assert.equal(requests[4].init.method, "PUT");
+  assert.equal(requests[4].init.method, "POST");
   assert.deepEqual(JSON.parse(requests[4].init.body), { assignee: "operator", force: true });
   assert.equal(new Headers(requests[4].init.headers).get("If-Match"), '"issue-version"');
 
@@ -342,8 +342,10 @@ test("claim adds one assignee while forced release removes every assignee", asyn
   await api.releaseIssue("awb-123", { assignee: "operator", force: true });
 
   assert.equal(calls[0].path, "api/issues/awb-123/claim");
+  assert.equal(calls[0].init.method, "POST");
   assert.deepEqual(JSON.parse(calls[0].init.body), { assignee: "second", force: false });
   assert.equal(calls[1].path, "api/issues/awb-123/release");
+  assert.equal(calls[1].init.method, "POST");
   assert.deepEqual(JSON.parse(calls[1].init.body), { assignee: "operator", force: true });
 });
 

@@ -736,7 +736,7 @@ func TestForceCannotRecordANameThatIsNoUserThroughTheAPI(t *testing.T) {
 			if authenticates {
 				headers = append(headers, basicAuth("mikael", "hunter2")...)
 			}
-			resp, payload := send(t, h, http.MethodPut, "/api/issues/"+issue.ID+"/claim",
+			resp, payload := send(t, h, http.MethodPost, "/api/issues/"+issue.ID+"/claim",
 				`{"assignee":"nobody","force":true}`, headers...)
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 			assert.Contains(t, payload, "no such user: nobody")

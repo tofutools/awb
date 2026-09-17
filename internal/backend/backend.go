@@ -396,7 +396,7 @@ type WorkspacePatch struct {
 	Description *string
 }
 
-// ClaimRequest is the body of awb claim and PUT /api/issues/{id}/claim.
+// ClaimRequest is the body of awb claim and POST /api/issues/{id}/claim.
 type ClaimRequest struct {
 	// Assignee names who takes the issue. The CLI always states it explicitly, so
 	// that a remote claim records exactly what a local one would.
@@ -406,7 +406,7 @@ type ClaimRequest struct {
 	Force bool
 }
 
-// ReleaseRequest is the body of awb release and PUT /api/issues/{id}/release.
+// ReleaseRequest is the body of awb release and POST /api/issues/{id}/release.
 type ReleaseRequest struct {
 	// Assignee is the caller's identity, and is what the "assigned to someone
 	// else" refusal compares against. It may be empty when Force is set, that

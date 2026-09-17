@@ -287,15 +287,15 @@ export const api = {
   moveIssue: (id: string, body: IssueMove) =>
     issueMutation<Issue>(id, "/move", "POST", body),
   claimIssue: (id: string, body: ClaimRequest = { force: false }) =>
-    issueMutation<Issue>(id, "/claim", "PUT", body),
+    issueMutation<Issue>(id, "/claim", "POST", body),
   releaseIssue: (id: string, body: ReleaseRequest = { force: false }) =>
-    issueMutation<Issue>(id, "/release", "PUT", body),
+    issueMutation<Issue>(id, "/release", "POST", body),
   closeIssue: (id: string, body: CloseRequest = {}) =>
     issueMutation<Issue>(id, "/close", "POST", body),
   setIssueStatus: (id: string, status: Issue["status"]) =>
     issueMutation<Issue>(id, "/status", "PUT", { status }),
   reopenIssue: (id: string) =>
-    issueMutation<Issue>(id, "/reopen", "PUT"),
+    issueMutation<Issue>(id, "/reopen", "POST"),
   addLabel: (id: string, label: string) =>
     issueMutation<Issue>(id, "/labels", "PUT", { label }),
   removeLabel: (id: string, label: string) =>
