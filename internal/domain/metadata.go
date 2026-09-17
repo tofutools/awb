@@ -3,6 +3,8 @@ package domain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"maps"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -86,11 +88,33 @@ func DecodeMetadata(encoded string) (Metadata, error) {
 	return decoded, nil
 }
 
-// ValidateMetadata puts a metadata object into the one form awb stores and
-// bounds what that form may weigh. Canonicalizing here rather than at each
-// boundary is what lets two objects be compared as bytes, which is how an
-// update decides it changed nothing.
+// ValidateMetadata is what a write a caller asked for applies: the canonical
+// form, and the bound on what that form may weigh.
+//
+// The two are separate because only one of them is a gate. The canonical form
+// is what the column holds, so everything that writes it owes it; the size
+// bound is a rule about what a caller may ask for, and a restore — a copy of
+// an object some other database already holds — deliberately does not apply
+// the rules, exactly as it does not apply the prose gate.
 func ValidateMetadata(m Metadata) (Metadata, error) {
+	normalized, err := CanonicalMetadata(m)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := EncodeMetadata(normalized)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > MaxMetadataBytes {
+		return nil, awberr.Usagef("metadata is too large: maximum %d bytes", MaxMetadataBytes)
+	}
+	return normalized, nil
+}
+
+// CanonicalMetadata puts a metadata object into the one form awb stores it in.
+// Canonicalizing here rather than at each boundary is what lets two objects be
+// compared as bytes, which is how an update decides it changed nothing.
+func CanonicalMetadata(m Metadata) (Metadata, error) {
 	if len(m) == 0 {
 		return Metadata{}, nil
 	}
@@ -101,13 +125,6 @@ func ValidateMetadata(m Metadata) (Metadata, error) {
 			return nil, awberr.Usagef("metadata value under %q is not valid JSON: %s", key, err)
 		}
 		normalized[key] = canonical
-	}
-	encoded, err := EncodeMetadata(normalized)
-	if err != nil {
-		return nil, err
-	}
-	if len(encoded) > MaxMetadataBytes {
-		return nil, awberr.Usagef("metadata is too large: maximum %d bytes", MaxMetadataBytes)
 	}
 	return normalized, nil
 }
@@ -127,8 +144,13 @@ func canonicalValue(raw json.RawMessage) (json.RawMessage, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	// One value and nothing after it: "1 2" is two, and neither is this one.
-	if decoder.More() {
+	// One value and nothing after it. The end is found by decoding again and
+	// requiring io.EOF rather than by asking More(), which answers about the
+	// array or object being parsed and so reports no more after the "1" of
+	// "1]" — leaving a trailing byte to be silently dropped by the re-encoding
+	// below.
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return nil, awberr.Usagef("a metadata value must be one JSON value")
 	}
 	return json.Marshal(value)

@@ -533,14 +533,14 @@ func TestIssueMetadataReorderingIsNotAChange(t *testing.T) {
 	b, ctx := newBackend(t)
 	created, err := b.CreateIssue(ctx, backend.IssueCreate{
 		Workspace: "awb", Title: "tagged",
-		Metadata: mustMetadata(t, `{"nested":{"a":1,"b":2},"list":[{"p":1,"q":2}]}`),
+		Metadata: mustMetadata(t, `{"nested":{"a":1,"b":2},"list":[{"p":1},{"q":2}]}`),
 	})
 	require.NoError(t, err)
 
 	before, err := b.ListActivity(ctx, created.ID, "", nil, nil)
 	require.NoError(t, err)
 
-	reordered := mustMetadata(t, `{"list":[{"q":2,"p":1}],"nested":{"b":2,"a":1}}`)
+	reordered := mustMetadata(t, `{"list":[{"p":1},{"q":2}],"nested":{"b":2,"a":1}}`)
 	updated, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &reordered}, "")
 	require.NoError(t, err)
 	assert.Equal(t, created.UpdatedAt, updated.UpdatedAt, "the same value is not a new version")
@@ -549,9 +549,10 @@ func TestIssueMetadataReorderingIsNotAChange(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before.Total, after.Total, "a write that changed nothing records nothing")
 
-	// An array's order is meaning, so reordering one is a change.
-	swapped := mustMetadata(t, `{"list":[{"p":1,"q":2},{"z":0}]}`)
-	changed, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &swapped}, "")
+	// An array's order is meaning, so reversing one is a change — the same two
+	// elements either way, so it is the order and not the length that shows.
+	reversed := mustMetadata(t, `{"list":[{"q":2},{"p":1}]}`)
+	changed, err := b.UpdateIssue(ctx, created.ID, backend.IssuePatch{Metadata: &reversed}, "")
 	require.NoError(t, err)
 	assert.Greater(t, changed.UpdatedAt, created.UpdatedAt)
 }

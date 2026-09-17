@@ -72,19 +72,31 @@ func TestParseMetadataKeepsNumbersAsWritten(t *testing.T) {
 
 // Two spellings of one value are one stored object, so re-sending what was read
 // with the keys in another order is not a change. Array order is meaning rather
-// than spelling, so reordering one is.
+// than spelling, so reversing one is — with the same elements either way, so it
+// is the order and not the length that the comparison answers to.
 func TestMetadataEqualityIgnoresKeyOrderAtEveryDepth(t *testing.T) {
-	first, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"p":1,"q":2}]},"b":2}`))
+	first, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"p":1},{"q":2}]},"b":2}`))
 	require.NoError(t, err)
-	second, err := domain.ParseMetadata([]byte(`{"b":2,"a":{"y":[{"q":2,"p":1}],"x":1}}`))
+	second, err := domain.ParseMetadata([]byte(`{"b":2,"a":{"y":[{"p":1},{"q":2}],"x":1}}`))
 	require.NoError(t, err)
 
 	assert.True(t, domain.EqualMetadata(first, second))
 	assert.Equal(t, encodedMetadata(t, first), encodedMetadata(t, second))
 
-	swapped, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"q":2,"p":1},{"z":0}]},"b":2}`))
+	reversed, err := domain.ParseMetadata([]byte(`{"a":{"x":1,"y":[{"q":2},{"p":1}]},"b":2}`))
 	require.NoError(t, err)
-	assert.False(t, domain.EqualMetadata(first, swapped))
+	assert.False(t, domain.EqualMetadata(first, reversed),
+		"the same two elements in the other order is a different value")
+}
+
+// A value must be one JSON value and nothing else. Trailing bytes cannot reach
+// here through a decoder, so this is about a Metadata assembled in Go: dropping
+// what follows would store something the caller never wrote.
+func TestCanonicalizingRefusesTrailingBytes(t *testing.T) {
+	for _, value := range []string{"1]", "1}", "1 2", "1 x", `{"a":1}]`, ""} {
+		_, err := domain.ValidateMetadata(domain.Metadata{"k": json.RawMessage(value)})
+		assertUsage(t, err, value)
+	}
 }
 
 // The canonical encoding is encoding/json's, which escapes <, > and & inside a
