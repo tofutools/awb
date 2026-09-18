@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"reflect"
 	"slices"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -100,6 +101,21 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if err != nil {
 			return err
 		}
+		existing, err := tx.GetIssue(issue.ID)
+		if err == nil {
+			same, err := sameIssueCreate(tx, existing, issue, labels, relations)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return awberr.Conflictf("issue id %s is already used with different creation data", issue.ID)
+			}
+			issue = existing
+			return nil
+		}
+		if awberr.KindOf(err) != awberr.NotFound {
+			return err
+		}
 		if workspace.State == domain.WorkspaceArchived {
 			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Workspace)
 		}
@@ -146,6 +162,41 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 	return issue, nil
+}
+
+// sameIssueCreate makes PUT creation retry-safe. It compares the validated,
+// effective creation state rather than the spelling of references, so an
+// equivalent full ID and unique prefix describe the same request.
+func sameIssueCreate(tx *storage.Tx, existing, requested *domain.Issue, labels []string,
+	relations []backend.NewRelation) (bool, error) {
+	if existing.Workspace != requested.Workspace || existing.Title != requested.Title ||
+		existing.Description != requested.Description || existing.CommitHash != requested.CommitHash ||
+		existing.PullRequestURL != requested.PullRequestURL || !reflect.DeepEqual(existing.Metadata, requested.Metadata) ||
+		existing.Type != requested.Type || existing.Status != requested.Status ||
+		existing.Priority != requested.Priority || !slices.Equal(existing.Assignees, requested.Assignees) {
+		return false, nil
+	}
+	wantLabels := slices.Clone(labels)
+	slices.Sort(wantLabels)
+	wantLabels = slices.Compact(wantLabels)
+	if !slices.Equal(existing.Labels, wantLabels) {
+		return false, nil
+	}
+	wantRelations := make(map[string]bool, len(relations))
+	for _, rel := range relations {
+		other, err := resolve(tx, rel.Other)
+		if err != nil {
+			return false, err
+		}
+		wantRelations[string(rel.Type)+"\x00"+other] = true
+	}
+	gotRelations := make(map[string]bool, len(existing.Relations))
+	for _, rel := range existing.Relations {
+		if rel.Direction == domain.DirectionOut {
+			gotRelations[string(rel.Type)+"\x00"+rel.Other] = true
+		}
+	}
+	return reflect.DeepEqual(gotRelations, wantRelations), nil
 }
 
 // movingAssignee is who a board move that starts work assigns it to: the

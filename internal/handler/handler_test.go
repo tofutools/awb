@@ -153,6 +153,22 @@ func TestCreateIssueValidatesTheClientAssignedID(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 }
 
+func TestCreateIssueIsIdempotent(t *testing.T) {
+	a := newAPI(t)
+	path := a.createPath()
+	body := `{"workspace":"awb","title":"Parser crashes","labels":["parser"]}`
+
+	resp, first := a.do(http.MethodPut, path, body)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, first)
+	resp, second := a.do(http.MethodPut, path, body)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, second)
+	assert.JSONEq(t, first, second)
+
+	resp, payload := a.do(http.MethodPut, path,
+		`{"workspace":"awb","title":"Different creation"}`)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode, payload)
+}
+
 func TestCreateIssueUsesTheDirectModeDefaults(t *testing.T) {
 	a := newAPI(t)
 
