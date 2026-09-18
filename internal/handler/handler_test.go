@@ -160,9 +160,11 @@ func TestCreateIssueIsIdempotent(t *testing.T) {
 
 	resp, first := a.do(http.MethodPut, path, body)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, first)
+	resp, edited := a.do(http.MethodPatch, path, `{"title":"Parser fixed"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, edited)
 	resp, second := a.do(http.MethodPut, path, body)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode, second)
-	assert.JSONEq(t, first, second)
+	assert.JSONEq(t, edited, second, "a retry is recognized after mutable issue state changes")
 
 	resp, payload := a.do(http.MethodPut, path,
 		`{"workspace":"awb","title":"Different creation"}`)

@@ -345,6 +345,26 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 	return awberr.Wrap(awberr.Runtime, err, "create issue")
 }
 
+// IssueCreationFingerprint returns the immutable canonical request fingerprint
+// recorded when issue was created, or an empty string for a pre-v26 issue.
+func (t *Tx) IssueCreationFingerprint(issue string) (string, error) {
+	var fingerprint string
+	err := t.q.QueryRowContext(t.ctx,
+		`SELECT fingerprint FROM issue_creations WHERE issue = ?`, issue).Scan(&fingerprint)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return fingerprint, awberr.Wrap(awberr.Runtime, err, "read creation fingerprint of %s", issue)
+}
+
+// InsertIssueCreationFingerprint records the canonical request in the same
+// transaction as the issue it identifies.
+func (t *Tx) InsertIssueCreationFingerprint(issue, fingerprint string) error {
+	_, err := t.q.ExecContext(t.ctx,
+		`INSERT INTO issue_creations (issue, fingerprint) VALUES (?, ?)`, issue, fingerprint)
+	return awberr.Wrap(awberr.Runtime, err, "record creation fingerprint of %s", issue)
+}
+
 // IssueFields are the stored fields an update may change.
 type IssueFields struct {
 	Title          string

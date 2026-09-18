@@ -2,8 +2,11 @@ package local
 
 import (
 	"context"
-	"reflect"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -101,13 +104,25 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if err != nil {
 			return err
 		}
-		existing, err := tx.GetIssue(issue.ID)
-		if err == nil {
-			same, err := sameIssueCreate(tx, existing, issue, labels, relations)
+		resolvedRelations := make([]backend.NewRelation, 0, len(relations))
+		for _, rel := range relations {
+			other, err := resolve(tx, rel.Other)
 			if err != nil {
 				return err
 			}
-			if !same {
+			resolvedRelations = append(resolvedRelations, backend.NewRelation{Type: rel.Type, Other: other})
+		}
+		fingerprint, err := issueCreationFingerprint(issue, labels, resolvedRelations)
+		if err != nil {
+			return err
+		}
+		existing, err := tx.GetIssue(issue.ID)
+		if err == nil {
+			stored, err := tx.IssueCreationFingerprint(issue.ID)
+			if err != nil {
+				return err
+			}
+			if stored == "" || stored != fingerprint {
 				return awberr.Conflictf("issue id %s is already used with different creation data", issue.ID)
 			}
 			issue = existing
@@ -129,6 +144,9 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if err := tx.InsertIssue(issue); err != nil {
 			return err
 		}
+		if err := tx.InsertIssueCreationFingerprint(issue.ID, fingerprint); err != nil {
+			return err
+		}
 		for _, label := range labels {
 			if err := tx.AddLabel(issue, label); err != nil {
 				return err
@@ -136,11 +154,8 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 		counterparts := relationSnapshots{}
 		captureCounterpart := counterparts.capture(tx)
-		for _, rel := range relations {
-			other, err := resolve(tx, rel.Other)
-			if err != nil {
-				return err
-			}
+		for _, rel := range resolvedRelations {
+			other := rel.Other
 			if err := captureCounterpart(other); err != nil {
 				return err
 			}
@@ -164,39 +179,37 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	return issue, nil
 }
 
-// sameIssueCreate makes PUT creation retry-safe. It compares the validated,
-// effective creation state rather than the spelling of references, so an
-// equivalent full ID and unique prefix describe the same request.
-func sameIssueCreate(tx *storage.Tx, existing, requested *domain.Issue, labels []string,
-	relations []backend.NewRelation) (bool, error) {
-	if existing.Workspace != requested.Workspace || existing.Title != requested.Title ||
-		existing.Description != requested.Description || existing.CommitHash != requested.CommitHash ||
-		existing.PullRequestURL != requested.PullRequestURL || !reflect.DeepEqual(existing.Metadata, requested.Metadata) ||
-		existing.Type != requested.Type || existing.Status != requested.Status ||
-		existing.Priority != requested.Priority || !slices.Equal(existing.Assignees, requested.Assignees) {
-		return false, nil
-	}
+// issueCreationFingerprint encodes the validated, effective and semantically
+// resolved creation request. It stays stable when the issue later changes.
+func issueCreationFingerprint(issue *domain.Issue, labels []string,
+	relations []backend.NewRelation) (string, error) {
 	wantLabels := slices.Clone(labels)
 	slices.Sort(wantLabels)
 	wantLabels = slices.Compact(wantLabels)
-	if !slices.Equal(existing.Labels, wantLabels) {
-		return false, nil
-	}
-	wantRelations := make(map[string]bool, len(relations))
-	for _, rel := range relations {
-		other, err := resolve(tx, rel.Other)
-		if err != nil {
-			return false, err
+	wantRelations := slices.Clone(relations)
+	slices.SortFunc(wantRelations, func(a, b backend.NewRelation) int {
+		if n := strings.Compare(string(a.Type), string(b.Type)); n != 0 {
+			return n
 		}
-		wantRelations[string(rel.Type)+"\x00"+other] = true
+		return strings.Compare(a.Other, b.Other)
+	})
+	wantRelations = slices.Compact(wantRelations)
+	canonical := struct {
+		Workspace, Title, Description, CommitHash, PullRequestURL string
+		Metadata                                                  domain.Metadata
+		Type                                                      domain.Type
+		Status                                                    domain.Status
+		Priority                                                  int
+		Assignees, Labels                                         []string
+		Relations                                                 []backend.NewRelation
+	}{issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL,
+		issue.Metadata, issue.Type, issue.Status, issue.Priority, issue.Assignees, wantLabels, wantRelations}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "encode creation request of %s", issue.ID)
 	}
-	gotRelations := make(map[string]bool, len(existing.Relations))
-	for _, rel := range existing.Relations {
-		if rel.Direction == domain.DirectionOut {
-			gotRelations[string(rel.Type)+"\x00"+rel.Other] = true
-		}
-	}
-	return reflect.DeepEqual(gotRelations, wantRelations), nil
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // movingAssignee is who a board move that starts work assigns it to: the
