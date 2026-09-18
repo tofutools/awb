@@ -100,6 +100,18 @@ type commentBody struct {
 }
 
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
+	if req.ID == "" {
+		identity, err := b.AuthenticatedIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		typ := req.Type
+		if typ == "" {
+			typ = domain.DefaultType
+		}
+		req.ID = domain.MakeID(req.Workspace,
+			domain.IssueHash(identity, req.Title, typ, req.Description))
+	}
 	body := issueCreateBody{
 		Backlog:        req.Backlog,
 		Workspace:      req.Workspace,
@@ -118,7 +130,8 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	}
 
 	var issue domain.Issue
-	_, err := b.call(ctx, http.MethodPost, b.endpoint("/api/issues", nil), body, "", &issue)
+	_, err := b.call(ctx, http.MethodPut,
+		b.endpoint("/api/issues/"+url.PathEscape(req.ID), nil), body, "", &issue)
 	if err != nil {
 		return nil, err
 	}

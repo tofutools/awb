@@ -289,7 +289,7 @@ function CreateIssue({
                   : {}),
                 labels: staged,
                 relations,
-              });
+              }, identity);
               const uploads = await Promise.allSettled(
                 files.map((file) => api.addAttachment(created.id, file)),
               );

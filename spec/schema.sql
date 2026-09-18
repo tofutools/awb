@@ -237,3 +237,8 @@ CREATE INDEX idx_issues_board_candidates
 
 CREATE UNIQUE INDEX idx_issue_activity_comment_key
 		ON issue_activity (issue, actor, comment_key) WHERE comment_key <> '';
+
+CREATE TABLE issue_creations (
+		issue       TEXT PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+		fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64)
+	) STRICT, WITHOUT ROWID;

@@ -303,10 +303,8 @@ func (t *Tx) loadBlockers(ids []string, byID map[string]*domain.Issue) error {
 	return awberr.Wrap(awberr.Runtime, rows.Err(), "read blockers")
 }
 
-// InsertIssue stores a new issue, drawing a fresh salt and retrying on a
-// same-workspace ID collision inside the same transaction.
+// InsertIssue stores a new issue at its client-assigned ID.
 func (t *Tx) InsertIssue(issue *domain.Issue) error {
-	const maxAttempts = 8
 	now := Now()
 	issue.CreatedAt = now
 	issue.UpdatedAt = now
@@ -321,40 +319,50 @@ func (t *Tx) InsertIssue(issue *domain.Issue) error {
 		return encodeErr
 	}
 
-	for attempt := range maxAttempts {
-		salt, err := domain.NewSalt()
-		if err != nil {
-			return err
-		}
-		issue.ID = domain.MakeID(issue.Workspace, domain.MintHash(issue.Title, now, salt))
-
-		_, err = t.q.ExecContext(t.ctx, `
+	_, err := t.q.ExecContext(t.ctx, `
 			INSERT INTO issues (`+issueColumns+`)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL,
-			metadata, issue.Type, issue.Status, issue.Priority, issue.Order,
-			issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
-		if err == nil {
-			for position, assignee := range assignees {
-				if _, err := t.q.ExecContext(t.ctx,
-					`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
-					issue.ID, assignee, position); err != nil {
-					return awberr.Wrap(awberr.Runtime, err, "assign issue %s", issue.ID)
-				}
+		issue.ID, issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL,
+		metadata, issue.Type, issue.Status, issue.Priority, issue.Order,
+		issue.CreatedAt, issue.UpdatedAt, issue.ClosedAt)
+	if err == nil {
+		for position, assignee := range assignees {
+			if _, err := t.q.ExecContext(t.ctx,
+				`INSERT INTO issue_assignees (issue, assignee, position) VALUES (?, ?, ?)`,
+				issue.ID, assignee, position); err != nil {
+				return awberr.Wrap(awberr.Runtime, err, "assign issue %s", issue.ID)
 			}
-			issue.Assignees = slices.Clone(assignees)
-			return nil
 		}
-		if isUniqueViolation(err) && attempt < maxAttempts-1 {
-			continue // an ID collision: draw a new salt and try again
-		}
-		if isCheckViolation(err) {
-			return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
-		}
-		return awberr.Wrap(awberr.Runtime, err, "create issue")
+		issue.Assignees = slices.Clone(assignees)
+		return nil
 	}
-	return awberr.Runtimef("could not mint a free issue id in workspace %s after %d attempts",
-		issue.Workspace, maxAttempts)
+	if isUniqueViolation(err) {
+		return awberr.Conflictf("issue already exists: %s", issue.ID)
+	}
+	if isCheckViolation(err) {
+		return awberr.Runtimef("refusing to store an inconsistent issue: %s", err.Error())
+	}
+	return awberr.Wrap(awberr.Runtime, err, "create issue")
+}
+
+// IssueCreationFingerprint returns the immutable canonical request fingerprint
+// recorded when issue was created, or an empty string for a pre-v26 issue.
+func (t *Tx) IssueCreationFingerprint(issue string) (string, error) {
+	var fingerprint string
+	err := t.q.QueryRowContext(t.ctx,
+		`SELECT fingerprint FROM issue_creations WHERE issue = ?`, issue).Scan(&fingerprint)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return fingerprint, awberr.Wrap(awberr.Runtime, err, "read creation fingerprint of %s", issue)
+}
+
+// InsertIssueCreationFingerprint records the canonical request in the same
+// transaction as the issue it identifies.
+func (t *Tx) InsertIssueCreationFingerprint(issue, fingerprint string) error {
+	_, err := t.q.ExecContext(t.ctx,
+		`INSERT INTO issue_creations (issue, fingerprint) VALUES (?, ?)`, issue, fingerprint)
+	return awberr.Wrap(awberr.Runtime, err, "record creation fingerprint of %s", issue)
 }
 
 // IssueFields are the stored fields an update may change.

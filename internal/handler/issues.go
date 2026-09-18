@@ -19,9 +19,10 @@ func issueResponse(issue *domain.Issue) *api.IssueHeaders {
 	}
 }
 
-func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate) (
+func (h *Handler) CreateIssue(ctx context.Context, req *api.IssueCreate, params api.CreateIssueParams) (
 	*api.IssueCreatedHeaders, error) {
 	create := backend.IssueCreate{
+		ID:             params.ID,
 		Backlog:        req.Backlog.Or(false),
 		Workspace:      string(req.Workspace),
 		Title:          req.Title,

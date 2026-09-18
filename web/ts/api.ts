@@ -18,6 +18,7 @@
 // anything the UI loaded from under it would reach the API server instead.
 
 import type { components, operations } from "./api-types.js";
+import { sha256 } from "./sha256.js";
 
 /** A complete issue for detail and mutation responses. */
 export type Issue = components["schemas"]["Issue"];
@@ -281,7 +282,12 @@ export const api = {
       body: JSON.stringify({ ignored }),
     })),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
-  createIssue: (body: IssueCreate) => postOne<Issue>("api/issues", body),
+  createIssue: async (body: IssueCreate, identity: string) => {
+    const type = body.type ?? "task";
+    const description = body.description ?? "";
+    const hash = sha256(identity + body.title + type + description).slice(0, 6);
+    return putOne<Issue>(`api/issues/${encodeURIComponent(`${body.workspace}-${hash}`)}`, body);
+  },
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
   moveIssue: (id: string, body: IssueMove) =>

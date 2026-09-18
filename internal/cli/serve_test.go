@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/tofutools/awb/internal/backend"
 	"github.com/tofutools/awb/internal/remote"
 	"io"
@@ -294,8 +295,8 @@ func TestUIProxyForwardsBrowserWritesAfterCheckingTheirOrigin(t *testing.T) {
 	var upstreamURL string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/awb/api/issues", r.URL.Path)
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "/awb/api/issues/awb-123456", r.URL.Path)
 		assert.Equal(t, upstreamURL, r.Header.Get("Origin"))
 		assert.Equal(t, upstreamURL+"/awb/", r.Header.Get("Referer"))
 		body, err := io.ReadAll(r.Body)
@@ -307,13 +308,13 @@ func TestUIProxyForwardsBrowserWritesAfterCheckingTheirOrigin(t *testing.T) {
 	upstreamURL = upstream.URL
 
 	h := newProxyServeHandler(t, upstream.URL+"/awb")
-	resp, _ := send(t, h, http.MethodPost, "/api/issues", `{}`,
+	resp, _ := send(t, h, http.MethodPut, "/api/issues/awb-123456", `{}`,
 		"Origin", "http://127.0.0.1:7777",
 		"Referer", "http://127.0.0.1:7777/#/issues")
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	assert.Equal(t, 1, requests)
 
-	resp, _ = send(t, h, http.MethodPost, "/api/issues", `{}`,
+	resp, _ = send(t, h, http.MethodPut, "/api/issues/awb-123456", `{}`,
 		"Origin", "https://elsewhere.example")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	assert.Equal(t, 1, requests)
@@ -983,7 +984,7 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 
 	rec := call(http.MethodPut, "/api/workspaces/awb", "application/json", `{"key":"awb"}`)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	rec = call(http.MethodPost, "/api/issues", "application/json",
+	rec = call(http.MethodPut, "/api/issues/awb-123456", "application/json",
 		`{"workspace":"awb","title":"Parser crashes"}`)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 
@@ -1008,7 +1009,7 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 
 	// A JSON body over the general cap still is, so raising one cap did not
 	// raise the other.
-	rec = call(http.MethodPost, "/api/issues", "application/json",
+	rec = call(http.MethodPut, "/api/issues/awb-654321", "application/json",
 		`{"workspace":"awb","title":"`+strings.Repeat("x", maxRequestBody)+`"}`)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
 }
@@ -1169,7 +1170,7 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	// The fixtures ask for no compression, so their bodies can simply be read.
 	rec := call(http.MethodPut, "/api/workspaces/awb", "application/json", `{"key":"awb"}`, false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	rec = call(http.MethodPost, "/api/issues", "application/json",
+	rec = call(http.MethodPut, "/api/issues/awb-123456", "application/json",
 		`{"workspace":"awb","title":"Parser crashes"}`, false)
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var issue domain.Issue
@@ -1470,10 +1471,10 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 	require.NoError(t, err)
 
 	ids := make([]string, 0, 8)
-	for range 4 {
+	for n := range 4 {
 		for _, workspace := range []string{"awb", "web"} {
 			issue, err := be.CreateIssue(ctx, backend.IssueCreate{
-				Workspace: workspace, Title: "tied", Description: "tied parser text",
+				Workspace: workspace, Title: "tied", Description: fmt.Sprintf("tied parser text %d", n),
 				Labels: []string{"b", "a"}})
 			require.NoError(t, err)
 			ids = append(ids, issue.ID)

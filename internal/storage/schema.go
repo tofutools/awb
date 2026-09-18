@@ -42,6 +42,18 @@ var migrations = [][]string{
 	schemaV23,
 	schemaV24,
 	schemaV25,
+	schemaV26,
+}
+
+// schemaV26 remembers the canonical request that first created an issue. It is
+// separate from the mutable issue row so a delayed retry remains identifiable
+// after ordinary edits and workflow transitions. Existing issues have no row
+// and therefore conservatively conflict with a create request for their ID.
+var schemaV26 = []string{
+	`CREATE TABLE issue_creations (
+		issue       TEXT PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+		fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64)
+	) STRICT, WITHOUT ROWID`,
 }
 
 // schemaV25 gives an issue the caller-owned JSON object it carries beside the

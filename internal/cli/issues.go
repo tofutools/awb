@@ -173,6 +173,16 @@ func newCreateCommand(e *env) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			identity, err := be.AuthenticatedIdentity(cmd.Context())
+			if err != nil {
+				return err
+			}
+			effectiveType := req.Type
+			if effectiveType == "" {
+				effectiveType = domain.DefaultType
+			}
+			req.ID = domain.MakeID(req.Workspace,
+				domain.IssueHash(identity, req.Title, effectiveType, req.Description))
 			issue, err := be.CreateIssue(cmd.Context(), req)
 			if err != nil {
 				return err

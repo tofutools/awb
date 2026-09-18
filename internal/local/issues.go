@@ -2,7 +2,11 @@ package local
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/tofutools/awb/internal/awberr"
 	"github.com/tofutools/awb/internal/backend"
@@ -13,7 +17,19 @@ import (
 // CreateIssue creates an issue with its labels and relations in one
 // transaction.
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
+	// Direct callers predating client-assigned IDs remain useful inside the
+	// implementation and tests. Network requests are always served and must
+	// supply the path ID; the CLI supplies one before reaching either backend.
+	if req.ID == "" {
+		typ := req.Type
+		if typ == "" {
+			typ = domain.DefaultType
+		}
+		req.ID = domain.MakeID(req.Workspace,
+			domain.IssueHash(b.identity, req.Title, typ, req.Description))
+	}
 	issue := &domain.Issue{
+		ID:        req.ID,
 		Workspace: req.Workspace,
 		Type:      domain.DefaultType,
 		Status:    domain.DefaultStatus,
@@ -23,6 +39,13 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	var err error
 	if issue.Workspace, err = domain.ValidateWorkspaceKey(req.Workspace); err != nil {
 		return nil, err
+	}
+	if issue.ID, err = domain.ValidateIssueID(req.ID); err != nil {
+		return nil, err
+	}
+	idWorkspace, _, _ := domain.SplitID(issue.ID)
+	if idWorkspace != issue.Workspace {
+		return nil, awberr.Usagef("issue id %q does not belong to workspace %q", issue.ID, issue.Workspace)
 	}
 	if issue.Title, err = domain.ValidateTitle(req.Title); err != nil {
 		return nil, err
@@ -81,6 +104,33 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if err != nil {
 			return err
 		}
+		resolvedRelations := make([]backend.NewRelation, 0, len(relations))
+		for _, rel := range relations {
+			other, err := resolve(tx, rel.Other)
+			if err != nil {
+				return err
+			}
+			resolvedRelations = append(resolvedRelations, backend.NewRelation{Type: rel.Type, Other: other})
+		}
+		fingerprint, err := issueCreationFingerprint(issue, labels, resolvedRelations)
+		if err != nil {
+			return err
+		}
+		existing, err := tx.GetIssue(issue.ID)
+		if err == nil {
+			stored, err := tx.IssueCreationFingerprint(issue.ID)
+			if err != nil {
+				return err
+			}
+			if stored == "" || stored != fingerprint {
+				return awberr.Conflictf("issue id %s is already used with different creation data", issue.ID)
+			}
+			issue = existing
+			return nil
+		}
+		if awberr.KindOf(err) != awberr.NotFound {
+			return err
+		}
 		if workspace.State == domain.WorkspaceArchived {
 			return awberr.Conflictf("workspace %s is archived and cannot receive new issues", issue.Workspace)
 		}
@@ -94,6 +144,9 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		if err := tx.InsertIssue(issue); err != nil {
 			return err
 		}
+		if err := tx.InsertIssueCreationFingerprint(issue.ID, fingerprint); err != nil {
+			return err
+		}
 		for _, label := range labels {
 			if err := tx.AddLabel(issue, label); err != nil {
 				return err
@@ -101,11 +154,8 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		}
 		counterparts := relationSnapshots{}
 		captureCounterpart := counterparts.capture(tx)
-		for _, rel := range relations {
-			other, err := resolve(tx, rel.Other)
-			if err != nil {
-				return err
-			}
+		for _, rel := range resolvedRelations {
+			other := rel.Other
 			if err := captureCounterpart(other); err != nil {
 				return err
 			}
@@ -127,6 +177,39 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 		return nil, err
 	}
 	return issue, nil
+}
+
+// issueCreationFingerprint encodes the validated, effective and semantically
+// resolved creation request. It stays stable when the issue later changes.
+func issueCreationFingerprint(issue *domain.Issue, labels []string,
+	relations []backend.NewRelation) (string, error) {
+	wantLabels := slices.Clone(labels)
+	slices.Sort(wantLabels)
+	wantLabels = slices.Compact(wantLabels)
+	wantRelations := slices.Clone(relations)
+	slices.SortFunc(wantRelations, func(a, b backend.NewRelation) int {
+		if n := strings.Compare(string(a.Type), string(b.Type)); n != 0 {
+			return n
+		}
+		return strings.Compare(a.Other, b.Other)
+	})
+	wantRelations = slices.Compact(wantRelations)
+	canonical := struct {
+		Workspace, Title, Description, CommitHash, PullRequestURL string
+		Metadata                                                  domain.Metadata
+		Type                                                      domain.Type
+		Status                                                    domain.Status
+		Priority                                                  int
+		Assignees, Labels                                         []string
+		Relations                                                 []backend.NewRelation
+	}{issue.Workspace, issue.Title, issue.Description, issue.CommitHash, issue.PullRequestURL,
+		issue.Metadata, issue.Type, issue.Status, issue.Priority, issue.Assignees, wantLabels, wantRelations}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return "", awberr.Wrap(awberr.Runtime, err, "encode creation request of %s", issue.ID)
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // movingAssignee is who a board move that starts work assigns it to: the

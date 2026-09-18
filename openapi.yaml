@@ -144,19 +144,6 @@ paths:
         '200':
           $ref: '#/components/responses/IssueList'
         default: { $ref: '#/components/responses/Error' }
-    post:
-      tags: [issues]
-      operationId: createIssue
-      summary: Create an issue with its labels and relations, in one transaction
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/IssueCreate' }
-      responses:
-        '201': { $ref: '#/components/responses/IssueCreated' }
-        default: { $ref: '#/components/responses/Error' }
-
   /api/issues/suggestions:
     get:
       tags: [issues]
@@ -223,20 +210,50 @@ paths:
         default: { $ref: '#/components/responses/Error' }
 
   /api/issues/{id}:
-    parameters:
-      - $ref: '#/components/parameters/issueId'
     get:
       tags: [issues]
       operationId: getIssue
       summary: Read one issue
+      parameters:
+        - $ref: '#/components/parameters/issueId'
       responses:
         '200': { $ref: '#/components/responses/Issue' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [issues]
+      operationId: createIssue
+      summary: Create an issue with its labels and relations, in one transaction
+      description: |
+        The client chooses the ID, making a retried request target the same
+        resource instead of creating another issue. The ID must have the
+        request body's workspace prefix and a six-character lowercase
+        hexadecimal suffix.
+
+        Repeating the same validated creation request at that ID returns the
+        existing issue. Reusing the ID with different creation data is a
+        conflict.
+
+        The CLI and web UI derive that suffix by concatenating the creating
+        user/identity, title, effective type (`task` when omitted), and
+        description (empty when omitted), SHA-256 hashing the UTF-8 bytes, and
+        taking the first six characters of the lowercase hexadecimal digest.
+        Other clients may choose any suffix with the required format.
+      parameters:
+        - $ref: '#/components/parameters/newIssueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/IssueCreated' }
         default: { $ref: '#/components/responses/Error' }
     patch:
       tags: [issues]
       operationId: updateIssue
       summary: Change an issue's editable fields
       parameters:
+        - $ref: '#/components/parameters/issueId'
         - $ref: '#/components/parameters/ifMatch'
       requestBody:
         required: true
@@ -251,6 +268,7 @@ paths:
       operationId: deleteIssue
       summary: Hard delete an issue and its relations
       parameters:
+        - $ref: '#/components/parameters/issueId'
         - $ref: '#/components/parameters/ifMatch'
       responses:
         '200':
@@ -1531,6 +1549,15 @@ components:
       schema: { type: string }
 
   parameters:
+    newIssueId:
+      name: id
+      in: path
+      required: true
+      description: |
+        The full client-assigned ID of the issue to create. Its prefix must
+        equal the request body's workspace and its suffix must be exactly six
+        lowercase hexadecimal characters.
+      schema: { type: string, minLength: 3 }
     issueId:
       name: id
       in: path

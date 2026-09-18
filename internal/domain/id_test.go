@@ -1,7 +1,6 @@
 package domain_test
 
 import (
-	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,49 +9,22 @@ import (
 	"github.com/tofutools/awb/internal/domain"
 )
 
-// A fixed vector, so a change to the derivation cannot pass unnoticed. The
-// inputs are the title, the created_at in its exact 24-byte millisecond form,
-// and 16 salt bytes.
-func TestMintHashFixedVector(t *testing.T) {
-	salt, err := hex.DecodeString("000102030405060708090a0b0c0d0e0f")
-	require.NoError(t, err)
-
-	got := domain.MintHash("Parser crashes on empty input", "2026-08-26T09:12:03.412Z", salt)
+// A fixed vector pins the client ID algorithm shared with the web UI.
+func TestIssueHashFixedVector(t *testing.T) {
+	got := domain.IssueHash("alex", "Create tickets in the UI", domain.TypeFeature,
+		"Use the shared editor.")
 
 	assert.Len(t, got, domain.HashLen)
 	assert.True(t, domain.IsHex(got))
-	assert.Equal(t, "6dd829", got)
+	assert.Equal(t, "20eb8c", got)
 }
 
-func TestMintHashDependsOnEveryInput(t *testing.T) {
-	salt := make([]byte, domain.SaltLen)
-	base := domain.MintHash("title", "2026-08-26T09:12:03.412Z", salt)
-
-	otherSalt := make([]byte, domain.SaltLen)
-	otherSalt[15] = 1
-
-	assert.NotEqual(t, base, domain.MintHash("titlf", "2026-08-26T09:12:03.412Z", salt))
-	assert.NotEqual(t, base, domain.MintHash("title", "2026-08-26T09:12:03.413Z", salt))
-	assert.NotEqual(t, base, domain.MintHash("title", "2026-08-26T09:12:03.412Z", otherSalt))
-}
-
-// Length-prefixing the title is what makes the framing unambiguous: two
-// different splits of the same bytes must not collide.
-func TestMintHashTitleIsLengthPrefixed(t *testing.T) {
-	salt := make([]byte, domain.SaltLen)
-	a := domain.MintHash("ab", "2026-08-26T09:12:03.412Z", salt)
-	b := domain.MintHash("a", "b2026-08-26T09:12:03.412Z"[:24], salt)
-	assert.NotEqual(t, a, b)
-}
-
-func TestNewSalt(t *testing.T) {
-	a, err := domain.NewSalt()
-	require.NoError(t, err)
-	assert.Len(t, a, domain.SaltLen)
-
-	b, err := domain.NewSalt()
-	require.NoError(t, err)
-	assert.NotEqual(t, a, b, "two salts in a row must differ")
+func TestIssueHashDependsOnEveryInput(t *testing.T) {
+	base := domain.IssueHash("alex", "title", domain.TypeTask, "description")
+	assert.NotEqual(t, base, domain.IssueHash("alexa", "title", domain.TypeTask, "description"))
+	assert.NotEqual(t, base, domain.IssueHash("alex", "other", domain.TypeTask, "description"))
+	assert.NotEqual(t, base, domain.IssueHash("alex", "title", domain.TypeBug, "description"))
+	assert.NotEqual(t, base, domain.IssueHash("alex", "title", domain.TypeTask, "other"))
 }
 
 func TestSplitIDUsesTheLastHyphen(t *testing.T) {

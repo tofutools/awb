@@ -104,10 +104,15 @@ changes nothing. Its own keys are the one exception to a response's determinism,
 since the generated encoder writes a map in no fixed order. Derived fields are read-only; their own
 operations change them.
 
-IDs have the form `<workspace>-<hash>`. The hash is derived from creation data
-rather than a global sequence, allowing a local caller to mint an ID without a
-coordination service. Any unique full-ID prefix or bare hash prefix resolves to
-the same issue. Ambiguity is a conflict, never an arbitrary choice.
+IDs have the form `<workspace>-<hash>`. The CLI and web client derive the hash
+from the creating identity, title, effective type and description, allowing a
+caller to mint an ID without a coordination service. Issue creation is a
+client-assigned `PUT`: retrying the same creation at the same ID returns the
+original issue, while reusing the ID for different creation data conflicts.
+The backend validates the full ID and workspace prefix without requiring other
+clients to use that derivation algorithm. Any unique full-ID prefix or bare
+hash prefix resolves to the same issue. Ambiguity is a conflict, never an
+arbitrary choice.
 
 ### Assignment and workflow
 
