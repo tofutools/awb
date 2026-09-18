@@ -29,9 +29,12 @@ func seed(t *testing.T, db *storage.DB) func(title string, mutate ...func(*domai
 		return tx.InsertWorkspace("awb", "Agent Work Board", "")
 	}))
 
+	next := 0
 	return func(title string, mutate ...func(*domain.Issue)) string {
 		t.Helper()
+		next++
 		issue := &domain.Issue{
+			ID:        domain.MakeID("awb", domain.IssueHash("test", fmt.Sprint(next), domain.DefaultType, "")),
 			Workspace: "awb", Title: title, Type: domain.DefaultType,
 			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 		}
@@ -1011,9 +1014,10 @@ func TestWorkspaceListOrderings(t *testing.T) {
 		return nil
 	}))
 	// gamma two open issues, alpha one, beta none.
-	for _, key := range []string{"gamma", "gamma", "alpha"} {
+	for n, key := range []string{"gamma", "gamma", "alpha"} {
 		require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 			return tx.InsertIssue(&domain.Issue{
+				ID:        domain.MakeID(key, fmt.Sprintf("%06x", n+1)),
 				Workspace: key, Title: "t", Type: domain.DefaultType,
 				Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 			})
@@ -1106,6 +1110,7 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 	statusIssue := func(title string, mutate func(*domain.Issue)) {
 		t.Helper()
 		issue := &domain.Issue{
+			ID:        domain.MakeID("st", domain.IssueHash("test", title, domain.DefaultType, "")),
 			Workspace: "st", Title: title, Type: domain.DefaultType,
 			Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
 		}

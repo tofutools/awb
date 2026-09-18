@@ -13,7 +13,19 @@ import (
 // CreateIssue creates an issue with its labels and relations in one
 // transaction.
 func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*domain.Issue, error) {
+	// Direct callers predating client-assigned IDs remain useful inside the
+	// implementation and tests. Network requests are always served and must
+	// supply the path ID; the CLI supplies one before reaching either backend.
+	if req.ID == "" {
+		typ := req.Type
+		if typ == "" {
+			typ = domain.DefaultType
+		}
+		req.ID = domain.MakeID(req.Workspace,
+			domain.IssueHash(b.identity, req.Title, typ, req.Description))
+	}
 	issue := &domain.Issue{
+		ID:        req.ID,
 		Workspace: req.Workspace,
 		Type:      domain.DefaultType,
 		Status:    domain.DefaultStatus,
@@ -23,6 +35,13 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	var err error
 	if issue.Workspace, err = domain.ValidateWorkspaceKey(req.Workspace); err != nil {
 		return nil, err
+	}
+	if issue.ID, err = domain.ValidateIssueID(req.ID); err != nil {
+		return nil, err
+	}
+	idWorkspace, _, _ := domain.SplitID(issue.ID)
+	if idWorkspace != issue.Workspace {
+		return nil, awberr.Usagef("issue id %q does not belong to workspace %q", issue.ID, issue.Workspace)
 	}
 	if issue.Title, err = domain.ValidateTitle(req.Title); err != nil {
 		return nil, err

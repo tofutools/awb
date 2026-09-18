@@ -281,7 +281,16 @@ export const api = {
       body: JSON.stringify({ ignored }),
     })),
   issue: (id: string) => getOne<Issue>(`api/issues/${encodeURIComponent(id)}`),
-  createIssue: (body: IssueCreate) => postOne<Issue>("api/issues", body),
+  createIssue: async (body: IssueCreate, identity: string) => {
+    const type = body.type ?? "task";
+    const description = body.description ?? "";
+    const input = new TextEncoder().encode(identity + body.title + type + description);
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", input));
+    const hash = Array.from(digest.slice(0, 3), (byte) =>
+      byte.toString(16).padStart(2, "0")
+    ).join("");
+    return putOne<Issue>(`api/issues/${encodeURIComponent(`${body.workspace}-${hash}`)}`, body);
+  },
   updateIssue: (id: string, patch: IssuePatch) =>
     patchOne<Issue>(`api/issues/${encodeURIComponent(id)}`, patch),
   moveIssue: (id: string, body: IssueMove) =>

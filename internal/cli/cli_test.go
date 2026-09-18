@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -477,7 +478,7 @@ func TestCreateClaimAssignsTheConfiguredIdentity(t *testing.T) {
 	h := newHarness(t)
 
 	var issue domain.Issue
-	require.NoError(t, json.Unmarshal([]byte(h.mustRun("create", "claimed at creation",
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("create", "claimed by two",
 		"--workspace", "awb", "--claim", "--json")), &issue))
 	assert.Equal(t, domain.StatusInProgress, issue.Status)
 	assert.Equal(t, []string{"mikael"}, issue.Assignees)
@@ -575,8 +576,8 @@ func TestListingsPage(t *testing.T) {
 	for _, key := range []string{"mid", "yew", "zed"} {
 		h.mustRun("workspace", "create", key)
 	}
-	for range 5 {
-		h.create("tied", "--workspace", "awb")
+	for n := range 5 {
+		h.create("tied", "--workspace", "awb", "--description", fmt.Sprint(n))
 	}
 	for _, name := range []string{"carol", "alice", "dan", "bob"} {
 		h.mustRunStdin("hunter2\n", "user", "add", name, "--password")
@@ -633,7 +634,7 @@ func TestOutputIsDeterministic(t *testing.T) {
 	h := newHarness(t)
 	for i := range 5 {
 		h.create("issue", "--workspace", "awb", "--label", "b", "--label", "a",
-			"--priority", string(rune('0'+i%5)))
+			"--priority", string(rune('0'+i%5)), "--description", fmt.Sprint(i))
 	}
 
 	for _, args := range [][]string{
@@ -666,10 +667,10 @@ func TestEveryListingIsDeterministic(t *testing.T) {
 	h.mustRun("workspace", "create", "web", "--name", "Agent Work Board")
 
 	ids := make([]string, 0, 8)
-	for range 4 {
+	for n := range 4 {
 		for _, workspace := range []string{"awb", "web"} {
 			ids = append(ids, h.create("tied", "--workspace", workspace,
-				"--label", "b", "--label", "a", "--description", "tied parser text"))
+				"--label", "b", "--label", "a", "--description", fmt.Sprintf("tied parser text %d", n)))
 		}
 	}
 	blocker, parent := ids[0], ids[4]

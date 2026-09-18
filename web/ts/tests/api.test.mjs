@@ -108,7 +108,7 @@ test("user administration creates and version-deletes accounts", async (t) => {
   assert.equal(new Headers(calls[2].init.headers).get("If-Match"), '"user-v1"');
 });
 
-test("issue creation posts the complete atomic create body", async (t) => {
+test("issue creation puts the complete atomic create body at its deterministic ID", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (path, init = {}) => {
     calls.push({ path, init });
@@ -128,10 +128,10 @@ test("issue creation posts the complete atomic create body", async (t) => {
     labels: ["frontend", "release/1.0"],
     relations: [{ type: "has-parent", other: "awb-epic" }],
   };
-  await api.createIssue(body);
+  await api.createIssue(body, "alex");
 
-  assert.equal(calls[0].path, "api/issues");
-  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].path, "api/issues/awb-20eb8c");
+  assert.equal(calls[0].init.method, "PUT");
   assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
   assert.deepEqual(JSON.parse(calls[0].init.body), body);
 });

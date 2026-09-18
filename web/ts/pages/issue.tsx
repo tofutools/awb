@@ -1054,6 +1054,7 @@ function InlineChildCreate({
   mutable: boolean;
   reload: () => Promise<void>;
 }) {
+  const { identity } = useApp();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1102,7 +1103,7 @@ function InlineChildCreate({
             setBusy(true);
             setError(undefined);
             try {
-              const created = await api.createIssue(body);
+              const created = await api.createIssue(body, identity);
               setTitle("");
               setStatus(`Child ${created.id} was created. Add another child.`);
               await reload();

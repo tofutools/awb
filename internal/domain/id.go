@@ -3,7 +3,6 @@ package domain
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"strings"
 
@@ -11,53 +10,21 @@ import (
 )
 
 // HashLen is the number of hexadecimal characters in an issue ID's hash part.
-// It is fixed at six, which is about 16 million values per workspace — few
-// enough that collision handling is required, which is why MintHash draws a
-// fresh salt and the insert retries.
+// It is fixed at six, which is about 16 million values per workspace.
 const HashLen = 6
-
-// SaltLen is the number of random bytes mixed into a hash.
-const SaltLen = 16
 
 // BoardViewIDBytes makes view IDs long enough to be safely shared as
 // unguessable URLs without a workspace prefix or a collision-retry loop.
 const BoardViewIDBytes = 12
 
-// MintHash derives the hash part of an issue ID from the issue's content and a
-// random salt, following the Beads hash-ID scheme:
-//
-//  1. concatenate the title's UTF-8 byte length as an unsigned 64-bit
-//     big-endian integer, the title's UTF-8 bytes, the 24 ASCII bytes of
-//     createdAt in the exact form YYYY-MM-DDTHH:MM:SS.sssZ, and the 16 raw salt
-//     bytes;
-//  2. take the SHA-256 digest of that sequence;
-//  3. keep the first six characters of its lowercase hexadecimal encoding.
-//
-// Length-prefixing the only variable-length field makes the framing
-// unambiguous without reserving a character that titles could otherwise use.
-// The title and timestamp make IDs independently mintable without a counter;
-// the salt distinguishes otherwise identical creations.
-//
-// IDs are not content-addressed and must not be reconstructed.
-func MintHash(title, createdAt string, salt []byte) string {
-	buf := make([]byte, 0, 8+len(title)+len(createdAt)+len(salt))
-	buf = binary.BigEndian.AppendUint64(buf, uint64(len(title)))
-	buf = append(buf, title...)
-	buf = append(buf, createdAt...)
-	buf = append(buf, salt...)
-
-	sum := sha256.Sum256(buf)
+// IssueHash derives the hash part of a client-created issue ID. The clients
+// concatenate the creating identity, title, effective type and description,
+// hash the UTF-8 bytes with SHA-256 and retain the first six lowercase hex
+// characters. The server validates the resulting ID's shape and workspace,
+// but deliberately does not require clients to use this algorithm.
+func IssueHash(identity, title string, typ Type, description string) string {
+	sum := sha256.Sum256([]byte(identity + title + string(typ) + description))
 	return hex.EncodeToString(sum[:])[:HashLen]
-}
-
-// NewSalt draws SaltLen bytes from crypto/rand. math/rand is deliberately not
-// used.
-func NewSalt() ([]byte, error) {
-	salt := make([]byte, SaltLen)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, awberr.Wrap(awberr.Runtime, err, "generate salt")
-	}
-	return salt, nil
 }
 
 // NewBoardViewID mints the stable, opaque identifier of a saved board view.

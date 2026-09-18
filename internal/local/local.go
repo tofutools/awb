@@ -3,8 +3,8 @@
 // top of, so both surfaces exercise one set of operations.
 //
 // Every mutation is a single BEGIN IMMEDIATE transaction, so the graph checks,
-// the compare-and-set of claim, the strictly-increasing updated_at and the ID
-// collision retry all read and write inside one writer's exclusive turn, and
+// the compare-and-set of claim and the strictly-increasing updated_at all read
+// and write inside one writer's exclusive turn, and
 // no concurrent commit can slip between the check and the change.
 package local
 

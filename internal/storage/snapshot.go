@@ -26,7 +26,7 @@ type Snapshot struct {
 // restore never leaves a partially populated database.
 //
 // This is intentionally not expressed through the ordinary create operations:
-// those mint new issue IDs and timestamps and apply transition defaults, while
+// those assign timestamps and apply transition defaults, while
 // a dump must remain a faithful local copy of what the server returned.
 //
 // It therefore does not apply domain's prose gate either, and that is the one

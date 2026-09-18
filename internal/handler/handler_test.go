@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"mime"
@@ -33,7 +34,18 @@ type api struct {
 	be     *local.Backend
 	// blobs is where attachment content is stored, for the tests that look at
 	// the files rather than at the rows.
-	blobs string
+	blobs     string
+	nextIssue int
+}
+
+func (a *api) createPath() string {
+	return a.createPathFor("awb")
+}
+
+func (a *api) createPathFor(workspace string) string {
+	a.nextIssue++
+	hash := domain.IssueHash("test", fmt.Sprint(a.nextIssue), domain.DefaultType, "")
+	return "/api/issues/" + domain.MakeID(workspace, hash)
 }
 
 func newAPI(t *testing.T) *api {
@@ -89,10 +101,14 @@ func (a *api) do(method, path, body string, headers ...string) (*http.Response, 
 	return resp, string(data)
 }
 
-// createIssue posts an issue and returns it.
+// createIssue puts an issue at a client-assigned ID and returns it.
 func (a *api) createIssue(body string) domain.Issue {
 	a.t.Helper()
-	resp, payload := a.do(http.MethodPost, "/api/issues", body)
+	var target struct {
+		Workspace string `json:"workspace"`
+	}
+	require.NoError(a.t, json.Unmarshal([]byte(body), &target))
+	resp, payload := a.do(http.MethodPut, a.createPathFor(target.Workspace), body)
 	require.Equal(a.t, http.StatusCreated, resp.StatusCode, payload)
 
 	var issue domain.Issue
@@ -102,7 +118,8 @@ func (a *api) createIssue(body string) domain.Issue {
 
 func TestCreateIssue(t *testing.T) {
 	a := newAPI(t)
-	resp, payload := a.do(http.MethodPost, "/api/issues",
+	path := a.createPath()
+	resp, payload := a.do(http.MethodPut, path,
 		`{"workspace":"awb","title":"Parser crashes","type":"bug","priority":1,"labels":["parser"]}`)
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
@@ -111,6 +128,7 @@ func TestCreateIssue(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(payload), &issue))
 	assert.Equal(t, "Parser crashes", issue.Title)
 	assert.Equal(t, domain.TypeBug, issue.Type)
+	assert.Equal(t, strings.TrimPrefix(path, "/api/issues/"), issue.ID)
 
 	// 201 carries the new object and a Location header naming it.
 	assert.Equal(t, "/api/issues/"+issue.ID, resp.Header.Get("Location"))
@@ -118,6 +136,21 @@ func TestCreateIssue(t *testing.T) {
 	assert.Equal(t, backend.ETag(issue.UpdatedAt), resp.Header.Get("ETag"))
 	// No response under /api/ is cacheable.
 	assert.Equal(t, "no-store", resp.Header.Get("Cache-Control"))
+}
+
+func TestCreateIssueValidatesTheClientAssignedID(t *testing.T) {
+	a := newAPI(t)
+	body := `{"workspace":"awb","title":"Parser crashes"}`
+
+	resp, _ := a.do(http.MethodPut, "/api/issues/not-an-id", body)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	resp, payload := a.do(http.MethodPut, "/api/issues/web-123456", body)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(t, payload, "does not belong to workspace")
+
+	resp, _ = a.do(http.MethodPost, "/api/issues", body)
+	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 }
 
 func TestCreateIssueUsesTheDirectModeDefaults(t *testing.T) {
@@ -315,7 +348,7 @@ func TestCreateIssueRejectsUnknownFields(t *testing.T) {
 		`{"workspace":"awb","title":"t","nonsense":1}`,
 		`{"workspace":"awb","title":"t","relations":[{"type":"related","other":"x","direction":"out"}]}`,
 	} {
-		resp, payload := a.do(http.MethodPost, "/api/issues", body)
+		resp, payload := a.do(http.MethodPut, a.createPath(), body)
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
 		assert.Contains(t, payload, `"error"`, body)
 	}
@@ -328,7 +361,7 @@ func TestNullIsRejected(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"t"}`)
 
 	for _, req := range []struct{ method, path, body string }{
-		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":null}`},
+		{http.MethodPut, a.createPath(), `{"workspace":"awb","title":null}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":null}`},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":null}`},
 	} {
@@ -343,12 +376,12 @@ func TestNullIsRejected(t *testing.T) {
 func TestUnpairedSurrogateIsRejected(t *testing.T) {
 	a := newAPI(t)
 
-	resp, payload := a.do(http.MethodPost, "/api/issues", `{"workspace":"awb","title":"a\ud800b"}`)
+	resp, payload := a.do(http.MethodPut, a.createPath(), `{"workspace":"awb","title":"a\ud800b"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(t, payload, "surrogate")
 
 	// A properly paired surrogate is an ordinary character and is accepted.
-	resp, payload = a.do(http.MethodPost, "/api/issues", `{"workspace":"awb","title":"a😀b"}`)
+	resp, payload = a.do(http.MethodPut, a.createPath(), `{"workspace":"awb","title":"a😀b"}`)
 	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
 
 	var issue domain.Issue
@@ -361,8 +394,8 @@ func TestUnpairedSurrogateIsRejected(t *testing.T) {
 func TestUnsupportedMediaType(t *testing.T) {
 	a := newAPI(t)
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"t"}`))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		a.server.URL+a.createPath(), strings.NewReader(`{"workspace":"awb","title":"t"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 
@@ -1051,7 +1084,7 @@ func TestProjectVocabularyIsNotAnAPICompatibilitySurface(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp, _ = a.do(http.MethodGet, "/api/issues?project=awb", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	resp, _ = a.do(http.MethodPost, "/api/issues", `{"project":"awb","title":"old client"}`)
+	resp, _ = a.do(http.MethodPut, a.createPath(), `{"project":"awb","title":"old client"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	resp, _ = a.do(http.MethodPut, "/api/board-views/view-0123456789abcdef01234567",
 		`{"name":"old client","all_projects":false,"projects":["awb"],"priority_max":4}`)
@@ -1074,18 +1107,18 @@ func TestErrorStatuses(t *testing.T) {
 		{"unknown workspace", http.MethodGet, "/api/workspaces/nosuch", "", http.StatusNotFound},
 		{"filter naming a missing workspace", http.MethodGet, "/api/issues?workspace=nosuch", "",
 			http.StatusNotFound},
-		{"bad enum", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","type":"nonsense"}`,
+		{"bad enum", http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","type":"nonsense"}`,
 			http.StatusBadRequest},
-		{"bad priority", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","priority":9}`,
+		{"bad priority", http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","priority":9}`,
 			http.StatusBadRequest},
-		{"bad label", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","labels":["Bad"]}`,
+		{"bad label", http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","labels":["Bad"]}`,
 			http.StatusBadRequest},
-		{"empty title", http.MethodPost, "/api/issues", `{"workspace":"awb","title":"  "}`,
+		{"empty title", http.MethodPut, a.createPath(), `{"workspace":"awb","title":"  "}`,
 			http.StatusBadRequest},
-		{"malformed JSON", http.MethodPost, "/api/issues", `{`, http.StatusBadRequest},
+		{"malformed JSON", http.MethodPut, a.createPath(), `{`, http.StatusBadRequest},
 		{"self relation", http.MethodPost, "/api/issues/" + issue.ID + "/relations",
 			`{"type":"blocked-by","other":"` + issue.ID + `"}`, http.StatusConflict},
-		{"two parents", http.MethodPost, "/api/issues",
+		{"two parents", http.MethodPut, a.createPath(),
 			`{"workspace":"awb","title":"t","relations":[` +
 				`{"type":"has-parent","other":"` + issue.ID + `"},` +
 				`{"type":"has-parent","other":"` + issue.ID + `"}]}`, http.StatusBadRequest},
@@ -1138,8 +1171,8 @@ func TestEmptyArrays(t *testing.T) {
 func TestBodyWithoutContentTypeIsRejected(t *testing.T) {
 	a := newAPI(t)
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"untyped"}`))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		a.server.URL+a.createPath(), strings.NewReader(`{"workspace":"awb","title":"untyped"}`))
 	require.NoError(t, err)
 	req.Header.Del("Content-Type")
 
@@ -1451,11 +1484,11 @@ func TestAddAttachmentRefusesTheWrongContentType(t *testing.T) {
 // document rather than the one endpoint that differs.
 func TestJSONEndpointsStillDemandJSON(t *testing.T) {
 	a := newAPI(t)
-	resp, payload := a.do(http.MethodPost, "/api/issues", "")
+	resp, payload := a.do(http.MethodPut, a.createPath(), "")
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		a.server.URL+"/api/issues", strings.NewReader(`{"workspace":"awb","title":"t"}`))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		a.server.URL+a.createPath(), strings.NewReader(`{"workspace":"awb","title":"t"}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "text/plain")
 	got, err := a.server.Client().Do(req)
@@ -1743,9 +1776,9 @@ func TestMarkdownGateOverHTTP(t *testing.T) {
 	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes"}`)
 
 	for _, c := range []struct{ method, path, body string }{
-		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"<script>alert(1)</script>"}`},
-		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"[a](javascript:alert(1))"}`},
-		{http.MethodPost, "/api/issues", `{"workspace":"awb","title":"t","description":"![a](data:image/svg+xml,<svg/>)"}`},
+		{http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","description":"<script>alert(1)</script>"}`},
+		{http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","description":"[a](javascript:alert(1))"}`},
+		{http.MethodPut, a.createPath(), `{"workspace":"awb","title":"t","description":"![a](data:image/svg+xml,<svg/>)"}`},
 		{http.MethodPatch, "/api/issues/" + issue.ID, `{"description":"<b>no</b>"}`},
 		{http.MethodPut, "/api/issues/" + issue.ID + "/comments/markdown", `{"body":"<b>no</b>"}`},
 		{http.MethodPost, "/api/issues/" + issue.ID + "/close", `{"reason":"see [why](javascript:alert(1))"}`},

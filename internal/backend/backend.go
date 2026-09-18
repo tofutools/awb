@@ -313,10 +313,11 @@ type AttachmentCreate struct {
 	Content io.Reader
 }
 
-// IssueCreate is the body of awb create and of POST /api/issues. Everything
+// IssueCreate is the body of awb create and of PUT /api/issues/{id}. Everything
 // but Workspace and Title may be left at its zero value and then takes its
 // documented default.
 type IssueCreate struct {
+	ID             string
 	Backlog        bool
 	Workspace      string
 	Title          string
