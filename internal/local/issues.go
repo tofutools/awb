@@ -329,21 +329,21 @@ func (b *Backend) ListIssueSummaries(ctx context.Context, filter *domain.Filter)
 
 // SuggestIssues finds visible issues by a literal ID or title fragment for
 // reference editors. Closed issues are included because relations may name one.
-func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssuePage, error) {
+func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssueSummaryPage, error) {
 	valid, err := domain.ValidateSearchTerm(query)
 	if err != nil {
-		return backend.IssuePage{}, err
+		return backend.IssueSummaryPage{}, err
 	}
-	var page backend.IssuePage
+	var page backend.IssueSummaryPage
 	err = b.read(ctx, func(tx *storage.Tx, _ domain.Caller) error {
 		page.Issues, page.Total, err = tx.SuggestIssues(valid, limit)
 		return err
 	})
 	if err != nil {
-		return backend.IssuePage{}, err
+		return backend.IssueSummaryPage{}, err
 	}
 	if page.Issues == nil {
-		page.Issues = []domain.Issue{}
+		page.Issues = []domain.IssueSummary{}
 	}
 	return page, nil
 }

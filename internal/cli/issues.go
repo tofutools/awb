@@ -353,14 +353,27 @@ func runListing(e *env, cmd *cobra.Command, flags *FilterFlags, interactive bool
 	if err != nil {
 		return err
 	}
-	page, err := be.ListIssues(cmd.Context(), filter)
+	// --json is the one listing mode that shows more than a row: it reads the
+	// complete records, and every other mode reads the summary projection, which
+	// is exactly what a table row, a compact line and a picker row draw. Against
+	// a server that is the difference between /api/issues/full and /api/issues.
+	// The picker prints the issue it is given by reading it again, so it takes
+	// summaries whatever --json says.
+	if e.json && out == nil {
+		page, err := be.ListIssues(cmd.Context(), filter)
+		if err != nil {
+			return err
+		}
+		return e.printIssuesJSON(page.Issues)
+	}
+	page, err := be.ListIssueSummaries(cmd.Context(), filter)
 	if err != nil {
 		return err
 	}
 	if out != nil {
 		return e.pickIssue(cmd.Context(), be, out, page.Issues, withBlockers)
 	}
-	return e.printIssues(page.Issues, withBlockers)
+	return e.printIssueSummaries(page.Issues, withBlockers)
 }
 
 type updateParams struct {

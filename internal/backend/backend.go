@@ -61,7 +61,7 @@ type Backend interface {
 	GetIssue(ctx context.Context, ref string) (*domain.Issue, error)
 	ListIssues(ctx context.Context, filter *domain.Filter) (IssuePage, error)
 	ListIssueSummaries(ctx context.Context, filter *domain.Filter) (IssueSummaryPage, error)
-	SuggestIssues(ctx context.Context, query string, limit *int) (IssuePage, error)
+	SuggestIssues(ctx context.Context, query string, limit *int) (IssueSummaryPage, error)
 	UpdateIssue(ctx context.Context, ref string, req IssuePatch, ifMatch string) (*domain.Issue, error)
 	MoveIssue(ctx context.Context, ref string, req IssueMove, ifMatch string) (*domain.Issue, error)
 	SetStatus(ctx context.Context, ref string, status domain.Status, ifMatch string) (*domain.Issue, error)
@@ -224,7 +224,7 @@ type WorkspaceActivityPage struct {
 // NavigationResults is the small, grouped autocomplete result used by clients
 // that navigate to records without first loading their full collections.
 type NavigationResults struct {
-	Issues     []domain.Issue
+	Issues     []domain.IssueSummary
 	Workspaces []domain.Workspace
 	Users      []domain.User
 }

@@ -22,8 +22,10 @@ import (
 
 // sample is a listing wide enough that every column cannot fit any ordinary
 // window, so what the layout gives up is visible.
-func sample() []domain.Issue {
-	issues := []domain.Issue{
+// sample is a listing as a listing reads one: the summary projection, which is
+// what every mode but --json draws.
+func sample() []domain.IssueSummary {
+	return []domain.IssueSummary{
 		{ID: "demo-eeec94", Priority: 0, Status: domain.StatusOpen, Type: "epic",
 			Title:  "Ship the 1.0 release of the widget catalogue",
 			Labels: []string{"release"}},
@@ -32,13 +34,11 @@ func sample() []domain.Issue {
 			Assignees: []string{"bob", "carol"}, Labels: []string{"catalogue", "frontend"}},
 		{ID: "demo-bff7dc", Priority: 2, Status: domain.StatusOpen, Type: "feature",
 			Title: "Search the catalogue by name and tag", Blocked: true,
-			Blockers: []string{"demo-bbd9d3"},
-			Labels:   []string{"catalogue", "frontend", "search"},
-			Relations: []domain.Relation{{Type: domain.RelHasParent, Other: "demo-eeec94",
-				Direction: domain.DirectionOut}}},
+			Blockers:    []string{"demo-bbd9d3"},
+			Labels:      []string{"catalogue", "frontend", "search"},
+			Parent:      "demo-eeec94",
+			ParentTitle: "Ship the 1.0 release of the widget catalogue"},
 	}
-	issues[2].SetRelationTitle("demo-eeec94", "Ship the 1.0 release of the widget catalogue")
-	return issues
 }
 
 // render prints a listing to a window of the given width, or to no window at
@@ -145,7 +145,7 @@ func TestJSONIncludesWebLinks(t *testing.T) {
 	issue.SetRelationTitle("demo-parent", "A deliberately long parent title that remains complete")
 	issues := renderRemote(config.ColorNever, false, func(e *env) {
 		e.json = true
-		require.NoError(t, e.printIssues([]domain.Issue{issue}, false))
+		require.NoError(t, e.printIssuesJSON([]domain.Issue{issue}))
 	})
 	var issueList []map[string]any
 	require.NoError(t, json.Unmarshal([]byte(issues), &issueList))

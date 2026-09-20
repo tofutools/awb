@@ -1563,3 +1563,76 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		assert.Equal(t, first, again, path)
 	}
 }
+
+// A listing reads the representation it draws: --json is the mode that shows
+// more than a row, and it is the only one that reads complete issues. Every
+// other mode draws a table row, a compact line or a picker row, all of which
+// are the summary projection, so against a server they cost /api/issues rather
+// than /api/issues/full — and the readiness listings cost their own endpoints.
+func TestRemoteListingsReadSummariesExceptUnderJSON(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
+	require.NoError(t, err)
+	created, err := be.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Parser crashes", Description: "A large detail body",
+		Type: domain.TypeBug, Labels: []string{"parser"},
+	})
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_IDENTITY", "mikael")
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_WORKSPACE", "AWB_CONFIG_FILE"} {
+		t.Setenv(name, "")
+	}
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	run := func(args ...string) string {
+		t.Helper()
+		mu.Lock()
+		paths = nil
+		mu.Unlock()
+		var stdout, stderr bytes.Buffer
+		code := Execute(ctx, "test", openapi.New(raw), args, &stdout, &stderr, strings.NewReader(""))
+		require.Equal(t, 0, code, stderr.String())
+		return stdout.String()
+	}
+	read := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return paths
+	}
+
+	compact := run("list", "--compact")
+	assert.Equal(t, domain.CompactLine(created, false)+"\n", compact,
+		"the summary draws the line a complete issue would have")
+	assert.Equal(t, []string{"/api/issues"}, read())
+
+	out := run("list", "--json")
+	assert.Contains(t, out, "A large detail body", "--json keeps the complete record")
+	assert.Equal(t, []string{"/api/issues/full"}, read())
+
+	run("ready", "--compact")
+	assert.Equal(t, []string{"/api/ready"}, read())
+
+	run("blocked", "--compact")
+	assert.Equal(t, []string{"/api/blocked"}, read())
+
+	run("search", "parser", "--compact")
+	assert.Equal(t, []string{"/api/search"}, read())
+
+	run("search", "parser", "--json")
+	assert.Equal(t, []string{"/api/issues/full"}, read())
+}

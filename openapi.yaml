@@ -154,7 +154,9 @@ paths:
         case-insensitive and includes closed issues. Exact IDs sort first,
         followed by ID prefixes, title prefixes and other matches. The usual
         workspace visibility scope applies, so suggestions cannot disclose an
-        issue the caller could not list.
+        issue the caller could not list. It answers with IssueSummary: a
+        reference field renders an ID and a title, and detail-only content is
+        available from `GET /api/issues/{id}`.
       parameters:
         - name: q
           in: query
@@ -163,7 +165,7 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 500 }
         - $ref: '#/components/parameters/limit'
       responses:
-        '200': { $ref: '#/components/responses/IssueFullList' }
+        '200': { $ref: '#/components/responses/IssueList' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/issues/full:
@@ -173,8 +175,8 @@ paths:
       summary: List complete issue records
       description: |
         The compatibility and export form of issue listing. Ordinary listing,
-        ready, blocked and search views return IssueSummary instead, avoiding
-        detail-only data and hydration work. This operation accepts their
+        ready, blocked, search, suggestion and navigation views return
+        IssueSummary instead, avoiding detail-only data and hydration work. This operation accepts their
         combined selection vocabulary so a remote CLI can retain the complete
         JSON and dump representations.
       parameters:
@@ -202,7 +204,20 @@ paths:
         - $ref: '#/components/parameters/includeParent'
         - $ref: '#/components/parameters/listingFilter'
         - $ref: '#/components/parameters/readiness'
-        - $ref: '#/components/parameters/sort'
+        - name: sort
+          in: query
+          description: |
+            Ordering, as on every other listing, with `relevance` available as
+            well because this operation also answers the search view: it is
+            search's default and is only accepted together with `q`, exactly as
+            on `GET /api/search`.
+          schema:
+            type: string
+            default: order
+            enum:
+              [order, priority, created, updated, id, workspace, status, assignee, type, blockers, relevance,
+               -order, -priority, -created, -updated, -id, -workspace, -status, -assignee, -type, -blockers,
+               -relevance]
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
       responses:
@@ -791,7 +806,8 @@ paths:
       description: |
         Case-insensitive substring matching over issue IDs and titles, workspace
         keys and names, and usernames and full names. Each result kind is independently
-        capped by `limit`, and normal visibility rules apply.
+        capped by `limit`, and normal visibility rules apply. Issues are
+        IssueSummary: navigation shows a name and moves to the record.
       parameters:
         - name: q
           in: query
@@ -2179,7 +2195,7 @@ components:
       properties:
         issues:
           type: array
-          items: { $ref: '#/components/schemas/Issue' }
+          items: { $ref: '#/components/schemas/IssueSummary' }
         workspaces:
           type: array
           items: { $ref: '#/components/schemas/Workspace' }
