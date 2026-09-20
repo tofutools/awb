@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/tofutools/awb/internal/awberr"
@@ -171,16 +172,21 @@ func (b *Backend) ListIssueSummaries(ctx context.Context, filter *domain.Filter)
 	if err := domain.ValidateParentFilter(filter); err != nil {
 		return backend.IssueSummaryPage{}, err
 	}
-	path := "/api/issues"
-	switch filter.Readiness {
-	case domain.ReadinessReady:
-		path = "/api/ready"
-	case domain.ReadinessBlocked:
-		path = "/api/blocked"
-	case domain.ReadinessAny:
-		if len(filter.Terms) > 0 {
-			path = "/api/search"
+	path, ok := summaryListingPath(filter)
+	if !ok {
+		// No endpoint answers this selection with summaries, so read the complete
+		// records and project them. The same filter must produce the same listing
+		// whichever implementation of the interface answers it, and a cheaper read
+		// that quietly answered a different question would not be one.
+		page, err := b.ListIssues(ctx, filter)
+		if err != nil {
+			return backend.IssueSummaryPage{}, err
 		}
+		summaries := make([]domain.IssueSummary, len(page.Issues))
+		for i := range page.Issues {
+			summaries[i] = page.Issues[i].Summary()
+		}
+		return backend.IssueSummaryPage{Issues: summaries, Total: page.Total}, nil
 	}
 
 	issues := []domain.IssueSummary{}
@@ -190,6 +196,37 @@ func (b *Backend) ListIssueSummaries(ctx context.Context, filter *domain.Filter)
 		return backend.IssueSummaryPage{}, err
 	}
 	return backend.IssueSummaryPage{Issues: issues, Total: totalCount(header, len(issues))}, nil
+}
+
+// summaryListingPath is the endpoint that answers this filter with summaries,
+// and false when none of them does.
+//
+// ready and blocked fix part of the selection for themselves and so declare
+// neither the parameters they fix nor q, and filterQuery drops what they will
+// not take. That is right for a filter asking for exactly what they fix and
+// wrong for any other: the request would be sent without the part they cannot
+// express and answered as though it had never been asked. Such a filter is
+// therefore not sent to them at all, and the caller reads the complete listing
+// instead, which takes the combined vocabulary.
+func summaryListingPath(f *domain.Filter) (string, bool) {
+	switch f.Readiness {
+	case domain.ReadinessReady:
+		if f.Unassigned && len(f.Assignees) == 0 && !f.IncludeClosed && !f.IncludeArchived &&
+			len(f.Terms) == 0 && slices.Equal(f.Statuses, []domain.Status{domain.StatusOpen}) {
+			return "/api/ready", true
+		}
+	case domain.ReadinessBlocked:
+		if !f.IncludeClosed && !f.IncludeArchived && len(f.Terms) == 0 &&
+			slices.Equal(f.Statuses, domain.NotClosedStatuses) {
+			return "/api/blocked", true
+		}
+	case domain.ReadinessAny:
+		if len(f.Terms) > 0 {
+			return "/api/search", true
+		}
+		return "/api/issues", true
+	}
+	return "", false
 }
 
 func (b *Backend) SuggestIssues(ctx context.Context, query string, limit *int) (backend.IssueSummaryPage, error) {

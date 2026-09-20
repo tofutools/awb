@@ -1636,3 +1636,82 @@ func TestRemoteListingsReadSummariesExceptUnderJSON(t *testing.T) {
 	run("search", "parser", "--json")
 	assert.Equal(t, []string{"/api/issues/full"}, read())
 }
+
+// One backend interface, two implementations, and a listing must not be able to
+// tell them apart. The summary listing is the one read with several endpoints
+// behind it — ready, blocked and search each fix or decline part of the
+// selection — so a filter that does not fit the one its readiness names has to
+// be answered some other way rather than answered differently.
+func TestRemoteSummaryListingsMatchTheLocalOnesForAwkwardFilters(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	for _, key := range []string{"awb", "old"} {
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key})
+		require.NoError(t, err)
+	}
+	create := func(workspace, title string, labels ...string) *domain.Issue {
+		t.Helper()
+		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
+			Workspace: workspace, Title: title, Type: domain.TypeTask, Labels: labels,
+		})
+		require.NoError(t, err)
+		return issue
+	}
+	parser := create("awb", "Parser crashes on empty input")
+	create("awb", "Parser rewrite")
+	held := create("awb", "Parser waits for the tokeniser")
+	blocker := create("awb", "Tokeniser drops the trailing newline")
+	_, err := be.AddRelation(ctx, held.ID, backend.RelationRequest{
+		Type: domain.RelBlockedBy, Other: blocker.ID,
+	}, "")
+	require.NoError(t, err)
+	claimed, err := be.Claim(ctx, parser.ID, backend.ClaimRequest{Assignee: "alice"}, "")
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusInProgress, claimed.Status)
+	create("old", "Parser of the old world")
+	_, err = be.ArchiveWorkspace(ctx, "old", "")
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael", false)
+	t.Cleanup(func() { _ = client.Close() })
+
+	open := []domain.Status{domain.StatusOpen}
+	for name, filter := range map[string]*domain.Filter{
+		"plain listing":      {},
+		"search":             {Terms: []string{"parser"}},
+		"ready":              {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady},
+		"blocked":            {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked},
+		"blocked assignee":   {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked, Assignees: []string{"alice"}},
+		"ready and a term":   {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, Terms: []string{"parser"}},
+		"blocked and a term": {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked, Terms: []string{"parser"}},
+		"ready archived":     {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, IncludeArchived: true},
+		"ready assigned":     {Readiness: domain.ReadinessReady, Assignees: []string{"alice"}},
+		"ready in progress":  {Statuses: []domain.Status{domain.StatusInProgress}, Readiness: domain.ReadinessReady},
+		"blocked closed too": {Readiness: domain.ReadinessBlocked, IncludeClosed: true},
+	} {
+		filter.Sort = domain.Sort{Key: domain.SortID}
+		want, err := be.ListIssueSummaries(ctx, filter)
+		require.NoError(t, err, name)
+		got, err := client.ListIssueSummaries(ctx, filter)
+		require.NoError(t, err, name)
+		assert.Equal(t, want, got, name)
+	}
+
+	// The listing the archived workspace holds is only reachable with the
+	// selector ready does not declare, so the case above is a real difference
+	// and not two empty answers agreeing.
+	archived, err := be.ListIssueSummaries(ctx, &domain.Filter{
+		Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, IncludeArchived: true,
+	})
+	require.NoError(t, err)
+	plain, err := be.ListIssueSummaries(ctx, &domain.Filter{
+		Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady,
+	})
+	require.NoError(t, err)
+	assert.Greater(t, archived.Total, plain.Total, "the archived workspace holds a ready issue")
+}
