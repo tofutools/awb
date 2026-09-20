@@ -50,10 +50,13 @@ func TestCompactLineOptionalFieldsAndOrder(t *testing.T) {
 		assert.Equal(t, `awb-a1 P2 open task "T"`, domain.CompactLine(&base, false))
 	})
 
-	t.Run("labels come out in the order given, which callers sort", func(t *testing.T) {
+	t.Run("labels and blockers come out sorted whatever order they are in", func(t *testing.T) {
 		i := base
-		i.Labels = []string{"a", "b", "c"}
-		assert.Equal(t, `awb-a1 P2 open task "T" #a #b #c`, domain.CompactLine(&i, false))
+		i.Labels = []string{"c", "a", "b"}
+		i.Blockers = []string{"awb-b2", "awb-b1"}
+		assert.Equal(t, `awb-a1 P2 open task "T" #a #b #c blocked-by:awb-b1 blocked-by:awb-b2`,
+			domain.CompactLine(&i, true))
+		assert.Equal(t, []string{"c", "a", "b"}, i.Labels, "the issue itself is not reordered")
 	})
 
 	t.Run("fixed order: assignee, labels, blocked, blockers", func(t *testing.T) {
@@ -110,4 +113,35 @@ func TestCompactTreePrefix(t *testing.T) {
 	assert.Equal(t, "", domain.CompactTreePrefix(0), "the root is unindented")
 	assert.Equal(t, "  ", domain.CompactTreePrefix(1))
 	assert.Equal(t, "      ", domain.CompactTreePrefix(3))
+}
+
+// The compact line is a compatibility surface with two callers behind it: a
+// listing that read summaries and one that read complete issues. They render
+// through one encoder so they cannot drift, and this is what says so.
+func TestCompactLineAndCompactSummaryLineAgree(t *testing.T) {
+	issue := domain.Issue{
+		ID: "awb-a1", Workspace: "awb", Title: `He said "hi"`, Type: domain.TypeBug,
+		Status: domain.StatusInProgress, Priority: 1,
+		Assignees: []string{"bob", "alice"},
+		Labels:    []string{"tokeniser", "a11y", "parser"},
+		Blocked:   true,
+		Blockers:  []string{"awb-c2", "awb-b1"},
+		Relations: []domain.Relation{
+			{Type: domain.RelHasParent, Other: "awb-p1", Direction: domain.DirectionOut},
+		},
+	}
+	// Hydration normalizes what it reads out of the database, so that is the
+	// shape both encoders are given in the listing they serve.
+	issue.Normalize()
+	summary := issue.Summary()
+
+	for _, withBlockers := range []bool{false, true} {
+		assert.Equal(t, domain.CompactLine(&issue, withBlockers),
+			domain.CompactSummaryLine(&summary, withBlockers))
+	}
+	assert.Equal(t,
+		`awb-a1 P1 in_progress bug "He said \"hi\"" @bob @alice #a11y #parser #tokeniser `+
+			`parent:awb-p1 !blocked blocked-by:awb-b1 blocked-by:awb-c2`,
+		domain.CompactSummaryLine(&summary, true),
+		"assignees keep claim order; labels and blockers are sorted")
 }

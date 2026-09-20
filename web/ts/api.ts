@@ -270,7 +270,7 @@ export const api = {
   search: (filters: SearchFilters, signal?: AbortSignal) =>
     getPage<IssueSummary>(`api/search${toQuery(filters)}`, { signal }),
   issueSuggestions: (query: string, signal?: AbortSignal) =>
-    getPage<Issue>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
+    getPage<IssueSummary>(`api/issues/suggestions${toQuery({ q: query, limit: 8 })}`, { signal }),
   navigation: async (query: string, signal?: AbortSignal) =>
     getResponse<NavigationResults>(await request(`api/navigation${toQuery({ q: query, limit: 6 })}`, { signal })),
   workspacePreferences: async () =>

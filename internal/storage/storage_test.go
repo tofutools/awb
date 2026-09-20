@@ -723,8 +723,8 @@ func TestSuggestIssuesByIDAndTitle(t *testing.T) {
 	closeIssue(t, db, closed)
 	add("Unrelated")
 
-	read := func(query string) ([]domain.Issue, int) {
-		var issues []domain.Issue
+	read := func(query string) ([]domain.IssueSummary, int) {
+		var issues []domain.IssueSummary
 		var total int
 		err := db.Read(t.Context(), func(tx *storage.Tx) error {
 			var err error

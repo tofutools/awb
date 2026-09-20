@@ -1563,3 +1563,155 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 		assert.Equal(t, first, again, path)
 	}
 }
+
+// A listing reads the representation it draws: --json is the mode that shows
+// more than a row, and it is the only one that reads complete issues. Every
+// other mode draws a table row, a compact line or a picker row, all of which
+// are the summary projection, so against a server they cost /api/issues rather
+// than /api/issues/full — and the readiness listings cost their own endpoints.
+func TestRemoteListingsReadSummariesExceptUnderJSON(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
+	require.NoError(t, err)
+	created, err := be.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "Parser crashes", Description: "A large detail body",
+		Type: domain.TypeBug, Labels: []string{"parser"},
+	})
+	require.NoError(t, err)
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("AWB_DB", server.URL)
+	t.Setenv("AWB_IDENTITY", "mikael")
+	for _, name := range []string{"AWB_USER", "AWB_PASSWORD", "AWB_WORKSPACE", "AWB_CONFIG_FILE"} {
+		t.Setenv(name, "")
+	}
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	run := func(args ...string) string {
+		t.Helper()
+		mu.Lock()
+		paths = nil
+		mu.Unlock()
+		var stdout, stderr bytes.Buffer
+		code := Execute(ctx, "test", openapi.New(raw), args, &stdout, &stderr, strings.NewReader(""))
+		require.Equal(t, 0, code, stderr.String())
+		return stdout.String()
+	}
+	read := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return paths
+	}
+
+	compact := run("list", "--compact")
+	assert.Equal(t, domain.CompactLine(created, false)+"\n", compact,
+		"the summary draws the line a complete issue would have")
+	assert.Equal(t, []string{"/api/issues"}, read())
+
+	out := run("list", "--json")
+	assert.Contains(t, out, "A large detail body", "--json keeps the complete record")
+	assert.Equal(t, []string{"/api/issues/full"}, read())
+
+	run("ready", "--compact")
+	assert.Equal(t, []string{"/api/ready"}, read())
+
+	run("blocked", "--compact")
+	assert.Equal(t, []string{"/api/blocked"}, read())
+
+	run("search", "parser", "--compact")
+	assert.Equal(t, []string{"/api/search"}, read())
+
+	run("search", "parser", "--json")
+	assert.Equal(t, []string{"/api/issues/full"}, read())
+}
+
+// One backend interface, two implementations, and a listing must not be able to
+// tell them apart. The summary listing is the one read with several endpoints
+// behind it — ready, blocked and search each fix or decline part of the
+// selection — so a filter that does not fit the one its readiness names has to
+// be answered some other way rather than answered differently.
+func TestRemoteSummaryListingsMatchTheLocalOnesForAwkwardFilters(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	server := httptest.NewServer(h)
+	t.Cleanup(server.Close)
+
+	ctx := t.Context()
+	for _, key := range []string{"awb", "old"} {
+		_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: key})
+		require.NoError(t, err)
+	}
+	create := func(workspace, title string, labels ...string) *domain.Issue {
+		t.Helper()
+		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
+			Workspace: workspace, Title: title, Type: domain.TypeTask, Labels: labels,
+		})
+		require.NoError(t, err)
+		return issue
+	}
+	parser := create("awb", "Parser crashes on empty input")
+	create("awb", "Parser rewrite")
+	held := create("awb", "Parser waits for the tokeniser")
+	blocker := create("awb", "Tokeniser drops the trailing newline")
+	_, err := be.AddRelation(ctx, held.ID, backend.RelationRequest{
+		Type: domain.RelBlockedBy, Other: blocker.ID,
+	}, "")
+	require.NoError(t, err)
+	claimed, err := be.Claim(ctx, parser.ID, backend.ClaimRequest{Assignee: "alice"}, "")
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusInProgress, claimed.Status)
+	create("old", "Parser of the old world")
+	_, err = be.ArchiveWorkspace(ctx, "old", "")
+	require.NoError(t, err)
+
+	base, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	client := remote.New(base, "", "", "mikael", false)
+	t.Cleanup(func() { _ = client.Close() })
+
+	open := []domain.Status{domain.StatusOpen}
+	for name, filter := range map[string]*domain.Filter{
+		"plain listing":      {},
+		"search":             {Terms: []string{"parser"}},
+		"ready":              {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady},
+		"blocked":            {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked},
+		"blocked assignee":   {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked, Assignees: []string{"alice"}},
+		"ready and a term":   {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, Terms: []string{"parser"}},
+		"blocked and a term": {Statuses: domain.NotClosedStatuses, Readiness: domain.ReadinessBlocked, Terms: []string{"parser"}},
+		"ready archived":     {Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, IncludeArchived: true},
+		"ready assigned":     {Readiness: domain.ReadinessReady, Assignees: []string{"alice"}},
+		"ready in progress":  {Statuses: []domain.Status{domain.StatusInProgress}, Readiness: domain.ReadinessReady},
+		"blocked closed too": {Readiness: domain.ReadinessBlocked, IncludeClosed: true},
+	} {
+		filter.Sort = domain.Sort{Key: domain.SortID}
+		want, err := be.ListIssueSummaries(ctx, filter)
+		require.NoError(t, err, name)
+		got, err := client.ListIssueSummaries(ctx, filter)
+		require.NoError(t, err, name)
+		assert.Equal(t, want, got, name)
+	}
+
+	// The listing the archived workspace holds is only reachable with the
+	// selector ready does not declare, so the case above is a real difference
+	// and not two empty answers agreeing.
+	archived, err := be.ListIssueSummaries(ctx, &domain.Filter{
+		Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady, IncludeArchived: true,
+	})
+	require.NoError(t, err)
+	plain, err := be.ListIssueSummaries(ctx, &domain.Filter{
+		Statuses: open, Unassigned: true, Readiness: domain.ReadinessReady,
+	})
+	require.NoError(t, err)
+	assert.Greater(t, archived.Total, plain.Total, "the archived workspace holds a ready issue")
+}

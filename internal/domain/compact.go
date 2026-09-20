@@ -27,6 +27,15 @@ import (
 // spaces, so a line is parseable by splitting on whitespace outside the quoted
 // title.
 func CompactLine(issue *Issue, withBlockers bool) string {
+	summary := issue.Summary()
+	return CompactSummaryLine(&summary, withBlockers)
+}
+
+// CompactSummaryLine renders the same line from the summary projection, which
+// carries every field the form names. It is the one encoder: CompactLine
+// projects and comes here, so a listing that reads summaries and one that reads
+// complete issues cannot drift apart.
+func CompactSummaryLine(issue *IssueSummary, withBlockers bool) string {
 	var b strings.Builder
 
 	b.WriteString(issue.ID)

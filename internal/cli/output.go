@@ -456,34 +456,38 @@ func trimRight(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// printIssues renders a listing in whichever mode is in force.
+// printIssuesJSON renders a listing as the complete issue records --json is.
+// It is the one listing mode that shows more than a row, and so the one that
+// reads more than a row.
+func (e *env) printIssuesJSON(issues []domain.Issue) error {
+	// An empty list renders as [], never as null.
+	if issues == nil {
+		issues = []domain.Issue{}
+	}
+	out := make([]issueJSON, len(issues))
+	for i := range issues {
+		out[i] = e.issueJSON(&issues[i])
+	}
+	return e.writeJSON(out)
+}
+
+// printIssueSummaries renders a listing in the two modes that draw rows rather
+// than records: every cell either of them draws is in the summary projection.
 //
 // withBlockers is set by awb blocked, which shows the ids of the blockers as
 // well.
-func (e *env) printIssues(issues []domain.Issue, withBlockers bool) error {
-	switch {
-	case e.json:
-		// An empty list renders as [], never as null.
-		if issues == nil {
-			issues = []domain.Issue{}
-		}
-		out := make([]issueJSON, len(issues))
+func (e *env) printIssueSummaries(issues []domain.IssueSummary, withBlockers bool) error {
+	if e.compact {
 		for i := range issues {
-			out[i] = e.issueJSON(&issues[i])
+			_, _ = fmt.Fprintln(e.stdout, domain.CompactSummaryLine(&issues[i], withBlockers))
 		}
-		return e.writeJSON(out)
-	case e.compact:
-		for i := range issues {
-			_, _ = fmt.Fprintln(e.stdout, domain.CompactLine(&issues[i], withBlockers))
-		}
-		return nil
-	default:
-		e.printIssueTable(issues, withBlockers)
 		return nil
 	}
+	e.printIssueTable(issues, withBlockers)
+	return nil
 }
 
-func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
+func (e *env) printIssueTable(issues []domain.IssueSummary, withBlockers bool) {
 	if len(issues) == 0 {
 		return
 	}
@@ -493,8 +497,8 @@ func (e *env) printIssueTable(issues []domain.Issue, withBlockers bool) {
 
 // issueCols is the listing an issue table draws, and the same one the picker
 // scrolls: the two differ in where the columns are sent, not in what they say.
-func (e *env) issueCols(t *theme, issues []domain.Issue, withBlockers bool) []col {
-	cells := func(text func(*domain.Issue) string) []string {
+func (e *env) issueCols(t *theme, issues []domain.IssueSummary, withBlockers bool) []col {
+	cells := func(text func(*domain.IssueSummary) string) []string {
 		out := make([]string, len(issues))
 		for i := range issues {
 			out[i] = text(&issues[i])
@@ -504,44 +508,45 @@ func (e *env) issueCols(t *theme, issues []domain.Issue, withBlockers bool) []co
 
 	cols := []col{
 		{header: "ID", paint: always(t.id),
-			cells: cells(func(i *domain.Issue) string { return e.issueLink(t, i.ID) })},
+			cells: cells(func(i *domain.IssueSummary) string { return e.issueLink(t, i.ID) })},
 		{header: "P", paint: func(row int) lipgloss.Style {
 			return t.priority[clampPriority(issues[row].Priority)]
 		},
-			cells: cells(func(i *domain.Issue) string { return "P" + strconv.Itoa(i.Priority) })},
-		{header: "STATUS", paint: func(row int) lipgloss.Style { return t.statusStyle(&issues[row]) },
-			cells: cells(statusText)},
+			cells: cells(func(i *domain.IssueSummary) string { return "P" + strconv.Itoa(i.Priority) })},
+		{header: "STATUS", paint: func(row int) lipgloss.Style {
+			return t.statusStyle(issues[row].Status, issues[row].Blocked)
+		},
+			cells: cells(func(i *domain.IssueSummary) string { return statusText(i.Status, i.Blocked) })},
 		{header: "TYPE", expendable: true,
-			cells: cells(func(i *domain.Issue) string { return string(i.Type) })},
+			cells: cells(func(i *domain.IssueSummary) string { return string(i.Type) })},
 		{header: "PARENT", floor: nameFloor, expendable: true, paint: always(t.dim),
-			cells: cells(func(i *domain.Issue) string { return e.parentListingCell(t, i) })},
+			cells: cells(func(i *domain.IssueSummary) string { return e.parentListingCell(t, i) })},
 		{header: "TITLE", floor: titleFloor,
-			cells: cells(func(i *domain.Issue) string { return t.listTitle(i.Title) })},
+			cells: cells(func(i *domain.IssueSummary) string { return t.listTitle(i.Title) })},
 		{header: "ASSIGNEES", expendable: true, paint: always(t.assignee),
-			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Assignees, ",") })},
+			cells: cells(func(i *domain.IssueSummary) string { return strings.Join(i.Assignees, ",") })},
 		{header: "LABELS", floor: labelsFloor, expendable: true, paint: always(t.label),
-			cells: cells(func(i *domain.Issue) string { return strings.Join(i.Labels, ",") })},
+			cells: cells(func(i *domain.IssueSummary) string { return strings.Join(i.Labels, ",") })},
 	}
 	if withBlockers {
 		// awb blocked exists to show this column, so it is never given up.
 		cols = append(cols, col{header: "BLOCKED BY", floor: blockersFloor, paint: always(t.blocked),
-			cells: cells(func(i *domain.Issue) string { return e.issueLinks(t, i.Blockers, ",") })})
+			cells: cells(func(i *domain.IssueSummary) string { return e.issueLinks(t, i.Blockers, ",") })})
 	}
 	return cols
 }
 
-func (e *env) parentListingCell(t *theme, issue *domain.Issue) string {
-	for _, relation := range issue.Relations {
-		if relation.Type != domain.RelHasParent || relation.Direction != domain.DirectionOut {
-			continue
-		}
-		text := issue.RelationTitle(relation.Other)
-		if text == "" {
-			text = relation.Other
-		}
-		return e.entityLink(t, truncate(text, parentTitleWidth), "/issues/"+url.PathEscape(relation.Other))
+// parentListingCell names the parent by its title, falling back to its id when
+// the caller may see the relation but not the issue at the other end.
+func (e *env) parentListingCell(t *theme, issue *domain.IssueSummary) string {
+	if issue.Parent == "" {
+		return ""
 	}
-	return ""
+	text := issue.ParentTitle
+	if text == "" {
+		text = issue.Parent
+	}
+	return e.entityLink(t, truncate(text, parentTitleWidth), "/issues/"+url.PathEscape(issue.Parent))
 }
 
 // entityLink makes an identifier open the bundled web UI when this invocation
@@ -605,26 +610,26 @@ func (t *theme) listTitle(title string) string {
 
 // statusText is the status as a listing shows it. The blocked marker is the one
 // thing the column says that the stored status does not.
-func statusText(issue *domain.Issue) string {
-	if issue.Blocked {
-		return string(issue.Status) + " !blocked"
+func statusText(status domain.Status, blocked bool) string {
+	if blocked {
+		return string(status) + " !blocked"
 	}
-	return string(issue.Status)
+	return string(status)
 }
 
-func (t *theme) statusStyle(issue *domain.Issue) lipgloss.Style {
+func (t *theme) statusStyle(status domain.Status, blocked bool) lipgloss.Style {
 	switch {
-	case issue.Blocked:
+	case blocked:
 		return t.blocked
-	case issue.Status == domain.StatusClosed:
+	case status == domain.StatusClosed:
 		return t.closed
 	default:
 		return lipgloss.NewStyle()
 	}
 }
 
-func (e *env) renderStatus(t *theme, issue *domain.Issue) string {
-	return t.apply(t.statusStyle(issue), statusText(issue))
+func (e *env) renderStatus(t *theme, status domain.Status, blocked bool) string {
+	return t.apply(t.statusStyle(status, blocked), statusText(status, blocked))
 }
 
 func clampPriority(p int) int {
@@ -677,7 +682,7 @@ func (e *env) printIssueDetail(issue *domain.Issue) {
 		e.field(t, "Parent", e.issueLink(t, issue.Parent))
 	}
 	e.field(t, "Type", string(issue.Type))
-	e.field(t, "Status", e.renderStatus(t, issue))
+	e.field(t, "Status", e.renderStatus(t, issue.Status, issue.Blocked))
 	e.field(t, "Priority", "P"+strconv.Itoa(issue.Priority))
 	e.field(t, "Assignees", t.apply(t.assignee, strings.Join(issue.Assignees, ", ")))
 	e.field(t, "Labels", t.apply(t.label, strings.Join(issue.Labels, ", ")))
@@ -1047,7 +1052,7 @@ func (e *env) treeNode(t *theme, node *domain.IssueTree) string {
 	return fmt.Sprintf("%s  %s  %s  %s",
 		t.apply(t.id, e.issueLink(t, node.ID)),
 		t.apply(t.priority[clampPriority(node.Priority)], "P"+strconv.Itoa(node.Priority)),
-		e.renderStatus(t, &node.Issue),
+		e.renderStatus(t, node.Status, node.Blocked),
 		truncate(node.Title, unboxedTitleWidth))
 }
 

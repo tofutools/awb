@@ -11,9 +11,9 @@ import (
 )
 
 type navigationResults struct {
-	Issues     []domain.Issue     `json:"issues"`
-	Workspaces []domain.Workspace `json:"workspaces"`
-	Users      []directoryUser    `json:"users"`
+	Issues     []domain.IssueSummary `json:"issues"`
+	Workspaces []domain.Workspace    `json:"workspaces"`
+	Users      []directoryUser       `json:"users"`
 }
 
 func (b *Backend) SearchNavigation(ctx context.Context, query string, limit int) (backend.NavigationResults, error) {

@@ -284,7 +284,7 @@ func (h *Handler) SearchIssues(ctx context.Context, params api.SearchIssuesParam
 }
 
 func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesParams) (
-	*api.IssueFullListHeaders, error) {
+	*api.IssueListHeaders, error) {
 	query, err := domain.ValidateSearchTerm(params.Q)
 	if err != nil {
 		return nil, err
@@ -293,9 +293,9 @@ func (h *Handler) SuggestIssues(ctx context.Context, params api.SuggestIssuesPar
 	if err != nil {
 		return nil, err
 	}
-	return &api.IssueFullListHeaders{
+	return &api.IssueListHeaders{
 		XTotalCount: api.NewOptInt(page.Total),
-		Response:    toIssues(page.Issues),
+		Response:    toIssueSummaries(page.Issues),
 	}, nil
 }
 

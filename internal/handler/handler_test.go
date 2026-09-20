@@ -220,15 +220,20 @@ func TestSearchNavigation(t *testing.T) {
 	resp, payload := a.do(http.MethodGet, "/api/navigation?q=command+pal&limit=2", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	var results struct {
-		Issues     []domain.Issue     `json:"issues"`
-		Workspaces []domain.Workspace `json:"workspaces"`
-		Users      []domain.User      `json:"users"`
+		Issues     []domain.IssueSummary `json:"issues"`
+		Workspaces []domain.Workspace    `json:"workspaces"`
+		Users      []domain.User         `json:"users"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(payload), &results))
 	require.Len(t, results.Issues, 1)
 	assert.Equal(t, issue.ID, results.Issues[0].ID)
 	assert.Empty(t, results.Workspaces)
 	assert.Empty(t, results.Users)
+	// Navigation shows a name and moves to the record, so its issues are
+	// summaries exactly as every other collection's are.
+	var groups map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(payload), &groups))
+	assertIssueSummaries(t, string(groups["issues"]))
 
 	resp, payload = a.do(http.MethodGet, "/api/navigation?q=palette&limit=21", "")
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
@@ -803,19 +808,34 @@ func TestPaging(t *testing.T) {
 	}
 }
 
+// issueSummaryKeys is the whole of the summary projection. Every collection
+// answers with it and nothing else: a listing, a board, a suggestion and a
+// navigation result alike.
+var issueSummaryKeys = []string{
+	"id", "workspace", "title", "type", "status", "priority", "labels", "assignees",
+	"updated_at", "blocked", "blockers", "parent", "parent_title",
+}
+
+// assertIssueSummaries decodes a JSON array of issues and fails unless every
+// one of them is exactly a summary, with no detail-only field on it.
+func assertIssueSummaries(t *testing.T, payload string) []map[string]json.RawMessage {
+	t.Helper()
+	var rows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(payload), &rows))
+	for _, row := range rows {
+		assert.ElementsMatch(t, issueSummaryKeys, slices.Collect(maps.Keys(row)))
+	}
+	return rows
+}
+
 func TestIssueListingsReturnSummariesAndFullListingRetainsRecords(t *testing.T) {
 	a := newAPI(t)
 	issue := a.createIssue(`{"workspace":"awb","title":"Parser crashes","description":"Large detail body","commit_hash":"abcdef12","pull_request_url":"https://example.com/pull/1"}`)
 
 	resp, payload := a.do(http.MethodGet, "/api/issues", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	var summaries []map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal([]byte(payload), &summaries))
+	summaries := assertIssueSummaries(t, payload)
 	require.Len(t, summaries, 1)
-	assert.ElementsMatch(t, []string{
-		"id", "workspace", "title", "type", "status", "priority", "labels", "assignees",
-		"updated_at", "blocked", "blockers", "parent", "parent_title",
-	}, slices.Collect(maps.Keys(summaries[0])))
 	assert.NotContains(t, summaries[0], "description")
 	assert.NotContains(t, summaries[0], "attachments")
 	assert.NotContains(t, summaries[0], "relations")
@@ -829,6 +849,15 @@ func TestIssueListingsReturnSummariesAndFullListingRetainsRecords(t *testing.T) 
 	assert.Equal(t, "Large detail body", full[0].Description)
 	assert.Equal(t, "abcdef12", full[0].CommitHash)
 	assert.Equal(t, "https://example.com/pull/1", full[0].PullRequestURL)
+
+	// It is the complete form of the search view as well as of the listing, so
+	// it takes search's terms and search's own ordering with them. That is what
+	// a remote awb search --json reads.
+	resp, payload = a.do(http.MethodGet, "/api/issues/full?q=parser&sort=relevance", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	require.NoError(t, json.Unmarshal([]byte(payload), &full))
+	require.Len(t, full, 1)
+	assert.Equal(t, "Large detail body", full[0].Description)
 }
 
 func TestPagingAppliesAfterIssueSorting(t *testing.T) {
@@ -942,6 +971,9 @@ func TestRejectedParameters(t *testing.T) {
 		"/api/blocked?include-closed=true",
 		"/api/issues?q=x",
 		"/api/issues?sort=relevance",
+		// relevance is an order over search results, so it needs the terms that
+		// produce them wherever it is accepted.
+		"/api/issues/full?sort=relevance",
 		"/api/labels?sort=value",
 		"/api/assignees?sort=value",
 	}
@@ -991,10 +1023,13 @@ func TestIssueSuggestionsSearchIDsAndTitles(t *testing.T) {
 
 	resp, payload := a.do(http.MethodGet, "/api/issues/suggestions?q=parser&limit=8", "")
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
-	var issues []domain.Issue
+	var issues []domain.IssueSummary
 	require.NoError(t, json.Unmarshal([]byte(payload), &issues))
 	require.Len(t, issues, 1)
 	assert.Equal(t, created.ID, issues[0].ID)
+	// A reference field renders an ID and a title, so a suggestion is a summary
+	// and carries none of the detail hydrating a complete issue would cost.
+	assertIssueSummaries(t, payload)
 
 	resp, payload = a.do(http.MethodGet,
 		"/api/issues/suggestions?q="+created.ID[:len(created.ID)-2], "")

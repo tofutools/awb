@@ -563,6 +563,8 @@ func TestSortVocabularyMatchesTheAPIDocument(t *testing.T) {
 		"the issue listings")
 	assert.ElementsMatch(t, domain.SortAlternatives(true), inline("/api/search"),
 		"search, which adds relevance")
+	assert.ElementsMatch(t, domain.SortAlternatives(true), inline("/api/issues/full"),
+		"the complete listing, which also answers search and so adds relevance too")
 	assert.ElementsMatch(t, domain.WorkspaceSortAlternatives(), inline("/api/workspaces"),
 		"the workspace listing")
 }

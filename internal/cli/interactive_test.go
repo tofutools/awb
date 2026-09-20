@@ -31,10 +31,10 @@ import (
 // Every row's title is a different length, and no window holds every length,
 // so a layout decided by the visible rows rather than by the whole listing
 // shows up as a box that changes width.
-func many(n int) []domain.Issue {
-	issues := make([]domain.Issue, n)
+func many(n int) []domain.IssueSummary {
+	issues := make([]domain.IssueSummary, n)
 	for i := range issues {
-		issues[i] = domain.Issue{
+		issues[i] = domain.IssueSummary{
 			ID:       "demo-" + string(rune('a'+i%26)) + string(rune('a'+i/26)),
 			Priority: i % (domain.MaxPriority + 1), Status: domain.StatusOpen,
 			Type: "task", Title: "Issue " + strings.Repeat("x", i),
@@ -44,7 +44,7 @@ func many(n int) []domain.Issue {
 }
 
 // newPicker is a picker over a listing, in a window of the given size.
-func newPicker(t *testing.T, issues []domain.Issue, mode config.ColorMode,
+func newPicker(t *testing.T, issues []domain.IssueSummary, mode config.ColorMode,
 	width, height int) *picker {
 	t.Helper()
 	e := &env{stdout: &errWriter{w: &strings.Builder{}}, boxed: true, width: width,

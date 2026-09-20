@@ -99,7 +99,7 @@ func (s *screen) Write(p []byte) (int, error) {
 // show prints is the whole of it, relations and derived state included, which
 // is the point of choosing one.
 func (e *env) pickIssue(ctx context.Context, be backend.Backend, out term.File,
-	issues []domain.Issue, withBlockers bool) error {
+	issues []domain.IssueSummary, withBlockers bool) error {
 	if len(issues) == 0 {
 		return nil
 	}

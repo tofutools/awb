@@ -12,7 +12,7 @@ func (h *Handler) SearchNavigation(ctx context.Context, params api.SearchNavigat
 		return nil, err
 	}
 	return &api.NavigationResults{
-		Issues:     toIssues(results.Issues),
+		Issues:     toIssueSummaries(results.Issues),
 		Workspaces: toWorkspaces(results.Workspaces),
 		Users:      toDirectoryUsers(results.Users),
 	}, nil
