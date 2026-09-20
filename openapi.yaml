@@ -384,6 +384,8 @@ paths:
         all of them appends it to that manually ranked sequence. Workspace
         and issue ID are immutable. Status changes apply the same assignment
         safety rules as claim, release, close, make-ready and reopen.
+        Note: this operation is not idempotent, do not blindly retry after 
+        an indeterminate response.
       requestBody:
         required: true
         content:
