@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Work Board — an issue tracker for coding agents</title>
+  <meta name="description" content="Agent Work Board (awb) is a small issue tracker built for coding agents and the humans working with them. One Go binary backed by SQLite, with a CLI, a JSON API and a bundled web UI.">
+  <meta property="og:title" content="Agent Work Board">
+  <meta property="og:description" content="A small issue tracker built for coding agents and the humans working with them.">
+  <meta property="og:image" content="https://tofutools.github.io/awb/assets/board.png">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="#top" aria-label="Agent Work Board home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="3" width="28" height="12" rx="3"/><rect x="2" y="17" width="13" height="12" rx="3"/><rect x="17" y="17" width="13" height="12" rx="3"/></svg>
+      <span>Agent Work Board</span>
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <a href="#why">Why awb</a>
+      <a href="#try">Try it</a>
+      <a href="#model">Model</a>
+      <a href="#docs">Docs</a>
+      <a class="nav-github" href="https://github.com/tofutools/awb">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="dot"></span> Beta · MIT licensed · One Go binary</p>
+        <h1>The issue tracker your <em>agents</em> can actually use.</h1>
+        <p class="lead">
+          Agent Work Board (<code>awb</code>) is a small issue tracker built for coding agents and
+          the humans working with them. It is one Go binary backed by SQLite: use it
+          directly from the command line, or start its HTTP server to share the same work
+          through the CLI, API, and bundled web UI.
+        </p>
+        <div class="install">
+          <code id="install-cmd"><span class="line">git clone https://github.com/tofutools/awb</span>
+<span class="line">cd awb &amp;&amp; task install</span></code>
+          <button class="copy" type="button" data-copy="install-cmd" aria-label="Copy install commands">Copy</button>
+        </div>
+        <div class="cta">
+          <a class="button primary" href="https://github.com/tofutools/awb/blob/main/docs/getting-started.md">Get started</a>
+          <a class="button" href="https://github.com/tofutools/awb">View on GitHub</a>
+        </div>
+      </div>
+
+      <div class="terminal hero-terminal" role="figure" aria-label="An agent working an issue">
+        <div class="terminal-bar"><span></span><span></span><span></span><b>agent@repo</b></div>
+<pre><span class="c-prompt">$</span> awb ready --compact
+<span class="c-id">app-a3f9c1</span> <span class="c-p1">P1</span> <span class="c-muted">open</span> bug <span class="c-str">"Parser crashes on empty input"</span> <span class="c-label">#parser</span>
+
+<span class="c-prompt">$</span> awb claim app-a3f9c1
+<span class="c-prompt">$</span> awb show app-a3f9c1 --json
+<span class="c-prompt">$</span> awb comment add app-a3f9c1 \
+    --body <span class="c-str">"Reproduced with an empty token stream."</span> \
+    --key reproduce-empty-input
+<span class="c-prompt">$</span> awb close app-a3f9c1 \
+    --reason <span class="c-str">"Guard against the empty token stream"</span>
+<span class="c-prompt">$</span> <span class="cursor"></span></pre>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <figure class="window showcase">
+        <div class="window-bar"><span></span><span></span><span></span><b>127.0.0.1:7777/#/boards</b></div>
+        <img src="assets/board.png" width="1440" height="1000" alt="The awb board showing issues grouped by epic and workflow status">
+      </figure>
+    </div>
+  </section>
+
+  <section class="section narrow-on-purpose">
+    <div class="wrap statement">
+      <h2 class="kicker">Narrower on purpose</h2>
+      <p>
+        awb is deliberately narrower than Jira, Linear, or GitHub Issues. It keeps a
+        fixed workflow and a small vocabulary, makes dependencies part of the data
+        model, and gives agents compact, deterministic interfaces.
+      </p>
+      <ul class="not-list" aria-label="What awb leaves out">
+        <li>No workflow designer</li>
+        <li>No custom-field system</li>
+        <li>No sprint machinery</li>
+        <li>No reporting suite</li>
+      </ul>
+      <p class="muted">Nothing to teach an agent before it can safely pick up work.</p>
+    </div>
+  </section>
+
+  <section class="section" id="why">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 class="kicker">Why awb</h2>
+        <p class="section-title">Built around how agents pick up, claim and finish work.</p>
+      </header>
+      <div class="features">
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></div>
+          <h3>Agents can discover work</h3>
+          <p><code>awb ready</code> returns open, unblocked, unassigned issues in the team's work
+            order, with priority as the automatic fallback.</p>
+        </article>
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h3>Coordination is atomic</h3>
+          <p>Claiming an issue joins its assignees and moves it to <code>in_progress</code> in one
+            transaction. Concurrent agents cannot both perform a conflicting write unnoticed.</p>
+        </article>
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h6"/></svg></div>
+          <h3>Outputs have explicit audiences</h3>
+          <p>The default presentation is for humans, <code>--compact</code> spends little
+            context, and <code>--json</code> is the stable automation contract.</p>
+        </article>
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.3 7.2 15.7 10.8M8.3 16.8l7.4-3.6"/></svg></div>
+          <h3>Dependencies mean something</h3>
+          <p><code>blocked-by</code> drives readiness; parent, provenance, and related links
+            preserve useful structure without changing the workflow.</p>
+        </article>
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg></div>
+          <h3>Local use needs no service</h3>
+          <p>A SQLite file is enough. The same CLI can later point at an awb URL without
+            changing commands.</p>
+        </article>
+        <article class="feature">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14.5A5 5 0 0 1 21.5 19"/></svg></div>
+          <h3>Human collaboration is included</h3>
+          <p>The web UI provides lists, full-text search, editable issue pages, comments,
+            attachments, user administration, and a draggable board with saved shareable views.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="try">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 class="kicker">Try it</h2>
+        <p class="section-title">From a fresh clone to a running board.</p>
+      </header>
+
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <div>
+            <h3>Build from source</h3>
+            <div class="terminal small"><pre><span class="c-prompt">$</span> git clone https://github.com/tofutools/awb
+<span class="c-prompt">$</span> cd awb
+<span class="c-prompt">$</span> task install</pre></div>
+            <p class="step-note">Needs Go, Node.js, <code>tsc</code>, <code>ogen</code> and
+              <code>openapi-typescript</code>; <code>mise install</code> sets up the pinned versions.
+              Without <a href="https://taskfile.dev">Task</a>, run
+              <code>./build.sh -o "$(go env GOPATH)/bin"</code>, which also tests and lints.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <div>
+            <h3>Create a database and load the built-in demonstration</h3>
+            <div class="terminal small"><pre><span class="c-prompt">$</span> awb init
+<span class="c-prompt">$</span> awb demo
+<span class="c-prompt">$</span> awb serve</pre></div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <div>
+            <h3>Open <a href="http://127.0.0.1:7777/">http://127.0.0.1:7777/</a></h3>
+            <p>The demo workspace exercises every issue type, priority, status, and relation,
+              and gives the board enough structure to explore.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div>
+          <h3>Or start with an empty workspace</h3>
+          <p><code>.awb.yaml</code> is directory context: awb finds it by walking upward and uses
+            its workspace for creation and listings. It is safe and useful to commit.</p>
+        </div>
+        <div class="terminal small"><pre><span class="c-prompt">$</span> awb init
+<span class="c-prompt">$</span> awb workspace create app --name <span class="c-str">"My application"</span>
+<span class="c-prompt">$</span> printf <span class="c-str">'workspace: app\n'</span> &gt; .awb.yaml
+<span class="c-prompt">$</span> awb create <span class="c-str">"Parser crashes on empty input"</span> \
+    --type bug --priority 1 --label parser</pre></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="agents">
+    <div class="wrap split reverse">
+      <div>
+        <h2 class="kicker">An agent-sized workflow</h2>
+        <p class="section-title">Deterministic, transactional, and short enough to explain in a prompt.</p>
+        <p>Work commands are non-interactive unless interactivity is explicitly requested.
+          Account password commands are the deliberate exception: they read from standard
+          input and hide terminal entry, while scripts can pipe a password or provide a
+          bcrypt hash.</p>
+        <p>Successful mutations are transactional, errors have classified exit codes, and the
+          compact vocabulary fits in a short agent instruction. Print or install that
+          instruction with <code>awb agent-guide</code>.</p>
+        <ul class="harnesses" aria-label="Supported agent harnesses">
+          <li>Claude Code</li>
+          <li>Codex</li>
+          <li>OpenCode</li>
+          <li>GitHub Copilot</li>
+        </ul>
+        <p class="muted small-print">Installing the bundled skill does not edit a repository's
+          <code>AGENTS.md</code>, <code>CLAUDE.md</code>, or similar instruction files.</p>
+      </div>
+      <div class="terminal">
+        <div class="terminal-bar"><span></span><span></span><span></span><b>teach your agent</b></div>
+<pre><span class="c-muted"># Print the instruction for an agent</span>
+<span class="c-prompt">$</span> awb agent-guide
+
+<span class="c-muted"># Or install it as a skill for your harness</span>
+<span class="c-prompt">$</span> awb agent-guide install-skills</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="model">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 class="kicker">The model</h2>
+        <p class="section-title">A small vocabulary, fixed on purpose.</p>
+        <p class="section-intro">Every issue belongs permanently to one <strong>workspace</strong>. Its ID begins
+          with that workspace key and may be abbreviated wherever the abbreviation is unambiguous.
+          An issue has one type, one workflow status, a priority, labels, zero or more assignees,
+          Markdown description and comments, relations, and attachments.</p>
+      </header>
+
+      <div class="model-grid">
+        <div class="model-card">
+          <h3>Type</h3>
+          <ul class="chips">
+            <li>epic</li><li>feature</li><li>bug</li><li>task</li><li>chore</li>
+          </ul>
+        </div>
+        <div class="model-card">
+          <h3>Status</h3>
+          <ol class="flow">
+            <li>backlog</li><li>open</li><li>in_progress</li><li>closed</li>
+          </ol>
+          <p class="muted">Backlog parks future work, kept out of readiness and boards by default.</p>
+        </div>
+        <div class="model-card">
+          <h3>Priority</h3>
+          <ul class="chips priorities">
+            <li class="p0">P0</li><li class="p1">P1</li><li class="p2">P2</li><li>P3</li><li>P4</li>
+          </ul>
+          <p class="muted">0 highest through 4 lowest; default 2.</p>
+        </div>
+      </div>
+
+      <div class="relations">
+        <div class="relation">
+          <code>blocked-by</code>
+          <p>The subject cannot become ready until the other issue closes.</p>
+        </div>
+        <div class="relation">
+          <code>has-parent</code>
+          <p>Places the subject below an epic or other parent.</p>
+        </div>
+        <div class="relation">
+          <code>discovered-from</code>
+          <p>Records where work was found.</p>
+        </div>
+        <div class="relation">
+          <code>related</code>
+          <p>Symmetric association with no workflow effect.</p>
+        </div>
+      </div>
+
+      <p class="model-note">Blocked state is derived from the graph rather than stored. Closing a blocker
+        can therefore make another issue ready without rewriting that issue. A workspace
+        can be archived into retained read-only history and restored later without
+        changing its IDs or URLs.</p>
+    </div>
+  </section>
+
+  <section class="section" id="modes">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 class="kicker">One backend, three ways to work</h2>
+        <p class="section-title">The same commands, the same output, wherever the data lives.</p>
+      </header>
+      <div class="modes">
+        <div class="mode">
+          <h3>Direct</h3>
+          <p>The CLI operates directly on a database file by default.</p>
+          <div class="terminal small"><pre><span class="c-prompt">$</span> awb ready --compact</pre></div>
+        </div>
+        <div class="mode">
+          <h3>Serve</h3>
+          <p>Start a server to expose the OpenAPI-described JSON API and bundled UI.</p>
+          <div class="terminal small"><pre><span class="c-prompt">$</span> awb serve</pre></div>
+        </div>
+        <div class="mode">
+          <h3>Remote</h3>
+          <p>Point the same CLI at it locally, through an environment variable, or through the
+            user configuration file.</p>
+          <div class="terminal small"><pre><span class="c-prompt">$</span> AWB_DB=http://127.0.0.1:7777 \
+    awb ready --compact</pre></div>
+        </div>
+      </div>
+      <p class="model-note">Commands use one backend interface, so direct and remote mode share command
+        behavior and output. Authorization is intentionally a server concern: direct
+        mode trusts filesystem access, while server mode can authenticate users and
+        scope them to workspaces.</p>
+
+      <div class="gallery">
+        <figure class="window">
+          <div class="window-bar"><span></span><span></span><span></span><b>Issues</b></div>
+          <img src="assets/issues.png" width="1440" height="1000" loading="lazy" alt="The awb issue list with full-text search and filters">
+        </figure>
+        <figure class="window">
+          <div class="window-bar"><span></span><span></span><span></span><b>Issue</b></div>
+          <img src="assets/issue.png" width="1440" height="1000" loading="lazy" alt="An awb issue page with description, relations, details and activity">
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="docs">
+    <div class="wrap">
+      <header class="section-head">
+        <h2 class="kicker">Documentation</h2>
+        <p class="section-title">Start with the guide that matches what you are doing.</p>
+      </header>
+      <div class="doc-grid">
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/getting-started.md">
+          <h3>Getting started</h3>
+          <p>Build a real workspace and work an issue through its lifecycle.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/cli.md">
+          <h3>Command-line guide</h3>
+          <p>Output modes, discovery, relations, activity, attachments, and automation behavior.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/web-ui.md">
+          <h3>Web UI</h3>
+          <p>Boards, issue editing, navigation, and administration.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/configuration.md">
+          <h3>Configuration</h3>
+          <p>User settings, directory context, environment variables, and precedence.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/server.md">
+          <h3>Server and API</h3>
+          <p>Remote mode, authentication, authorization, reverse proxies, and backups.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/docs/development.md">
+          <h3>Development</h3>
+          <p>Repository layout, generation, builds, tests, and releases.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/spec/ARCHITECTURE.md">
+          <h3>Architecture</h3>
+          <p>The system boundaries and the reasons behind them.</p>
+        </a>
+        <a class="doc" href="https://github.com/tofutools/awb/blob/main/spec/TODO.md">
+          <h3>Future work</h3>
+          <p>Intentionally deferred capabilities.</p>
+        </a>
+      </div>
+      <p class="muted docs-help">Run <code>awb &lt;command&gt; --help</code> for the exact command contract of the installed version.</p>
+    </div>
+  </section>
+
+  <section class="section status">
+    <div class="wrap status-card">
+      <div>
+        <h2 class="kicker">Project status</h2>
+        <p>awb is beta software. CLI and API compatibility may change before 1.0, but the
+          database is migrated forward rather than discarded. It is aimed at individuals,
+          small teams, and open-source projects that want a dependable shared work graph
+          without operating a large project-management system.</p>
+      </div>
+      <a class="button primary" href="https://github.com/tofutools/awb/blob/main/docs/getting-started.md">Get started</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span class="brand small">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="3" width="28" height="12" rx="3"/><rect x="2" y="17" width="13" height="12" rx="3"/><rect x="17" y="17" width="13" height="12" rx="3"/></svg>
+      Agent Work Board
+    </span>
+    <nav aria-label="Project">
+      <a href="https://github.com/tofutools/awb">GitHub</a>
+      <a href="https://github.com/tofutools/awb/releases">Releases</a>
+      <a href="https://github.com/tofutools/awb/blob/main/docs/index.md">Documentation</a>
+      <a href="https://github.com/tofutools/awb/blob/main/LICENSE">MIT License</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  for (const button of document.querySelectorAll("button[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const text = document.getElementById(button.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = "Copied";
+      } catch {
+        button.textContent = "Press Ctrl+C";
+        getSelection().selectAllChildren(document.getElementById(button.dataset.copy));
+      }
+      setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
+  }
+</script>
+</body>
+</html>

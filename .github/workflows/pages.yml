@@ -1,0 +1,65 @@
+# Publishes the project site in site/ to GitHub Pages on every push to main
+# that can change it.
+#
+# The site is static and has no build step. Its screenshots are the ones the
+# documentation uses: site/assets is a symlink to docs/assets, so they have one
+# copy in the repository, and the copy below dereferences it so the published
+# artifact holds the files themselves. The documentation is linked on GitHub
+# rather than republished, where its relative links already work.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/assets/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  # A deployment interrupted halfway is worse than a queued one that finishes.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Assemble site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # configure-pages reads the repository's Pages settings, and fails here
+      # with a clear message when Pages is not set to deploy from Actions.
+      pages: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Copy site with symlinks resolved
+        run: cp -RL site _site
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

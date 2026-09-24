@@ -37,10 +37,23 @@ agent before it can safely pick up work.
 
 ## Try it
 
-Install with Go:
+Build and install from source. The build generates code from `openapi.yaml`
+and compiles the TypeScript frontend, so it needs Go, Node.js, `tsc`, `ogen`,
+and `openapi-typescript` on `$PATH`; `mise install` sets up the versions pinned
+in `mise.toml`. With [Task](https://taskfile.dev):
 
 ```console
-go install github.com/tofutools/awb@latest
+git clone https://github.com/tofutools/awb.git
+cd awb
+task install
+```
+
+`task install` puts `awb` in `GOBIN`, or `GOPATH/bin`. Without Task, `./build.sh`
+builds, tests, and lints, which also needs `golangci-lint`, and `-o` says where
+the binary goes:
+
+```console
+./build.sh -o "$(go env GOPATH)/bin"
 ```
 
 Create a database and load the built-in demonstration:
@@ -105,7 +118,7 @@ assignees, Markdown description and comments, relations, and attachments.
 | Concept | Values and meaning |
 | --- | --- |
 | Type | `epic`, `feature`, `bug`, `task`, `chore` |
-| Status | `open`, `in_progress`, `closed` |
+| Status | `backlog`, `open`, `in_progress`, `closed`; backlog parks future work, kept out of readiness and boards by default |
 | Priority | `0` highest through `4` lowest; default `2` |
 | `blocked-by` | The subject cannot become ready until the other issue closes |
 | `has-parent` | Places the subject below an epic or other parent |

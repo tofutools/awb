@@ -37,7 +37,9 @@ CI runs that same script rather than a second definition of the build. Every
 pull request and every push to `main` builds and tests on Linux and macOS and
 cross-compiles each platform listed in `.github/targets.json`, which is also
 what a tagged release ships; `main` is separately scanned for known
-vulnerabilities. The pieces both workflows share live in `.github/actions/`.
+vulnerabilities, and the project site in `site/` is published to GitHub Pages
+when a push changes it. The pieces the build workflows share live in
+`.github/actions/`.
 Third-party actions are pinned to a commit with the version in a trailing
 comment; GitHub's own `actions/*` are pinned to a major tag.
 
@@ -58,6 +60,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
 | `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
 | `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `ts/vendor/` the vendoring script and its type stubs, `static/` build output and the committed browser bundles, `embed.go`. |
+| `site/` | The project web site, published to GitHub Pages by `.github/workflows/pages.yml`; `assets` links to `docs/assets`. |
 
 Three structural rules hold the design together:
 
