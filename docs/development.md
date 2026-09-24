@@ -77,6 +77,7 @@ fresh checkout therefore needs generation before Go or TypeScript compilation.
 | `web/static` | HTML, CSS, compiled frontend, and vendored browser dependencies |
 | `web/ts/vendor` | Type stubs for the vendored bundles, and the script that rebuilds them |
 | `openapi.yaml` | HTTP API source of truth |
+| `site/` | Project web site, published to GitHub Pages |
 
 See [Architecture](../spec/ARCHITECTURE.md) for the boundaries that this layout
 enforces.

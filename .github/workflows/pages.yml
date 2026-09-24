@@ -29,6 +29,11 @@ jobs:
   build:
     name: Assemble site
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # configure-pages reads the repository's Pages settings, and fails here
+      # with a clear message when Pages is not set to deploy from Actions.
+      pages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

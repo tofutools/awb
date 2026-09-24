@@ -37,7 +37,9 @@ CI runs that same script rather than a second definition of the build. Every
 pull request and every push to `main` builds and tests on Linux and macOS and
 cross-compiles each platform listed in `.github/targets.json`, which is also
 what a tagged release ships; `main` is separately scanned for known
-vulnerabilities. The pieces both workflows share live in `.github/actions/`.
+vulnerabilities, and the project site in `site/` is published to GitHub Pages
+when a push changes it. The pieces the build workflows share live in
+`.github/actions/`.
 Third-party actions are pinned to a commit with the version in a trailing
 comment; GitHub's own `actions/*` are pinned to a major tag.
 

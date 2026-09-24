@@ -254,7 +254,7 @@ h1 em {
 .c-p1 { color: var(--warn); }
 .c-str { color: var(--gold); }
 .c-label { color: #9fb7e0; }
-.c-muted { color: #6f6f69; }
+.c-muted { color: #85857e; }
 
 .cursor {
   display: inline-block;

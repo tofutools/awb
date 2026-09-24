@@ -105,7 +105,7 @@ assignees, Markdown description and comments, relations, and attachments.
 | Concept | Values and meaning |
 | --- | --- |
 | Type | `epic`, `feature`, `bug`, `task`, `chore` |
-| Status | `open`, `in_progress`, `closed` |
+| Status | `backlog`, `open`, `in_progress`, `closed`; backlog parks future work, kept out of readiness and boards by default |
 | Priority | `0` highest through `4` lowest; default `2` |
 | `blocked-by` | The subject cannot become ready until the other issue closes |
 | `has-parent` | Places the subject below an epic or other parent |
