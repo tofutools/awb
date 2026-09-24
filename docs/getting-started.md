@@ -5,10 +5,23 @@ The same data can be served to a browser or remote CLI later.
 
 ## Install
 
-Install with Go:
+Build and install from source. The build generates code from `openapi.yaml`
+and compiles the TypeScript frontend, so it needs Go, Node.js, `tsc`, `ogen`,
+and `openapi-typescript` on `$PATH`; `mise install` sets up the versions pinned
+in `mise.toml` (see [Development](development.md#toolchain)). With [Task](https://taskfile.dev):
 
 ```console
-go install github.com/tofutools/awb@latest
+git clone https://github.com/tofutools/awb.git
+cd awb
+task install
+```
+
+`task install` puts `awb` in `GOBIN`, or `GOPATH/bin`. Without Task, `./build.sh`
+builds, tests, and lints, which also needs `golangci-lint`, and `-o` says where
+the binary goes:
+
+```console
+./build.sh -o "$(go env GOPATH)/bin"
 ```
 
 The binary contains the web application. There is no separate frontend package

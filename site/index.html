@@ -46,9 +46,9 @@
           through the CLI, API, and bundled web UI.
         </p>
         <div class="install">
-          <span class="prompt" aria-hidden="true">$</span>
-          <code id="install-cmd">go install github.com/tofutools/awb@latest</code>
-          <button class="copy" type="button" data-copy="install-cmd" aria-label="Copy install command">Copy</button>
+          <code id="install-cmd"><span class="line">git clone https://github.com/tofutools/awb</span>
+<span class="line">cd awb &amp;&amp; task install</span></code>
+          <button class="copy" type="button" data-copy="install-cmd" aria-label="Copy install commands">Copy</button>
         </div>
         <div class="cta">
           <a class="button primary" href="https://github.com/tofutools/awb/blob/main/docs/getting-started.md">Get started</a>
@@ -149,15 +149,21 @@
     <div class="wrap">
       <header class="section-head">
         <h2 class="kicker">Try it</h2>
-        <p class="section-title">From nothing to a running board in three commands.</p>
+        <p class="section-title">From a fresh clone to a running board.</p>
       </header>
 
       <div class="steps">
         <div class="step">
           <span class="step-num">1</span>
           <div>
-            <h3>Install with Go</h3>
-            <div class="terminal small"><pre><span class="c-prompt">$</span> go install github.com/tofutools/awb@latest</pre></div>
+            <h3>Build from source</h3>
+            <div class="terminal small"><pre><span class="c-prompt">$</span> git clone https://github.com/tofutools/awb
+<span class="c-prompt">$</span> cd awb
+<span class="c-prompt">$</span> task install</pre></div>
+            <p class="step-note">Needs Go, Node.js, <code>tsc</code>, <code>ogen</code> and
+              <code>openapi-typescript</code>; <code>mise install</code> sets up the pinned versions.
+              Without <a href="https://taskfile.dev">Task</a>, run
+              <code>./build.sh -o "$(go env GOPATH)/bin"</code>, which also tests and lints.</p>
           </div>
         </div>
         <div class="step">

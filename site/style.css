@@ -173,8 +173,8 @@ h1 em {
   background: var(--panel);
   font-size: 0.92rem;
 }
-.install .prompt { color: var(--accent); font-family: var(--mono); }
-.install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+.install code { flex: 1; min-width: 0; overflow-x: auto; white-space: pre; line-height: 1.7; }
+.install .line::before { content: "$ "; color: var(--accent); }
 
 .copy {
   flex: none;
@@ -376,7 +376,7 @@ h3 { margin: 0 0 0.5rem; font-size: 1.08rem; letter-spacing: -0.01em; }
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
   margin-bottom: 3.5rem;
 }
@@ -384,6 +384,7 @@ h3 { margin: 0 0 0.5rem; font-size: 1.08rem; letter-spacing: -0.01em; }
 .step { display: flex; gap: 1rem; min-width: 0; }
 .step > div { min-width: 0; flex: 1; }
 .step p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.step .step-note { margin-top: 0.75rem; font-size: 0.85rem; }
 
 .step-num {
   display: grid;
