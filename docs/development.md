@@ -136,7 +136,8 @@ that scope leaks data instead of returning an error.
 
 Pull requests and pushes to `main` run `./build.sh` on Linux and macOS and
 cross-compile every target in `.github/targets.json`. A separate workflow scans
-`main` for known vulnerabilities.
+`main` for known vulnerabilities, and another publishes the project site in
+`site/` to GitHub Pages when a push to `main` changes it.
 
 Version tags trigger the release workflow. It repeats the native build and
 tests, builds each declared target, verifies the version stamp, and publishes

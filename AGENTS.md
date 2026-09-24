@@ -58,6 +58,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
 | `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
 | `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `ts/vendor/` the vendoring script and its type stubs, `static/` build output and the committed browser bundles, `embed.go`. |
+| `site/` | The project web site, published to GitHub Pages by `.github/workflows/pages.yml`; `assets` links to `docs/assets`. |
 
 Three structural rules hold the design together:
 
