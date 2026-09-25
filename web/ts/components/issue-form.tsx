@@ -2,6 +2,7 @@ import { useState, useRef, useLayoutEffect } from "preact/hooks";
 import { api, type Issue, type IssueCreate, type Relation } from "../api.js";
 import { issueEditorShortcut } from "../keyboard.js";
 import { stagedLabel } from "../issue-create.js";
+import { labelSuggestionFilters, labelSuggestions } from "../label-suggestions.js";
 import {
   Button,
   Field,
@@ -390,18 +391,18 @@ function CreateIssue({
                   placeholder="Add label"
                   maxLength={64}
                   load={async (q, s) =>
-                    (
-                      await api.labels(
-                        {
-                          workspace: [workspace || resource.data!.rows[0].key],
-                        },
-                        s,
-                      )
-                    ).rows
-                      .filter(
-                        (v) => !labels.includes(v.value) && v.value.includes(q),
-                      )
-                      .map((v) => ({ value: v.value, label: v.value }))
+                    labelSuggestions(
+                      (
+                        await api.labels(
+                          labelSuggestionFilters(
+                            workspace || resource.data!.rows[0].key,
+                          ),
+                          s,
+                        )
+                      ).rows,
+                      labels,
+                      q,
+                    )
                   }
                 />
                 <Button class="quiet-action" onClick={stage}>
