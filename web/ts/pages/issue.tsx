@@ -11,6 +11,7 @@ import {
 } from "../sidebar.js";
 import { inlineChildIssueCreate } from "../issue-create.js";
 import { childIssueFilters } from "../issue-children.js";
+import { labelSuggestionFilters, labelSuggestions } from "../label-suggestions.js";
 import { pendingComment, type PendingComment } from "../comment-key.js";
 import { HistoryChange } from "../components/history-diff.js";
 import { nextSortValue, sortState } from "../listings.js";
@@ -755,15 +756,16 @@ function IssueSidebar({
                     placeholder="Add label"
                     required
                     load={async (q, s) =>
-                      (await api.labels({}, s)).rows
-                        .filter(
-                          (f) =>
-                            !issue.labels.includes(f.value) &&
-                            f.value
-                              .toLocaleLowerCase()
-                              .includes(q.toLocaleLowerCase()),
-                        )
-                        .map((f) => ({ value: f.value, label: f.value }))
+                      labelSuggestions(
+                        (
+                          await api.labels(
+                            labelSuggestionFilters(issue.workspace),
+                            s,
+                          )
+                        ).rows,
+                        issue.labels,
+                        q,
+                      )
                     }
                   />
                   <Button type="submit" class="quiet-action">
