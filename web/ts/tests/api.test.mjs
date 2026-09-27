@@ -130,7 +130,7 @@ test("issue creation puts the complete atomic create body at its deterministic I
   };
   await api.createIssue(body, "alex");
 
-  assert.equal(calls[0].path, "api/issues/awb-20eb8c");
+  assert.equal(calls[0].path, "api/issues/awb-4kexrm");
   assert.equal(calls[0].init.method, "PUT");
   assert.equal(new Headers(calls[0].init.headers).get("Content-Type"), "application/json");
   assert.deepEqual(JSON.parse(calls[0].init.body), body);
@@ -437,4 +437,15 @@ test("workspace membership writes distinguish creation from the idempotent resou
   assert.deepEqual(JSON.parse(calls[1].init.body), { access: "admin" });
   assert.equal(calls[2].path, "api/workspaces/team%2Fweb/members/a%2Fb");
   assert.equal(calls[2].init.method, "DELETE");
+});
+
+test("issue hashes preserve leading zeros and UTF-8 across clients", async (t) => {
+  const paths = [];
+  t.mock.method(globalThis, "fetch", async (path) => {
+    paths.push(path);
+    return new Response("{}", { status: 201 });
+  });
+  await api.createIssue({ workspace: "awb", title: "46" }, "alex");
+  await api.createIssue({ workspace: "awb", title: "雪 ☃" }, "alex");
+  assert.deepEqual(paths, ["api/issues/awb-0o6b4c", "api/issues/awb-xou1ia"]);
 });

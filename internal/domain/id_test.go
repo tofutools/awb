@@ -15,8 +15,8 @@ func TestIssueHashFixedVector(t *testing.T) {
 		"Use the shared editor.")
 
 	assert.Len(t, got, domain.HashLen)
-	assert.True(t, domain.IsHex(got))
-	assert.Equal(t, "20eb8c", got)
+	assert.True(t, domain.IsBase36(got))
+	assert.Equal(t, "4kexrm", got)
 }
 
 func TestIssueHashDependsOnEveryInput(t *testing.T) {
@@ -93,7 +93,7 @@ func TestParseIssueRef(t *testing.T) {
 	})
 
 	t.Run("rejects", func(t *testing.T) {
-		for _, s := range []string{"", "   ", "awb-", "-a3f", "awb-zzz", "1bad-a3f", "awb a3f"} {
+		for _, s := range []string{"", "   ", "awb-", "-a3f", "awb-z!z", "1bad-a3f", "awb a3f"} {
 			_, err := domain.ParseIssueRef(s)
 			require.Error(t, err, "%q", s)
 			assert.Equal(t, awberr.Usage, awberr.KindOf(err), "%q", s)
@@ -124,4 +124,33 @@ func TestParseIssueRefDoesNotTrim(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "awb", ref.Workspace)
 	assert.Equal(t, "a3f9c1", ref.Hash)
+}
+
+func TestBase36IssueIDs(t *testing.T) {
+	for _, id := range []string{"awb-zzzzzz", "web-ui-0ghxyz", "awb-a3f9c1"} {
+		got, err := domain.ValidateIssueID(id)
+		require.NoError(t, err)
+		assert.Equal(t, id, got)
+	}
+	for _, id := range []string{"awb-ABCDEZ", "awb-abcde", "awb-abcdefg", "awb-abcd_0", "awb-äbcdef"} {
+		_, err := domain.ValidateIssueID(id)
+		require.Error(t, err, id)
+	}
+	for _, input := range []string{"ZZZZZZ", "WEB-UI-GHXYZ", "awb-z"} {
+		ref, err := domain.ParseIssueRef(input)
+		require.NoError(t, err)
+		assert.NotEmpty(t, ref.Hash)
+	}
+	assert.True(t, domain.IsBase36("0123456789abcdefghijklmnopqrstuvwxyz"))
+	for _, input := range []string{"", "ABC", "ä", "a b", "a_b"} {
+		assert.False(t, domain.IsBase36(input), input)
+	}
+	// Board view IDs retain their hexadecimal vocabulary.
+	_, err := domain.ValidateBoardViewID("view-zzzzzzzzzzzzzzzzzzzzzzzz")
+	require.Error(t, err)
+}
+
+func TestIssueHashPaddingAndUTF8(t *testing.T) {
+	assert.Equal(t, "0o6b4c", domain.IssueHash("alex", "46", domain.TypeTask, ""))
+	assert.Equal(t, "xou1ia", domain.IssueHash("alex", "雪 ☃", domain.TypeTask, ""))
 }

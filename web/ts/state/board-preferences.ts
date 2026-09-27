@@ -44,7 +44,7 @@ export function hiddenBoardEpicEntries(
   ref: string,
 ): HiddenBoardEpic[] {
   const validID = (value: string): boolean =>
-    /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(value);
+    /^[a-z][a-z0-9-]*-[0-9a-z]{6}$/.test(value);
   const entries = new Map<string, HiddenBoardEpic>();
   try {
     const stored: unknown = JSON.parse(
@@ -187,7 +187,7 @@ export function defaultBoardPreferences(
           ? value.all_epics
           : fallback.all_epics,
       epics: strings(value.epics).filter((item) =>
-        /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/.test(item),
+        /^[a-z][a-z0-9-]*-[0-9a-z]{6}$/.test(item),
       ),
       include_no_epic:
         typeof value.include_no_epic === "boolean"

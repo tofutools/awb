@@ -285,7 +285,10 @@ export const api = {
   createIssue: async (body: IssueCreate, identity: string) => {
     const type = body.type ?? "task";
     const description = body.description ?? "";
-    const hash = sha256(identity + body.title + type + description).slice(0, 6);
+    // Encode the first 31 SHA-256 bits, matching domain.IssueHash.
+    const digest = sha256(identity + body.title + type + description);
+    const hash = Math.floor(Number.parseInt(digest.slice(0, 8), 16) / 2)
+      .toString(36).padStart(6, "0");
     return putOne<Issue>(`api/issues/${encodeURIComponent(`${body.workspace}-${hash}`)}`, body);
   },
   updateIssue: (id: string, patch: IssuePatch) =>
