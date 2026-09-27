@@ -75,14 +75,14 @@ test("initial filter suggestions are capped while searched matches are not", () 
 
 test("epic selection is shareable, single-valued, and resets pagination", () => {
   const query = new URLSearchParams("workspace=awb&label=frontend&sort=-updated&page=3");
-  const selected = withEpicSelection(query, "awb-a1b2c3");
-  assert.equal(selected.toString(), "workspace=awb&label=frontend&sort=-updated&epic=awb-a1b2c3");
-  assert.equal(epicSelectionFrom(selected), "awb-a1b2c3");
+  const selected = withEpicSelection(query, "awb-g1x2z3");
+  assert.equal(selected.toString(), "workspace=awb&label=frontend&sort=-updated&epic=awb-g1x2z3");
+  assert.equal(epicSelectionFrom(selected), "awb-g1x2z3");
   assert.equal(withEpicSelection(selected, noEpicSelection).get("epic"), "none");
   assert.equal(withEpicSelection(selected, null).has("epic"), false);
   assert.equal(epicSelectionFrom(new URLSearchParams("epic=not-an-id")), null);
   assert.deepEqual(epicParentFilter(selected), {
-    parent: "awb-a1b2c3", recursive: true, "include-parent": true,
+    parent: "awb-g1x2z3", recursive: true, "include-parent": true,
   });
   assert.deepEqual(epicParentFilter(new URLSearchParams("epic=none")), {
     parent: "none", "parent-type": "epic", recursive: true,

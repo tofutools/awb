@@ -242,7 +242,7 @@ paths:
         The client chooses the ID, making a retried request target the same
         resource instead of creating another issue. The ID must have the
         request body's workspace prefix and a six-character lowercase
-        hexadecimal suffix.
+        base-36 suffix.
 
         Repeating the same validated creation request at that ID returns the
         existing issue. Reusing the ID with different creation data is a
@@ -251,7 +251,8 @@ paths:
         The CLI and web UI derive that suffix by concatenating the creating
         user/identity, title, effective type (`task` when omitted), and
         description (empty when omitted), SHA-256 hashing the UTF-8 bytes, and
-        taking the first six characters of the lowercase hexadecimal digest.
+        encoding the first 31 bits of the digest as lowercase base-36, padded
+        with leading zeros to six characters.
         Other clients may choose any suffix with the required format.
       parameters:
         - $ref: '#/components/parameters/newIssueId'
@@ -1574,7 +1575,7 @@ components:
       description: |
         The full client-assigned ID of the issue to create. Its prefix must
         equal the request body's workspace and its suffix must be exactly six
-        lowercase hexadecimal characters.
+        lowercase base-36 characters.
       schema: { type: string, minLength: 3 }
     issueId:
       name: id
@@ -1981,7 +1982,7 @@ components:
   schemas:
     IssueID:
       type: string
-      pattern: '^[a-z][a-z0-9-]*-[0-9a-f]{6}$'
+      pattern: '^[a-z][a-z0-9-]*-[0-9a-z]{6}$'
 
     BoardViewID:
       type: string

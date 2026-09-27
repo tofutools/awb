@@ -110,7 +110,8 @@ operations change them.
 
 IDs have the form `<workspace>-<hash>`. The CLI and web client derive the hash
 from the creating identity, title, effective type and description, allowing a
-caller to mint an ID without a coordination service. Issue creation is a
+caller to mint an ID without a coordination service. The first 31 SHA-256
+bits are encoded as six lowercase base-36 characters, padded with leading zeros. Issue creation is a
 client-assigned `PUT`: retrying the same creation at the same ID returns the
 original issue, while reusing the ID for different creation data conflicts.
 The backend validates the full ID and workspace prefix without requiring other

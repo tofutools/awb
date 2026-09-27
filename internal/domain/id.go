@@ -3,14 +3,16 @@ package domain
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"strconv"
 	"strings"
 
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// HashLen is the number of hexadecimal characters in an issue ID's hash part.
-// It is fixed at six, which is about 16 million values per workspace.
+// HashLen is the number of lowercase base-36 characters in an issue ID's hash part.
+// It is fixed at six, which is enough to encode 31 bits per workspace.
 const HashLen = 6
 
 // BoardViewIDBytes makes view IDs long enough to be safely shared as
@@ -19,12 +21,14 @@ const BoardViewIDBytes = 12
 
 // IssueHash derives the hash part of a client-created issue ID. The clients
 // concatenate the creating identity, title, effective type and description,
-// hash the UTF-8 bytes with SHA-256 and retain the first six lowercase hex
-// characters. The server validates the resulting ID's shape and workspace,
+// hash the UTF-8 bytes with SHA-256 and encode the first 31 bits as lowercase
+// base-36, padded with leading zeros to six characters. The server validates
+// the resulting ID's shape and workspace,
 // but deliberately does not require clients to use this algorithm.
 func IssueHash(identity, title string, typ Type, description string) string {
 	sum := sha256.Sum256([]byte(identity + title + string(typ) + description))
-	return hex.EncodeToString(sum[:])[:HashLen]
+	hash := strconv.FormatUint(uint64(binary.BigEndian.Uint32(sum[:4])>>1), 36)
+	return strings.Repeat("0", HashLen-len(hash)) + hash
 }
 
 // NewBoardViewID mints the stable, opaque identifier of a saved board view.
@@ -62,7 +66,7 @@ func SplitID(id string) (workspaceKey, hash string, ok bool) {
 // requires one immutable issue ID.
 func ValidateIssueID(s string) (string, error) {
 	workspace, hash, ok := SplitID(s)
-	if !ok || len(hash) != HashLen || !IsHex(hash) {
+	if !ok || len(hash) != HashLen || !IsBase36(hash) {
 		return "", awberr.Usagef("invalid issue id %q", s)
 	}
 	if _, err := ValidateWorkspaceKey(workspace); err != nil {
@@ -72,8 +76,7 @@ func ValidateIssueID(s string) (string, error) {
 }
 
 // IsHex reports whether s is non-empty and made only of lowercase hexadecimal
-// digits, which is what an issue ID's hash part and any prefix of one look
-// like.
+// digits.
 func IsHex(s string) bool {
 	if s == "" {
 		return false
@@ -82,6 +85,22 @@ func IsHex(s string) bool {
 		isDigit := r >= '0' && r <= '9'
 		isHexLetter := r >= 'a' && r <= 'f'
 		if !isDigit && !isHexLetter {
+			return false
+		}
+	}
+	return true
+}
+
+// IsBase36 reports whether s is non-empty and contains only lowercase letters
+// and ASCII digits, as an issue hash or prefix requires.
+func IsBase36(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		isDigit := r >= '0' && r <= '9'
+		isLetter := r >= 'a' && r <= 'z'
+		if !isDigit && !isLetter {
 			return false
 		}
 	}
@@ -114,12 +133,12 @@ func ParseIssueRef(s string) (IssueRef, error) {
 	}
 
 	// A bare hash or hash prefix carries no workspace.
-	if IsHex(s) {
+	if IsBase36(s) {
 		return IssueRef{Hash: s, Raw: raw}, nil
 	}
 
 	workspace, hash, ok := SplitID(s)
-	if !ok || !IsHex(hash) {
+	if !ok || !IsBase36(hash) {
 		return IssueRef{}, awberr.Usagef(
 			"invalid issue id %q: expected <workspace>-<hash> or a bare hash", raw)
 	}

@@ -924,7 +924,7 @@ func TestParentListingFilterCanBeRecursive(t *testing.T) {
 	assert.ElementsMatch(t, []string{epic.ID, unrelated.ID}, []string{issues[0].ID, issues[1].ID})
 
 	for _, query := range []string{
-		"parent=not-an-id",
+		"parent=not-an-!d",
 		"recursive=true",
 		"include-parent=true",
 		"parent=none&include-parent=true",

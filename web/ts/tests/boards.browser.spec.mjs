@@ -215,9 +215,9 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await createDialog.getByRole("button", { name: "Create issue" }).click();
   await expect(page).toHaveURL(/#\/boards$/);
   const createdNoticeLink = page.locator(".app-notice a");
-  await expect(createdNoticeLink).toHaveText(/demo-[0-9a-f]+/);
-  await expect(createdNoticeLink).toHaveAttribute("href", /^#\/issues\/demo-[0-9a-f]+$/);
-  await expect(page.locator(".app-notice")).toContainText(/Issue demo-[0-9a-f]+ was created\./);
+  await expect(createdNoticeLink).toHaveText(/demo-[0-9a-z]+/);
+  await expect(createdNoticeLink).toHaveAttribute("href", /^#\/issues\/demo-[0-9a-z]+$/);
+  await expect(page.locator(".app-notice")).toContainText(/Issue demo-[0-9a-z]+ was created\./);
   const createdCard = page.locator(".board-card", { hasText: "Created from the board" });
   await expect(createdCard).toBeVisible();
   const createdID = await createdCard.getAttribute("data-issue");

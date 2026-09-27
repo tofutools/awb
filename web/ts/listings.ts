@@ -15,7 +15,7 @@ export interface SortState {
 export const listingFilterMaxLength = 500;
 
 export const noEpicSelection = "none";
-const issueIDPattern = /^[a-z][a-z0-9-]*-[0-9a-f]{6}$/;
+const issueIDPattern = /^[a-z][a-z0-9-]*-[0-9a-z]{6}$/;
 
 export const initialFilterSuggestionLimit = 8;
 
