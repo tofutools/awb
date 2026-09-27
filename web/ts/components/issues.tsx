@@ -194,7 +194,12 @@ export function IssueTable({
       return (
         <span class="blocker-list">
           {issue.blockers.length
-            ? issue.blockers.join(", ")
+            ? issue.blockers.map((id, index) => (
+                <span key={id}>
+                  {index > 0 && ", "}
+                  <a href={`#/issues/${id}`}>{id}</a>
+                </span>
+              ))
             : issue.blocked
               ? "hidden work"
               : ""}
