@@ -283,6 +283,39 @@ test("issue edit URLs support Back, Forward and direct loading without replacing
   await expect(page.locator(".issue-edit-form")).toHaveCount(0);
 });
 
+test("issue heading keeps its actions clear of the title on phones", async ({ page }) => {
+  const workspace = await fixture(page, "mobile");
+  const issue = await createIssue(
+    page,
+    workspace,
+    "A long issue title that wraps across several lines on a phone",
+  );
+  await page.goto(`${baseURL}/#/issues/${issue.id}`);
+  await expect(page.locator(".issue-heading h1")).toHaveText(issue.title);
+
+  for (const width of [320, 390, 560]) {
+    await page.setViewportSize({ width, height: 800 });
+    const bounds = await page.evaluate(() => {
+      const rect = (selector) =>
+        document.querySelector(selector).getBoundingClientRect();
+      const text = rect(".issue-heading-text");
+      const title = rect(".issue-heading h1");
+      const actions = rect(".issue-heading-actions");
+      const toggle = rect(".issue-sidebar-toggle");
+      return {
+        titleBottom: text.bottom,
+        actionsTop: actions.top,
+        titleRight: title.right,
+        toggleLeft: toggle.left,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(bounds.actionsTop).toBeGreaterThanOrEqual(bounds.titleBottom);
+    expect(bounds.toggleLeft).toBeGreaterThanOrEqual(bounds.titleRight);
+    expect(bounds.scrollWidth).toBeLessThanOrEqual(width);
+  }
+});
+
 test("a save finishing after navigation does not reopen the issue", async ({ page }) => {
   const workspace = await fixture(page, "late");
   const issue = await createIssue(page, workspace, "Delayed save");
