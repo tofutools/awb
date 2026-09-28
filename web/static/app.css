@@ -1948,7 +1948,12 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .directory-heading { align-items: stretch; }
   .directory-heading .primary-button { text-align: center; }
   .issue-view { margin-top: -1rem; }
-  .issue-heading { padding-top: 1.2rem; }
+  .issue-heading, .sidebar-collapsed .issue-heading {
+    flex-direction: column;
+    padding: 1.2rem 0 1rem;
+  }
+  .issue-heading-text { padding-right: 3rem; }
+  .issue-heading-actions { justify-content: flex-start; }
   .issue-facts { grid-template-columns: minmax(0, 1fr); }
   .attachments li { grid-template-columns: minmax(0, 1fr) auto; }
   .child-issues-table tbody tr { position: relative; }
