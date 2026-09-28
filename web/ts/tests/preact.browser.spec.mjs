@@ -291,6 +291,7 @@ test("issue heading keeps its actions clear of the title on phones", async ({ pa
     "A long issue title that wraps across several lines on a phone",
   );
   await page.goto(`${baseURL}/#/issues/${issue.id}`);
+  await expect(page.locator(".issue-heading h1")).toHaveText(issue.title);
 
   for (const width of [320, 390, 560]) {
     await page.setViewportSize({ width, height: 800 });
