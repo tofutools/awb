@@ -422,8 +422,7 @@ function BoardLane(props: LaneProps) {
             aria-controls={`board-column-panel-${key}-${column.status}`}
             onClick={() => setSelectedStatus(column.status)}
           >
-            <span>{statusLabel(column.status)}</span>
-            <span class="board-tab-count">{column.total}</span>
+            {statusLabel(column.status)}
           </button>
         ))}
       </div>

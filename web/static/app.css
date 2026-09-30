@@ -1737,10 +1737,9 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .board-lane-name { display: grid; gap: 0.1rem; }
   .board-tabs { display: flex; border-bottom: 1px solid var(--line); }
   .board-tabs[hidden] { display: none; }
-  .board-tab { display: grid; flex: 1; min-width: 0; gap: 0.15rem; justify-items: center; padding: 0.65rem 0.2rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 0.75rem; cursor: pointer; }
+  .board-tab { flex: 1; min-width: 0; padding: 0.65rem 0.2rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 0.75rem; cursor: pointer; }
   .board-tab.active { border-bottom-color: var(--accent); color: var(--fg); font-weight: 650; }
   .board-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .board-tab-count { font: 0.7rem var(--mono); }
   .board-columns { display: block; max-width: 100%; }
   .board-column { display: none; }
   .board-column.active { display: block; }

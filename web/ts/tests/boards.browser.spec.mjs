@@ -622,6 +622,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
 	await page.setViewportSize({ width: 710, height: 900 });
 	await page.goto(`${baseURL}/#/boards`);
+	await expect(page.locator(".board-tabs").first()).toBeHidden();
+	for (const column of await page.locator(".board-lane").first().locator(".board-column").all()) {
+		await expect(column).toBeVisible();
+	}
 	await page.getByRole("button", { name: "Edit view" }).click();
 	const resetDefault = page.getByRole("dialog", { name: "Edit default board" });
 	await resetDefault.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
@@ -646,8 +650,11 @@ test("save, share and work from a responsive board", async ({ page }) => {
   await expect(mobileLane.locator(".board-column").first()).toBeHidden();
   await expect(mobileLane.locator(".board-column").nth(1)).toBeVisible();
   await expect(page.locator(".board-lane").nth(1).locator(".board-tab").first()).toHaveAttribute("aria-pressed", "true");
-  await expect(mobileLane.locator(".board-columns")).not.toHaveCSS("overflow-x", "auto");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await mobileLane.locator(".board-lane-toggle").click();
+  await expect(mobileLane.locator(".board-tabs")).toBeHidden();
+  await mobileLane.locator(".board-lane-toggle").click();
+  await expect(mobileLane.locator(".board-column").nth(1)).toBeVisible();
   await page.evaluate(async () => {
     for (let index = 0; index < 10; index++) {
       const response = await fetch("api/issues", {
