@@ -343,6 +343,10 @@ function BoardLane(props: LaneProps) {
   const [collapsed, setCollapsed] = useState(() =>
     collapsedBoardLanes(boardRef).has(key),
   );
+  const [selectedStatus, setSelectedStatus] = useState<BoardStatus>(lane.columns[0]?.status ?? "open");
+  const activeStatus = lane.columns.some((column) => column.status === selectedStatus)
+    ? selectedStatus
+    : lane.columns[0]?.status;
   const total = lane.columns.reduce((sum, c) => sum + c.total, 0);
   return (
     <section
@@ -408,6 +412,34 @@ function BoardLane(props: LaneProps) {
           </Button>
         </div>
       </header>
+      <div class="board-tabs" role="tablist" aria-label={`${label} statuses`} hidden={collapsed}>
+        {lane.columns.map((column, index) => (
+          <button
+            key={column.status}
+            type="button"
+            role="tab"
+            class={`board-tab ${activeStatus === column.status ? "active" : ""}`}
+            aria-selected={activeStatus === column.status}
+            aria-controls={`board-column-panel-${key}-${column.status}`}
+            tabIndex={activeStatus === column.status ? 0 : -1}
+            onClick={() => setSelectedStatus(column.status)}
+            onKeyDown={(e) => {
+              // Arrow, Home, and End keys move focus and select the next tab.
+              const next = e.key === "ArrowRight" ? (index + 1) % lane.columns.length
+                : e.key === "ArrowLeft" ? (index - 1 + lane.columns.length) % lane.columns.length
+                : e.key === "Home" ? 0
+                : e.key === "End" ? lane.columns.length - 1
+                : -1;
+              if (next < 0) return;
+              e.preventDefault();
+              setSelectedStatus(lane.columns[next].status);
+              e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+            }}
+          >
+            {statusLabel(column.status)}
+          </button>
+        ))}
+      </div>
       <div
         style={{ "--board-columns": lane.columns.length }}
         class="board-columns"
@@ -415,13 +447,13 @@ function BoardLane(props: LaneProps) {
         hidden={collapsed}
       >
         {lane.columns.map((column) => (
-          <BoardColumn key={column.status} {...props} column={column} />
+          <BoardColumn key={column.status} {...props} column={column} active={activeStatus === column.status} />
         ))}
       </div>
     </section>
   );
 }
-function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
+function BoardColumn({ column, active, ...props }: LaneProps & { column: Column; active: boolean }) {
   const {
     lane,
     boardRef,
@@ -534,7 +566,9 @@ function BoardColumn({ column, ...props }: LaneProps & { column: Column }) {
   );
   return (
     <section
-      class={`board-column ${target ? "drop-target" : ""} ${target && !target.before && !target.after ? "drop-empty" : ""}`}
+      id={`board-column-panel-${key}-${column.status}`}
+      role="tabpanel"
+      class={`board-column ${active ? "active" : ""} ${target ? "drop-target" : ""} ${target && !target.before && !target.after ? "drop-empty" : ""}`}
       data-status={column.status}
       aria-labelledby={`board-column-${key}-${column.status}`}
       onDragOver={(e) => {

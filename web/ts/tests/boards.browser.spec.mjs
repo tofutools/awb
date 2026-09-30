@@ -622,6 +622,10 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
 	await page.setViewportSize({ width: 710, height: 900 });
 	await page.goto(`${baseURL}/#/boards`);
+	await expect(page.locator(".board-tabs").first()).toBeHidden();
+	for (const column of await page.locator(".board-lane").first().locator(".board-column").all()) {
+		await expect(column).toBeVisible();
+	}
 	await page.getByRole("button", { name: "Edit view" }).click();
 	const resetDefault = page.getByRole("dialog", { name: "Edit default board" });
 	await resetDefault.locator(".board-view-scope-card").first().getByText("All", { exact: true }).click();
@@ -636,7 +640,26 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/#/boards`);
-  await expect(page.locator(".board-columns").first()).toHaveCSS("overflow-x", "auto");
+  const mobileLane = page.locator(".board-lane").first();
+  const tabs = mobileLane.locator(".board-tab");
+  await expect(tabs.first()).toBeVisible();
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  await expect(mobileLane.locator(".board-column").first()).toBeVisible();
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(mobileLane.locator(".board-column").first()).toBeHidden();
+  await expect(mobileLane.locator(".board-column").nth(1)).toBeVisible();
+  await tabs.nth(1).press("ArrowRight");
+  await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+  await expect(tabs.nth(2)).toBeFocused();
+  await tabs.nth(2).press("ArrowLeft");
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".board-lane").nth(1).locator(".board-tab").first()).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await mobileLane.locator(".board-lane-toggle").click();
+  await expect(mobileLane.locator(".board-tabs")).toBeHidden();
+  await mobileLane.locator(".board-lane-toggle").click();
+  await expect(mobileLane.locator(".board-column").nth(1)).toBeVisible();
   await page.evaluate(async () => {
     for (let index = 0; index < 10; index++) {
       const response = await fetch("api/issues", {
@@ -648,7 +671,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
     }
   });
   await page.reload();
-  const responsiveCard = page.locator('.board-card[data-issue^="demo-"]').first();
+  const responsiveCard = page.locator('.board-card[data-issue^="demo-"]:visible').first();
   await expect.poll(() => responsiveCard.evaluate((card) => card.draggable)).toBe(false);
   await expect(page.locator(".board-card-drag, .board-card-order-button, .list-row-drag, .list-row-order-button")).toHaveCount(0);
   await expect(responsiveCard.locator("select")).toHaveCount(0);
