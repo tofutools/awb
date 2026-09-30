@@ -636,7 +636,18 @@ test("save, share and work from a responsive board", async ({ page }) => {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseURL}/#/boards`);
-  await expect(page.locator(".board-columns").first()).toHaveCSS("overflow-x", "auto");
+  const mobileLane = page.locator(".board-lane").first();
+  const tabs = mobileLane.locator(".board-tab");
+  await expect(tabs.first()).toBeVisible();
+  await expect(tabs.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(mobileLane.locator(".board-column").first()).toBeVisible();
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(mobileLane.locator(".board-column").first()).toBeHidden();
+  await expect(mobileLane.locator(".board-column").nth(1)).toBeVisible();
+  await expect(page.locator(".board-lane").nth(1).locator(".board-tab").first()).toHaveAttribute("aria-pressed", "true");
+  await expect(mobileLane.locator(".board-columns")).not.toHaveCSS("overflow-x", "auto");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.evaluate(async () => {
     for (let index = 0; index < 10; index++) {
       const response = await fetch("api/issues", {
@@ -648,7 +659,7 @@ test("save, share and work from a responsive board", async ({ page }) => {
     }
   });
   await page.reload();
-  const responsiveCard = page.locator('.board-card[data-issue^="demo-"]').first();
+  const responsiveCard = page.locator('.board-card[data-issue^="demo-"]:visible').first();
   await expect.poll(() => responsiveCard.evaluate((card) => card.draggable)).toBe(false);
   await expect(page.locator(".board-card-drag, .board-card-order-button, .list-row-drag, .list-row-order-button")).toHaveCount(0);
   await expect(responsiveCard.locator("select")).toHaveCount(0);
