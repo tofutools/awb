@@ -43,6 +43,12 @@ var migrations = [][]string{
 	schemaV24,
 	schemaV25,
 	schemaV26,
+	schemaV27,
+}
+
+// schemaV27 stores the optional Git repository root for workspace commit links.
+var schemaV27 = []string{
+	`ALTER TABLE workspaces ADD COLUMN repository_url TEXT NOT NULL DEFAULT ''`,
 }
 
 // schemaV26 remembers the canonical request that first created an issue. It is

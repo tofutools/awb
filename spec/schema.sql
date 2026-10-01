@@ -8,7 +8,7 @@ CREATE TABLE "workspaces" (
 		created_at  TEXT NOT NULL,
 		updated_at  TEXT NOT NULL
 	, state TEXT NOT NULL DEFAULT 'active'
-		CHECK (state IN ('active', 'archived')), archived_at TEXT NOT NULL DEFAULT '', archived_by TEXT NOT NULL DEFAULT '') STRICT;
+		CHECK (state IN ('active', 'archived')), archived_at TEXT NOT NULL DEFAULT '', archived_by TEXT NOT NULL DEFAULT '', repository_url TEXT NOT NULL DEFAULT '') STRICT;
 
 CREATE VIRTUAL TABLE issues_fts USING fts5 (
 		title,

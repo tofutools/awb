@@ -57,9 +57,9 @@ func (d *DB) RestoreSnapshot(ctx context.Context, snapshot Snapshot) error {
 				state = domain.WorkspaceActive
 			}
 			if _, err := tx.q.ExecContext(ctx, `
-				INSERT INTO workspaces (key, name, description, state, archived_at, archived_by, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				p.Key, p.Name, p.Description, state, p.ArchivedAt, p.ArchivedBy, p.CreatedAt, p.UpdatedAt); err != nil {
+				INSERT INTO workspaces (key, name, description, repository_url, state, archived_at, archived_by, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				p.Key, p.Name, p.Description, p.RepositoryURL, state, p.ArchivedAt, p.ArchivedBy, p.CreatedAt, p.UpdatedAt); err != nil {
 				return restoreError(err, "workspace %s", p.Key)
 			}
 		}

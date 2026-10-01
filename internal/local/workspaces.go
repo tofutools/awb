@@ -27,6 +27,10 @@ func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCrea
 	if err != nil {
 		return nil, err
 	}
+	repositoryURL, err := domain.ValidateRepositoryURL(req.RepositoryURL)
+	if err != nil {
+		return nil, err
+	}
 
 	var workspace *domain.Workspace
 	err = b.write(ctx, func(tx *storage.Tx, caller domain.Caller) error {
@@ -36,7 +40,7 @@ func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCrea
 		if !caller.MayManageWorkspaces() {
 			return awberr.Forbiddenf("only a workspace administrator may create a workspace")
 		}
-		if err := tx.InsertWorkspace(key, name, description); err != nil {
+		if err := tx.InsertWorkspace(key, name, description, repositoryURL); err != nil {
 			return err
 		}
 		workspace, err = tx.GetWorkspace(key)
@@ -132,7 +136,13 @@ func (b *Backend) UpdateWorkspace(ctx context.Context, key string, req backend.W
 			}
 		}
 
-		if err := tx.UpdateWorkspace(existing, name, description); err != nil {
+		repositoryURL := existing.RepositoryURL
+		if req.RepositoryURL != nil {
+			if repositoryURL, err = domain.ValidateRepositoryURL(*req.RepositoryURL); err != nil {
+				return err
+			}
+		}
+		if err := tx.UpdateWorkspace(existing, name, description, repositoryURL); err != nil {
 			return err
 		}
 		workspace, err = tx.GetWorkspace(key)

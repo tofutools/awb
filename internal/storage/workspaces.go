@@ -43,13 +43,13 @@ func (t *Tx) GetWorkspace(key string) (*domain.Workspace, error) {
 	visible, args := t.visibleClause("p.key")
 	var p domain.Workspace
 	err := t.q.QueryRowContext(t.ctx, `
-		SELECT p.key, p.name, p.description, p.state, p.archived_at, p.archived_by,
+		SELECT p.key, p.name, p.description, p.repository_url, p.state, p.archived_at, p.archived_by,
 		       p.created_at, p.updated_at,
 		       (SELECT count(*) FROM issues i
 		         WHERE i.workspace = p.key AND i.status <> 'closed')
 		  FROM workspaces p
 		 WHERE p.key = ? AND `+visible, append([]any{key}, args...)...,
-	).Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
+	).Scan(&p.Key, &p.Name, &p.Description, &p.RepositoryURL, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 		&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, awberr.NotFoundf("no such workspace: %s", key)
@@ -142,7 +142,7 @@ func (t *Tx) ListWorkspacesByState(filter string, state domain.WorkspaceStateFil
 	}
 
 	query := `
-		SELECT p.key, p.name, p.description, p.state, p.archived_at, p.archived_by,
+		SELECT p.key, p.name, p.description, p.repository_url, p.state, p.archived_at, p.archived_by,
 		       p.created_at, p.updated_at,
 		       ` + active + `
 		  FROM workspaces p
@@ -158,7 +158,7 @@ func (t *Tx) ListWorkspacesByState(filter string, state domain.WorkspaceStateFil
 	workspaces = []domain.Workspace{}
 	for rows.Next() {
 		var p domain.Workspace
-		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
+		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.RepositoryURL, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
 			return nil, 0, awberr.Wrap(awberr.Runtime, err, "list workspaces")
 		}
@@ -177,7 +177,7 @@ func (t *Tx) SearchWorkspacesForNavigation(query string, limit int) ([]domain.Wo
 	args = append(args, query, query, limit)
 	active := `(SELECT count(*) FROM issues i WHERE i.workspace = p.key AND i.status <> 'closed')`
 	rows, err := t.q.QueryContext(t.ctx, `
-		SELECT p.key, p.name, p.description, p.state, p.archived_at, p.archived_by,
+		SELECT p.key, p.name, p.description, p.repository_url, p.state, p.archived_at, p.archived_by,
 		       p.created_at, p.updated_at, `+active+`
 		  FROM workspaces p
 		 WHERE `+visible+` AND p.state = 'active'
@@ -190,7 +190,7 @@ func (t *Tx) SearchWorkspacesForNavigation(query string, limit int) ([]domain.Wo
 	workspaces := []domain.Workspace{}
 	for rows.Next() {
 		var p domain.Workspace
-		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.State, &p.ArchivedAt, &p.ArchivedBy,
+		if err := rows.Scan(&p.Key, &p.Name, &p.Description, &p.RepositoryURL, &p.State, &p.ArchivedAt, &p.ArchivedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.ActiveIssues); err != nil {
 			return nil, awberr.Wrap(awberr.Runtime, err, "search workspaces for navigation")
 		}
@@ -200,11 +200,15 @@ func (t *Tx) SearchWorkspacesForNavigation(query string, limit int) ([]domain.Wo
 }
 
 // InsertWorkspace stores a new workspace.
-func (t *Tx) InsertWorkspace(key, name, description string) error {
+func (t *Tx) InsertWorkspace(key, name, description string, repositoryURLs ...string) error {
+	repositoryURL := ""
+	if len(repositoryURLs) > 0 {
+		repositoryURL = repositoryURLs[0]
+	}
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
-		INSERT INTO workspaces (key, name, description, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)`, key, name, description, now, now)
+		INSERT INTO workspaces (key, name, description, repository_url, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, key, name, description, repositoryURL, now, now)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return awberr.Conflictf("workspace %s already exists", key)
@@ -218,19 +222,24 @@ func (t *Tx) InsertWorkspace(key, name, description string) error {
 // only when something actually changed. Creating, changing or deleting an
 // issue the workspace holds does not touch it: active_issues is derived, not
 // stored.
-func (t *Tx) UpdateWorkspace(p *domain.Workspace, name, description string) error {
-	if name == p.Name && description == p.Description {
+func (t *Tx) UpdateWorkspace(p *domain.Workspace, name, description string, repositoryURLs ...string) error {
+	repositoryURL := p.RepositoryURL
+	if len(repositoryURLs) > 0 {
+		repositoryURL = repositoryURLs[0]
+	}
+	if name == p.Name && description == p.Description && repositoryURL == p.RepositoryURL {
 		return nil
 	}
 	updated := bumpedTimestamp(p.UpdatedAt, Now())
 	_, err := t.q.ExecContext(t.ctx, `
-		UPDATE workspaces SET name = ?, description = ?, updated_at = ? WHERE key = ?`,
-		name, description, updated, p.Key)
+		UPDATE workspaces SET name = ?, description = ?, repository_url = ?, updated_at = ? WHERE key = ?`,
+		name, description, repositoryURL, updated, p.Key)
 	if err != nil {
 		return awberr.Wrap(awberr.Runtime, err, "update workspace %s", p.Key)
 	}
 	p.Name = name
 	p.Description = description
+	p.RepositoryURL = repositoryURL
 	p.UpdatedAt = updated
 	return nil
 }

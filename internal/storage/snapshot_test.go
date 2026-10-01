@@ -23,7 +23,7 @@ func TestRestoreSnapshotIsFaithfulToProseTheGateWouldRefuse(t *testing.T) {
 
 	db := newDB(t)
 	require.NoError(t, db.RestoreSnapshot(t.Context(), storage.Snapshot{
-		Workspaces: []domain.Workspace{{Key: "awb", Name: "Agent Work Board", Description: legacy}},
+		Workspaces: []domain.Workspace{{Key: "awb", Name: "Agent Work Board", Description: legacy, RepositoryURL: "https://github.com/tofutools/awb"}},
 		Issues: []domain.Issue{{
 			ID: "awb-5c1d84", Workspace: "awb", Title: "Legacy", Description: legacy,
 			Type: domain.DefaultType, Status: domain.DefaultStatus, Priority: domain.DefaultPriority,
@@ -38,6 +38,7 @@ func TestRestoreSnapshotIsFaithfulToProseTheGateWouldRefuse(t *testing.T) {
 		workspace, err := tx.GetWorkspace("awb")
 		require.NoError(t, err)
 		assert.Equal(t, legacy, workspace.Description)
+		assert.Equal(t, "https://github.com/tofutools/awb", workspace.RepositoryURL)
 
 		issue, err := tx.GetIssue("awb-5c1d84")
 		require.NoError(t, err)

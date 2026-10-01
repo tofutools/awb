@@ -63,8 +63,9 @@ CLI/API parity structural rather than a checklist.
 A workspace is the immutable boundary around a set of issues. Its key becomes
 the issue ID prefix and never changes. Issues cannot transfer between
 workspaces; moving them would break IDs, stable URLs, graph interpretation, and
-authorization scope at once. A workspace's display name and Markdown
-description remain editable.
+authorization scope at once. A workspace's display name, Markdown
+description, and optional Git repository URL remain editable. The web UI uses
+the repository URL to link issue commit hashes on supported Git hosts.
 
 A workspace is either active or archived. Archiving preserves the key, issues,
 relations, blobs, membership, preferences, timestamps, and URLs as read-only

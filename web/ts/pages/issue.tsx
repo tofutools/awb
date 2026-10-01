@@ -1,7 +1,7 @@
 import { Icon } from "../components/icon.js";
 import { useRef, useState, useLayoutEffect } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { api, type Issue, type IssueSummary, type Activity, type IssueTree } from "../api.js";
+import { api, type Issue, type IssueSummary, type Activity, type IssueTree, type Workspace } from "../api.js";
 import { inspectorParent, inspectorStatusAction } from "../inspector.js";
 import { issueEditorShortcut, commentSubmitShortcut } from "../keyboard.js";
 import {
@@ -14,6 +14,7 @@ import { childIssueFilters } from "../issue-children.js";
 import { labelSuggestionFilters, labelSuggestions } from "../label-suggestions.js";
 import { pendingComment, type PendingComment } from "../comment-key.js";
 import { HistoryChange } from "../components/history-diff.js";
+import { commitLink } from "../commit-link.js";
 import { nextSortValue, sortState } from "../listings.js";
 import { replaceRoute, routeHref, type Route } from "../routing/route.js";
 import {
@@ -179,7 +180,7 @@ export function IssuePage({ route }: { route: Route }) {
           reload={resource.reload}
         />
       </div>
-      <IssueSidebar issue={issue} mutable={mutable} reload={resource.reload} />
+      <IssueSidebar issue={issue} workspace={workspace} mutable={mutable} reload={resource.reload} />
       <Button
         class="issue-sidebar-toggle"
         aria-controls="issue-details"
@@ -498,10 +499,12 @@ function formatSize(size: number) {
 
 function IssueSidebar({
   issue,
+  workspace,
   mutable,
   reload,
 }: {
   issue: Issue;
+  workspace: Workspace;
   mutable: boolean;
   reload: () => Promise<void>;
 }) {
@@ -512,6 +515,7 @@ function IssueSidebar({
   const [assignee, setAssignee] = useState("");
   const [closing, setClosing] = useState(false);
   const parent = inspectorParent(issue.relations);
+  const commitURL = commitLink(workspace.repository_url, issue.commit_hash);
   const change = (operation: () => Promise<unknown>) =>
     mutation.run(async () => {
       await operation();
@@ -542,7 +546,9 @@ function IssueSidebar({
           {issue.commit_hash &&
             fact(
               "Commit",
-              <span class="id commit-hash">{issue.commit_hash}</span>,
+              commitURL ? (
+                <a class="id commit-hash" href={commitURL} target="_blank" rel="noopener noreferrer">{issue.commit_hash}</a>
+              ) : <span class="id commit-hash">{issue.commit_hash}</span>,
             )}
           {issue.pull_request_url &&
             fact(

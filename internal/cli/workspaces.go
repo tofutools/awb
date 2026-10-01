@@ -74,8 +74,9 @@ func newWorkspaceActivityCommand(e *env) *cobra.Command {
 
 type workspaceCreateParams struct {
 	DescriptionFlags
-	Key  string `positional:"true" required:"true"`
-	Name string `long:"name" optional:"true" help:"human-readable name; defaults to the key"`
+	Key           string `positional:"true" required:"true"`
+	Name          string `long:"name" optional:"true" help:"human-readable name; defaults to the key"`
+	RepositoryURL string `long:"repository-url" optional:"true" help:"HTTP(S) Git repository URL for commit links"`
 }
 
 func newWorkspaceCreateCommand(e *env) *cobra.Command {
@@ -91,7 +92,7 @@ func newWorkspaceCreateCommand(e *env) *cobra.Command {
 			return describe("workspace")(ctx, &p.DescriptionFlags, cmd)
 		},
 		RunFuncE: func(p *workspaceCreateParams, cmd *cobra.Command, _ []string) error {
-			req := backend.WorkspaceCreate{Key: p.Key, Name: p.Name}
+			req := backend.WorkspaceCreate{Key: p.Key, Name: p.Name, RepositoryURL: p.RepositoryURL}
 			if description, err := p.value(e); err != nil {
 				return err
 			} else if description != nil {
@@ -113,9 +114,10 @@ func newWorkspaceCreateCommand(e *env) *cobra.Command {
 
 type workspaceUpdateParams struct {
 	DescriptionFlags
-	Key   string  `positional:"true" required:"true"`
-	Name  *string `long:"name" help:"human-readable name; \"\" restores the key"`
-	Force bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
+	Key           string  `positional:"true" required:"true"`
+	Name          *string `long:"name" help:"human-readable name; \"\" restores the key"`
+	RepositoryURL *string `long:"repository-url" help:"HTTP(S) Git repository URL; empty clears it"`
+	Force         bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 
 func newWorkspaceUpdateCommand(e *env) *cobra.Command {
@@ -132,7 +134,7 @@ func newWorkspaceUpdateCommand(e *env) *cobra.Command {
 			return describe("workspace")(ctx, &p.DescriptionFlags, cmd)
 		},
 		RunFuncE: func(p *workspaceUpdateParams, cmd *cobra.Command, _ []string) error {
-			patch := backend.WorkspacePatch{Name: p.Name}
+			patch := backend.WorkspacePatch{Name: p.Name, RepositoryURL: p.RepositoryURL}
 			description, ifMatch, err := p.valueForUpdate(e, "workspace", p.Key, p.Force)
 			if err != nil {
 				return err

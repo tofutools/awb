@@ -193,15 +193,16 @@ func (t *IssueTree) UnmarshalJSON(data []byte) error {
 // Workspace is the top-level organising unit. ActiveIssues counts the issues
 // that are not closed; it is derived and read-only, as are the two timestamps.
 type Workspace struct {
-	Key          string         `json:"key"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description"`
-	State        WorkspaceState `json:"state"`
-	ArchivedAt   string         `json:"archived_at"`
-	ArchivedBy   string         `json:"archived_by"`
-	ActiveIssues int            `json:"active_issues"`
-	CreatedAt    string         `json:"created_at"`
-	UpdatedAt    string         `json:"updated_at"`
+	Key           string         `json:"key"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	RepositoryURL string         `json:"repository_url"`
+	State         WorkspaceState `json:"state"`
+	ArchivedAt    string         `json:"archived_at"`
+	ArchivedBy    string         `json:"archived_by"`
+	ActiveIssues  int            `json:"active_issues"`
+	CreatedAt     string         `json:"created_at"`
+	UpdatedAt     string         `json:"updated_at"`
 }
 
 // WorkspaceActivity is the append-only audit trail of lifecycle transitions.

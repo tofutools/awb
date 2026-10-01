@@ -112,6 +112,17 @@ func TestValidateDescription(t *testing.T) {
 }
 
 func TestValidateImplementationLinks(t *testing.T) {
+	t.Run("repository URL", func(t *testing.T) {
+		for _, value := range []string{"", "https://github.com/tofutools/awb", "https://gitlab.com/team/project.git/", "http://bitbucket.org/team/project"} {
+			got, err := domain.ValidateRepositoryURL(value)
+			require.NoError(t, err)
+			assert.Equal(t, value, got)
+		}
+		for _, value := range []string{"github.com/team/project", "ftp://example.com/project", "https://example.com", "https://user@example.com/project", "https://example.com/project?tab=readme", "https://example.com/project#readme", "https://example.com/project one"} {
+			_, err := domain.ValidateRepositoryURL(value)
+			assertUsage(t, err, value)
+		}
+	})
 	t.Run("commit hash", func(t *testing.T) {
 		for _, value := range []string{"", "0123456", strings.Repeat("A", domain.MaxCommitHashLen)} {
 			got, err := domain.ValidateCommitHash(value)

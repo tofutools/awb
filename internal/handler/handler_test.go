@@ -239,6 +239,23 @@ func TestSearchNavigation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
 }
 
+func TestWorkspaceRepositoryURLAPI(t *testing.T) {
+	a := newAPI(t)
+	resp, payload := a.do(http.MethodPut, "/api/workspaces/web", `{"key":"web","repository_url":"https://github.com/team/repo"}`)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"repository_url":"https://github.com/team/repo"`)
+
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":"https://gitlab.com/team/repo"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"repository_url":"https://gitlab.com/team/repo"`)
+
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":"javascript:alert(1)"}`)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)
+	resp, payload = a.do(http.MethodGet, "/api/workspaces/web", "")
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"repository_url":"https://gitlab.com/team/repo"`)
+}
+
 func TestWorkspacePreferencesRecoverIgnoredWorkspaces(t *testing.T) {
 	a := newAPI(t)
 	_, err := a.be.CreateUser(t.Context(), backend.UserCreate{Name: "mikael", Password: "hunter2"})

@@ -81,9 +81,10 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *api.WorkspaceCreate,
 		return nil, awberr.Usagef("a workspace key in the body must match the path")
 	}
 	workspace, err := h.backendFor(ctx).CreateWorkspace(ctx, backend.WorkspaceCreate{
-		Key:         string(req.Key),
-		Name:        req.Name.Or(""),
-		Description: req.Description.Or(""),
+		Key:           string(req.Key),
+		Name:          req.Name.Or(""),
+		Description:   req.Description.Or(""),
+		RepositoryURL: string(req.RepositoryURL.Or("")),
 	})
 	if err != nil {
 		return nil, err
@@ -118,13 +119,22 @@ func (h *Handler) UpdateWorkspace(ctx context.Context, req *api.WorkspacePatch,
 	}
 
 	workspace, err := h.backendFor(ctx).UpdateWorkspace(ctx, key, backend.WorkspacePatch{
-		Name:        optString(req.Name),
-		Description: optString(req.Description),
+		Name:          optString(req.Name),
+		Description:   optString(req.Description),
+		RepositoryURL: optRepositoryURL(req.RepositoryURL),
 	}, params.IfMatch.Or(""))
 	if err != nil {
 		return nil, err
 	}
 	return workspaceResponse(workspace), nil
+}
+
+func optRepositoryURL(value api.OptRepositoryURL) *string {
+	if url, ok := value.Get(); ok {
+		text := string(url)
+		return &text
+	}
+	return nil
 }
 
 // DeleteWorkspace takes --cascade as a boolean query parameter. There is no
