@@ -22,12 +22,20 @@ export function Badge({
   return <span class={`listing-badge ${className}`}>{children}</span>;
 }
 type BadgeIssue = Pick<IssueSummary, "priority" | "status" | "blocked" | "assignees" | "labels">;
-export function IssueBadges({ issue }: { issue: BadgeIssue }) {
+export function IssueBadges({
+  issue,
+  showStatus = true,
+}: {
+  issue: BadgeIssue;
+  showStatus?: boolean;
+}) {
   const { identity } = useApp();
   return (
     <span class="badges">
       <Badge className={`priority p${issue.priority}`}>P{issue.priority}</Badge>
-      <Badge className={`status status-${issue.status}`}>{issue.status}</Badge>
+      {showStatus && (
+        <Badge className={`status status-${issue.status}`}>{issue.status}</Badge>
+      )}
       {issue.blocked && <Badge className="blocked">blocked</Badge>}
       {issue.assignees.map((name) => (
         <Badge

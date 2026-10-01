@@ -45,7 +45,12 @@ export function DashboardPage() {
                 {issues.map((issue) => (
                   <li key={issue.id}>
                     <NameLink href={`#/issues/${issue.id}`} id={issue.id} title={issue.title} />
-                    <IssueBadges issue={issue} />
+                    {issue.pull_request_url && (
+                      <a class="dashboard-pr" href={issue.pull_request_url}>
+                        {issue.pull_request_url}
+                      </a>
+                    )}
+                    <IssueBadges issue={issue} showStatus={false} />
                   </li>
                 ))}
               </ul>

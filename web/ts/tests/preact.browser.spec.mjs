@@ -102,7 +102,9 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const first = await fixture(page, "dashboarda");
   const second = await fixture(page, "dashboardb");
   const empty = await fixture(page, "dashboardempty");
-  const active = await createIssue(page, first, "Dashboard active work");
+  const active = await createIssue(page, first, "Dashboard active work", {
+    pull_request_url: "https://example.com/pull/123",
+  });
   await createIssue(page, first, "Dashboard open work");
   const other = await createIssue(page, second, "Dashboard other work");
 
@@ -122,6 +124,9 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const secondSection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(second) }) });
   const emptySection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(empty) }) });
   await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
+  await expect(firstSection.getByRole("link", { name: "https://example.com/pull/123" }))
+    .toHaveAttribute("href", "https://example.com/pull/123");
+  await expect(firstSection.locator(".status-in_progress")).toHaveCount(0);
   await expect(firstSection.getByText("Dashboard open work")).toHaveCount(0);
   await expect(secondSection.getByRole("link", { name: /Dashboard other work/ })).toBeVisible();
   await expect(emptySection.getByText("No issues in progress.")).toBeVisible();
