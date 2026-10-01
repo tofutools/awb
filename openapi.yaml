@@ -2368,7 +2368,7 @@ components:
       type: string
       description: Optional absolute HTTP or HTTPS Git repository URL used for commit links. No credentials, query, or fragment.
       maxLength: 1000
-      pattern: '^(|https?://[^/\s@?#]+(?:/[^\s?#]+)+)$'
+      pattern: '^(|https?://[^/\s@?#]+(?:/[^/\s?#]+)+/?)$'
 
     IssueMetadata:
       type: object

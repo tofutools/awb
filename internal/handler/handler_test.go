@@ -248,6 +248,11 @@ func TestWorkspaceRepositoryURLAPI(t *testing.T) {
 	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":"https://gitlab.com/team/repo"}`)
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	assert.Contains(t, payload, `"repository_url":"https://gitlab.com/team/repo"`)
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":""}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	assert.Contains(t, payload, `"repository_url":""`)
+	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":"https://gitlab.com/team/repo"}`)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 
 	resp, payload = a.do(http.MethodPatch, "/api/workspaces/web", `{"repository_url":"javascript:alert(1)"}`)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, payload)

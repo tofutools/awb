@@ -93,7 +93,7 @@ func (b *Backend) ListWorkspacesByState(ctx context.Context, filter string, stat
 	return page, nil
 }
 
-// UpdateWorkspace changes a workspace's name or description. The key itself is
+// UpdateWorkspace changes a workspace's name, description, or repository URL. The key itself is
 // immutable. An empty name restores the key as the name.
 func (b *Backend) UpdateWorkspace(ctx context.Context, key string, req backend.WorkspacePatch,
 	ifMatch string) (*domain.Workspace, error) {

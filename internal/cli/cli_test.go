@@ -1499,7 +1499,24 @@ func TestDemoOutput(t *testing.T) {
 	var workspace domain.Workspace
 	require.NoError(t, json.Unmarshal([]byte(h.mustRun("demo", "--force", "--json")), &workspace))
 	assert.Equal(t, "demo", workspace.Key)
+	assert.Equal(t, "https://github.com/tofutools/awb", workspace.RepositoryURL)
 	assert.NotZero(t, workspace.ActiveIssues, "the count is the one after the issues were created")
+	var commitShown bool
+	for _, issue := range h.demoIssues() {
+		commitShown = commitShown || issue.CommitHash != ""
+	}
+	assert.True(t, commitShown, "a demo issue shows the repository commit link")
+}
+
+func TestWorkspaceRepositoryURLFlags(t *testing.T) {
+	h := newHarness(t)
+	h.mustRun("workspace", "create", "web", "--repository-url", "https://github.com/team/repo")
+	var workspace domain.Workspace
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("workspace", "show", "web", "--json")), &workspace))
+	assert.Equal(t, "https://github.com/team/repo", workspace.RepositoryURL)
+	h.mustRun("workspace", "update", "web", "--repository-url", "")
+	require.NoError(t, json.Unmarshal([]byte(h.mustRun("workspace", "show", "web", "--json")), &workspace))
+	assert.Empty(t, workspace.RepositoryURL)
 }
 
 // A second run replaces the demo workspace wholesale, clearing whatever else is

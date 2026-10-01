@@ -87,7 +87,7 @@ func TestCancelledRouteReadDoesNotPoisonLaterAuthentication(t *testing.T) {
 			requestFinished <- err
 		case "/healthy":
 			if err := db.Write(r.Context(), func(tx *storage.Tx) error {
-				return tx.InsertWorkspace("healthy", "Healthy", "")
+				return tx.InsertWorkspace("healthy", "Healthy", "", "")
 			}); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

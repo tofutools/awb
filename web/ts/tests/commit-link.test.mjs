@@ -15,4 +15,7 @@ test("unconfigured or unsupported repositories keep the hash unlinked", () => {
   assert.equal(commitLink("https://example.com/team/repo", "abcdef1"), undefined);
   assert.equal(commitLink("javascript:alert(1)", "abcdef1"), undefined);
   assert.equal(commitLink("https://github.com/team/repo", "not-a-hash"), undefined);
+  assert.equal(commitLink("https://github.com/team/repo?", "abcdef1"), undefined);
+  assert.equal(commitLink("https://github.com/team/repo#", "abcdef1"), undefined);
+  assert.equal(commitLink("https://github.com//", "abcdef1"), undefined);
 });

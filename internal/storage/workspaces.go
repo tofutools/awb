@@ -200,11 +200,7 @@ func (t *Tx) SearchWorkspacesForNavigation(query string, limit int) ([]domain.Wo
 }
 
 // InsertWorkspace stores a new workspace.
-func (t *Tx) InsertWorkspace(key, name, description string, repositoryURLs ...string) error {
-	repositoryURL := ""
-	if len(repositoryURLs) > 0 {
-		repositoryURL = repositoryURLs[0]
-	}
+func (t *Tx) InsertWorkspace(key, name, description, repositoryURL string) error {
 	now := Now()
 	_, err := t.q.ExecContext(t.ctx, `
 		INSERT INTO workspaces (key, name, description, repository_url, created_at, updated_at)
@@ -218,15 +214,11 @@ func (t *Tx) InsertWorkspace(key, name, description string, repositoryURLs ...st
 	return nil
 }
 
-// UpdateWorkspace writes a workspace's name and description, moving updated_at
+// UpdateWorkspace writes a workspace's name, description, and repository URL, moving updated_at
 // only when something actually changed. Creating, changing or deleting an
 // issue the workspace holds does not touch it: active_issues is derived, not
 // stored.
-func (t *Tx) UpdateWorkspace(p *domain.Workspace, name, description string, repositoryURLs ...string) error {
-	repositoryURL := p.RepositoryURL
-	if len(repositoryURLs) > 0 {
-		repositoryURL = repositoryURLs[0]
-	}
+func (t *Tx) UpdateWorkspace(p *domain.Workspace, name, description, repositoryURL string) error {
 	if name == p.Name && description == p.Description && repositoryURL == p.RepositoryURL {
 		return nil
 	}

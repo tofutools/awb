@@ -309,7 +309,7 @@ function WorkspaceCreateForm({ hidden }: { hidden: boolean }) {
       <Field label="Name (optional)">
         <input name="name" maxLength={500} />
       </Field>
-      <Field label="Git repository URL (optional)">
+      <Field label="GitHub, GitLab, or Bitbucket repository URL (optional)">
         <input name="repository_url" type="url" maxLength={1000} placeholder="https://github.com/owner/repo" />
       </Field>
       <MarkdownField
@@ -1227,7 +1227,7 @@ function WorkspaceEditForm({
       <Field label="Name">
         <input name="name" defaultValue={workspace.name} maxLength={500} />
       </Field>
-      <Field label="Git repository URL (optional)">
+      <Field label="GitHub, GitLab, or Bitbucket repository URL (optional)">
         <input name="repository_url" type="url" defaultValue={workspace.repository_url} maxLength={1000} placeholder="https://github.com/owner/repo" />
       </Field>
       <MarkdownField

@@ -106,7 +106,7 @@ func ValidateRepositoryURL(s string) (string, error) {
 		return "", awberr.Usagef("repository URL must be at most %d characters and contain no whitespace", MaxRepositoryURLLen)
 	}
 	parsed, err := url.Parse(s)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path == "" || parsed.Path == "/" {
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || strings.ContainsAny(s, "?#") || parsed.Path == "" || parsed.Path == "/" || strings.Contains(parsed.Path, "//") {
 		return "", awberr.Usagef("repository URL must be an absolute http or https repository URL without credentials, query, or fragment")
 	}
 	return s, nil

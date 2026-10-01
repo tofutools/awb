@@ -76,7 +76,7 @@ type workspaceCreateParams struct {
 	DescriptionFlags
 	Key           string `positional:"true" required:"true"`
 	Name          string `long:"name" optional:"true" help:"human-readable name; defaults to the key"`
-	RepositoryURL string `long:"repository-url" optional:"true" help:"HTTP(S) Git repository URL for commit links"`
+	RepositoryURL string `long:"repository-url" optional:"true" help:"GitHub, GitLab, or Bitbucket repository URL for commit links"`
 }
 
 func newWorkspaceCreateCommand(e *env) *cobra.Command {
@@ -116,7 +116,7 @@ type workspaceUpdateParams struct {
 	DescriptionFlags
 	Key           string  `positional:"true" required:"true"`
 	Name          *string `long:"name" help:"human-readable name; \"\" restores the key"`
-	RepositoryURL *string `long:"repository-url" help:"HTTP(S) Git repository URL; empty clears it"`
+	RepositoryURL *string `long:"repository-url" help:"GitHub, GitLab, or Bitbucket repository URL; empty clears it"`
 	Force         bool    `long:"force" optional:"true" help:"replace the description without a fetched-version precondition"`
 }
 

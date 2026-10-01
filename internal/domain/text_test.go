@@ -118,7 +118,7 @@ func TestValidateImplementationLinks(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, value, got)
 		}
-		for _, value := range []string{"github.com/team/project", "ftp://example.com/project", "https://example.com", "https://user@example.com/project", "https://example.com/project?tab=readme", "https://example.com/project#readme", "https://example.com/project one"} {
+		for _, value := range []string{"github.com/team/project", "ftp://example.com/project", "https://example.com", "https://user@example.com/project", "https://example.com/project?tab=readme", "https://example.com/project#readme", "https://github.com/a/b?", "https://github.com/a/b#", "https://github.com//", "https://example.com/project one"} {
 			_, err := domain.ValidateRepositoryURL(value)
 			assertUsage(t, err, value)
 		}

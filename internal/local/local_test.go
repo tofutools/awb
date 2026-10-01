@@ -1129,6 +1129,10 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	read, err := b.GetWorkspace(ctx, "web")
 	require.NoError(t, err)
 	assert.Equal(t, repositoryURL, read.RepositoryURL)
+	emptyURL := ""
+	cleared, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{RepositoryURL: &emptyURL}, "")
+	require.NoError(t, err)
+	assert.Empty(t, cleared.RepositoryURL)
 
 	name := "Web UI"
 	updated, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &name}, "")
