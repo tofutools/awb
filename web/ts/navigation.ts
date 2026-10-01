@@ -24,6 +24,7 @@ export const namedDestinations: readonly NamedDestination[] = [
   defaultDestination,
   { id: "ready", label: "Ready", path: "#/ready", keywords: "board unassigned available", workspaceScoped: "ready" },
   { id: "blocked", label: "Blocked", path: "#/blocked", keywords: "dependencies waiting", workspaceScoped: "blocked" },
+  { id: "dashboard", label: "Dashboard", path: "#/dashboard", keywords: "in progress work by workspace" },
   { id: "boards", label: "Boards", path: "#/boards", keywords: "kanban scrum swimlanes views", workspaceScoped: "boards" },
   { id: "workspaces", label: "Workspaces", path: "#/workspaces", keywords: "workspaces boards", workspaceScoped: "workspaces" },
   { id: "users", label: "Users", path: "#/users", keywords: "people members accounts" },

@@ -331,7 +331,8 @@ func toIssues(issues []domain.Issue) []api.Issue {
 func toIssueSummary(issue *domain.IssueSummary) api.IssueSummary {
 	result := api.IssueSummary{
 		ID: issue.ID, Workspace: api.WorkspaceKey(issue.Workspace), Title: issue.Title,
-		Type: api.Type(issue.Type), Status: api.Status(issue.Status), Priority: api.Priority(issue.Priority),
+		PullRequestURL: api.PullRequestURL(issue.PullRequestURL),
+		Type:           api.Type(issue.Type), Status: api.Status(issue.Status), Priority: api.Priority(issue.Priority),
 		Labels: toLabels(issue.Labels), Assignees: toAssignees(issue.Assignees),
 		UpdatedAt: api.Timestamp(issue.UpdatedAt), Blocked: issue.Blocked,
 		Blockers: make([]api.IssueID, len(issue.Blockers)), Parent: issue.Parent, ParentTitle: issue.ParentTitle,

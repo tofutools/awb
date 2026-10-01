@@ -812,7 +812,7 @@ func TestPaging(t *testing.T) {
 // answers with it and nothing else: a listing, a board, a suggestion and a
 // navigation result alike.
 var issueSummaryKeys = []string{
-	"id", "workspace", "title", "type", "status", "priority", "labels", "assignees",
+	"id", "workspace", "title", "pull_request_url", "type", "status", "priority", "labels", "assignees",
 	"updated_at", "blocked", "blockers", "parent", "parent_title",
 }
 
@@ -836,6 +836,7 @@ func TestIssueListingsReturnSummariesAndFullListingRetainsRecords(t *testing.T) 
 	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
 	summaries := assertIssueSummaries(t, payload)
 	require.Len(t, summaries, 1)
+	assert.JSONEq(t, `"https://example.com/pull/1"`, string(summaries[0]["pull_request_url"]))
 	assert.NotContains(t, summaries[0], "description")
 	assert.NotContains(t, summaries[0], "attachments")
 	assert.NotContains(t, summaries[0], "relations")

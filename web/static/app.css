@@ -657,6 +657,35 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   font-family: var(--mono);
 }
 
+.dashboard-workspace { margin-top: 1.5rem; }
+.dashboard-workspace h2 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+  font-size: 1.1rem;
+}
+.dashboard-workspace-key, .dashboard-count { color: var(--muted); font-size: 0.75rem; font-weight: normal; }
+.dashboard-count { margin-left: auto; }
+.dashboard-issues { margin: 0; padding: 0; list-style: none; }
+.dashboard-issues li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  background: var(--panel);
+}
+.dashboard-issues li:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.dashboard-issues li:last-child { border-bottom: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); }
+.dashboard-issues li:only-child { border-radius: var(--radius); }
+.dashboard-pr { overflow-wrap: anywhere; font-size: 0.8rem; }
+.dashboard-issues .badges { margin-left: auto; }
+.dashboard-empty { margin: 0; color: var(--muted); }
+
 .listing-table {
   width: 100%;
   border: 1px solid var(--line);

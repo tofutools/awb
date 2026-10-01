@@ -13,6 +13,10 @@ test("Issues is the first primary destination", () => {
   assert.equal(defaultDestination.id, "issues");
   assert.equal(defaultDestination.path, "#/issues");
   assert.equal(namedDestinations[0], defaultDestination);
+  assert.deepEqual(
+    namedDestinations.slice(2, 5).map((destination) => destination.id),
+    ["blocked", "dashboard", "boards"],
+  );
 });
 
 test("issue listing tabs preserve selected workspace filters", () => {

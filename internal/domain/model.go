@@ -79,19 +79,20 @@ type Issue struct {
 // only fields those views render or need for interaction; GetIssue remains the
 // complete representation used for editing, inspection and export.
 type IssueSummary struct {
-	ID          string   `json:"id"`
-	Workspace   string   `json:"workspace"`
-	Title       string   `json:"title"`
-	Type        Type     `json:"type"`
-	Status      Status   `json:"status"`
-	Priority    int      `json:"priority"`
-	Labels      []string `json:"labels"`
-	Assignees   []string `json:"assignees"`
-	UpdatedAt   string   `json:"updated_at"`
-	Blocked     bool     `json:"blocked"`
-	Blockers    []string `json:"blockers"`
-	Parent      string   `json:"parent"`
-	ParentTitle string   `json:"parent_title"`
+	ID             string   `json:"id"`
+	Workspace      string   `json:"workspace"`
+	Title          string   `json:"title"`
+	PullRequestURL string   `json:"pull_request_url"`
+	Type           Type     `json:"type"`
+	Status         Status   `json:"status"`
+	Priority       int      `json:"priority"`
+	Labels         []string `json:"labels"`
+	Assignees      []string `json:"assignees"`
+	UpdatedAt      string   `json:"updated_at"`
+	Blocked        bool     `json:"blocked"`
+	Blockers       []string `json:"blockers"`
+	Parent         string   `json:"parent"`
+	ParentTitle    string   `json:"parent_title"`
 }
 
 // Normalize makes the summary deterministic and keeps collection fields
@@ -113,7 +114,7 @@ func (i *IssueSummary) Normalize() {
 // Summary projects a complete issue without changing either representation.
 func (i *Issue) Summary() IssueSummary {
 	summary := IssueSummary{
-		ID: i.ID, Workspace: i.Workspace, Title: i.Title, Type: i.Type,
+		ID: i.ID, Workspace: i.Workspace, Title: i.Title, PullRequestURL: i.PullRequestURL, Type: i.Type,
 		Status: i.Status, Priority: i.Priority, Labels: slices.Clone(i.Labels),
 		Assignees: slices.Clone(i.Assignees), UpdatedAt: i.UpdatedAt,
 		Blocked: i.Blocked, Blockers: slices.Clone(i.Blockers), Parent: i.Parent,

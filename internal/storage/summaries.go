@@ -6,13 +6,13 @@ import (
 )
 
 // issueSummaryColumns is deliberately narrower than issueColumns: collection
-// views do not read descriptions, integration metadata, ordering, or lifecycle
+// views do not read descriptions, other integration metadata, ordering, or lifecycle
 // timestamps they never return.
-const issueSummaryColumns = `i.id, i.workspace, i.title, i.type, i.status, i.priority, i.updated_at`
+const issueSummaryColumns = `i.id, i.workspace, i.title, i.pull_request_url, i.type, i.status, i.priority, i.updated_at`
 
 func scanIssueSummary(row rowScanner) (*domain.IssueSummary, error) {
 	var issue domain.IssueSummary
-	err := row.Scan(&issue.ID, &issue.Workspace, &issue.Title, &issue.Type,
+	err := row.Scan(&issue.ID, &issue.Workspace, &issue.Title, &issue.PullRequestURL, &issue.Type,
 		&issue.Status, &issue.Priority, &issue.UpdatedAt)
 	return &issue, err
 }

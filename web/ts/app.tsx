@@ -14,6 +14,7 @@ import { Palette } from "./components/palette.js";
 import { ListingPage } from "./pages/listing.js";
 import { IssuePage, TreePage } from "./pages/issue.js";
 import { BoardsPage } from "./pages/boards.js";
+import { DashboardPage } from "./pages/dashboard.js";
 import {
   WorkspacesPage,
   WorkspacePage,
@@ -145,6 +146,8 @@ function RouteView({ route }: { route: Route }) {
       );
     case "blocked":
       return <ListingPage route={route} kind="blocked" />;
+    case "dashboard":
+      return <DashboardPage />;
     case "boards":
       return <BoardsPage route={route} />;
     case "tree":
