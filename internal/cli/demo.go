@@ -45,11 +45,12 @@ type demoIssue struct {
 	// refer to one that comes before it.
 	key string
 
-	title       string
-	description string
-	issueType   domain.Type
-	priority    int
-	labels      []string
+	title          string
+	description    string
+	pullRequestURL string
+	issueType      domain.Type
+	priority       int
+	labels         []string
 	// assignees make creation an atomic create-and-claim, so the issue lands in
 	// in_progress rather than open.
 	assignees []string
@@ -111,14 +112,15 @@ var demoIssues = []demoIssue{{
 	description: "Tables for widgets, tags and the join between them.\n",
 	hasParent:   "release",
 }, {
-	key:         "catalogue",
-	title:       "Browse the widget catalogue",
-	issueType:   domain.TypeFeature,
-	priority:    1,
-	labels:      []string{"catalogue", "frontend"},
-	assignees:   []string{"alice", "bob"},
-	description: "A paged list of widgets, newest first, with a detail page for each.\n",
-	hasParent:   "release",
+	key:            "catalogue",
+	title:          "Browse the widget catalogue",
+	issueType:      domain.TypeFeature,
+	priority:       1,
+	labels:         []string{"catalogue", "frontend"},
+	assignees:      []string{"alice", "bob"},
+	pullRequestURL: "https://example.com/widgets/pull/42",
+	description:    "A paged list of widgets, newest first, with a detail page for each.\n",
+	hasParent:      "release",
 	// The blocker is already closed, so this shows a dependency that no longer
 	// holds anything up.
 	blockedBy: []string{"schema"},
@@ -346,16 +348,17 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 		}
 		priority := d.priority
 		issue, err := be.CreateIssue(ctx, backend.IssueCreate{
-			Backlog:     d.backlog,
-			Workspace:   demoWorkspaceKey,
-			Title:       d.title,
-			Description: d.description,
-			Type:        d.issueType,
-			Priority:    &priority,
-			Metadata:    metadata,
-			Assignees:   d.assignees,
-			Labels:      d.labels,
-			Relations:   relations,
+			Backlog:        d.backlog,
+			Workspace:      demoWorkspaceKey,
+			Title:          d.title,
+			Description:    d.description,
+			PullRequestURL: d.pullRequestURL,
+			Type:           d.issueType,
+			Priority:       &priority,
+			Metadata:       metadata,
+			Assignees:      d.assignees,
+			Labels:         d.labels,
+			Relations:      relations,
 		})
 		if err != nil {
 			return nil, err

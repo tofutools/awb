@@ -124,12 +124,17 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const secondSection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(second) }) });
   const emptySection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(empty) }) });
   await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
-  await expect(firstSection.getByRole("link", { name: "https://example.com/pull/123" }))
-    .toHaveAttribute("href", "https://example.com/pull/123");
+  const dashboardPR = firstSection.getByRole("link", { name: "https://example.com/pull/123" });
+  await expect(dashboardPR).toHaveAttribute("href", "https://example.com/pull/123");
+  await expect(dashboardPR).toHaveAttribute("target", "_blank");
   await expect(firstSection.locator(".status-in_progress")).toHaveCount(0);
   await expect(firstSection.getByText("Dashboard open work")).toHaveCount(0);
   await expect(secondSection.getByRole("link", { name: /Dashboard other work/ })).toBeVisible();
   await expect(emptySection.getByText("No issues in progress.")).toBeVisible();
+
+  await page.goto(`${baseURL}/#/issues/${active.id}`);
+  const detailPR = page.locator(".issue-facts a[href='https://example.com/pull/123']");
+  await expect(detailPR).toHaveAttribute("target", "_blank");
 });
 
 test("the root opens Issues first and the status view can show closed work", async ({

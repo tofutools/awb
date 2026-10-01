@@ -94,10 +94,11 @@ An issue belongs to exactly one workspace and carries:
 Issue detail, mutation responses, CLI JSON, and export use the complete issue
 representation. Every collection uses a fixed summary projection — listings,
 boards, reference suggestions and navigation results alike: identity and
-workflow fields, labels and assignees, active blockers, and the direct parent.
-This keeps descriptions, attachment metadata, extracted links, integration
-metadata, and the complete relation graph out of collection reads. A listing
-reads what it draws, so a table, a compact line and the interactive picker read
+workflow fields, labels and assignees, active blockers, the direct parent, and
+the pull request URL used by the dashboard. This keeps descriptions, attachment
+metadata, extracted links, other integration metadata, and the complete relation
+graph out of collection reads. A listing reads what it draws, so a table, a
+compact line and the interactive picker read
 summaries and only `--json` reads the complete records; against a server that
 is the difference between `/api/issues` and `/api/issues/full`.
 Both representations are normalized and deterministic, and absent collections

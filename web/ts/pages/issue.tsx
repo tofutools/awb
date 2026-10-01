@@ -547,7 +547,9 @@ function IssueSidebar({
           {issue.pull_request_url &&
             fact(
               "Pull request",
-              <a href={issue.pull_request_url}>{issue.pull_request_url}</a>,
+              <a href={issue.pull_request_url} target="_blank" rel="noopener noreferrer">
+                {issue.pull_request_url}
+              </a>,
             )}
           {fact(
             "Parent",

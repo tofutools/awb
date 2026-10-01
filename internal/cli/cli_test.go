@@ -1411,7 +1411,7 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 	relations := map[domain.RelationType]bool{}
 	labels := map[string]bool{}
 	assignees := map[string]bool{}
-	var links, structured, closeReasons, severalBlockers, severalAssignees int
+	var links, structured, closeReasons, severalBlockers, severalAssignees, dashboardPRs int
 
 	var epic string
 	for i := range issues {
@@ -1430,6 +1430,9 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 		}
 		if len(issue.Assignees) > 1 {
 			severalAssignees++
+		}
+		if issue.Status == domain.StatusInProgress && issue.PullRequestURL != "" {
+			dashboardPRs++
 		}
 		links += len(issue.Links)
 		// More than links: a description that exercises the Markdown a terminal
@@ -1474,6 +1477,7 @@ func TestDemoCoversTheVocabulary(t *testing.T) {
 		"a description written as Markdown, so the rendered description has something to show")
 	assert.NotZero(t, closeReasons, "a closed issue that records why")
 	assert.NotZero(t, severalBlockers, "an issue with more than one blocker")
+	assert.NotZero(t, dashboardPRs, "an in-progress issue with a pull request for the dashboard")
 
 	// Both halves of readiness have something to show.
 	assert.NotEmpty(t, h.mustRun("ready", "--workspace", "demo", "--compact"))
