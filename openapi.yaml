@@ -2364,6 +2364,12 @@ components:
       maxLength: 1000
       pattern: '^(|https?://[^/\s?#]+(?:[^\s]*)?)$'
 
+    RepositoryURL:
+      type: string
+      description: Optional absolute HTTP or HTTPS Git repository URL used for commit links. No credentials, query, or fragment.
+      maxLength: 1000
+      pattern: '^(|https?://[^/\s@?#]+(?:/[^/\s?#]+)+/?)$'
+
     IssueMetadata:
       type: object
       description: |
@@ -2746,7 +2752,7 @@ components:
       description: Compatibility-named representation of one workspace.
       type: object
       additionalProperties: false
-      required: [key, name, description, state, archived_at, archived_by, active_issues, created_at, updated_at]
+      required: [key, name, description, repository_url, state, archived_at, archived_by, active_issues, created_at, updated_at]
       properties:
         key: { $ref: '#/components/schemas/WorkspaceKey' }
         name:
@@ -2761,6 +2767,7 @@ components:
           description: |
             GitHub Flavored Markdown, validated on the way in as **Markdown**
             above describes. At most 64 KiB of UTF-8.
+        repository_url: { $ref: '#/components/schemas/RepositoryURL' }
         state:
           type: string
           enum: [active, archived]
@@ -3133,6 +3140,7 @@ components:
           maxLength: 500
           description: Defaults to the key.
         description: { type: string }
+        repository_url: { $ref: '#/components/schemas/RepositoryURL' }
 
     WorkspacePatch:
       type: object
@@ -3149,6 +3157,7 @@ components:
           maxLength: 500
           description: '`""` restores the key as the name.'
         description: { type: string }
+        repository_url: { $ref: '#/components/schemas/RepositoryURL' }
         key: { $ref: '#/components/schemas/WorkspaceKey' }
         active_issues: { type: integer, minimum: 0 }
         created_at: { $ref: '#/components/schemas/Timestamp' }

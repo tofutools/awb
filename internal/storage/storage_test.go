@@ -26,7 +26,7 @@ func newDB(t *testing.T) *storage.DB {
 func seed(t *testing.T, db *storage.DB) func(title string, mutate ...func(*domain.Issue)) string {
 	t.Helper()
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertWorkspace("awb", "Agent Work Board", "")
+		return tx.InsertWorkspace("awb", "Agent Work Board", "", "")
 	}))
 
 	next := 0
@@ -1007,7 +1007,7 @@ func TestWorkspaceListOrderings(t *testing.T) {
 	// order, so no two orderings agree by accident.
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
 		for _, key := range []string{"beta", "alpha", "gamma"} {
-			if err := tx.InsertWorkspace(key, key, ""); err != nil {
+			if err := tx.InsertWorkspace(key, key, "", ""); err != nil {
 				return err
 			}
 		}
@@ -1035,7 +1035,7 @@ func TestWorkspaceListOrderings(t *testing.T) {
 					return err
 				}
 				// A rename that changes nothing is a no-op, so each one differs.
-				return tx.UpdateWorkspace(workspace, fmt.Sprintf("%s %d", key, i), "")
+				return tx.UpdateWorkspace(workspace, fmt.Sprintf("%s %d", key, i), "", "")
 			}))
 		}
 	}
@@ -1105,7 +1105,7 @@ func TestStatusAndTypeSortByTheVocabulary(t *testing.T) {
 	// One issue per status, on a second workspace so the type set above is not in
 	// the way. Every status is reachable only through its own transition.
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertWorkspace("st", "statuses", "")
+		return tx.InsertWorkspace("st", "statuses", "", "")
 	}))
 	statusIssue := func(title string, mutate func(*domain.Issue)) {
 		t.Helper()
@@ -1260,7 +1260,7 @@ func TestWorkspaces(t *testing.T) {
 	closeIssue(t, db, done)
 
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertWorkspace("web", "web", "")
+		return tx.InsertWorkspace("web", "web", "", "")
 	}))
 
 	workspaces, total, err := func() ([]domain.Workspace, int, error) {
@@ -1301,7 +1301,7 @@ func TestWorkspaces(t *testing.T) {
 
 	// A duplicate key is a conflict.
 	err = db.Write(t.Context(), func(tx *storage.Tx) error {
-		return tx.InsertWorkspace("awb", "again", "")
+		return tx.InsertWorkspace("awb", "again", "", "")
 	})
 	require.Error(t, err)
 	assert.Equal(t, 4, exitOf(err))
@@ -1311,10 +1311,10 @@ func TestWorkspaceListingFilterAppliesBeforePagingAndCounting(t *testing.T) {
 	db := newDB(t)
 	seed(t, db)
 	require.NoError(t, db.Write(t.Context(), func(tx *storage.Tx) error {
-		if err := tx.InsertWorkspace("cli", "Command tools", "remote clients"); err != nil {
+		if err := tx.InsertWorkspace("cli", "Command tools", "remote clients", ""); err != nil {
 			return err
 		}
-		return tx.InsertWorkspace("web", "Web console", "MÜLLER Agent issue tracking")
+		return tx.InsertWorkspace("web", "Web console", "MÜLLER Agent issue tracking", "")
 	}))
 
 	limit, offset := 1, 0

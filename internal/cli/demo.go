@@ -48,6 +48,7 @@ type demoIssue struct {
 	title          string
 	description    string
 	pullRequestURL string
+	commitHash     string
 	issueType      domain.Type
 	priority       int
 	labels         []string
@@ -119,6 +120,7 @@ var demoIssues = []demoIssue{{
 	labels:         []string{"catalogue", "frontend"},
 	assignees:      []string{"alice", "bob"},
 	pullRequestURL: "https://example.com/widgets/pull/42",
+	commitHash:     "e93be817ad22ea565071c030b4e0e0f68d61a4fd",
 	description:    "A paged list of widgets, newest first, with a detail page for each.\n",
 	hasParent:      "release",
 	// The blocker is already closed, so this shows a dependency that no longer
@@ -324,9 +326,10 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 	}
 
 	if _, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{
-		Key:         demoWorkspaceKey,
-		Name:        demoWorkspaceName,
-		Description: demoWorkspaceDesc,
+		Key:           demoWorkspaceKey,
+		Name:          demoWorkspaceName,
+		Description:   demoWorkspaceDesc,
+		RepositoryURL: "https://github.com/tofutools/awb",
 	}); err != nil {
 		return nil, err
 	}
@@ -353,6 +356,7 @@ func buildDemo(ctx context.Context, be backend.Backend, force bool) (*domain.Wor
 			Title:          d.title,
 			Description:    d.description,
 			PullRequestURL: d.pullRequestURL,
+			CommitHash:     d.commitHash,
 			Type:           d.issueType,
 			Priority:       &priority,
 			Metadata:       metadata,

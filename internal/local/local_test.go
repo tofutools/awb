@@ -1118,9 +1118,21 @@ func TestDeleteIssue(t *testing.T) {
 func TestWorkspaceLifecycle(t *testing.T) {
 	b, ctx := newBackend(t)
 
-	created, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web"})
+	created, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "web", RepositoryURL: "https://github.com/tofutools/awb"})
 	require.NoError(t, err)
 	assert.Equal(t, "web", created.Name, "the name defaults to the key")
+	assert.Equal(t, "https://github.com/tofutools/awb", created.RepositoryURL)
+	repositoryURL := "https://gitlab.com/tofutools/awb"
+	changed, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{RepositoryURL: &repositoryURL}, "")
+	require.NoError(t, err)
+	assert.Equal(t, repositoryURL, changed.RepositoryURL)
+	read, err := b.GetWorkspace(ctx, "web")
+	require.NoError(t, err)
+	assert.Equal(t, repositoryURL, read.RepositoryURL)
+	emptyURL := ""
+	cleared, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{RepositoryURL: &emptyURL}, "")
+	require.NoError(t, err)
+	assert.Empty(t, cleared.RepositoryURL)
 
 	name := "Web UI"
 	updated, err := b.UpdateWorkspace(ctx, "web", backend.WorkspacePatch{Name: &name}, "")

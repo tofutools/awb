@@ -99,7 +99,7 @@ func TestCancelledHTTPRequestDoesNotPoisonConnection(t *testing.T) {
 	})
 	mux.HandleFunc("/healthy", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Write(r.Context(), func(tx *Tx) error {
-			return tx.InsertWorkspace("healthy", "Healthy", "")
+			return tx.InsertWorkspace("healthy", "Healthy", "", "")
 		}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -207,7 +207,7 @@ func openImmediateContender(t *testing.T, path string) *sql.DB {
 func assertPoolRemainsUsable(t *testing.T, db *DB) {
 	t.Helper()
 	require.NoError(t, db.Write(t.Context(), func(tx *Tx) error {
-		return tx.InsertWorkspace("healthy", "Healthy", "")
+		return tx.InsertWorkspace("healthy", "Healthy", "", "")
 	}))
 	require.NoError(t, db.Read(t.Context(), func(tx *Tx) error {
 		workspace, err := tx.GetWorkspace("healthy")

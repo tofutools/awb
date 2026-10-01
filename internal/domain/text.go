@@ -26,6 +26,7 @@ const (
 	MaxCommitHashLen     = 128
 	MinCommitHashLen     = 7
 	MaxPullRequestURLLen = 1000
+	MaxRepositoryURLLen  = 1000
 	MaxCommentKeyLen     = 100
 
 	// MaxDescriptionBytes is 64 KiB of UTF-8.
@@ -88,6 +89,25 @@ func ValidatePullRequestURL(s string) (string, error) {
 	parsed, err := url.Parse(s)
 	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", awberr.Usagef("pull request URL must be an absolute http or https URL")
+	}
+	return s, nil
+}
+
+// ValidateRepositoryURL accepts an optional HTTP(S) repository root. A query,
+// fragment, or credentials cannot form part of a stable commit link.
+func ValidateRepositoryURL(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	if err := checkUTF8("repository URL", s); err != nil {
+		return "", err
+	}
+	if utf8.RuneCountInString(s) > MaxRepositoryURLLen || strings.IndexFunc(s, unicode.IsSpace) >= 0 {
+		return "", awberr.Usagef("repository URL must be at most %d characters and contain no whitespace", MaxRepositoryURLLen)
+	}
+	parsed, err := url.Parse(s)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || strings.ContainsAny(s, "?#") || parsed.Path == "" || parsed.Path == "/" || strings.Contains(parsed.Path, "//") {
+		return "", awberr.Usagef("repository URL must be an absolute http or https repository URL without credentials, query, or fragment")
 	}
 	return s, nil
 }

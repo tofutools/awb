@@ -846,6 +846,7 @@ func (e *env) printWorkspaceDetail(workspace *domain.Workspace) {
 	e.field(t, "Open", strconv.Itoa(workspace.ActiveIssues))
 	e.field(t, "Created", workspace.CreatedAt)
 	e.field(t, "Updated", workspace.UpdatedAt)
+	e.field(t, "Git repository", workspace.RepositoryURL)
 
 	e.writeDescription(t, workspace.Description)
 }

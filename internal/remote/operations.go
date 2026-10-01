@@ -81,14 +81,16 @@ type releaseBody struct {
 }
 
 type workspaceCreateBody struct {
-	Key         string `json:"key"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	Key           string `json:"key"`
+	Name          string `json:"name,omitempty"`
+	Description   string `json:"description,omitempty"`
+	RepositoryURL string `json:"repository_url,omitempty"`
 }
 
 type workspacePatchBody struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	Description   *string `json:"description,omitempty"`
+	RepositoryURL *string `json:"repository_url,omitempty"`
 }
 
 type identityBody struct {
@@ -501,7 +503,7 @@ func (b *Backend) ListActivity(ctx context.Context, ref string, kind domain.Acti
 }
 
 func (b *Backend) CreateWorkspace(ctx context.Context, req backend.WorkspaceCreate) (*domain.Workspace, error) {
-	body := workspaceCreateBody{Key: req.Key, Name: req.Name, Description: req.Description}
+	body := workspaceCreateBody{Key: req.Key, Name: req.Name, Description: req.Description, RepositoryURL: req.RepositoryURL}
 	var workspace domain.Workspace
 	_, err := b.call(ctx, http.MethodPut, b.endpoint("/api/workspaces/"+url.PathEscape(req.Key), nil), body, "", &workspace)
 	if err != nil {
@@ -594,7 +596,7 @@ func (b *Backend) ListWorkspaceActivity(ctx context.Context, key string, limit, 
 
 func (b *Backend) UpdateWorkspace(ctx context.Context, key string, req backend.WorkspacePatch,
 	ifMatch string) (*domain.Workspace, error) {
-	body := workspacePatchBody{Name: req.Name, Description: req.Description}
+	body := workspacePatchBody{Name: req.Name, Description: req.Description, RepositoryURL: req.RepositoryURL}
 	var workspace domain.Workspace
 	_, err := b.call(ctx, http.MethodPatch, b.endpoint("/api/workspaces/"+url.PathEscape(key), nil),
 		body, ifMatch, &workspace)

@@ -395,16 +395,18 @@ type IssueMove struct {
 
 // WorkspaceCreate is the body of awb workspace create and of PUT /api/workspaces/{key}.
 type WorkspaceCreate struct {
-	Key         string
-	Name        string
-	Description string
+	Key           string
+	Name          string
+	Description   string
+	RepositoryURL string
 }
 
 // WorkspacePatch is what awb workspace update and PATCH /api/workspaces/{key} may
 // change. The key itself is immutable.
 type WorkspacePatch struct {
-	Name        *string
-	Description *string
+	Name          *string
+	Description   *string
+	RepositoryURL *string
 }
 
 // ClaimRequest is the body of awb claim and POST /api/issues/{id}/claim.

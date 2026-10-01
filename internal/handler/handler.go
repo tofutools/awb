@@ -391,15 +391,16 @@ func toTree(tree *domain.IssueTree) api.IssueTree {
 
 func toWorkspace(workspace *domain.Workspace) api.Workspace {
 	return api.Workspace{
-		Key:          api.WorkspaceKey(workspace.Key),
-		Name:         workspace.Name,
-		Description:  workspace.Description,
-		State:        api.WorkspaceState(workspace.State),
-		ArchivedAt:   workspace.ArchivedAt,
-		ArchivedBy:   workspace.ArchivedBy,
-		ActiveIssues: workspace.ActiveIssues,
-		CreatedAt:    api.Timestamp(workspace.CreatedAt),
-		UpdatedAt:    api.Timestamp(workspace.UpdatedAt),
+		Key:           api.WorkspaceKey(workspace.Key),
+		Name:          workspace.Name,
+		Description:   workspace.Description,
+		RepositoryURL: api.RepositoryURL(workspace.RepositoryURL),
+		State:         api.WorkspaceState(workspace.State),
+		ArchivedAt:    workspace.ArchivedAt,
+		ArchivedBy:    workspace.ArchivedBy,
+		ActiveIssues:  workspace.ActiveIssues,
+		CreatedAt:     api.Timestamp(workspace.CreatedAt),
+		UpdatedAt:     api.Timestamp(workspace.UpdatedAt),
 	}
 }
 

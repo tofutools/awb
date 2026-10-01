@@ -279,6 +279,7 @@ function WorkspaceCreateForm({ hidden }: { hidden: boolean }) {
             key: formValue(form, "key"),
             name: formValue(form, "name"),
             description: formValue(form, "description"),
+            repository_url: formValue(form, "repository_url"),
           });
         });
         if (ok && created !== undefined)
@@ -307,6 +308,9 @@ function WorkspaceCreateForm({ hidden }: { hidden: boolean }) {
       </p>
       <Field label="Name (optional)">
         <input name="name" maxLength={500} />
+      </Field>
+      <Field label="GitHub, GitLab, or Bitbucket repository URL (optional)">
+        <input name="repository_url" type="url" maxLength={1000} placeholder="https://github.com/owner/repo" />
       </Field>
       <MarkdownField
         label="Description (Markdown)"
@@ -1206,9 +1210,10 @@ function WorkspaceEditForm({
         const submittedURL = location.hash;
         const name = formValue(event.currentTarget, "name");
         const description = formValue(event.currentTarget, "description");
+        const repository_url = formValue(event.currentTarget, "repository_url");
         if (
           await mutation.run(() =>
-            api.updateWorkspace(workspace.key, { name, description }),
+            api.updateWorkspace(workspace.key, { name, description, repository_url }),
           )
         ) {
           await reload();
@@ -1221,6 +1226,9 @@ function WorkspaceEditForm({
       <h2>Edit workspace</h2>
       <Field label="Name">
         <input name="name" defaultValue={workspace.name} maxLength={500} />
+      </Field>
+      <Field label="GitHub, GitLab, or Bitbucket repository URL (optional)">
+        <input name="repository_url" type="url" defaultValue={workspace.repository_url} maxLength={1000} placeholder="https://github.com/owner/repo" />
       </Field>
       <MarkdownField
         label="Description (Markdown)"
@@ -1665,6 +1673,9 @@ export function WorkspacePage({ route }: PageProps) {
           <Markdown text={workspace.description} />
         )}
       </section>
+      {workspace.repository_url && (
+        <p class="workspace-facts">Git repository: <a href={workspace.repository_url} target="_blank" rel="noopener noreferrer">{workspace.repository_url}</a></p>
+      )}
       <p class="workspace-facts">
         {workspace.active_issues} open issue
         {workspace.active_issues === 1 ? "" : "s"} · Updated{" "}
