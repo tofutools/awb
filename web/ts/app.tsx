@@ -147,7 +147,7 @@ function RouteView({ route }: { route: Route }) {
     case "blocked":
       return <ListingPage route={route} kind="blocked" />;
     case "dashboard":
-      return <DashboardPage />;
+      return <DashboardPage route={route} />;
     case "boards":
       return <BoardsPage route={route} />;
     case "tree":

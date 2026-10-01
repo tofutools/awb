@@ -104,9 +104,12 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const empty = await fixture(page, "dashboardempty");
   const active = await createIssue(page, first, "Dashboard active work", {
     pull_request_url: "https://example.com/pull/123",
+    assignees: ["dashboard-alex"],
   });
   await createIssue(page, first, "Dashboard open work");
-  const other = await createIssue(page, second, "Dashboard other work");
+  const other = await createIssue(page, second, "Dashboard other work", {
+    assignees: ["dashboard-blair"],
+  });
 
   for (const issue of [active, other]) {
     const current = await page.request.get(`${baseURL}/api/issues/${issue.id}`);
@@ -131,6 +134,23 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   await expect(firstSection.getByText("Dashboard open work")).toHaveCount(0);
   await expect(secondSection.getByRole("link", { name: /Dashboard other work/ })).toBeVisible();
   await expect(emptySection.getByText("No issues in progress.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add assignee filter" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add assignee filter" });
+  await dialog.getByRole("option", { name: /@dashboard-alex/ }).click();
+  await expect(page).toHaveURL(/assignee=dashboard-alex/);
+  await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
+  await expect(firstSection.locator(".dashboard-count")).toHaveText("1");
+  await expect(secondSection.getByText("Dashboard other work")).toHaveCount(0);
+  await expect(secondSection.locator(".dashboard-count")).toHaveText("0");
+  await page.getByRole("button", { name: "Add assignee filter" }).click();
+  await dialog.getByRole("option", { name: /@dashboard-blair/ }).click();
+  await expect(secondSection.getByRole("link", { name: /Dashboard other work/ })).toBeVisible();
+  await page.getByRole("button", { name: "Remove assignee dashboard-alex" }).click();
+  await expect(firstSection.getByText("Dashboard active work")).toHaveCount(0);
+  await page.getByRole("button", { name: "Remove assignee dashboard-blair" }).click();
+  await expect(page).not.toHaveURL(/assignee=/);
+  await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
 
   await page.goto(`${baseURL}/#/issues/${active.id}`);
   const detailPR = page.locator(".issue-facts a[href='https://example.com/pull/123']");
