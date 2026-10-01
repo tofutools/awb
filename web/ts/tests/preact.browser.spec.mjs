@@ -102,11 +102,19 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const first = await fixture(page, "dashboarda");
   const second = await fixture(page, "dashboardb");
   const empty = await fixture(page, "dashboardempty");
+  const closedAssignee = `${first}-charlie`;
   const active = await createIssue(page, first, "Dashboard active work", {
     pull_request_url: "https://example.com/pull/123",
     assignees: ["dashboard-alex"],
   });
+  await createIssue(page, first, "Dashboard sibling work", {
+    assignees: ["dashboard-blair"],
+  });
   await createIssue(page, first, "Dashboard open work");
+  const closed = await createIssue(page, first, "Dashboard closed work", {
+    assignees: [closedAssignee],
+  });
+  await closeIssue(page, closed);
   const other = await createIssue(page, second, "Dashboard other work", {
     assignees: ["dashboard-blair"],
   });
@@ -127,6 +135,7 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
   const secondSection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(second) }) });
   const emptySection = page.locator(".dashboard-workspace", { has: page.getByRole("heading", { name: new RegExp(empty) }) });
   await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
+  await expect(firstSection.getByRole("link", { name: /Dashboard sibling work/ })).toBeVisible();
   const dashboardPR = firstSection.getByRole("link", { name: "https://example.com/pull/123" });
   await expect(dashboardPR).toHaveAttribute("href", "https://example.com/pull/123");
   await expect(dashboardPR).toHaveAttribute("target", "_blank");
@@ -137,20 +146,31 @@ test("dashboard groups in-progress issues by visible workspace", async ({ page }
 
   await page.getByRole("button", { name: "Add assignee filter" }).click();
   const dialog = page.getByRole("dialog", { name: "Add assignee filter" });
+  await expect(dialog.getByRole("option", { name: /@dashboard-alex/ })).toBeVisible();
+  await expect(dialog.getByRole("option", { name: `@${closedAssignee}`, exact: false })).toHaveCount(0);
   await dialog.getByRole("option", { name: /@dashboard-alex/ }).click();
   await expect(page).toHaveURL(/assignee=dashboard-alex/);
   await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
   await expect(firstSection.locator(".dashboard-count")).toHaveText("1");
+  await expect(firstSection.getByText("Dashboard sibling work")).toHaveCount(0);
   await expect(secondSection.getByText("Dashboard other work")).toHaveCount(0);
   await expect(secondSection.locator(".dashboard-count")).toHaveText("0");
+  await expect(secondSection.getByText("No matching issues in progress.")).toBeVisible();
   await page.getByRole("button", { name: "Add assignee filter" }).click();
   await dialog.getByRole("option", { name: /@dashboard-blair/ }).click();
+  await expect(firstSection.getByRole("link", { name: /Dashboard sibling work/ })).toBeVisible();
   await expect(secondSection.getByRole("link", { name: /Dashboard other work/ })).toBeVisible();
   await page.getByRole("button", { name: "Remove assignee dashboard-alex" }).click();
+  await expect(page).toHaveURL(/assignee=dashboard-blair/);
   await expect(firstSection.getByText("Dashboard active work")).toHaveCount(0);
   await page.getByRole("button", { name: "Remove assignee dashboard-blair" }).click();
   await expect(page).not.toHaveURL(/assignee=/);
   await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
+
+  await page.goto(`${baseURL}/#/dashboard?assignee=dashboard-alex`);
+  await expect(page.getByRole("button", { name: "Remove assignee dashboard-alex" })).toBeVisible();
+  await expect(firstSection.getByRole("link", { name: /Dashboard active work/ })).toBeVisible();
+  await expect(firstSection.getByText("Dashboard sibling work")).toHaveCount(0);
 
   await page.goto(`${baseURL}/#/issues/${active.id}`);
   const detailPR = page.locator(".issue-facts a[href='https://example.com/pull/123']");

@@ -31,21 +31,23 @@ export function DashboardPage({ route }: { route: Route }) {
     <div class="dashboard">
       <h1>Dashboard</h1>
       <p class="lede">Work in progress across your visible workspaces.</p>
-      <DynamicFilterRow
-        route={route}
-        title="assignees"
-        name="assignee"
-        selected={assignees}
-        choices={[]}
-        loadChoices={async () => {
-          const page = await api.assignees({ status: ["in_progress"] });
-          return rankCountedFilterSuggestions(page.rows).map((assignee) => ({
-            value: assignee.value,
-            label: `@${assignee.value}`,
-            detail: `${assignee.count} issue${assignee.count === 1 ? "" : "s"}`,
-          }));
-        }}
-      />
+      <div class="facets">
+        <DynamicFilterRow
+          route={route}
+          title="assignees"
+          name="assignee"
+          selected={assignees}
+          choices={[]}
+          loadChoices={async () => {
+            const page = await api.assignees({ status: ["in_progress"] });
+            return rankCountedFilterSuggestions(page.rows).map((assignee) => ({
+              value: assignee.value,
+              label: `@${assignee.value}`,
+              detail: `${assignee.count} issue${assignee.count === 1 ? "" : "s"}`,
+            }));
+          }}
+        />
+      </div>
       <ErrorMessage error={resource.error} />
       {!resource.data && !resource.error && <Loading />}
       {resource.data?.workspaces.length === 0 && (
@@ -77,7 +79,9 @@ export function DashboardPage({ route }: { route: Route }) {
                 ))}
               </ul>
             ) : (
-              <p class="dashboard-empty">No issues in progress.</p>
+              <p class="dashboard-empty">
+                {assignees.length ? "No matching issues in progress." : "No issues in progress."}
+              </p>
             )}
           </section>
         );
