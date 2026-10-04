@@ -1,6 +1,6 @@
 // Minimal declarations for the committed markdown-it bundle. Only the surface
 // awb uses is declared; the bundle itself is the pre-built ESM artifact under
-// web/static/vendor/.
+// web/static/third_party/.
 declare module "markdown-it" {
   export interface Options {
     html?: boolean;

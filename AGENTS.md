@@ -25,8 +25,8 @@ on failure. `-o DIR` sets where the binary goes.
 
 Prerequisites on `$PATH`: `go` (1.26.6 or later), `ogen`,
 `openapi-typescript`, `tsc`, `golangci-lint`, `node`. No package manager is
-ever invoked: the browser bundles under `web/static/vendor/` are pre-built
-committed artifacts, rebuilt by hand with `web/ts/vendor/rebuild.sh` — the one
+ever invoked: the browser bundles under `web/static/third_party/` are pre-built
+committed artifacts, rebuilt by hand with `web/ts/third_party/rebuild.sh` — the one
 thing here that does need `npm` and the network, and which for that reason no
 build or CI job may call.
 
@@ -59,7 +59,7 @@ comment; GitHub's own `actions/*` are pinned to a major tag.
 | `internal/awberr` | The error taxonomy both surfaces report. |
 | `internal/api` | **Generated** from `openapi.yaml` by ogen. Never edited. |
 | `internal/openapi` | The document itself: the JSON form, the two handlers that publish it, and what it says each operation accepts. |
-| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `ts/vendor/` the vendoring script and its type stubs, `static/` build output and the committed browser bundles, `embed.go`. |
+| `web/` | The frontend: `ts/` sources (`api-types.ts` **generated**), `ts/third_party/` the dependency script and type stubs, `static/` build output and the committed browser bundles, `embed.go`. |
 | `site/` | The project web site, published to GitHub Pages by `.github/workflows/pages.yml`; `assets` links to `docs/assets`. |
 
 Three structural rules hold the design together:

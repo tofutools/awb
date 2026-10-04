@@ -670,7 +670,7 @@ test("Markdown changes notify once and still bubble input", async ({
 }) => {
   await page.goto(`${baseURL}/#/issues`);
   await page.evaluate(async () => {
-    const { h, render } = await import("/vendor/preact-10.29.8.js");
+    const { h, render } = await import("/third_party/preact-10.29.8.js");
     const { MarkdownInput } = await import("/components/markdown-input.js");
     const host = document.createElement("form");
     host.id = "markdown-callback-check";

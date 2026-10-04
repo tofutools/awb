@@ -1,4 +1,4 @@
-The codemirror-6.43.11.js ESM bundle was built by web/ts/vendor/rebuild.sh with
+The codemirror-6.43.11.js ESM bundle was built by web/ts/third_party/rebuild.sh with
 esbuild, from these npm packages:
 
 @codemirror/autocomplete 6.20.3

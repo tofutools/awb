@@ -213,10 +213,10 @@ func vendorBundle(t *testing.T, name string) string {
 	t.Helper()
 	staticFS, err := web.StaticFS()
 	require.NoError(t, err)
-	matches, err := fs.Glob(staticFS, "vendor/"+name+"-*.js")
+	matches, err := fs.Glob(staticFS, "third_party/"+name+"-*.js")
 	require.NoError(t, err)
-	require.Len(t, matches, 1, "vendor/%s-*.js", name)
-	return strings.TrimPrefix(matches[0], "vendor/")
+	require.Len(t, matches, 1, "third_party/%s-*.js", name)
+	return strings.TrimPrefix(matches[0], "third_party/")
 }
 
 func TestStaticAssetsAreServed(t *testing.T) {
@@ -230,16 +230,16 @@ func TestStaticAssetsAreServed(t *testing.T) {
 
 	// The vendored browser bundles are committed and embedded. Their filenames
 	// carry the upstream version, so they are looked up by prefix: an upgrade
-	// changes the name, and web/ts/vendor/rebuild.sh does not edit Go tests.
+	// changes the name, and web/ts/third_party/rebuild.sh does not edit Go tests.
 	for _, bundle := range []string{"codemirror", "dompurify", "markdown-it"} {
 		name := vendorBundle(t, bundle)
-		resp, body = get(t, h, http.MethodGet, "/vendor/"+name)
+		resp, body = get(t, h, http.MethodGet, "/third_party/"+name)
 		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
 		assert.NotEmpty(t, body, name)
 
 		// The import map is what makes the bundle reachable from the UI, so a
 		// bundle whose name it does not carry would be embedded but unused.
-		assert.Contains(t, shell, "./vendor/"+name)
+		assert.Contains(t, shell, "./third_party/"+name)
 	}
 
 	// A deep link falls back to the shell, so client-side routing works.

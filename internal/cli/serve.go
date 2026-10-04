@@ -947,7 +947,7 @@ func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 }
 
 // contentSecurityPolicy pins the UI's script sources to the import map the
-// bundled page carries, so the committed vendor bundles load and nothing else
+// bundled page carries, so the committed third-party bundles load and nothing else
 // does.
 func contentSecurityPolicy() (string, error) {
 	importMapHash, err := commonweb.ImportMapCSPHash(web.Static)

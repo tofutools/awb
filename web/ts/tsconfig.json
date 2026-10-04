@@ -22,22 +22,22 @@
     ],
     "paths": {
       "codemirror": [
-        "./vendor/codemirror.d.ts"
+        "./third_party/codemirror.d.ts"
       ],
       "markdown-it": [
-        "./vendor/markdown-it.d.ts"
+        "./third_party/markdown-it.d.ts"
       ],
       "dompurify": [
-        "./vendor/dompurify.d.ts"
+        "./third_party/dompurify.d.ts"
       ],
       "preact": [
-        "./vendor/preact/index.d.ts"
+        "./third_party/preact/index.d.ts"
       ],
       "preact/hooks": [
-        "./vendor/preact/hooks.d.ts"
+        "./third_party/preact/hooks.d.ts"
       ],
       "preact/jsx-runtime": [
-        "./vendor/preact/jsx-runtime.d.ts"
+        "./third_party/preact/jsx-runtime.d.ts"
       ]
     },
     "jsx": "react-jsx",
@@ -48,7 +48,7 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "vendor",
+    "third_party",
     "tests"
   ]
 }

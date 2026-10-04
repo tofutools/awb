@@ -384,9 +384,9 @@ leaves the page.
 The existing `tsc` pipeline emits JSX through Preact's automatic runtime. One
 committed Preact ESM bundle contains its core, hooks, and JSX runtime so they
 share one scheduler. Upstream declarations, pinned package versions, licenses,
-and provenance accompany the bundle. Only the maintainer vendor rebuild script
-invokes a package manager; normal builds and CI need neither a vendor install
-nor a vendor rebuild.
+and provenance accompany the bundle. Only the maintainer third-party rebuild
+script invokes a package manager; normal builds and CI need neither a dependency
+install nor a bundle rebuild.
 
 ## Authentication and authorization
 

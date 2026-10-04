@@ -53,7 +53,7 @@ const packages = roots
 
 writeFileSync(
   provenanceOut,
-  `The ${bundleName} ESM bundle was built by web/ts/vendor/rebuild.sh with\n` +
+  `The ${bundleName} ESM bundle was built by web/ts/third_party/rebuild.sh with\n` +
     `esbuild, from these npm packages:\n\n` +
     packages.map((pkg) => `${pkg.name} ${pkg.version}\n`).join("") +
     `\nTheir license texts are in ${licenseOut.split("/").pop()}.\n`,

@@ -1,4 +1,4 @@
-The markdown-it-15.0.1.js ESM bundle was built by web/ts/vendor/rebuild.sh with
+The markdown-it-15.0.1.js ESM bundle was built by web/ts/third_party/rebuild.sh with
 esbuild, from these npm packages:
 
 entities 8.0.0
