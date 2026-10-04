@@ -3,9 +3,9 @@
 # Build output
 /awb
 
-# Compiled frontend (tsc output; vendor bundles are committed)
+# Compiled frontend (tsc output; third-party bundles are committed)
 /web/static/**/*.js
-!/web/static/vendor/**
+!/web/static/third_party/**
 
 # Generated from openapi.yaml by build.sh — never committed, never edited
 /internal/api/*_gen.go
@@ -16,5 +16,5 @@
 # above does not cover them.
 /internal/*_gen.go.dump
 
-# Throwaway install tree for web/ts/vendor/rebuild.sh; never part of a build
-/web/ts/vendor/node_modules/
+# Throwaway install tree for web/ts/third_party/rebuild.sh; never part of a build
+/web/ts/third_party/node_modules/
