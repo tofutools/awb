@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Maintainer-only script. Rebuilds every vendored browser resource under
-# web/static/vendor/ from upstream npm releases: it installs the versions
+# web/static/third_party/ from upstream npm releases: it installs the versions
 # package.json pins, bundles each library into one self-contained ESM file with
 # esbuild, regenerates that bundle's LICENSE and PROVENANCE files from the
 # packages that actually went into it, and rewrites the import map in
@@ -29,7 +29,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 VENDOR_DIR="$(pwd)"
-OUT_DIR="$VENDOR_DIR/../../static/vendor"
+OUT_DIR="$VENDOR_DIR/../../static/third_party"
 INDEX_HTML="$VENDOR_DIR/../../static/index.html"
 ESBUILD="$VENDOR_DIR/node_modules/.bin/esbuild"
 
@@ -53,7 +53,7 @@ DOMPURIFY_VER="$(pkgver dompurify)"
 PREACT_VER="$(pkgver preact)"
 
 # The symbol surface of each bundle. Keep these minimal: what is exported here
-# is what ends up in the shipped file, and the matching web/ts/vendor/*.d.ts is
+# is what ends up in the shipped file, and the matching web/ts/third_party/*.d.ts is
 # what the frontend is allowed to use.
 #
 # The CodeMirror set is web/ts/markdown-editor.ts's dynamic import plus the
@@ -146,16 +146,16 @@ bundle preact      "$PREACT_VER"
 # frontend tests and internal/cli/serve_test.go resolve the bundles by prefix
 # and need no edit.
 node "$VENDOR_DIR/gen-importmap.mjs" "$INDEX_HTML" \
-  "codemirror=./vendor/codemirror-$CODEMIRROR_VER.js" \
-  "markdown-it=./vendor/markdown-it-$MARKDOWNIT_VER.js" \
-  "dompurify=./vendor/dompurify-$DOMPURIFY_VER.js" \
-  "preact=./vendor/preact-$PREACT_VER.js" \
-  "preact/hooks=./vendor/preact-$PREACT_VER.js" \
-  "preact/jsx-runtime=./vendor/preact-$PREACT_VER.js"
+  "codemirror=./third_party/codemirror-$CODEMIRROR_VER.js" \
+  "markdown-it=./third_party/markdown-it-$MARKDOWNIT_VER.js" \
+  "dompurify=./third_party/dompurify-$DOMPURIFY_VER.js" \
+  "preact=./third_party/preact-$PREACT_VER.js" \
+  "preact/hooks=./third_party/preact-$PREACT_VER.js" \
+  "preact/jsx-runtime=./third_party/preact-$PREACT_VER.js"
 
 cat <<EOF
 
-Wrote to web/static/vendor/:
+Wrote to web/static/third_party/:
   codemirror-$CODEMIRROR_VER.js
   markdown-it-$MARKDOWNIT_VER.js
   dompurify-$DOMPURIFY_VER.js

@@ -5,7 +5,7 @@
 # golangci-lint.
 #
 # NOTE: no npm/npx/yarn/pnpm/bun — the browser vendor bundles under
-# web/static/vendor/ are pre-built committed artifacts.
+# web/static/third_party/ are pre-built committed artifacts.
 #
 # On success this script is silent (no stdout/stderr) and exits 0.
 # On failure it prints the failing step's output to stderr and exits non-zero.
