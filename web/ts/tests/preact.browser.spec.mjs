@@ -1130,3 +1130,19 @@ test("metadata JSON editor highlights, validates and submits its current documen
     return JSON.parse(text);
   }).toEqual(metadata);
 });
+
+test("issue details omit the metadata section when metadata is empty", async ({ page }) => {
+  const workspace = await fixture(page, "emptyjson");
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  await page.getByRole("button", { name: "New issue", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "New issue", exact: true });
+  await dialog.getByLabel("Title", { exact: true }).fill("Issue without metadata");
+  const request = page.waitForRequest((r) => r.method() === "PUT" && r.url().includes("/api/issues/"));
+  await dialog.getByRole("button", { name: "Create issue", exact: true }).click();
+  const sent = await request;
+  await expect(dialog).toHaveCount(0);
+  const id = new URL(sent.url()).pathname.split("/").at(-1);
+  await page.goto(`${baseURL}/#/issues/${id}`);
+  await expect(page.locator(".issue-heading-text")).toBeVisible();
+  await expect(page.locator(".issue-metadata")).toHaveCount(0);
+});
