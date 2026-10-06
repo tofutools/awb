@@ -1384,7 +1384,10 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
 }
 .issue-create-dialog::backdrop { background: rgb(0 0 0 / 42%); }
-.issue-create-form { display: grid; gap: 0.85rem; padding: 1.1rem; }
+.issue-create-dialog > h2 { margin: 0; padding: 0.65rem 1.1rem 0; }
+.issue-create-form { display: grid; gap: 0.65rem; padding: 0.75rem 1.1rem 1.1rem; }
+.issue-create-form .markdown-editor { height: 8rem; min-height: 6rem; }
+.issue-create-form .json-editor { height: 4rem; min-height: 3rem; }
 .issue-create-form h2 { margin: 0; }
 .issue-create-form .edit-field-row { grid-template-columns: minmax(9rem, 1.4fr) repeat(2, minmax(7rem, 1fr)); }
 .issue-create-context {
