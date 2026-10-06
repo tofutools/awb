@@ -34,3 +34,18 @@ export function inlineChildIssueCreate(
     relations: [{ type: "has-parent", other: parent }],
   };
 }
+
+/** Metadata is optional on creation, but a supplied value must be a JSON object. */
+export function issueMetadata(raw: string): NonNullable<IssueCreate["metadata"]> {
+  if (!raw.trim()) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error("Metadata must be valid JSON.");
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Metadata must be a JSON object.");
+  }
+  return value as NonNullable<IssueCreate["metadata"]>;
+}

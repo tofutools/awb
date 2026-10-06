@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect } from "preact/hooks";
 import { api, type Issue, type IssueCreate, type Relation } from "../api.js";
 import { issueEditorShortcut } from "../keyboard.js";
-import { stagedLabel } from "../issue-create.js";
+import { issueMetadata, stagedLabel } from "../issue-create.js";
 import { labelSuggestionFilters, labelSuggestions } from "../label-suggestions.js";
 import {
   Button,
@@ -281,6 +281,7 @@ function CreateIssue({
             void mutation.run(async () => {
               const created = await api.createIssue({
                 ...issueFields(form),
+                metadata: issueMetadata(String(data.get("metadata") ?? "")),
                 backlog,
                 workspace: workspace || resource.data!.rows[0].key,
                 type: String(data.get("type")) as IssueCreate["type"],
@@ -364,6 +365,14 @@ function CreateIssue({
             </Field>
           </div>
           <IssueFields />
+          <Field label="Metadata (JSON object)">
+            <textarea
+              name="metadata"
+              rows={4}
+              placeholder={'{"key": "value"}'}
+              spellcheck={false}
+            />
+          </Field>
           <div class="issue-create-resources">
             <section class="issue-create-resource issue-create-labels">
               <h3>Labels</h3>
