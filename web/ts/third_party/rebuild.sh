@@ -69,13 +69,16 @@ PREACT_VER="$(pkgver preact)"
 # unless it is handed the extension, and its own GFM-enabled markdownLanguage
 # also carries Emoji and sub/superscript, which awb's dialect does not have.
 cat > "$WORK_DIR/codemirror-entry.mjs" <<'EOF'
-export { EditorView, keymap } from "@codemirror/view";
+export { EditorView, keymap, lineNumbers } from "@codemirror/view";
 export { EditorState } from "@codemirror/state";
 export { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-export { syntaxHighlighting } from "@codemirror/language";
+export { syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap, syntaxTree } from "@codemirror/language";
 export { classHighlighter, tagHighlighter, tags } from "@lezer/highlight";
 export { markdown } from "@codemirror/lang-markdown";
 export { GFM } from "@lezer/markdown";
+export { json } from "@codemirror/lang-json";
+export { linter } from "@codemirror/lint";
+export { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 EOF
 
 cat > "$WORK_DIR/markdown-it-entry.mjs" <<'EOF'

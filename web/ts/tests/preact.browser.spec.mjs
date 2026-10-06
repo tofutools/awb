@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 
 async function fixture(page, suffix) {
   const key = `p${Date.now().toString(36)}${suffix}`;
-  const response = await page.request.post(`${baseURL}/api/workspaces`, {
+  const response = await page.request.put(`${baseURL}/api/workspaces/${key}`, {
     data: { key, name: "Preact browser checks" },
   });
   expect(response.ok(), await response.text()).toBe(true);
@@ -1084,4 +1084,65 @@ test("epic, status, and type filters compose without duplicate page fetches", as
     epicRow.getByRole("button", { name: "Remove epic none" }),
   ).toBeVisible();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
+});
+
+test("metadata JSON editor highlights, validates and submits its current document", async ({ page }) => {
+  const workspace = await fixture(page, "json");
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  await page.getByRole("button", { name: "New issue", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "New issue", exact: true });
+  await dialog.getByLabel("Title", { exact: true }).fill("JSON metadata editor");
+  const editor = dialog.locator(".json-editor .cm-content");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveAttribute("aria-label", "Metadata (JSON object)");
+  await editor.fill('{"broken":}');
+  const marker = dialog.locator(".json-editor .cm-lintRange-error");
+  await expect(marker).toBeVisible();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await marker.hover();
+  const tooltip = dialog.locator(".cm-tooltip:has(.cm-tooltip-lint)");
+  await expect(tooltip).toBeVisible();
+  expect(await tooltip.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const probe = document.createElement("div");
+    probe.style.background = "var(--panel)";
+    probe.style.color = "var(--fg)";
+    element.append(probe);
+    const expected = getComputedStyle(probe);
+    const matches = style.backgroundColor === expected.backgroundColor && style.color === expected.color;
+    probe.remove();
+    return matches;
+  })).toBe(true);
+  await expect(dialog.locator(".json-editor-hint")).toBeVisible();
+  const metadata = { source: "browser", nested: { values: [true, null, 42] } };
+  await editor.fill(JSON.stringify(metadata, null, 2));
+  await expect(dialog.locator(".json-editor .cm-lintRange-error")).toHaveCount(0);
+  await expect(dialog.locator(".json-editor .tok-string").first()).toBeVisible();
+  const request = page.waitForRequest((r) => r.method() === "PUT" && r.url().includes("/api/issues/"));
+  await editor.press("Control+Enter");
+  const sent = await request;
+  expect(sent.postDataJSON().metadata).toEqual(metadata);
+  await expect(dialog).toHaveCount(0);
+  const id = new URL(sent.url()).pathname.split("/").at(-1);
+  await page.goto(`${baseURL}/#/issues/${id}`);
+  await expect.poll(async () => {
+    const text = await page.locator(".issue-metadata pre").textContent();
+    return JSON.parse(text);
+  }).toEqual(metadata);
+});
+
+test("issue details omit the metadata section when metadata is empty", async ({ page }) => {
+  const workspace = await fixture(page, "emptyjson");
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  await page.getByRole("button", { name: "New issue", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "New issue", exact: true });
+  await dialog.getByLabel("Title", { exact: true }).fill("Issue without metadata");
+  const request = page.waitForRequest((r) => r.method() === "PUT" && r.url().includes("/api/issues/"));
+  await dialog.getByRole("button", { name: "Create issue", exact: true }).click();
+  const sent = await request;
+  await expect(dialog).toHaveCount(0);
+  const id = new URL(sent.url()).pathname.split("/").at(-1);
+  await page.goto(`${baseURL}/#/issues/${id}`);
+  await expect(page.locator(".issue-heading-text")).toBeVisible();
+  await expect(page.locator(".issue-metadata")).toHaveCount(0);
 });

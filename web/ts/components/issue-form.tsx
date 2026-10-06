@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect } from "preact/hooks";
 import { api, type Issue, type IssueCreate, type Relation } from "../api.js";
 import { issueEditorShortcut } from "../keyboard.js";
-import { stagedLabel } from "../issue-create.js";
+import { issueMetadata, stagedLabel } from "../issue-create.js";
 import { labelSuggestionFilters, labelSuggestions } from "../label-suggestions.js";
 import {
   Button,
@@ -14,6 +14,7 @@ import {
   useMutation,
   useApp,
 } from "./ui.js";
+import { JsonInput } from "./json-input.js";
 import { Autocomplete } from "./autocomplete.js";
 export function IssueFields({
   issue,
@@ -278,9 +279,11 @@ function CreateIssue({
             const data = new FormData(form);
             const staged = label.trim() ? stage() : labels;
             if (staged === null) return;
+            setError(undefined);
             void mutation.run(async () => {
               const created = await api.createIssue({
                 ...issueFields(form),
+                metadata: issueMetadata(String(data.get("metadata") ?? "")),
                 backlog,
                 workspace: workspace || resource.data!.rows[0].key,
                 type: String(data.get("type")) as IssueCreate["type"],
@@ -364,6 +367,13 @@ function CreateIssue({
             </Field>
           </div>
           <IssueFields />
+          <div class="edit-field">
+            <span class="edit-field-label">Metadata (JSON object)</span>
+            <JsonInput name="metadata" label="Metadata (JSON object)" />
+            <small class="json-editor-hint">
+              Optional JSON object, e.g. <code>{'{"key": "value"}'}</code>.
+            </small>
+          </div>
           <div class="issue-create-resources">
             <section class="issue-create-resource issue-create-labels">
               <h3>Labels</h3>

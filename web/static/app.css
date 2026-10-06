@@ -1064,7 +1064,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-heading h1 { max-width: 52rem; font-size: clamp(1.75rem, 3vw, 2.2rem); line-height: 1.2; }
 .issue-heading-actions > button { white-space: nowrap; }
 .issue-description { padding: 0.5rem 0 1rem; }
-.issue-description h2 { color: var(--fg); font-size: 1rem; }
+.issue-description > h2 { margin-top: 0; color: var(--fg); font-size: 1rem; }
 .issue-description-body.markdown { margin: 0; padding: 0; border: 0; background: transparent; }
 .issue-description-body.markdown > :first-child { margin-top: 0; }
 .issue-description-body.markdown > :last-child { margin-bottom: 0; }
@@ -1258,7 +1258,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   font: inherit;
 }
 .edit-panel textarea { resize: vertical; }
-.markdown-editor {
+.code-editor {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1270,13 +1270,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   border-radius: var(--radius);
   background: var(--bg);
 }
-.markdown-editor:focus-within {
+.code-editor:focus-within {
   outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-color: var(--accent);
 }
-.markdown-editor > textarea { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; }
+.code-editor > textarea { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; }
 .markdown-editor-mount { flex: 1 1 auto; min-height: 0; }
-.markdown-editor .cm-editor, .markdown-editor .cm-scroller { height: 100%; }
+.code-editor .cm-editor, .code-editor .cm-scroller { height: 100%; }
 .markdown-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1346,13 +1346,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .markdown-help-list code { white-space: pre; font: 0.85rem/1.45 var(--mono); }
 .markdown-help-list dd { color: var(--muted); }
 .markdown-help-note { margin: 0; color: var(--muted); font-size: 0.85rem; }
-.markdown-editor .cm-editor { background: var(--bg); color: var(--fg); }
-.markdown-editor .cm-editor.cm-focused { outline: none; }
-.markdown-editor .cm-scroller {
+.code-editor .cm-editor { background: var(--bg); color: var(--fg); }
+.code-editor .cm-editor.cm-focused { outline: none; }
+.code-editor .cm-scroller {
   overflow: auto;
   font: 0.9rem/1.55 var(--mono);
 }
-.markdown-editor .cm-content { min-height: 100%; padding: 0.55rem 0.65rem; caret-color: var(--fg); }
+.code-editor .cm-content { min-height: 100%; padding: 0.55rem 0.65rem; caret-color: var(--fg); }
 .markdown-editor .tok-heading { color: var(--accent); font-weight: 700; }
 .markdown-editor .tok-strong { font-weight: 700; }
 .markdown-editor .tok-emphasis { font-style: italic; }
@@ -1384,8 +1384,11 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
 }
 .issue-create-dialog::backdrop { background: rgb(0 0 0 / 42%); }
-.issue-create-form { display: grid; gap: 0.85rem; padding: 1.1rem; }
-.issue-create-form h2 { margin: 0; }
+.issue-create-dialog > h2 { margin: 0; padding: 0.65rem 1.1rem 0; }
+.issue-create-dialog > p { margin: 0.75rem 1.1rem 1.1rem; }
+.issue-create-form { display: grid; gap: 0.65rem; padding: 0.75rem 1.1rem 1.1rem; }
+.issue-create-form .markdown-editor { height: 8rem; min-height: 6rem; }
+.issue-create-form .json-editor { height: 4rem; min-height: 3rem; }
 .issue-create-form .edit-field-row { grid-template-columns: minmax(9rem, 1.4fr) repeat(2, minmax(7rem, 1fr)); }
 .issue-create-context {
   margin: 0;
@@ -2021,3 +2024,18 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 /* Preact leaves editor DOM ownership with CodeMirror and uses native groups
    for inspector controls without adding a visual fieldset frame. */
 .inspector-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+
+.issue-metadata pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.json-editor { height: 10rem; }
+.json-editor-mount { flex: 1 1 auto; min-height: 0; }
+.json-editor .tok-string { color: var(--accent); }
+.json-editor .tok-number, .json-editor .tok-bool, .json-editor .tok-null { color: var(--accent); }
+.json-editor .tok-propertyName { color: var(--fg); font-weight: 600; }
+.json-editor .cm-gutters { background: var(--panel); color: var(--muted); border-color: var(--line); }
+
+.json-editor .cm-tooltip { background: var(--panel); color: var(--fg); border-color: var(--line); }
+.json-editor .cm-diagnostic { color: var(--fg); }
+.json-editor .cm-foldPlaceholder { background: var(--panel); color: var(--muted); border-color: var(--line); }
+.json-editor .cm-activeLineGutter { background: var(--panel); color: var(--fg); }
+.json-editor-hint { color: var(--muted); }

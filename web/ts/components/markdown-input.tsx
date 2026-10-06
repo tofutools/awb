@@ -103,7 +103,7 @@ export function MarkdownInput({
     };
   }, []);
   return (
-    <div class="markdown-editor">
+    <div class="markdown-editor code-editor">
       {host && <MarkdownToolbar host={host} revision={selection} />}
       <textarea
         ref={textarea}
