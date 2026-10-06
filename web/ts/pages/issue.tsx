@@ -150,14 +150,12 @@ export function IssuePage({ route }: { route: Route }) {
             <p class="empty">No description.</p>
           )}
         </section>
-        <section class="issue-resource-section issue-metadata">
-          <h2>Metadata</h2>
-          {Object.keys(issue.metadata).length ? (
+        {Object.keys(issue.metadata).length > 0 && (
+          <section class="issue-resource-section issue-metadata">
+            <h2>Metadata</h2>
             <pre>{JSON.stringify(issue.metadata, null, 2)}</pre>
-          ) : (
-            <p class="empty">No metadata.</p>
-          )}
-        </section>
+          </section>
+        )}
         <Children
           parent={issue}
           issues={children}
