@@ -1064,7 +1064,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .issue-heading h1 { max-width: 52rem; font-size: clamp(1.75rem, 3vw, 2.2rem); line-height: 1.2; }
 .issue-heading-actions > button { white-space: nowrap; }
 .issue-description { padding: 0.5rem 0 1rem; }
-.issue-description h2 { margin-top: 0; color: var(--fg); font-size: 1rem; }
+.issue-description > h2 { margin-top: 0; color: var(--fg); font-size: 1rem; }
 .issue-description-body.markdown { margin: 0; padding: 0; border: 0; background: transparent; }
 .issue-description-body.markdown > :first-child { margin-top: 0; }
 .issue-description-body.markdown > :last-child { margin-bottom: 0; }
