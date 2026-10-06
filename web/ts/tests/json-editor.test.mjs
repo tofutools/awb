@@ -22,3 +22,19 @@ test("live metadata diagnostics agree with creation validation", () => {
     assert.ok(diagnostic.message);
   }
 });
+
+
+test("syntax diagnostics point at the parse error instead of the whole object", () => {
+  const raw = '{"valid": true, "broken": }';
+  const tree = syntaxTree(EditorState.create({ doc: raw, extensions: [json()] }));
+  const [diagnostic] = metadataDiagnostics(raw, tree);
+  assert.ok(diagnostic.from > 0);
+  assert.ok(diagnostic.to - diagnostic.from <= 1);
+  assert.equal(diagnostic.message, "Metadata must be valid JSON.");
+
+  const array = "[true]";
+  const arrayTree = syntaxTree(EditorState.create({ doc: array, extensions: [json()] }));
+  assert.deepEqual(metadataDiagnostics(array, arrayTree)[0], {
+    from: 0, to: array.length, severity: "error", message: "Metadata must be a JSON object.",
+  });
+});

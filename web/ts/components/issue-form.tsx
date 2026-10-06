@@ -370,6 +370,9 @@ function CreateIssue({
           <div class="edit-field">
             <span class="edit-field-label">Metadata (JSON object)</span>
             <JsonInput name="metadata" label="Metadata (JSON object)" />
+            <small class="json-editor-hint">
+              Optional JSON object, e.g. <code>{'{"key": "value"}'}</code>.
+            </small>
           </div>
           <div class="issue-create-resources">
             <section class="issue-create-resource issue-create-labels">

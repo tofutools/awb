@@ -38,7 +38,7 @@ export function JsonInput({ name, label }: { name: string; label: string }) {
             autocapitalize: "off",
           }),
           cm.syntaxHighlighting(cm.classHighlighter),
-          cm.linter((editor) => metadataDiagnostics(editor.state.doc.toString())),
+          cm.linter((editor) => metadataDiagnostics(editor.state.doc.toString(), cm.syntaxTree(editor.state))),
           cm.EditorView.updateListener.of((update) => {
             if (update.docChanged) input.value = update.state.doc.toString();
           }),

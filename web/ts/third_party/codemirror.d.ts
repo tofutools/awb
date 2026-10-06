@@ -71,5 +71,14 @@ declare module "codemirror" {
     severity: "error" | "warning" | "info";
     message: string;
   }
+  interface SyntaxNodeRef {
+    readonly from: number;
+    readonly to: number;
+    readonly type: { readonly isError: boolean };
+  }
+  interface SyntaxTree {
+    iterate(spec: { enter: (node: SyntaxNodeRef) => boolean | void }): void;
+  }
+  function syntaxTree(state: EditorState): SyntaxTree;
   function linter(source: (view: EditorView) => readonly Diagnostic[]): unknown;
 }

@@ -1096,7 +1096,24 @@ test("metadata JSON editor highlights, validates and submits its current documen
   await expect(editor).toBeVisible();
   await expect(editor).toHaveAttribute("aria-label", "Metadata (JSON object)");
   await editor.fill('{"broken":}');
-  await expect(dialog.locator(".json-editor .cm-lintRange-error")).toBeVisible();
+  const marker = dialog.locator(".json-editor .cm-lintRange-error");
+  await expect(marker).toBeVisible();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await marker.hover();
+  const tooltip = dialog.locator(".cm-tooltip:has(.cm-tooltip-lint)");
+  await expect(tooltip).toBeVisible();
+  expect(await tooltip.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const probe = document.createElement("div");
+    probe.style.background = "var(--panel)";
+    probe.style.color = "var(--fg)";
+    element.append(probe);
+    const expected = getComputedStyle(probe);
+    const matches = style.backgroundColor === expected.backgroundColor && style.color === expected.color;
+    probe.remove();
+    return matches;
+  })).toBe(true);
+  await expect(dialog.locator(".json-editor-hint")).toBeVisible();
   const metadata = { source: "browser", nested: { values: [true, null, 42] } };
   await editor.fill(JSON.stringify(metadata, null, 2));
   await expect(dialog.locator(".json-editor .cm-lintRange-error")).toHaveCount(0);
@@ -1108,5 +1125,8 @@ test("metadata JSON editor highlights, validates and submits its current documen
   await expect(dialog).toHaveCount(0);
   const id = new URL(sent.url()).pathname.split("/").at(-1);
   await page.goto(`${baseURL}/#/issues/${id}`);
-  await expect(page.locator(".issue-metadata pre")).toHaveText(JSON.stringify(metadata, null, 2));
+  await expect.poll(async () => {
+    const text = await page.locator(".issue-metadata pre").textContent();
+    return JSON.parse(text);
+  }).toEqual(metadata);
 });
