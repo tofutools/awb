@@ -14,6 +14,7 @@ import {
   useMutation,
   useApp,
 } from "./ui.js";
+import { JsonInput } from "./json-input.js";
 import { Autocomplete } from "./autocomplete.js";
 export function IssueFields({
   issue,
@@ -366,14 +367,10 @@ function CreateIssue({
             </Field>
           </div>
           <IssueFields />
-          <Field label="Metadata (JSON object)">
-            <textarea
-              name="metadata"
-              rows={4}
-              placeholder={'{"key": "value"}'}
-              spellcheck={false}
-            />
-          </Field>
+          <div class="edit-field">
+            <span class="edit-field-label">Metadata (JSON object)</span>
+            <JsonInput name="metadata" label="Metadata (JSON object)" />
+          </div>
           <div class="issue-create-resources">
             <section class="issue-create-resource issue-create-labels">
               <h3>Labels</h3>

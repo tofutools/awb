@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 
 async function fixture(page, suffix) {
   const key = `p${Date.now().toString(36)}${suffix}`;
-  const response = await page.request.post(`${baseURL}/api/workspaces`, {
+  const response = await page.request.put(`${baseURL}/api/workspaces/${key}`, {
     data: { key, name: "Preact browser checks" },
   });
   expect(response.ok(), await response.text()).toBe(true);
@@ -1084,4 +1084,29 @@ test("epic, status, and type filters compose without duplicate page fetches", as
     epicRow.getByRole("button", { name: "Remove epic none" }),
   ).toBeVisible();
   await expect(page.locator(".filter-count")).toHaveText("2 issues");
+});
+
+test("metadata JSON editor highlights, validates and submits its current document", async ({ page }) => {
+  const workspace = await fixture(page, "json");
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  await page.getByRole("button", { name: "New issue", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "New issue", exact: true });
+  await dialog.getByLabel("Title", { exact: true }).fill("JSON metadata editor");
+  const editor = dialog.locator(".json-editor .cm-content");
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveAttribute("aria-label", "Metadata (JSON object)");
+  await editor.fill('{"broken":}');
+  await expect(dialog.locator(".json-editor .cm-lintRange-error")).toBeVisible();
+  const metadata = { source: "browser", nested: { values: [true, null, 42] } };
+  await editor.fill(JSON.stringify(metadata, null, 2));
+  await expect(dialog.locator(".json-editor .cm-lintRange-error")).toHaveCount(0);
+  await expect(dialog.locator(".json-editor .tok-string").first()).toBeVisible();
+  const request = page.waitForRequest((r) => r.method() === "PUT" && r.url().includes("/api/issues/"));
+  await editor.press("Control+Enter");
+  const sent = await request;
+  expect(sent.postDataJSON().metadata).toEqual(metadata);
+  await expect(dialog).toHaveCount(0);
+  const id = new URL(sent.url()).pathname.split("/").at(-1);
+  await page.goto(`${baseURL}/#/issues/${id}`);
+  await expect(page.locator(".issue-metadata pre")).toHaveText(JSON.stringify(metadata, null, 2));
 });

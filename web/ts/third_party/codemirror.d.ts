@@ -1,5 +1,5 @@
 // Minimal declarations for the committed CodeMirror bundle. Only the surface
-// used by markdown-editor.ts is exposed here.
+// used by the Markdown and JSON editors is exposed here.
 declare module "codemirror" {
   interface DocumentLine { readonly text: string; }
   interface TextDocument {
@@ -57,4 +57,19 @@ declare module "codemirror" {
   const tags: { readonly strikethrough: unknown };
   function markdown(config?: { extensions?: readonly unknown[] }): unknown;
   const GFM: unknown;
+  function json(): unknown;
+  function lineNumbers(): unknown;
+  function bracketMatching(): unknown;
+  function indentOnInput(): unknown;
+  function foldGutter(): unknown;
+  const foldKeymap: readonly unknown[];
+  function closeBrackets(): unknown;
+  const closeBracketsKeymap: readonly unknown[];
+  interface Diagnostic {
+    from: number;
+    to: number;
+    severity: "error" | "warning" | "info";
+    message: string;
+  }
+  function linter(source: (view: EditorView) => readonly Diagnostic[]): unknown;
 }
