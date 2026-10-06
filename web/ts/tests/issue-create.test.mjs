@@ -42,3 +42,13 @@ test("creation metadata rejects malformed JSON and non-object values", () => {
     assert.throws(() => issueMetadata(value), /JSON object/);
   }
 });
+
+
+test("creation metadata rejects numbers that would silently lose integer precision", () => {
+  for (const raw of ['{"id":9007199254740993}', '{"nested":[-9007199254740993]}', '{"n":1e400}']) {
+    assert.throws(() => issueMetadata(raw), /Use strings for large IDs/);
+  }
+  assert.deepEqual(issueMetadata('{"id":"9007199254740993","n":1.5}'), {
+    id: "9007199254740993", n: 1.5,
+  });
+});

@@ -278,6 +278,7 @@ function CreateIssue({
             const data = new FormData(form);
             const staged = label.trim() ? stage() : labels;
             if (staged === null) return;
+            setError(undefined);
             void mutation.run(async () => {
               const created = await api.createIssue({
                 ...issueFields(form),

@@ -38,11 +38,21 @@ export function inlineChildIssueCreate(
 /** Metadata is optional on creation, but a supplied value must be a JSON object. */
 export function issueMetadata(raw: string): NonNullable<IssueCreate["metadata"]> {
   if (!raw.trim()) return {};
+  let unsafeNumber = false;
   let value: unknown;
   try {
-    value = JSON.parse(raw);
+    value = JSON.parse(raw, (_key, item: unknown) => {
+      if (typeof item === "number" &&
+          (!Number.isFinite(item) || (Number.isInteger(item) && !Number.isSafeInteger(item)))) {
+        unsafeNumber = true;
+      }
+      return item;
+    });
   } catch {
     throw new Error("Metadata must be valid JSON.");
+  }
+  if (unsafeNumber) {
+    throw new Error("Metadata numbers must be finite and integers must be within the safe range. Use strings for large IDs.");
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Metadata must be a JSON object.");
