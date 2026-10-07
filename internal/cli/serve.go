@@ -19,6 +19,7 @@ import (
 	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/mikaelstaldal/go-server-common/csrf"
+	"github.com/mikaelstaldal/go-server-common/hostguard"
 	"github.com/mikaelstaldal/go-server-common/httputil"
 	"github.com/mikaelstaldal/go-server-common/recovery"
 	commonweb "github.com/mikaelstaldal/go-server-common/web"
@@ -162,7 +163,8 @@ func (o serveOptions) validate() error {
 		return awberr.Usagef(
 			"--no-auth serves without authentication, so there is no realm to present in")
 	}
-	return nil
+	_, err = o.hostPolicy()
+	return err
 }
 
 // exposure says why this server looks like one meant to be reached from
@@ -199,38 +201,20 @@ func isLoopbackAddr(addr string) bool {
 	return domain.IsLoopbackHost(addr)
 }
 
-// serverOrigin is the origin a browser names when it reaches this server, which
-// is what the cross-site write check compares against.
-//
-// Behind a reverse proxy the browser names the proxy, not this listener, so
-// --public-url is where it comes from when it is given.
-func (o serveOptions) serverOrigin() (string, error) {
-	origin, err := csrf.ResolveServerOrigin(o.publicURL, o.originHost(), o.port)
+// hostPolicy checks every request authority, independently of the origin check
+// on writes. Wildcard listeners need --public-url to name their public host.
+func (o serveOptions) hostPolicy() (*hostguard.Policy, error) {
+	policy, err := hostguard.New(o.publicURL, o.addr, o.port)
 	if err != nil {
-		return "", awberr.Usagef(
-			"--public-url: %s is not a full URL, like https://example.com/awb/", o.publicURL)
+		return nil, awberr.Usagef("--addr/--public-url host validation: %s", err)
 	}
-	return origin, nil
-}
-
-// originHost is the host in that origin when there is no --public-url. A server
-// bound to every interface has no host of its own, and loopback is the one a
-// browser on this machine reaches it by. An IPv6 address is bracketed, because
-// an origin is a URL authority and that is the form a browser sends.
-func (o serveOptions) originHost() string {
-	if o.addr == "" {
-		return "127.0.0.1"
-	}
-	if strings.Contains(o.addr, ":") {
-		return "[" + o.addr + "]"
-	}
-	return o.addr
+	return policy, nil
 }
 
 type serveParams struct {
-	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; empty for every interface"`
+	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; wildcard binds require --public-url"`
 	Port           int      `long:"port" default:"7777" optional:"true" help:"port to listen on"`
-	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
+	PublicURL      string   `long:"public-url" optional:"true" help:"public URL, required for wildcard binds, e.g. https://example.com/awb/"`
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server that authenticates nobody attributes every request to"`
@@ -282,6 +266,8 @@ func newServeCommand(e *env) *cobra.Command {
 			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
 			"no users at all, so adding one does not close the door either. Taking it\n" +
 			"back is a restart without the flag.\n\n" +
+			"Wildcard binds (empty, 0.0.0.0 or ::) require --public-url. Requests to\n" +
+			"unconfigured Hosts receive HTTP 421 before authentication or routing.\n\n" +
 			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
@@ -708,11 +694,11 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// basic-authentication credentials to cross-site requests of its own accord.
 	// One carrying neither header is allowed, that being what every non-browser
 	// client sends, and the CLI is one of them.
-	serverOrigin, err := opts.serverOrigin()
+	hosts, err := opts.hostPolicy()
 	if err != nil {
 		return nil, err
 	}
-	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, opts.corsOrigins...)...)(chain)
+	chain = csrf.MiddlewareOrigins(append(hosts.Origins(), opts.corsOrigins...)...)(chain)
 
 	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
 	// behind it. Whether it asks for anything is the database's answer, given
@@ -736,6 +722,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// Outside the authentication, because the first response a browser sees is
 	// the challenge: headers set only on the way past it would pin the host
 	// after the password had already been typed rather than before.
+	chain = hosts.Middleware(chain)
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
@@ -799,11 +786,12 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 	if opts.https {
 		strictTransport = hsts
 	}
-	serverOrigin, err := opts.serverOrigin()
+	hosts, err := opts.hostPolicy()
 	if err != nil {
 		return nil, err
 	}
-	chain := csrf.MiddlewareOrigins(serverOrigin)(root)
+	chain := csrf.MiddlewareOrigins(hosts.Origins()...)(root)
+	chain = hosts.Middleware(chain)
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",

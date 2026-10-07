@@ -439,6 +439,13 @@ on both sides of the development UI proxy. The server does not terminate TLS;
 a reverse proxy supplies TLS and an optional base path, while `--public-url`
 tells browser security checks which origin is real.
 
+Both server and UI proxy listeners validate every request Host before routing or
+authentication. The allowed authorities are the configured public URL, concrete
+bind address, and localhost/IPv4/IPv6 loopback aliases at the listener port;
+wildcard binds require `--public-url`. Reverse proxies must preserve that public
+Host or send an allowed local authority. CSRF accepts the corresponding public
+and local origins; CORS origins do not extend the Host allowlist.
+
 Cross-site writes are checked, external CORS origins are opt-in, state-changing
 responses are not cached, and attachment downloads are always opaque
 attachments rather than same-origin renderable content. Attachment responses
