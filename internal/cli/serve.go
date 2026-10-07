@@ -19,6 +19,7 @@ import (
 	"github.com/GiGurra/boa/pkg/boa"
 	"github.com/mikaelstaldal/go-server-common/auth"
 	"github.com/mikaelstaldal/go-server-common/csrf"
+	"github.com/mikaelstaldal/go-server-common/hostguard"
 	"github.com/mikaelstaldal/go-server-common/httputil"
 	"github.com/mikaelstaldal/go-server-common/recovery"
 	commonweb "github.com/mikaelstaldal/go-server-common/web"
@@ -162,7 +163,8 @@ func (o serveOptions) validate() error {
 		return awberr.Usagef(
 			"--no-auth serves without authentication, so there is no realm to present in")
 	}
-	return nil
+	_, err = o.hostPolicy()
+	return err
 }
 
 // exposure says why this server looks like one meant to be reached from
@@ -199,32 +201,14 @@ func isLoopbackAddr(addr string) bool {
 	return domain.IsLoopbackHost(addr)
 }
 
-// serverOrigin is the origin a browser names when it reaches this server, which
-// is what the cross-site write check compares against.
-//
-// Behind a reverse proxy the browser names the proxy, not this listener, so
-// --public-url is where it comes from when it is given.
-func (o serveOptions) serverOrigin() (string, error) {
-	origin, err := csrf.ResolveServerOrigin(o.publicURL, o.originHost(), o.port)
+// hostPolicy checks every request authority, independently of the origin check
+// on writes. Wildcard listeners need --public-url to name their public host.
+func (o serveOptions) hostPolicy() (*hostguard.Policy, error) {
+	policy, err := hostguard.New(o.publicURL, o.addr, o.port)
 	if err != nil {
-		return "", awberr.Usagef(
-			"--public-url: %s is not a full URL, like https://example.com/awb/", o.publicURL)
+		return nil, awberr.Usagef("--addr/--public-url host validation: %s", err)
 	}
-	return origin, nil
-}
-
-// originHost is the host in that origin when there is no --public-url. A server
-// bound to every interface has no host of its own, and loopback is the one a
-// browser on this machine reaches it by. An IPv6 address is bracketed, because
-// an origin is a URL authority and that is the form a browser sends.
-func (o serveOptions) originHost() string {
-	if o.addr == "" {
-		return "127.0.0.1"
-	}
-	if strings.Contains(o.addr, ":") {
-		return "[" + o.addr + "]"
-	}
-	return o.addr
+	return policy, nil
 }
 
 type serveParams struct {
@@ -708,11 +692,11 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// basic-authentication credentials to cross-site requests of its own accord.
 	// One carrying neither header is allowed, that being what every non-browser
 	// client sends, and the CLI is one of them.
-	serverOrigin, err := opts.serverOrigin()
+	hosts, err := opts.hostPolicy()
 	if err != nil {
 		return nil, err
 	}
-	chain = csrf.MiddlewareOrigins(append([]string{serverOrigin}, opts.corsOrigins...)...)(chain)
+	chain = csrf.MiddlewareOrigins(append(hosts.Origins(), opts.corsOrigins...)...)(chain)
 
 	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
 	// behind it. Whether it asks for anything is the database's answer, given
@@ -742,7 +726,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 		HSTS:           strictTransport,
 	})(chain)
 
-	return transferLimits(chain), nil
+	return hosts.Middleware(transferLimits(chain)), nil
 }
 
 // buildProxyHandler serves this binary's bundled UI and forwards its API calls
@@ -799,17 +783,17 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 	if opts.https {
 		strictTransport = hsts
 	}
-	serverOrigin, err := opts.serverOrigin()
+	hosts, err := opts.hostPolicy()
 	if err != nil {
 		return nil, err
 	}
-	chain := csrf.MiddlewareOrigins(serverOrigin)(root)
+	chain := csrf.MiddlewareOrigins(hosts.Origins()...)(root)
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
-	return transferLimits(chain), nil
+	return hosts.Middleware(transferLimits(chain)), nil
 }
 
 // proxyDeadlines bounds time spent waiting on the remote server. The listener's

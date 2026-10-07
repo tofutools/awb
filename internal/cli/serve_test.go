@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	stdhttputil "net/http/httputil"
@@ -151,6 +152,7 @@ func send(t *testing.T, h http.Handler, method, path, body string,
 		requestBody = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, requestBody)
+	req.Host = "127.0.0.1:7777"
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -659,7 +661,7 @@ func TestProxyRequiresSecureTransportBeforeForwardingCredentials(t *testing.T) {
 		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
 	}.validate(), "the browser-to-proxy hop also carries the credentials")
 	assert.NoError(t, serveOptions{
-		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/", https: true,
+		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/", https: true, publicURL: "https://ui.example.com/",
 	}.validate())
 	assert.NoError(t, serveOptions{
 		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
@@ -667,7 +669,7 @@ func TestProxyRequiresSecureTransportBeforeForwardingCredentials(t *testing.T) {
 	}.validate())
 	assert.NoError(t, serveOptions{
 		addr: "0.0.0.0", port: 7777, proxyTo: "https://example.com/awb/",
-		insecureTransport: true,
+		insecureTransport: true, publicURL: "http://ui.example.com/",
 	}.validate())
 }
 
@@ -842,7 +844,7 @@ func TestPublicURLIsTheSameOrigin(t *testing.T) {
 	resp, _ := get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "https://example.com")
 	assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
 
-	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "http://127.0.0.1:7777")
+	resp, _ = get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", "http://attacker.example:7777")
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -976,6 +978,7 @@ func TestAttachmentUploadHasItsOwnBodyCap(t *testing.T) {
 	call := func(method, path, contentType, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:7777"
 		req.Header.Set("Content-Type", contentType)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -1103,12 +1106,16 @@ func TestAttachmentContentIsStreamed(t *testing.T) {
 	require.NoError(t, err)
 
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	listener := httptest.NewUnstartedServer(nil)
+	t.Cleanup(listener.Close)
+	listenerPort := listener.Listener.Addr().(*net.TCPAddr).Port
 	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
-		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+		serveOptions{addr: "127.0.0.1", port: listenerPort, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
-	server := httptest.NewServer(h)
-	t.Cleanup(server.Close)
+	server := listener
+	server.Config.Handler = h
+	server.Start()
 
 	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
@@ -1156,6 +1163,7 @@ func TestAttachmentContentIsNotCompressed(t *testing.T) {
 	call := func(method, path, contentType, body string, gzipped bool) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:7777"
 		if contentType != "" {
 			req.Header.Set("Content-Type", contentType)
 		}
@@ -1236,6 +1244,7 @@ func TestCompressedResponsesDoNotCostACompressor(t *testing.T) {
 			before := totalAlloc()
 			for range requests {
 				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Host = "127.0.0.1:7777"
 				req.Header.Set("Accept-Encoding", "gzip")
 				rec := httptest.NewRecorder()
 				h.ServeHTTP(rec, req)
@@ -1316,11 +1325,15 @@ func TestRemoteModeCarriesIssueMetadata(t *testing.T) {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	listener := httptest.NewUnstartedServer(nil)
+	t.Cleanup(listener.Close)
+	listenerPort := listener.Listener.Addr().(*net.TCPAddr).Port
 	api, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
-		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+		serveOptions{addr: "127.0.0.1", port: listenerPort, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
-	server := httptest.NewServer(api)
-	t.Cleanup(server.Close)
+	server := listener
+	server.Config.Handler = api
+	server.Start()
 
 	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
@@ -1370,16 +1383,20 @@ func TestRemoteModeAddressesAwkwardNames(t *testing.T) {
 	raw, err := os.ReadFile("../../openapi.yaml")
 	require.NoError(t, err)
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	listener := httptest.NewUnstartedServer(nil)
+	t.Cleanup(listener.Close)
+	listenerPort := listener.Listener.Addr().(*net.TCPAddr).Port
 	api, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
-		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+		serveOptions{addr: "127.0.0.1", port: listenerPort, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
 	// A reverse proxy publishing the server under /awb/ and stripping that base
 	// before the request arrives, which is the contract the document states.
 	proxy := http.NewServeMux()
 	proxy.Handle("/awb/", http.StripPrefix("/awb", api))
-	server := httptest.NewServer(proxy)
-	t.Cleanup(server.Close)
+	server := listener
+	server.Config.Handler = proxy
+	server.Start()
 
 	_, err = be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
@@ -1570,16 +1587,19 @@ func TestEveryAPIListingIsDeterministic(t *testing.T) {
 // are the summary projection, so against a server they cost /api/issues rather
 // than /api/issues/full — and the readiness listings cost their own endpoints.
 func TestRemoteListingsReadSummariesExceptUnderJSON(t *testing.T) {
-	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
+	listener := httptest.NewUnstartedServer(nil)
+	t.Cleanup(listener.Close)
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: listener.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"})
 	var mu sync.Mutex
 	var paths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := listener
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		paths = append(paths, r.URL.Path)
 		mu.Unlock()
 		h.ServeHTTP(w, r)
-	}))
-	t.Cleanup(server.Close)
+	})
+	server.Start()
 
 	ctx := t.Context()
 	_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
@@ -1643,9 +1663,12 @@ func TestRemoteListingsReadSummariesExceptUnderJSON(t *testing.T) {
 // selection — so a filter that does not fit the one its readiness names has to
 // be answered some other way rather than answered differently.
 func TestRemoteSummaryListingsMatchTheLocalOnesForAwkwardFilters(t *testing.T) {
-	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
-	server := httptest.NewServer(h)
-	t.Cleanup(server.Close)
+	listener := httptest.NewUnstartedServer(nil)
+	t.Cleanup(listener.Close)
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: listener.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"})
+	server := listener
+	server.Config.Handler = h
+	server.Start()
 
 	ctx := t.Context()
 	for _, key := range []string{"awb", "old"} {
@@ -1714,4 +1737,57 @@ func TestRemoteSummaryListingsMatchTheLocalOnesForAwkwardFilters(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Greater(t, archived.Total, plain.Total, "the archived workspace holds a ready issue")
+}
+
+// Host validation covers safe reads as well as writes, before authentication
+// and proxy forwarding. CORS and forwarding headers never authorize a Host.
+func TestServeValidatesHostBeforeRouting(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("invalid host reached upstream")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	for _, mode := range []string{"server", "proxy"} {
+		t.Run(mode, func(t *testing.T) {
+			var h http.Handler
+			if mode == "server" {
+				h = newServeHandlerWith(t, serveOptions{addr: "127.0.0.1", port: 7777, corsOrigins: []string{"https://attacker.example"}})
+			} else {
+				h = newProxyServeHandler(t, upstream.URL)
+			}
+			for _, path := range []string{"/", "/app.js", "/openapi.json", "/api/workspaces"} {
+				for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodOptions} {
+					req := httptest.NewRequest(method, path, nil)
+					req.Host = "attacker.example:7777"
+					req.Header.Set("X-Forwarded-Host", "127.0.0.1:7777")
+					req.Header.Set("Origin", "https://attacker.example")
+					rec := httptest.NewRecorder()
+					h.ServeHTTP(rec, req)
+					assert.Equal(t, http.StatusMisdirectedRequest, rec.Code, path)
+					assert.Empty(t, rec.Header().Get("WWW-Authenticate"))
+				}
+			}
+		})
+	}
+}
+
+func TestServeHostPolicyConfiguration(t *testing.T) {
+	for _, addr := range []string{"", "0.0.0.0", "::"} {
+		opts := serveOptions{addr: addr, port: 7777, noAuth: true}
+		assert.Error(t, opts.validate(), addr)
+		opts.publicURL = "https://example.com/awb/"
+		assert.NoError(t, opts.validate(), addr)
+	}
+	h := newServeHandlerWith(t, serveOptions{addr: "127.0.0.2", port: 7777, publicURL: "https://example.com/awb/"})
+	for _, host := range []string{"localhost:7777", "127.0.0.1:7777", "127.0.0.2:7777", "[::1]:7777", "example.com"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code, host)
+	}
+	for _, origin := range []string{"http://localhost:7777", "http://127.0.0.1:7777", "http://[::1]:7777", "https://example.com"} {
+		resp, _ := get(t, h, http.MethodPut, "/api/workspaces/awb", "Origin", origin)
+		assert.NotEqual(t, http.StatusForbidden, resp.StatusCode, origin)
+	}
 }

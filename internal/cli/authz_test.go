@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -318,12 +319,14 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 	require.NoError(t, err)
 
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	server := httptest.NewUnstartedServer(nil)
+	t.Cleanup(server.Close)
 	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
-		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+		serveOptions{addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
-	server := httptest.NewServer(h)
-	t.Cleanup(server.Close)
+	server.Config.Handler = h
+	server.Start()
 
 	ctx := t.Context()
 	for _, key := range []string{"awb", "web"} {
@@ -369,9 +372,11 @@ func TestRemoteModeCarriesTheAuthorizationExitCodes(t *testing.T) {
 // Dynamic completion goes through the selected backend with its credentials,
 // including search terms that the remote facet endpoints apply.
 func TestRemoteCompletionUsesAuthenticatedSearchFacets(t *testing.T) {
-	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
-	server := httptest.NewServer(h)
+	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"})
+	server.Config.Handler = h
+	server.Start()
 
 	ctx := t.Context()
 	for _, key := range []string{"awb", "hidden"} {
@@ -409,9 +414,11 @@ func TestRemoteCompletionUsesAuthenticatedSearchFacets(t *testing.T) {
 }
 
 func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
-	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
-	server := httptest.NewServer(h)
+	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"})
+	server.Config.Handler = h
+	server.Start()
 
 	ctx := t.Context()
 	_, err := be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
@@ -473,9 +480,11 @@ func TestStatusShowsTheRemoteServerAndAuthenticatedIdentity(t *testing.T) {
 }
 
 func TestDescriptionReceiptWorkflowIsTheSameOverRemoteBackend(t *testing.T) {
-	h, be := newServeHandlerOn(t, serveOptions{port: 7777, basicAuthRealm: "awb"})
-	server := httptest.NewServer(h)
+	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"})
+	server.Config.Handler = h
+	server.Start()
 
 	_, err := be.CreateWorkspace(t.Context(), backend.WorkspaceCreate{Key: "awb"})
 	require.NoError(t, err)
@@ -530,12 +539,14 @@ func TestRemoteModeManagesUsers(t *testing.T) {
 	require.NoError(t, err)
 
 	be := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	server := httptest.NewUnstartedServer(nil)
+	t.Cleanup(server.Close)
 	h, err := buildHandler(be, openapi.New(raw), &authenticator{db: db, realm: "awb"},
-		serveOptions{port: 7777, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
+		serveOptions{addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb"}, log.New(io.Discard, "", 0))
 	require.NoError(t, err)
 
-	server := httptest.NewServer(h)
-	t.Cleanup(server.Close)
+	server.Config.Handler = h
+	server.Start()
 
 	ctx := t.Context()
 	_, err = be.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})

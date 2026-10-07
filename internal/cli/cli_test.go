@@ -1791,9 +1791,9 @@ func TestServeRefusesToOpenADatabaseWithNoUsers(t *testing.T) {
 		{"--public-url", "https://example.com/awb/"},
 		{"--https"},
 		{"--basic-auth-realm", "awb"},
-		{"--addr", "0.0.0.0"},
+		{"--public-url", "https://example.com/", "--addr", "0.0.0.0"},
 		{"--addr", "192.0.2.10"},
-		{"--addr", ""},
+		{"--public-url", "https://example.com/", "--addr", ""},
 	} {
 		_, stderr, code := h.run(append([]string{"serve"}, args...)...)
 		assert.Equal(t, 2, code, args)

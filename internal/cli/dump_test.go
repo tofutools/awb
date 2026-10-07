@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -25,11 +26,13 @@ import (
 // preserves the stored shapes rather than recreating them through mutations,
 // which would mint new IDs and timestamps.
 func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
-	handler, source := newServeHandlerOn(t, serveOptions{
-		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
-	})
-	server := httptest.NewServer(handler)
+	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
+	handler, source := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb",
+	})
+	server.Config.Handler = handler
+	server.Start()
 
 	ctx := t.Context()
 	_, err := source.CreateWorkspace(ctx, backend.WorkspaceCreate{
@@ -133,11 +136,13 @@ func TestDumpDownloadsAnExistingServerIntoLocalFiles(t *testing.T) {
 }
 
 func TestDumpOverwritePublishesOnlyACompletedReplacement(t *testing.T) {
-	handler, source := newServeHandlerOn(t, serveOptions{
-		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
-	})
-	server := httptest.NewServer(handler)
+	server := httptest.NewUnstartedServer(nil)
 	t.Cleanup(server.Close)
+	handler, source := newServeHandlerOn(t, serveOptions{
+		addr: "127.0.0.1", port: server.Listener.Addr().(*net.TCPAddr).Port, basicAuthRealm: "awb",
+	})
+	server.Config.Handler = handler
+	server.Start()
 
 	ctx := t.Context()
 	_, err := source.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})

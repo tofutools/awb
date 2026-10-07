@@ -11,8 +11,14 @@ $ awb serve
 The default listener is loopback-only. Change the address and port separately:
 
 ```console
-awb serve --addr 0.0.0.0 --port 8080
+awb serve --addr 0.0.0.0 --port 8080 --public-url https://example.com/
 ```
+
+A wildcard listener (`0.0.0.0`, `::`, or an empty address) requires
+`--public-url` to name the host clients use. Both server and local UI proxy mode
+reject requests with an unconfigured Host with HTTP 421, before authentication
+or routing. Localhost and IPv4/IPv6 loopback aliases, plus a concrete bind
+address, are accepted at the listener port alongside the public authority.
 
 A non-loopback listener needs an intentional authentication decision; see
 below.
@@ -134,14 +140,16 @@ in front of it:
 awb serve --public-url https://example.com/awb/ --https
 ```
 
-The proxy must map `/awb/` to the awb listener with that prefix stripped.
+The proxy must map `/awb/` to the awb listener with that prefix stripped, and
+preserve the public Host or send an allowed local host and port.
 `--public-url` gives the browser its real origin and base path for links and
-cross-site write protection. `--https` sends Strict-Transport-Security and must
+cross-site write protection. The corresponding local origins are also accepted
+for writes. `--https` sends Strict-Transport-Security and must
 agree with the public URL; enable it only when the public connection really is
 HTTPS.
 
 `--cors-origin` repeatably permits an exact external browser origin to call the
-API. It is off by default because any allowed browser page can make requests
+API. It does not authorize additional Host values. It is off by default because any allowed browser page can make requests
 with the user's ambient credentials.
 
 ## Local UI proxy
