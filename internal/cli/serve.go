@@ -212,9 +212,9 @@ func (o serveOptions) hostPolicy() (*hostguard.Policy, error) {
 }
 
 type serveParams struct {
-	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; empty for every interface"`
+	Addr           string   `long:"addr" default:"127.0.0.1" optional:"true" help:"address to listen on; wildcard binds require --public-url"`
 	Port           int      `long:"port" default:"7777" optional:"true" help:"port to listen on"`
-	PublicURL      string   `long:"public-url" optional:"true" help:"the URL a reverse proxy publishes this server under, e.g. https://example.com/awb/"`
+	PublicURL      string   `long:"public-url" optional:"true" help:"public URL, required for wildcard binds, e.g. https://example.com/awb/"`
 	HTTPS          bool     `long:"https" optional:"true" help:"a reverse proxy in front terminates TLS: send Strict-Transport-Security"`
 	CORSOrigins    []string `long:"cors-origin" collection:"array" optional:"true" help:"allow this exact browser origin to call the API; repeatable"`
 	Identity       *string  `long:"identity" help:"the identity a server that authenticates nobody attributes every request to"`
@@ -266,6 +266,8 @@ func newServeCommand(e *env) *cobra.Command {
 			"--no-auth serves it anyway, and means it: a server started with it consults\n" +
 			"no users at all, so adding one does not close the door either. Taking it\n" +
 			"back is a restart without the flag.\n\n" +
+			"Wildcard binds (empty, 0.0.0.0 or ::) require --public-url. Requests to\n" +
+			"unconfigured Hosts receive HTTP 421 before authentication or routing.\n\n" +
 			"The server never terminates TLS. To publish it beyond this machine, put a\n" +
 			"reverse proxy in front of it: --public-url is the URL it is published under,\n" +
 			"which the proxy maps to this server with that base path stripped, and --https\n" +
@@ -720,13 +722,14 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	// Outside the authentication, because the first response a browser sees is
 	// the challenge: headers set only on the way past it would pin the host
 	// after the password had already been typed rather than before.
+	chain = hosts.Middleware(chain)
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
 
-	return hosts.Middleware(transferLimits(chain)), nil
+	return transferLimits(chain), nil
 }
 
 // buildProxyHandler serves this binary's bundled UI and forwards its API calls
@@ -788,12 +791,13 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 		return nil, err
 	}
 	chain := csrf.MiddlewareOrigins(hosts.Origins()...)(root)
+	chain = hosts.Middleware(chain)
 	chain = httputil.SecurityHeaders(httputil.SecurityHeadersOptions{
 		CSP:            csp,
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
-	return hosts.Middleware(transferLimits(chain)), nil
+	return transferLimits(chain), nil
 }
 
 // proxyDeadlines bounds time spent waiting on the remote server. The listener's

@@ -1751,7 +1751,12 @@ func TestServeValidatesHostBeforeRouting(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			var h http.Handler
 			if mode == "server" {
-				h = newServeHandlerWith(t, serveOptions{addr: "127.0.0.1", port: 7777, corsOrigins: []string{"https://attacker.example"}})
+				var be *local.Backend
+				h, be = newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb", corsOrigins: []string{"https://attacker.example"}})
+				_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+				require.NoError(t, err)
+				resp, _ := get(t, h, http.MethodGet, "/api/workspaces")
+				require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 			} else {
 				h = newProxyServeHandler(t, upstream.URL)
 			}
@@ -1765,6 +1770,7 @@ func TestServeValidatesHostBeforeRouting(t *testing.T) {
 					h.ServeHTTP(rec, req)
 					assert.Equal(t, http.StatusMisdirectedRequest, rec.Code, path)
 					assert.Empty(t, rec.Header().Get("WWW-Authenticate"))
+					assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 				}
 			}
 		})

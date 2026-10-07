@@ -141,7 +141,12 @@ awb serve --public-url https://example.com/awb/ --https
 ```
 
 The proxy must map `/awb/` to the awb listener with that prefix stripped, and
-preserve the public Host or send an allowed local host and port.
+preserve the public Host or send an allowed local host and port. For nginx,
+`proxy_set_header Host $http_host;` preserves the client authority including its
+port. Container proxies and health checks must also send an allowed authority
+rather than an internal service name or pod IP. When clients use a DNS alias
+for a concrete bind address, configure that alias with `--public-url`; a single
+public authority is supported.
 `--public-url` gives the browser its real origin and base path for links and
 cross-site write protection. The corresponding local origins are also accepted
 for writes. `--https` sends Strict-Transport-Security and must

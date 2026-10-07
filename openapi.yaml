@@ -1974,7 +1974,8 @@ components:
         counts, a body claiming nothing claiming nothing useful. Every endpoint
         but the attachment upload declares `application/json`; that one
         declares `application/octet-stream`, and has a far larger size cap to
-        go with it.
+        go with it. A request addressed to an unconfigured Host is rejected before
+        routing with `421` and a JSON error body.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
