@@ -23,7 +23,7 @@ specifies, compiles the frontend, builds the binary, runs the Go and frontend
 tests, and lints. It is silent on success and prints the failing step's output
 on failure. `-o DIR` sets where the binary goes.
 
-Prerequisites on `$PATH`: `go` (1.26.6 or later), `ogen`,
+Prerequisites on `$PATH`: `go` (1.26.9 or later), `ogen`,
 `openapi-typescript`, `tsc`, `golangci-lint`, `node`. No package manager is
 ever invoked: the browser bundles under `web/static/third_party/` are pre-built
 committed artifacts, rebuilt by hand with `web/ts/third_party/rebuild.sh` — the one
