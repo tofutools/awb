@@ -60,6 +60,7 @@ func enumOf(t *testing.T, doc map[string]any, name string) []string {
 func TestDocumentParses(t *testing.T) {
 	doc := document(t)
 	assert.Equal(t, "3.1.0", doc["openapi"])
+	assert.Equal(t, "/", doc["servers"].([]any)[0].(map[string]any)["url"])
 
 	info, ok := doc["info"].(map[string]any)
 	require.True(t, ok)

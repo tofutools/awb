@@ -700,15 +700,23 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 	}
 	chain = csrf.MiddlewareOrigins(append(hosts.Origins(), opts.corsOrigins...)...)(chain)
 
-	// Nothing is exempt: the API, the OpenAPI document and the web UI all sit
-	// behind it. Whether it asks for anything is the database's answer, given
-	// per request; see authenticator.
+	// Discovery resources are public so clients can find the API before
+	// authenticating. Everything else consults the authenticator per request.
 	//
 	// There is no authenticator at all in proxy mode, which opens no database
 	// to authenticate against, or under --no-auth, which is an operator saying
 	// this server authenticates nobody whatever the database holds.
 	if credentials != nil {
-		chain = credentials.Middleware(logger)(chain)
+		next := chain
+		authenticated := credentials.Middleware(logger)(next)
+		chain = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+				(r.URL.Path == "/openapi.yaml" || r.URL.Path == "/.well-known/api-catalog") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			authenticated.ServeHTTP(w, r)
+		})
 	}
 
 	// Strict-Transport-Security only when a proxy terminates TLS: sent over
@@ -729,7 +737,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 		HSTS:           strictTransport,
 	})(chain)
 
-	return transferLimits(chain), nil
+	return apiDescription(transferLimits(chain)), nil
 }
 
 // buildProxyHandler serves this binary's bundled UI and forwards its API calls
@@ -797,7 +805,7 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
-	return transferLimits(chain), nil
+	return apiDescription(transferLimits(chain)), nil
 }
 
 // proxyDeadlines bounds time spent waiting on the remote server. The listener's
@@ -846,6 +854,7 @@ func buildRoutes(apiHandler http.Handler, document *openapi.Document,
 	root.Handle("/api/", apiHandler)
 	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
 	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
+	root.Handle("GET /.well-known/api-catalog", recovery.Middleware(httputil.Gzip(openapi.CatalogHandler())))
 	root.Handle("/", recovery.Middleware(web.SPAHandler(uiHandler, staticFS, shell)))
 	return root, nil
 }
@@ -988,4 +997,15 @@ func runServer(ctx context.Context, logger *log.Logger, opts serveOptions, h htt
 		}
 		return nil
 	}
+}
+
+// apiDescription advertises the API contract even on responses rejected before
+// routing, including authentication challenges and host-policy failures.
+func apiDescription(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Link", `</openapi.yaml>; rel="service-desc"`)
+		}
+		next.ServeHTTP(w, r)
+	})
 }

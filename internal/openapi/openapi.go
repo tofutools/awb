@@ -51,21 +51,39 @@ func (d *Document) JSON() ([]byte, error) { return d.jsonDocument() }
 
 // YAMLHandler serves /openapi.yaml.
 func (d *Document) YAMLHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = w.Write(d.yamlDocument)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(d.yamlDocument)
+		}
 	})
 }
 
 // JSONHandler serves /openapi.json.
 func (d *Document) JSONHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		document, err := d.JSON()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(document)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(document)
+		}
+	})
+}
+
+// CatalogHandler publishes the API's discovery links using the RFC 9727
+// Linkset profile. Origin-relative references keep discovery independent of
+// the hostname used to reach this server.
+func CatalogHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"`)
+		w.Header().Set("Link", `</.well-known/api-catalog>; rel="api-catalog"`)
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write([]byte(`{"linkset":[{"anchor":"/api/","service-desc":[{"href":"/openapi.yaml","type":"application/yaml"}]}]}` + "\n"))
 	})
 }

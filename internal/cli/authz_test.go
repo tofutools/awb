@@ -193,9 +193,8 @@ func TestALockDoesNotDependOnHavingSeenTheUser(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
-// Nothing is exempt from the lock either — not the UI, not the documents, and
-// not the CORS preflight that authentication itself lets past, because no
-// request could follow one successfully.
+// The lock covers the UI, protected documents and CORS preflight. Public
+// discovery stays available even while the server is locked.
 func TestTheLockCoversEverythingTheServerServes(t *testing.T) {
 	h, be := newServeHandlerOn(t, serveOptions{
 		addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb",
@@ -207,10 +206,15 @@ func TestTheLockCoversEverythingTheServerServes(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, path := range []string{
-		"/", "/app.js", "/api/issues", "/openapi.json", "/openapi.yaml",
+		"/", "/app.js", "/api/issues", "/openapi.json",
 	} {
 		resp, _ := get(t, h, http.MethodGet, path)
 		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode, path)
+	}
+
+	for _, path := range []string{"/openapi.yaml", "/.well-known/api-catalog"} {
+		resp, _ := get(t, h, http.MethodGet, path)
+		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
 	}
 
 	resp, _ := get(t, h, http.MethodOptions, "/api/issues",
@@ -260,14 +264,14 @@ func TestWrongCredentialsSayNothingAboutTheAccount(t *testing.T) {
 	assert.Equal(t, wrongBody, unknownBody)
 }
 
-// Nothing is exempt: the document and the web UI sit behind authentication
-// with the API.
+// The JSON document and web UI require authentication along with the API.
+// The YAML document and catalog are public discovery resources.
 func TestAuthenticationCoversEverythingTheServerServes(t *testing.T) {
 	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777, basicAuthRealm: "awb"})
 	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
 	require.NoError(t, err)
 
-	for _, path := range []string{"/", "/api/issues", "/openapi.json", "/openapi.yaml"} {
+	for _, path := range []string{"/", "/api/issues", "/openapi.json"} {
 		resp, _ := get(t, h, http.MethodGet, path)
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
 	}
