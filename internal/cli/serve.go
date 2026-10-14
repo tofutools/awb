@@ -715,9 +715,6 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 				next.ServeHTTP(w, r)
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				w.Header().Set("Link", `</openapi.yaml>; rel="service-desc"`)
-			}
 			authenticated.ServeHTTP(w, r)
 		})
 	}
@@ -740,7 +737,7 @@ func buildHandler(base *local.Backend, document *openapi.Document, credentials *
 		HSTS:           strictTransport,
 	})(chain)
 
-	return transferLimits(chain), nil
+	return apiDescription(transferLimits(chain)), nil
 }
 
 // buildProxyHandler serves this binary's bundled UI and forwards its API calls
@@ -808,7 +805,7 @@ func buildProxyHandler(target *url.URL, document *openapi.Document, opts serveOp
 		ReferrerPolicy: "same-origin",
 		HSTS:           strictTransport,
 	})(chain)
-	return transferLimits(chain), nil
+	return apiDescription(transferLimits(chain)), nil
 }
 
 // proxyDeadlines bounds time spent waiting on the remote server. The listener's
@@ -854,10 +851,7 @@ func buildRoutes(apiHandler http.Handler, document *openapi.Document,
 	}
 
 	root := http.NewServeMux()
-	root.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Link", `</openapi.yaml>; rel="service-desc"`)
-		apiHandler.ServeHTTP(w, r)
-	}))
+	root.Handle("/api/", apiHandler)
 	root.Handle("GET /openapi.json", recovery.Middleware(httputil.Gzip(document.JSONHandler())))
 	root.Handle("GET /openapi.yaml", recovery.Middleware(httputil.Gzip(document.YAMLHandler())))
 	root.Handle("GET /.well-known/api-catalog", recovery.Middleware(httputil.Gzip(openapi.CatalogHandler())))
@@ -1003,4 +997,15 @@ func runServer(ctx context.Context, logger *log.Logger, opts serveOptions, h htt
 		}
 		return nil
 	}
+}
+
+// apiDescription advertises the API contract even on responses rejected before
+// routing, including authentication challenges and host-policy failures.
+func apiDescription(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Link", `</openapi.yaml>; rel="service-desc"`)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
