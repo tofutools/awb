@@ -339,6 +339,12 @@ as direct mode.
 decoding, validation, and the TypeScript API types. Generated files are not
 committed and are never edited directly.
 
+The exact embedded document is public at `/openapi.yaml`, including when
+Basic authentication is enabled. `/.well-known/api-catalog` publishes its
+service description in the RFC 9727 Linkset profile, and API responses link to
+that description with `rel="service-desc"`. Discovery uses origin-relative
+URLs; the document's server URL is `/`.
+
 `internal/openapi` reads each operation's declared parameters and bodies back
 from the document. Handlers refuse undeclared input instead of accepting a
 second accidental API contract. `internal/handler` adapts generated operations

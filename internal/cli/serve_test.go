@@ -413,6 +413,63 @@ func TestOpenAPIIsServed(t *testing.T) {
 	assert.Contains(t, body, "openapi: 3.1.0")
 }
 
+// Discovery remains usable before authentication, while API and UI access
+// still require credentials when the database contains a password.
+func TestAPIDiscovery(t *testing.T) {
+	h, be := newServeHandlerOn(t, serveOptions{addr: "127.0.0.1", port: 7777})
+	_, err := be.CreateUser(t.Context(), backend.UserCreate{Name: "alice", Password: "hunter2"})
+	require.NoError(t, err)
+	raw, err := os.ReadFile("../../openapi.yaml")
+	require.NoError(t, err)
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, path := range []string{"/openapi.yaml", "/.well-known/api-catalog"} {
+			t.Run(method+path, func(t *testing.T) {
+				resp, body := get(t, h, method, path)
+				assert.Equal(t, http.StatusOK, resp.StatusCode)
+				assert.Empty(t, resp.Header.Get("WWW-Authenticate"))
+				if path == "/openapi.yaml" {
+					assert.Equal(t, "application/yaml", resp.Header.Get("Content-Type"))
+					if method == http.MethodGet {
+						assert.Equal(t, string(raw), body)
+					}
+				} else {
+					assert.Equal(t, `application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"`, resp.Header.Get("Content-Type"))
+					assert.Equal(t, `</.well-known/api-catalog>; rel="api-catalog"`, resp.Header.Get("Link"))
+					if method == http.MethodGet {
+						assert.JSONEq(t, `{"linkset":[{"anchor":"/api/","service-desc":[{"href":"/openapi.yaml","type":"application/yaml"}]}]}`, body)
+					}
+				}
+				if method == http.MethodHead {
+					assert.Empty(t, body)
+				}
+			})
+		}
+	}
+	for _, path := range []string{"/", "/api/issues", "/api/missing"} {
+		resp, _ := get(t, h, http.MethodGet, path)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		if strings.HasPrefix(path, "/api/") {
+			assert.Equal(t, `</openapi.yaml>; rel="service-desc"`, resp.Header.Get("Link"))
+			resp, _ = get(t, h, http.MethodGet, path, basicAuth("alice", "hunter2")...)
+			assert.Equal(t, `</openapi.yaml>; rel="service-desc"`, resp.Header.Get("Link"))
+		}
+	}
+}
+
+func TestProxyAPIDiscovery(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+	h := newProxyServeHandler(t, upstream.URL)
+	resp, _ := get(t, h, http.MethodGet, "/.well-known/api-catalog")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp, _ = get(t, h, http.MethodGet, "/api/issues")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, `</openapi.yaml>; rel="service-desc"`, resp.Header.Get("Link"))
+}
+
 // A browser attaches basic-authentication credentials to cross-site requests of
 // its own accord, so a write must carry an Origin or Referer naming the server
 // or an allowed origin.
