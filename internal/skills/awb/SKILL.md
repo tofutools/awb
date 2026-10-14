@@ -112,3 +112,8 @@ An issue cannot move between workspaces; its workspace-prefixed ID is stable.
 
 For commands not covered here, explore the command tree with `awb --help`, then
 use `awb <command> --help` or `awb <group> <command> --help` for details.
+
+A newly created issue might be picked up immediately by if it is ready 
+(status open and not blocked). If the issue is blocked, then create it with `--blocked-by` 
+rather than adding that relation later. If the issue is to be worked on later, create it with
+`--backlog`. If you intend to work on the issue yourself directly, create it with `--claim`.
