@@ -7,8 +7,9 @@ import {
   workspaceScopedHref,
 } from "./navigation.js";
 import { accountMenuItems } from "./preferences.js";
+import { requestReload } from "./reload.js";
 import { parseRoute, routeKey, type Route } from "./routing/route.js";
-import { AppContext, Avatar, ErrorMessage, Popover } from "./components/ui.js";
+import { AppContext, Avatar, Button, ErrorMessage, Popover } from "./components/ui.js";
 import { Icon, type IconName } from "./components/icon.js";
 import { Palette } from "./components/palette.js";
 import { ListingPage } from "./pages/listing.js";
@@ -83,7 +84,10 @@ function App() {
             </a>
           ))}
         </nav>
-        <Palette route={route} />
+        <span class="header-tools">
+          <Palette route={route} />
+          <ReloadButton />
+        </span>
         {caller.identity && (
           <span class="account-menu">
             <Popover
@@ -128,6 +132,30 @@ function App() {
         )}
       </main>
     </AppContext.Provider>
+  );
+}
+/** Refetches the current page's data in place, without a page reload, so
+ * drafts, scroll position and focus survive. */
+function ReloadButton() {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      class="reload-button"
+      title="Reload data"
+      aria-label="Reload data"
+      aria-busy={busy || undefined}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await requestReload(window);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Icon name="reload" />
+    </Button>
   );
 }
 /** Route identity changes only with the addressed page, never with its query

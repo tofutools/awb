@@ -379,7 +379,8 @@ because that URL prefix belongs to the HTTP API.
 
 Components retain their identity while refreshed data updates the virtual DOM.
 Mutation refreshes keep the page, focused controls, and editor drafts mounted;
-there is no partial-page replacement or post-edit scroll restoration. An issue
+so does the header's reload button, which asks every mounted resource to refetch
+rather than reloading the document. There is no partial-page replacement or post-edit scroll restoration. An issue
 or workspace edit form is the exception, and deliberately: a save that succeeds
 hides it and returns focus to the button that opened it, because the updated
 issue or workspace it reveals is the confirmation. CodeMirror

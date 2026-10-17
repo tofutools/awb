@@ -684,11 +684,13 @@ function UserAccountForm({
   const lastUserAdmin =
     user.user_admin &&
     directory.filter((candidate) => candidate.user_admin).length === 1;
+  // Keyed on the values, not the object: a refetch that changed nothing must
+  // not discard what is being typed.
   useEffect(() => {
     setFullName(user.full_name);
     setWorkspaceAdmin(user.workspace_admin);
     setUserAdmin(user.user_admin);
-  }, [user]);
+  }, [user.name, user.full_name, user.workspace_admin, user.user_admin]);
   return (
     <form
       class="user-admin-form"
@@ -2065,6 +2067,8 @@ function IgnoredWorkspacesSettingsCard({
 }): JSX.Element {
   const [workspaces, setWorkspaces] = useState(initialWorkspaces);
   const [filter, setFilter] = useState("");
+
+  useEffect(() => setWorkspaces(initialWorkspaces), [initialWorkspaces]);
   const visible = new Set(filterWorkspacePreferences(workspaces, filter));
 
   const update = (updated: WorkspacePreference): void => {
