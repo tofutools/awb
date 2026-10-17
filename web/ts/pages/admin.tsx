@@ -690,7 +690,7 @@ function UserAccountForm({
     setFullName(user.full_name);
     setWorkspaceAdmin(user.workspace_admin);
     setUserAdmin(user.user_admin);
-  }, [user.full_name, user.workspace_admin, user.user_admin]);
+  }, [user.name, user.full_name, user.workspace_admin, user.user_admin]);
   return (
     <form
       class="user-admin-form"
