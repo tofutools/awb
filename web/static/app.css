@@ -102,7 +102,6 @@ nav a.active::after {
   display: inline-flex;
   align-items: center;
   gap: 0.7rem;
-  margin-left: auto;
   padding: 0.35rem 0.45rem 0.35rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -112,6 +111,27 @@ nav a.active::after {
   cursor: pointer;
 }
 .command-palette-button:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.header-tools { display: inline-flex; align-items: stretch; gap: 0.5rem; margin-left: auto; }
+.reload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.reload-button:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.reload-button:disabled { cursor: progress; }
+.reload-button[aria-busy] .icon { animation: reload-spin 0.8s linear infinite; }
+@keyframes reload-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .reload-button[aria-busy] .icon { animation: none; }
+}
 .command-palette-button kbd, .command-palette footer kbd {
   padding: 0.08rem 0.3rem;
   border: 1px solid var(--line);

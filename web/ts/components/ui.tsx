@@ -41,6 +41,7 @@ import {
   showPagination,
 } from "../preferences.js";
 import { confirmationDecision } from "../keyboard.js";
+import { onReload } from "../reload.js";
 import { routeHref, type Route } from "../routing/route.js";
 
 export interface AppContextValue {
@@ -58,7 +59,8 @@ export const AppContext = createContext<AppContextValue>({
 export const useApp = () => useContext(AppContext);
 
 /** Data refreshes retain the mounted component and its drafts. A late request
- * cannot replace newer data or write into an unmounted route. */
+ * cannot replace newer data or write into an unmounted route. Every mounted
+ * resource also refetches when the header's reload button asks for it. */
 export function useResource<T>(load: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T>();
   const [error, setError] = useState<unknown>();
@@ -83,6 +85,7 @@ export function useResource<T>(load: () => Promise<T>, deps: unknown[]) {
       generation.current++;
     };
   }, deps);
+  useEffect(() => onReload(window, reload), []);
   return { data, error, reload };
 }
 export function useMutation() {
