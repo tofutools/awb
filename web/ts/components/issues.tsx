@@ -10,6 +10,7 @@ import {
   useApp,
   useMutation,
   ErrorMessage,
+  confirmMutation,
 } from "./ui.js";
 export type ListingKind = "issues" | "ready" | "blocked";
 export function Badge({
@@ -100,6 +101,7 @@ export function IssueTable({
   actions,
   onReload,
   mutable = true,
+  editableWorkspaces,
 }: {
   issues: IssueSummary[];
   kind?: ListingKind;
@@ -110,6 +112,7 @@ export function IssueTable({
   actions?: (issue: IssueSummary) => ComponentChildren;
   onReload?: () => Promise<void>;
   mutable?: boolean;
+  editableWorkspaces?: ReadonlySet<string>;
 }) {
   const { identity } = useApp();
   const surface = useDragSurface();
@@ -167,6 +170,61 @@ export function IssueTable({
           <span class="parent-marker">↳</span>
           {title ? listingParentTitle(title) : parent}
         </a>
+      );
+    }
+    // List edits use the same atomic status move as board drag and drop, so
+    // assignments and status cannot drift apart. Reload to reapply sort/filter.
+    if (
+      mutable && onReload && editableWorkspaces?.has(issue.workspace) &&
+      (key === "type" || key === "priority" || key === "status")
+    ) {
+      const choices = key === "type"
+        ? ["epic", "feature", "bug", "task", "chore"]
+        : key === "priority"
+          ? ["0", "1", "2", "3", "4"]
+          : ["backlog", "open", "in_progress", "closed"];
+      return (
+        <select
+          class={`listing-badge listing-edit ${key} ${key === "priority" ? `p${issue.priority}` : key === "status" ? `status-${issue.status}` : ""}`}
+          aria-label={`${key === "type" ? "Type" : key === "priority" ? "Priority" : "Status"} of ${issue.id}`}
+          value={String(issue[key])}
+          disabled={mutation.busy}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            event.currentTarget.value = String(issue[key]);
+            if (value === String(issue[key])) return;
+            void mutation.run(async () => {
+              const current = await api.issue(issue.id);
+              if (key === "status") {
+                const status = value as IssueSummary["status"];
+                if (
+                  (status === "open" || status === "backlog") &&
+                  current.assignees.length &&
+                  !(await confirmMutation(
+                    `Move issue to ${status}?`,
+                    `Move ${issue.id} to ${status}? This will unassign ${current.assignees.join(", ")}.`,
+                  ))
+                ) return;
+                if (status === "closed" && !(await confirmMutation(
+                  "Close issue?", `Close ${issue.id}? This can be reopened later.`,
+                  undefined, true,
+                ))) return;
+                await api.moveIssue(issue.id, { status });
+              } else if (key === "priority") {
+                await api.updateIssue(issue.id, { priority: Number(value) });
+              } else {
+                await api.updateIssue(issue.id, { type: value as IssueSummary["type"] });
+              }
+              await onReload();
+            });
+          }}
+        >
+          {choices.map((value) => (
+            <option key={value} value={value}>
+              {key === "priority" ? `P${value}` : value}
+            </option>
+          ))}
+        </select>
       );
     }
     if (key === "type") return <Badge className="type">{issue.type}</Badge>;

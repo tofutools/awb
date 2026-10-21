@@ -345,6 +345,9 @@ export function ListingPage({
                   direction={state.direction}
                   onSort={sort}
                   onReload={resource.reload}
+                  editableWorkspaces={kind === "issues" ? new Set(
+                    data.workspaces.rows.filter((w) => w.state === "active").map((w) => w.key),
+                  ) : undefined}
                 />
               ) : (
                 <p class="empty">

@@ -2039,3 +2039,13 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .json-editor .cm-foldPlaceholder { background: var(--panel); color: var(--muted); border-color: var(--line); }
 .json-editor .cm-activeLineGutter { background: var(--panel); color: var(--fg); }
 .json-editor-hint { color: var(--muted); }
+
+/* Native list editors keep the compact badge shape and keyboard interaction. */
+select.listing-edit {
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  max-width: 100%;
+}
+select.listing-edit:focus-visible { outline: 2px solid var(--accent); }
+select.listing-edit:disabled { opacity: 0.55; cursor: wait; }
