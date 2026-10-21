@@ -3,6 +3,8 @@ import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, type IssueSummary } from "../api.js";
 import { listingParentTitle, listingRelationshipRole } from "../listings.js";
+import { issueTypeVocabulary } from "../type-filter.js";
+import { issueStatusVocabulary } from "../status-filter.js";
 import {
   NameLink,
   UpdatedTime,
@@ -10,6 +12,7 @@ import {
   useApp,
   useMutation,
   ErrorMessage,
+  confirmMutation,
 } from "./ui.js";
 export type ListingKind = "issues" | "ready" | "blocked";
 export function Badge({
@@ -100,6 +103,7 @@ export function IssueTable({
   actions,
   onReload,
   mutable = true,
+  editableWorkspaces,
 }: {
   issues: IssueSummary[];
   kind?: ListingKind;
@@ -110,6 +114,7 @@ export function IssueTable({
   actions?: (issue: IssueSummary) => ComponentChildren;
   onReload?: () => Promise<void>;
   mutable?: boolean;
+  editableWorkspaces?: ReadonlySet<string>;
 }) {
   const { identity } = useApp();
   const surface = useDragSurface();
@@ -167,6 +172,67 @@ export function IssueTable({
           <span class="parent-marker">↳</span>
           {title ? listingParentTitle(title) : parent}
         </a>
+      );
+    }
+    // Status edits preserve manual order while updating assignments atomically.
+    // Reload after every edit to reapply sorting and filters.
+    if (
+      mutable && onReload && editableWorkspaces?.has(issue.workspace) &&
+      (key === "type" || key === "priority" || key === "status")
+    ) {
+      const choices = key === "type"
+        ? issueTypeVocabulary
+        : key === "priority"
+          ? ["0", "1", "2", "3", "4"]
+          : issueStatusVocabulary;
+      return (
+        <select
+          class={`listing-badge listing-edit ${key} ${key === "priority" ? `p${issue.priority}` : key === "status" ? `status-${issue.status}` : ""}`}
+          aria-label={`${key === "type" ? "Type" : key === "priority" ? "Priority" : "Status"} of ${issue.id}`}
+          value={String(issue[key])}
+          disabled={mutation.busy}
+          onChange={(event) => {
+            const select = event.currentTarget;
+            const value = select.value;
+            event.currentTarget.value = String(issue[key]);
+            if (value === String(issue[key])) return;
+            void mutation.run(async () => {
+              const current = await api.issue(issue.id);
+              if (key === "status") {
+                const status = value as IssueSummary["status"];
+                if (
+                  (status === "open" || status === "backlog") &&
+                  current.assignees.length &&
+                  !(await confirmMutation(
+                    `Move issue to ${status}?`,
+                    `Move ${issue.id} to ${status}? This will unassign ${current.assignees.join(", ")}.`,
+                  ))
+                ) return;
+                if (status === "closed" && !(await confirmMutation(
+                  "Close issue?", `Close ${issue.id}? This can be reopened later.`,
+                  undefined, true,
+                ))) return;
+                await api.setIssueStatus(issue.id, status);
+              } else if (key === "priority") {
+                await api.updateIssue(issue.id, { priority: Number(value) });
+              } else {
+                await api.updateIssue(issue.id, { type: value as IssueSummary["type"] });
+              }
+              await onReload();
+            }).then(() => {
+              // Disabling the native control while saving can move focus to
+              // the body. Restore it unless the user has focused elsewhere.
+              if (select.isConnected && document.activeElement === document.body)
+                select.focus({ preventScroll: true });
+            });
+          }}
+        >
+          {choices.map((value) => (
+            <option key={value} value={value}>
+              {key === "priority" ? `P${value}` : value}
+            </option>
+          ))}
+        </select>
       );
     }
     if (key === "type") return <Badge className="type">{issue.type}</Badge>;

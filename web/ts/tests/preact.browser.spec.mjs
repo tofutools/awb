@@ -1146,3 +1146,77 @@ test("issue details omit the metadata section when metadata is empty", async ({ 
   await expect(page.locator(".issue-heading-text")).toBeVisible();
   await expect(page.locator(".issue-metadata")).toHaveCount(0);
 });
+
+for (const width of [1440, 390]) {
+  test(`issue list edits type, priority and status at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const workspace = await fixture(page, `e${width}`);
+    const created = await page.request.put(`${baseURL}/api/issues/${workspace}-000001`, {
+      data: { workspace, title: "Edit from list" },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const issue = await created.json();
+    await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+    const row = page.locator(`tr[data-issue="${issue.id}"]`);
+    const type = row.getByRole("combobox", { name: `Type of ${issue.id}`, exact: true });
+    const priority = row.getByRole("combobox", { name: `Priority of ${issue.id}`, exact: true });
+    const status = row.getByRole("combobox", { name: `Status of ${issue.id}`, exact: true });
+    await type.selectOption("bug");
+    await expect(type).toHaveValue("bug");
+    await expect(type).toBeFocused();
+    await priority.selectOption("1");
+    await expect(priority).toHaveValue("1");
+    await expect(priority).toBeFocused();
+    await status.selectOption("in_progress");
+    await expect(status).toHaveValue("in_progress");
+    await status.selectOption("open");
+    const confirmation = page.getByRole("dialog", { name: "Move issue to open?", exact: true });
+    await confirmation.getByRole("button", { name: "No", exact: true }).click();
+    await expect(status).toHaveValue("in_progress");
+    await status.selectOption("open");
+    await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+    await expect(status).toHaveValue("open");
+    await expect(row.locator(".listing-col-assignee")).toHaveText("—");
+    await status.selectOption("closed");
+    await page.getByRole("dialog", { name: "Close issue?", exact: true })
+      .getByRole("button", { name: "Yes", exact: true }).click();
+    await expect(row).toHaveCount(0);
+    const saved = await page.request.get(`${baseURL}/api/issues/${issue.id}`);
+    expect(await saved.json()).toMatchObject({
+      type: "bug", priority: 1, status: "closed", assignees: [], order: issue.order,
+    });
+    await expect(page).toHaveURL(/#\/issues\?workspace=/);
+  });
+}
+
+test("issue list preserves values after a failed edit and keeps archived rows read-only", async ({ page }) => {
+  const workspace = await fixture(page, "editerr");
+  const id = `${workspace}-000001`;
+  const created = await page.request.put(`${baseURL}/api/issues/${id}`, {
+    data: { workspace, title: "Failed list edit" },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}`);
+  const row = page.locator(`tr[data-issue="${id}"]`);
+  const type = row.getByRole("combobox", { name: `Type of ${id}`, exact: true });
+  await page.route(`**/api/issues/${id}`, async (route) => {
+    if (route.request().method() === "PATCH")
+      await route.fulfill({ status: 403, json: { error: "Editing denied" } });
+    else await route.continue();
+  });
+  await type.selectOption("bug");
+  await expect(page.getByRole("alert")).toContainText("Editing denied");
+  await expect(type).toHaveValue("task");
+  await expect(type).toBeEnabled();
+  await page.unroute(`**/api/issues/${id}`);
+  await type.selectOption("bug");
+  await expect(type).toHaveValue("bug");
+  const current = await page.request.get(`${baseURL}/api/workspaces/${workspace}`);
+  const archived = await page.request.post(`${baseURL}/api/workspaces/${workspace}/archive`, {
+    headers: { "If-Match": current.headers().etag },
+  });
+  expect(archived.ok(), await archived.text()).toBe(true);
+  await page.goto(`${baseURL}/#/issues?workspace=${workspace}&include-archived=true`);
+  await expect(row.locator(".listing-col-type")).toHaveText("bug");
+  await expect(row.getByRole("combobox")).toHaveCount(0);
+});
