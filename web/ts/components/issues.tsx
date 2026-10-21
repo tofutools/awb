@@ -3,6 +3,8 @@ import { useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { api, type IssueSummary } from "../api.js";
 import { listingParentTitle, listingRelationshipRole } from "../listings.js";
+import { issueTypeVocabulary } from "../type-filter.js";
+import { issueStatusVocabulary } from "../status-filter.js";
 import {
   NameLink,
   UpdatedTime,
@@ -172,17 +174,17 @@ export function IssueTable({
         </a>
       );
     }
-    // List edits use the same atomic status move as board drag and drop, so
-    // assignments and status cannot drift apart. Reload to reapply sort/filter.
+    // Status edits preserve manual order while updating assignments atomically.
+    // Reload after every edit to reapply sorting and filters.
     if (
       mutable && onReload && editableWorkspaces?.has(issue.workspace) &&
       (key === "type" || key === "priority" || key === "status")
     ) {
       const choices = key === "type"
-        ? ["epic", "feature", "bug", "task", "chore"]
+        ? issueTypeVocabulary
         : key === "priority"
           ? ["0", "1", "2", "3", "4"]
-          : ["backlog", "open", "in_progress", "closed"];
+          : issueStatusVocabulary;
       return (
         <select
           class={`listing-badge listing-edit ${key} ${key === "priority" ? `p${issue.priority}` : key === "status" ? `status-${issue.status}` : ""}`}
@@ -190,7 +192,8 @@ export function IssueTable({
           value={String(issue[key])}
           disabled={mutation.busy}
           onChange={(event) => {
-            const value = event.currentTarget.value;
+            const select = event.currentTarget;
+            const value = select.value;
             event.currentTarget.value = String(issue[key]);
             if (value === String(issue[key])) return;
             void mutation.run(async () => {
@@ -209,13 +212,18 @@ export function IssueTable({
                   "Close issue?", `Close ${issue.id}? This can be reopened later.`,
                   undefined, true,
                 ))) return;
-                await api.moveIssue(issue.id, { status });
+                await api.setIssueStatus(issue.id, status);
               } else if (key === "priority") {
                 await api.updateIssue(issue.id, { priority: Number(value) });
               } else {
                 await api.updateIssue(issue.id, { type: value as IssueSummary["type"] });
               }
               await onReload();
+            }).then(() => {
+              // Disabling the native control while saving can move focus to
+              // the body. Restore it unless the user has focused elsewhere.
+              if (select.isConnected && document.activeElement === document.body)
+                select.focus({ preventScroll: true });
             });
           }}
         >
