@@ -61,8 +61,8 @@ github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsRe
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/mattn/go-runewidth v0.0.31 h1:1oCV4ReTlosDBc6rYRw5cL8S/4y8iv5oRl4SJ5IBgwo=
 github.com/mattn/go-runewidth v0.0.31/go.mod h1:3qAiGCV4Koz/yuveO58qUefmUTRm8r0IGEXZ9jeHp/8=
-github.com/mikaelstaldal/go-server-common v1.14.0 h1:x7++fwq5c9I/5jZEOO/j5k4uopUiDJUOKeHh8TwGCnU=
-github.com/mikaelstaldal/go-server-common v1.14.0/go.mod h1:sZpV7I/4DNFAv8yAYyveIQvKGt/oQwyW0+YTE+oGUm4=
+github.com/mikaelstaldal/go-server-common v1.15.0 h1:YdvdYUycSQsuNpcSs6AmjP60rkZlRTbLCs8ydpMhSA0=
+github.com/mikaelstaldal/go-server-common v1.15.0/go.mod h1:UGwL9eAKhWZnJfXC2e9pKdGH9SJuNTwPPaNedYy5hMU=
 github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
 github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL47Hk=
