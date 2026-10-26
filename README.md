@@ -91,9 +91,10 @@ $ awb comment add app-a3f9c1 --body "Reproduced with an empty token stream." --k
 $ awb close app-a3f9c1 --reason "Guard against the empty token stream"
 ```
 
-Work commands are non-interactive unless interactivity is explicitly requested.
-Account password commands are the deliberate exception: they read from standard
-input and hide terminal entry, while scripts can pipe a password or provide a
+Deletion commands ask for confirmation when stdin and stderr are terminals;
+`--force` skips the prompt and is required without a terminal.
+Account password commands read from standard input and hide terminal entry,
+while scripts can pipe a password or provide a
 bcrypt hash. A password is optional; an account without one is an assignee that
 nothing logs in as. Successful mutations are transactional, errors have classified
 exit codes, and the compact vocabulary fits in a short agent instruction. Print
