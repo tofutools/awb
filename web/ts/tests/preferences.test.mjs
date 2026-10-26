@@ -83,3 +83,38 @@ test("theme defaults to auto, persists choices, and tolerates unavailable storag
   assert.doesNotThrow(() => rememberTheme(blocked, "dark"));
   assert.doesNotThrow(() => rememberTheme(null, "light"));
 });
+
+test("theme application updates toolbar colors using explicit theme identifiers", async () => {
+  const { applyTheme } = await import("../../static/preferences.js");
+  const metas = [
+    { dataset: { theme: "light" }, content: "#ffffff", media: "" },
+    { dataset: { theme: "dark" }, content: "#000000", media: "" },
+  ];
+  globalThis.document = { documentElement: { dataset: {} }, querySelectorAll: () => metas };
+  try {
+    applyTheme("dark");
+    assert.equal(document.documentElement.dataset.theme, "dark");
+    assert.deepEqual(metas.map(meta => meta.media), ["not all", "all"]);
+    applyTheme("light");
+    assert.deepEqual(metas.map(meta => meta.media), ["all", "not all"]);
+    applyTheme("auto");
+    assert.deepEqual(metas.map(meta => meta.media), ["(prefers-color-scheme: light)", "(prefers-color-scheme: dark)"]);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("classic bootstrap restores explicit themes before application loading", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { runInNewContext } = await import("node:vm");
+  const source = await readFile(new URL("../../static/theme.js", import.meta.url), "utf8");
+  for (const value of [null, "auto", "invalid", "light", "dark"]) {
+    const document = { documentElement: { dataset: {} } };
+    runInNewContext(source, { document, localStorage: { getItem: () => value } });
+    assert.equal(document.documentElement.dataset.theme,
+      value === "light" || value === "dark" ? value : undefined);
+  }
+  assert.doesNotThrow(() => runInNewContext(source, {
+    get localStorage() { throw new Error("blocked"); },
+  }));
+});

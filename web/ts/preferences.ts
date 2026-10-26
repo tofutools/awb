@@ -100,7 +100,7 @@ export function rememberTheme(storage: PreferenceStorage | null, theme: ThemePre
 export function applyTheme(theme: ThemePreference): void {
   document.documentElement.dataset.theme = theme;
   for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
-    const dark = meta.content === "#16171a";
+    const dark = meta.dataset.theme === "dark";
     meta.media = theme === "auto"
       ? `(prefers-color-scheme: ${dark ? "dark" : "light"})`
       : (dark === (theme === "dark") ? "all" : "not all");
