@@ -1240,3 +1240,18 @@ test("color theme overrides the browser, persists, and returns to automatic mode
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(22, 23, 26)");
 });
+
+
+test("appearance selection survives reopening Settings when storage is blocked", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", { get() { throw new Error("blocked"); } });
+  });
+  await page.goto(`${baseURL}/#/settings`);
+  const theme = page.getByRole("combobox", { name: /Color theme/ });
+  await theme.selectOption("dark");
+  await page.goto(`${baseURL}/#/workspaces`);
+  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
+  await page.goto(`${baseURL}/#/settings`);
+  await expect(theme).toHaveValue("dark");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(22, 23, 26)");
+});

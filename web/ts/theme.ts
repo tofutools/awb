@@ -5,6 +5,9 @@
     const theme = localStorage.getItem("awb.theme");
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
+      for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+        meta.media = meta.dataset.theme === theme ? "all" : "not all";
+      }
     }
   } catch {
     // CSS follows the browser when storage is unavailable.

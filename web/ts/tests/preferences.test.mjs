@@ -109,10 +109,17 @@ test("classic bootstrap restores explicit themes before application loading", as
   const { runInNewContext } = await import("node:vm");
   const source = await readFile(new URL("../../static/theme.js", import.meta.url), "utf8");
   for (const value of [null, "auto", "invalid", "light", "dark"]) {
-    const document = { documentElement: { dataset: {} } };
+    const metas = [
+      { dataset: { theme: "light" }, media: "(prefers-color-scheme: light)" },
+      { dataset: { theme: "dark" }, media: "(prefers-color-scheme: dark)" },
+    ];
+    const document = { documentElement: { dataset: {} }, querySelectorAll: () => metas };
     runInNewContext(source, { document, localStorage: { getItem: () => value } });
     assert.equal(document.documentElement.dataset.theme,
       value === "light" || value === "dark" ? value : undefined);
+    assert.deepEqual(metas.map(meta => meta.media), value === "light" ? ["all", "not all"]
+      : value === "dark" ? ["not all", "all"]
+      : ["(prefers-color-scheme: light)", "(prefers-color-scheme: dark)"]);
   }
   assert.doesNotThrow(() => runInNewContext(source, {
     get localStorage() { throw new Error("blocked"); },

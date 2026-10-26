@@ -43,7 +43,6 @@ import {
 } from "../listings.js";
 import {
   applyTheme,
-  readTheme,
   rememberTheme,
   type ThemePreference,
   filterWorkspacePreferences,
@@ -2144,7 +2143,10 @@ export function SettingsPage({ route }: PageProps): JSX.Element {
     }
   }, [identity]);
   const storage = preferenceStorage(window);
-  const [theme, setTheme] = useState(() => readTheme(storage));
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    const applied = document.documentElement.dataset.theme;
+    return applied === "light" || applied === "dark" ? applied : "auto";
+  });
   const [paginationAutoHide, setPaginationAutoHide] = useState(() =>
     readPaginationAutoHide(storage),
   );
