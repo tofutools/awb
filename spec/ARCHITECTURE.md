@@ -19,7 +19,8 @@ the outcome through interfaces that cost little context and fail predictably.
 Commands remain non-interactive without a terminal, output modes have explicit
 contracts, and errors have one taxonomy across CLI and HTTP.
 Deletion commands offer a default-no confirmation when standard input and
-standard error are terminals; `--force` supplies confirmation without a prompt.
+standard error are terminals; `--force` supplies confirmation without a prompt
+and is required when either stream is not a terminal.
 
 The interactive list viewer is a human affordance that must be requested and
 requires a terminal on both input and output. It cannot accidentally appear in

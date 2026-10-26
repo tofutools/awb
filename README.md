@@ -92,7 +92,7 @@ $ awb close app-a3f9c1 --reason "Guard against the empty token stream"
 ```
 
 Deletion commands ask for confirmation when stdin and stderr are terminals;
-`--force` skips the prompt and is required without a terminal.
+`--force` skips the prompt and is required when either stdin or stderr is not a terminal.
 Account password commands read from standard input and hide terminal entry,
 while scripts can pipe a password or provide a
 bcrypt hash. A password is optional; an account without one is an assignee that

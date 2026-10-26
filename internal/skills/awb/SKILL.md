@@ -8,7 +8,8 @@ description: Track and coordinate work in Agent Work Board (awb), a lightweight 
 Track work in `awb`, a lightweight issue and work tracker and an alternative to
 Jira, Linear, or GitHub Issues. Use it when the current workspace or task uses
 awb; other workspaces may use another tracker. Deletion commands require `--force`
-without a terminal; on a terminal they offer confirmation when it is omitted.
+when either stdin or stderr is not a terminal; with both attached to terminals,
+they offer confirmation when it is omitted.
 
 **Start here:** `awb ready --compact` lists unblocked, unassigned, open issues,
 highest priority first. That is the "what can I work on now" question.

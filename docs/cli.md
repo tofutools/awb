@@ -29,8 +29,8 @@ Exit status is the machine-readable error class:
 
 Deletion commands ask for confirmation when stdin and stderr are terminals;
 only `y` or `yes` proceeds, and an empty reply or EOF cancels. `--force` skips
-the prompt and is required without a terminal. Workspace deletion still requires
-`--cascade` to delete its issues. Password entry for `user add --password` and
+the prompt and is required when either stdin or stderr is not a terminal.
+Workspace deletion still requires `--cascade` to delete its issues. Password entry for `user add --password` and
 `user update --password` prompts on a terminal with echo
 disabled, while scripts pipe the password through standard input or supply a
 bcrypt hash where the command supports one.
