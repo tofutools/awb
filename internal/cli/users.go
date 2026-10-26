@@ -333,6 +333,7 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 		Use:   "delete",
 		Short: "Delete a user",
 		Long: "Delete a user. Every access they had to a workspace goes with them.\n\n" +
+			"Without --force, asks for confirmation when stdin and stderr are terminals.\n\n" +
 			"The issues they were assigned are left exactly as they are: an assignee\n" +
 			"records who holds or held a piece of work, and rewriting that because\n" +
 			"somebody's access was withdrawn would lose the only record of who did it.\n\n" +
@@ -344,8 +345,8 @@ func newUserDeleteCommand(e *env) *cobra.Command {
 			"database openly is awb serve --no-auth.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *userDeleteParams, cmd *cobra.Command, _ []string) error {
-			if !p.Force {
-				return awberr.Usagef("awb user delete needs --force: it is not recoverable")
+			if err := e.confirmDeletion(p.Force, "awb user delete", fmt.Sprintf("user %q", p.Name)); err != nil {
+				return err
 			}
 
 			be, err := e.backend(cmd.Context())

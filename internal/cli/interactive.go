@@ -22,9 +22,8 @@ import (
 //
 // -i draws the listing a command would have printed on the full screen, lets
 // the reader move through it, and prints the entry they choose exactly as the
-// matching show command would. It is the one interactive thing awb does, and
-// the only one that needs a terminal: it draws on standard output and reads
-// keys from standard input, so it refuses without one on both rather than
+// matching show command would. It needs a terminal: it draws on standard
+// output and reads keys from standard input, so it refuses without one on both rather than
 // falling back to something else. Everything an agent or a script reads is
 // unchanged, because neither has a terminal to run it in.
 

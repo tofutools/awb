@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -729,6 +730,7 @@ func newDeleteCommand(e *env) *cobra.Command {
 		Use:   "delete",
 		Short: "Hard delete an issue and its relations",
 		Long: "Delete an issue. This is not recoverable.\n\n" +
+			"Without --force, asks for confirmation when stdin and stderr are terminals.\n\n" +
 			"It never refuses on account of dependents and has no --cascade: it orphans\n" +
 			"any children and drops every relation, and reports how many went, since\n" +
 			"removing a blocker silently makes other issues ready and orphaning children\n" +
@@ -739,10 +741,8 @@ func newDeleteCommand(e *env) *cobra.Command {
 			return nil
 		},
 		RunFuncE: func(p *forceParams, cmd *cobra.Command, _ []string) error {
-			// A missing --force depends on the arguments alone and not on anything the
-			// database holds, so it is a usage error.
-			if !p.Force {
-				return awberr.Usagef("awb delete needs --force: it is not recoverable")
+			if err := e.confirmDeletion(p.Force, "awb delete", fmt.Sprintf("issue %q", p.ID)); err != nil {
+				return err
 			}
 
 			be, err := e.backend(cmd.Context())

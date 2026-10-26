@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -205,14 +206,13 @@ func newAttachDeleteCommand(e *env) *cobra.Command {
 		Use:   "delete",
 		Short: "Delete an attachment",
 		Long: "Delete an attachment. This is not recoverable.\n\n" +
+			"Without --force, asks for confirmation when stdin and stderr are terminals.\n\n" +
 			"The stored content goes with it unless another attachment holds the same\n" +
 			"bytes, in which case that copy stays.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *attachDeleteParams, cmd *cobra.Command, _ []string) error {
-			// A missing --force depends on the arguments alone and not on anything
-			// the database holds, so it is a usage error.
-			if !p.Force {
-				return awberr.Usagef("awb attach delete needs --force: it is not recoverable")
+			if err := e.confirmDeletion(p.Force, "awb attach delete", fmt.Sprintf("attachment %q on issue %q", p.Name, p.ID)); err != nil {
+				return err
 			}
 
 			be, err := e.backend(cmd.Context())
