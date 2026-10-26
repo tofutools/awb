@@ -42,6 +42,10 @@ import {
   withPage,
 } from "../listings.js";
 import {
+  applyTheme,
+  readTheme,
+  rememberTheme,
+  type ThemePreference,
   filterWorkspacePreferences,
   preferenceStorage,
   readPaginationAutoHide,
@@ -2140,6 +2144,7 @@ export function SettingsPage({ route }: PageProps): JSX.Element {
     }
   }, [identity]);
   const storage = preferenceStorage(window);
+  const [theme, setTheme] = useState(() => readTheme(storage));
   const [paginationAutoHide, setPaginationAutoHide] = useState(() =>
     readPaginationAutoHide(storage),
   );
@@ -2153,6 +2158,27 @@ export function SettingsPage({ route }: PageProps): JSX.Element {
         <h1>Settings</h1>
         <p class="lede">Your preferences across Agent Work Board</p>
       </div>
+      <section class="profile-card">
+        <h2>Appearance</h2>
+        <label class="settings-preference">
+          <span class="settings-preference-copy">
+            <span class="settings-preference-title">Color theme</span>
+            <span class="settings-preference-description">
+              Auto follows your browser’s light or dark mode. Saved in this browser.
+            </span>
+          </span>
+          <select value={theme} onChange={(event) => {
+            const value = event.currentTarget.value as ThemePreference;
+            setTheme(value);
+            applyTheme(value);
+            rememberTheme(storage, value);
+          }}>
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
       <section class="profile-card">
         <h2>Listings</h2>
         <label class="settings-preference">

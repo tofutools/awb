@@ -2,6 +2,7 @@
    database in a browser, not a broad product surface. */
 
 :root {
+  color-scheme: light;
   --bg: #fbfbfa;
   --fg: #1c1c1a;
   --muted: #6b6b66;
@@ -14,7 +15,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #16171a;
     --fg: #e6e6e1;
     --muted: #9a9a93;
@@ -23,6 +25,17 @@
     --accent: #6bbfa4;
     --warn: #e08a6b;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --bg: #16171a;
+    --fg: #e6e6e1;
+    --muted: #9a9a93;
+    --line: #2c2e33;
+    --panel: #1d1f23;
+    --accent: #6bbfa4;
+    --warn: #e08a6b;
 }
 
 * { box-sizing: border-box; }

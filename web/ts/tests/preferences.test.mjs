@@ -59,3 +59,27 @@ test("settings follows profile in the account menu and routes to its own page", 
     { href: "#/settings", label: "Settings" },
   ]);
 });
+
+test("theme defaults to auto, persists choices, and tolerates unavailable storage", async () => {
+  const { readTheme, rememberTheme } = await import("../../static/preferences.js");
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  assert.equal(readTheme(storage), "auto");
+  for (const theme of ["light", "dark", "auto"]) {
+    rememberTheme(storage, theme);
+    assert.equal(readTheme(storage), theme);
+  }
+  values.set("awb.theme", "invalid");
+  assert.equal(readTheme(storage), "auto");
+  const blocked = {
+    getItem() { throw new Error("blocked"); },
+    setItem() { throw new Error("blocked"); },
+  };
+  assert.equal(readTheme(blocked), "auto");
+  assert.equal(readTheme(null), "auto");
+  assert.doesNotThrow(() => rememberTheme(blocked, "dark"));
+  assert.doesNotThrow(() => rememberTheme(null, "light"));
+});
