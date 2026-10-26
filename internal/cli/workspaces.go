@@ -314,6 +314,7 @@ func newWorkspaceDeleteCommand(e *env) *cobra.Command {
 		Use:   "delete",
 		Short: "Delete a workspace",
 		Long: "Delete a workspace.\n\n" +
+			"Without --force, asks for confirmation when stdin and stderr are terminals.\n\n" +
 			"It refuses while the workspace holds any issue at all — closed ones included,\n" +
 			"so the refusal is wider than the count workspace list shows and --force alone\n" +
 			"can never destroy closed history — unless --cascade is also given, which\n" +
@@ -321,8 +322,8 @@ func newWorkspaceDeleteCommand(e *env) *cobra.Command {
 			"other workspaces, which may unblock work elsewhere.",
 		ParamEnrich: boaParams,
 		RunFuncE: func(p *workspaceDeleteParams, cmd *cobra.Command, _ []string) error {
-			if !p.Force {
-				return awberr.Usagef("awb workspace delete needs --force: it is not recoverable")
+			if err := e.confirmDeletion(p.Force, "awb workspace delete", fmt.Sprintf("workspace %q (cascade: %t)", p.Key, p.Cascade)); err != nil {
+				return err
 			}
 
 			be, err := e.backend(cmd.Context())
