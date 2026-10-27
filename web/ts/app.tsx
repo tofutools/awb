@@ -6,7 +6,7 @@ import {
   namedDestinations,
   workspaceScopedHref,
 } from "./navigation.js";
-import { accountMenuItems } from "./preferences.js";
+import { applyTheme, preferenceStorage, readTheme, accountMenuItems } from "./preferences.js";
 import { requestReload } from "./reload.js";
 import { parseRoute, routeKey, type Route } from "./routing/route.js";
 import { AppContext, Avatar, Button, ErrorMessage, Popover } from "./components/ui.js";
@@ -26,6 +26,8 @@ import {
   ProfilePage,
   SettingsPage,
 } from "./pages/admin.js";
+applyTheme(readTheme(preferenceStorage(window)));
+
 function App() {
   const [route, setRoute] = useState(parseRoute);
   const [caller, setCaller] = useState({ identity: "", mayManageUsers: false });

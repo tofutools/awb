@@ -74,3 +74,35 @@ export function workspacePreferenceSummary(preferences: readonly WorkspacePrefer
   const ignored = preferences.filter((preference) => preference.ignored).length;
   return `${preferences.length - ignored} active · ${ignored} ignored`;
 }
+
+export type ThemePreference = "auto" | "light" | "dark";
+const themeKey = "awb.theme";
+
+/** Missing, invalid, or inaccessible preferences follow the browser theme. */
+export function readTheme(storage: PreferenceStorage | null): ThemePreference {
+  try {
+    const value = storage?.getItem(themeKey);
+    return value === "light" || value === "dark" ? value : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function rememberTheme(storage: PreferenceStorage | null, theme: ThemePreference): void {
+  try {
+    storage?.setItem(themeKey, theme);
+  } catch {
+    // Applying the theme still works when storage is blocked.
+  }
+}
+
+/** CSS resolves auto live as the browser preference changes. */
+export function applyTheme(theme: ThemePreference): void {
+  document.documentElement.dataset.theme = theme;
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    const dark = meta.dataset.theme === "dark";
+    meta.media = theme === "auto"
+      ? `(prefers-color-scheme: ${dark ? "dark" : "light"})`
+      : (dark === (theme === "dark") ? "all" : "not all");
+  }
+}
