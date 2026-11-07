@@ -1960,13 +1960,16 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 .attachment-preview-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .attachment-preview-state { margin: 0; padding: 1rem 1.2rem; }
 .attachment-preview-image { display: block; max-width: 100%; height: auto; margin: 0 auto; }
-.attachment-preview-markdown { margin: 0; padding: 1rem 1.2rem; border: 0; }
+.attachment-preview-markdown.markdown { margin: 0; padding: 1rem 1.2rem; border: 0; border-radius: 0; background: transparent; }
+.attachment-preview-markdown.markdown > :first-child { margin-top: 0; }
+.attachment-preview-markdown.markdown > :last-child { margin-bottom: 0; }
 .attachment-preview-text {
   box-sizing: border-box;
   margin: 0;
   padding: 1rem 1.2rem;
   color: var(--fg);
   font: 0.88em/1.6 var(--mono);
+  tab-size: 4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
