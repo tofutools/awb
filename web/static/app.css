@@ -1614,6 +1614,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   border-bottom: 1px solid var(--line);
 }
 .attachments li { grid-template-columns: minmax(10rem, 1fr) auto auto auto; }
+.attachment-actions { display: flex; gap: 0.4rem; align-self: center; justify-content: flex-end; }
 .child-issues-table .listing-col-actions { width: 1%; }
 .relations li { grid-template-columns: minmax(7rem, auto) minmax(7rem, auto) minmax(7rem, 1fr) auto; }
 .resource-list .inline-button { align-self: center; }
@@ -1931,6 +1932,56 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 }
 .history-diff-full:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .history-diff-dialog-footer { display: flex; justify-content: flex-end; padding: 0.8rem 1.2rem; border-top: 1px solid var(--line); }
+
+.attachment-preview-dialog {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(64rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
+}
+.attachment-preview-dialog[open] { display: flex; }
+.attachment-preview-dialog::backdrop { background: rgb(0 0 0 / 42%); }
+.attachment-preview-dialog > h2 {
+  margin: 0;
+  padding: 1rem 1.2rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg);
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+.attachment-preview-stage { flex: 1 1 auto; min-height: 6rem; overflow: auto; background: var(--bg); }
+.attachment-preview-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.attachment-preview-state { margin: 0; padding: 1rem 1.2rem; }
+.attachment-preview-image { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.attachment-preview-markdown { margin: 0; padding: 1rem 1.2rem; border: 0; }
+.attachment-preview-text {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 1rem 1.2rem;
+  color: var(--fg);
+  font: 0.88em/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.attachment-preview-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.attachment-preview-modes { display: flex; gap: 0.3rem; margin-right: auto; }
+.attachment-preview-modes [aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 
 .empty { color: var(--muted); font-style: italic; }
 .error { border: 1px solid var(--warn); border-radius: var(--radius); padding: 1rem; }
