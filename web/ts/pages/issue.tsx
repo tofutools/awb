@@ -40,6 +40,8 @@ import {
   RelationFields,
 } from "../components/issue-form.js";
 import { IssueTable, IssueBadges, Badge } from "../components/issues.js";
+import { AttachmentPreview } from "../components/attachment-preview.js";
+import { attachmentContentHref } from "../attachment-preview.js";
 
 export function IssuePage({ route }: { route: Route }) {
   const id = decodeURIComponent(route.path[1]);
@@ -393,34 +395,33 @@ function Resources({
           <ul class="attachments resource-list">
             {issue.attachments.map((a) => (
               <li key={a.name}>
-                <a
-                  href={`api/issues/${encodeURIComponent(a.issue)}/attachments/${encodeURIComponent(a.name)}/content`}
-                >
-                  {a.name}
-                </a>
+                <a href={attachmentContentHref(a.issue, a.name)}>{a.name}</a>
                 <span class="size">{formatSize(a.size)}</span>
                 <span class="content-type">{a.content_type}</span>
-                {editing && (
-                  <Button
-                    class="inline-button danger-button resource-remove"
-                    disabled={mutation.busy}
-                    onClick={async (e) => {
-                      if (
-                        await confirmMutation(
-                          "Remove attachment?",
-                          `Remove ${a.name} from ${a.issue}.`,
-                          e.currentTarget,
-                          true,
+                <span class="attachment-actions">
+                  <AttachmentPreview attachment={a} />
+                  {editing && (
+                    <Button
+                      class="inline-button danger-button resource-remove"
+                      disabled={mutation.busy}
+                      onClick={async (e) => {
+                        if (
+                          await confirmMutation(
+                            "Remove attachment?",
+                            `Remove ${a.name} from ${a.issue}.`,
+                            e.currentTarget,
+                            true,
+                          )
                         )
-                      )
-                        void change(() =>
-                          api.removeAttachment(a.issue, a.name),
-                        );
-                    }}
-                  >
-                    Remove
-                  </Button>
-                )}
+                          void change(() =>
+                            api.removeAttachment(a.issue, a.name),
+                          );
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
