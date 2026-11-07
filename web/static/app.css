@@ -1935,7 +1935,6 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
 
 .attachment-preview-dialog {
   box-sizing: border-box;
-  display: flex;
   flex-direction: column;
   width: min(64rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
@@ -2067,7 +2066,7 @@ a.name .title { flex: 1 1 auto; min-width: 0; }
   .child-issues-table .listing-col-actions::before { content: none; }
   .issue-editing .child-issues-table .listing-col-id { padding-right: 5rem; }
   .attachments .content-type { grid-column: 1; }
-  .attachments .resource-remove { grid-column: 2; grid-row: 1; }
+  .attachments .attachment-actions { grid-column: 2; grid-row: 1; }
   .relations li { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; }
   .relations .resource-remove { grid-column: 4; grid-row: 1; }
   .edit-actions { align-items: stretch; flex-direction: column; }

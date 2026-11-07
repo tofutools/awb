@@ -15,9 +15,12 @@ type Content =
   | { state: "text"; text: string };
 
 /**
- * useAttachmentContent fetches an attachment's bytes for a preview. An image
- * becomes an object URL typed as the image it is, revoked when the preview
- * closes; text is decoded as UTF-8.
+ * useAttachmentContent fetches an attachment's bytes for a preview, and text is
+ * decoded as UTF-8. A raster image becomes an object URL typed as the image it
+ * is, revoked when the preview closes. An SVG becomes a data: URL instead: an
+ * SVG is a document that can carry script, and while an <img> never runs it, a
+ * viewer can open the image in a tab of its own. A blob: URL would run there at
+ * this origin; a data: URL gets an opaque origin of its own.
  */
 function useAttachmentContent(attachment: Attachment, kind: PreviewKind): Content {
   const [content, setContent] = useState<Content>({ state: "loading" });
@@ -30,9 +33,13 @@ function useAttachmentContent(attachment: Attachment, kind: PreviewKind): Conten
           signal: abort.signal,
         });
         if (!resp.ok) throw new Error(`The attachment could not be read (${resp.status}).`);
-        if (kind === "image") {
-          const bytes = await resp.arrayBuffer();
-          url = URL.createObjectURL(new Blob([bytes], { type: imageType(attachment) }));
+        const type = imageType(attachment);
+        if (type === "image/svg+xml") {
+          const svg = `data:${type};charset=utf-8,${encodeURIComponent(await resp.text())}`;
+          if (!abort.signal.aborted) setContent({ state: "image", url: svg });
+        } else if (kind === "image") {
+          const blob = await resp.blob();
+          url = URL.createObjectURL(new Blob([blob], { type }));
           if (abort.signal.aborted) URL.revokeObjectURL(url);
           else setContent({ state: "image", url });
         } else {

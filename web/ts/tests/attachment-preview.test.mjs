@@ -37,6 +37,7 @@ test("binary and oversized files stay downloads only", () => {
   assert.equal(previewKind(file("blob", "application/octet-stream")), undefined);
   assert.equal(previewKind(file("big.log", "text/plain", MAX_TEXT_PREVIEW + 1)), undefined);
   assert.equal(previewKind(file("big.png", "image/png", MAX_IMAGE_PREVIEW + 1)), undefined);
+  assert.equal(previewKind(file("big.svg", "image/svg+xml", MAX_TEXT_PREVIEW + 1)), undefined);
   assert.equal(imageType(file("trace.txt", "text/plain")), undefined);
 });
 

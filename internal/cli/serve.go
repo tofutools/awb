@@ -948,8 +948,9 @@ func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 // does.
 //
 // Images may also come from blob: URLs, which only this origin's own script can
-// mint: that is how the issue page previews an image attachment, whose content
-// the server only ever serves as an opaque download.
+// mint: that is how the issue page previews a raster image attachment, whose
+// content the server only ever serves as an opaque download. An SVG, which can
+// carry script, is previewed from a data: URL instead.
 func contentSecurityPolicy() (string, error) {
 	importMapHash, err := commonweb.ImportMapCSPHash(web.Static)
 	if err != nil {

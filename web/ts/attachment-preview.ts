@@ -3,10 +3,11 @@
 // The server always answers attachment content as an opaque download (see
 // GetAttachmentContent), so a preview never navigates to it. The page fetches
 // the bytes itself and decides from the recorded metadata what they are:
-// images become a Blob of an image type shown in an <img>, which runs no
-// script even for SVG; Markdown is rendered through the same sanitising
-// renderer as a description; other text is shown as text. Anything else stays
-// a download only.
+// images are shown in an <img> — a raster image from a blob: URL, an SVG from a
+// data: URL so that opening it in a tab of its own cannot run it at this
+// origin (see useAttachmentContent); Markdown is rendered through the same
+// sanitising renderer as a description; other text is shown as text. Anything
+// else stays a download only.
 //
 // The stored content type is often a sniffed one — awb attach add without
 // --content-type records `text/plain` for a Markdown file and `text/xml` for an
@@ -22,7 +23,10 @@ export interface PreviewTarget {
 
 /** The largest image the page fetches whole to show. */
 export const MAX_IMAGE_PREVIEW = 25 * 1024 * 1024;
-/** The largest text or Markdown document the page fetches whole to show. */
+/**
+ * The largest text or Markdown document the page fetches whole to show, and
+ * the largest SVG, which is text inlined into a data: URL.
+ */
 export const MAX_TEXT_PREVIEW = 2 * 1024 * 1024;
 
 const imageTypes: Record<string, string> = {
@@ -79,7 +83,11 @@ export function imageType(a: PreviewTarget): string | undefined {
 
 /** previewKind says how an attachment can be previewed, if at all. */
 export function previewKind(a: PreviewTarget): PreviewKind | undefined {
-  if (imageType(a)) return a.size <= MAX_IMAGE_PREVIEW ? "image" : undefined;
+  const image = imageType(a);
+  if (image) {
+    const limit = image === "image/svg+xml" ? MAX_TEXT_PREVIEW : MAX_IMAGE_PREVIEW;
+    return a.size <= limit ? "image" : undefined;
+  }
   if (a.size > MAX_TEXT_PREVIEW) return undefined;
   const type = mediaType(a.content_type);
   const ext = extension(a.name);
