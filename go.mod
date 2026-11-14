@@ -1,6 +1,6 @@
 module github.com/tofutools/awb
 
-go 1.26.10
+go 1.26.11
 
 require (
 	charm.land/bubbletea/v2 v2.1.1
