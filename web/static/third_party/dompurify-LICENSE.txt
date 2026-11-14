@@ -1,6 +1,6 @@
-Licenses of the packages bundled into dompurify-3.4.14.js.
+Licenses of the packages bundled into dompurify-3.4.17.js.
 
-dompurify 3.4.14 (LICENSE)
+dompurify 3.4.17 (LICENSE)
 ========================================================================
 
 
@@ -207,7 +207,7 @@ dompurify 3.4.14 (LICENSE)
    limitations under the License.
 
 
-dompurify 3.4.14 (LICENSE-MPL)
+dompurify 3.4.17 (LICENSE-MPL)
 ========================================================================
 
 Mozilla Public License Version 2.0

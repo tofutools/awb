@@ -1,6 +1,6 @@
-The dompurify-3.4.14.js ESM bundle was built by web/ts/third_party/rebuild.sh with
+The dompurify-3.4.17.js ESM bundle was built by web/ts/third_party/rebuild.sh with
 esbuild, from these npm packages:
 
-dompurify 3.4.14
+dompurify 3.4.17
 
 Their license texts are in dompurify-LICENSE.txt.

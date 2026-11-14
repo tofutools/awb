@@ -1,6 +1,6 @@
-Licenses of the packages bundled into markdown-it-15.0.1.js.
+Licenses of the packages bundled into markdown-it-15.0.3.js.
 
-entities 8.0.0 (LICENSE)
+entities 8.1.0 (LICENSE)
 ========================================================================
 
 Copyright (c) Felix Böhm
@@ -43,7 +43,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 
-markdown-it 15.0.1 (LICENSE)
+markdown-it 15.0.3 (LICENSE)
 ========================================================================
 
 Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
