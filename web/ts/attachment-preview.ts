@@ -101,3 +101,45 @@ export function previewKind(a: PreviewTarget): PreviewKind | undefined {
 export function attachmentContentHref(issue: string, name: string): string {
   return `api/issues/${encodeURIComponent(issue)}/attachments/${encodeURIComponent(name)}/content`;
 }
+
+/**
+ * Frontmatter is hidden only when rendering; the stored and editable source is
+ * untouched. Only a complete block at the start of the document is metadata.
+ * Delimited YAML, TOML and JSON need no parsing. Bare JSON objects are scanned
+ * with string/escape awareness so nested objects and braces in strings work.
+ */
+export function withoutFrontmatter(source: string): string {
+  const start = source.startsWith("\uFEFF") ? 1 : 0;
+  const text = source.slice(start);
+  const opener = /^(---|\+\+\+|;;;)[ \t]*\r?\n/.exec(text);
+  if (opener) {
+    const rest = text.slice(opener[0].length);
+    const marker = opener[1] === "---" ? "(?:---|\\.\\.\\.)" : opener[1].replace(/\+/g, "\\+");
+    const closer = new RegExp(`^${marker}[ \t]*(?:\\r?\\n|$)`, "m").exec(rest);
+    return closer ? rest.slice(closer.index + closer[0].length) : source;
+  }
+  if (!text.startsWith("{")) return source;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) {
+      const end = i + 1;
+      if (!/^[ \t]*(?:\r?\n|$)/.test(text.slice(end))) return source;
+      try {
+        JSON.parse(text.slice(0, end));
+        return text.slice(end);
+      } catch {
+        return source;
+      }
+    }
+  }
+  return source;
+}
