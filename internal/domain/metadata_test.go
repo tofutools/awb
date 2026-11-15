@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -193,4 +194,32 @@ func TestValidateMetadataBoundsTheEncodedObject(t *testing.T) {
 		`"` + strings.Repeat("x", domain.MaxMetadataBytes) + `"`)}
 	_, err = domain.ValidateMetadata(over)
 	assertUsage(t, err)
+}
+
+// numberedMetadata is n entries small enough that MaxMetadataEntries+1 of them
+// stay well under MaxMetadataBytes, so it is the count that a test exercises.
+func numberedMetadata(n int) domain.Metadata {
+	m := make(domain.Metadata, n)
+	for i := range n {
+		m[fmt.Sprintf("k%d", i)] = json.RawMessage(`0`)
+	}
+	return m
+}
+
+func TestValidateMetadataBoundsTheNumberOfEntries(t *testing.T) {
+	_, err := domain.ValidateMetadata(numberedMetadata(domain.MaxMetadataEntries))
+	require.NoError(t, err)
+
+	_, err = domain.ValidateMetadata(numberedMetadata(domain.MaxMetadataEntries + 1))
+	assertUsage(t, err)
+	assert.ErrorContains(t, err, "entries")
+}
+
+func TestParseMetadataBoundsTheNumberOfEntries(t *testing.T) {
+	over, err := json.Marshal(numberedMetadata(domain.MaxMetadataEntries + 1))
+	require.NoError(t, err)
+	require.Less(t, len(over), domain.MaxMetadataBytes, "the count, not the size, is what is refused")
+	_, err = domain.ParseMetadata(over)
+	assertUsage(t, err)
+	assert.ErrorContains(t, err, "entries")
 }

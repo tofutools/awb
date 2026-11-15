@@ -425,8 +425,18 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		// Metadata merges rather than replaces: a caller that owns one key
 		// sends that key alone, and the keys it does not name survive. The
 		// merge happens here, inside the write transaction, so what it merges
-		// into is what the write is about to replace.
-		if req.Metadata != nil {
+		// into is what the write is about to replace. An empty update merges
+		// nothing, so it is not validated either: an issue restored with
+		// metadata over the bounds still takes an update that sends {}.
+		if req.Metadata != nil && len(*req.Metadata) > 0 {
+			// The merged object has at least as many keys as the update, so an
+			// update over the bound is refused before it is merged. The merged
+			// object's own count, which is what is bounded, is checked by
+			// ValidateMetadata: an update replacing keys the issue already has
+			// does not add to it.
+			if len(*req.Metadata) > domain.MaxMetadataEntries {
+				return awberr.Usagef("metadata is too large: maximum %d entries", domain.MaxMetadataEntries)
+			}
 			metadata, err := domain.ValidateMetadata(domain.MergeMetadata(issue.Metadata, *req.Metadata))
 			if err != nil {
 				return err
