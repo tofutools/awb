@@ -10,7 +10,8 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
-// MaxMetadataEntries bounds an issue's metadata entries.
+// MaxMetadataEntries bounds the number of top-level keys in an issue's metadata
+// object. MaxMetadataBytes alone admits over ten thousand tiny entries.
 const MaxMetadataEntries = 5000
 
 // MaxMetadataBytes bounds an issue's encoded metadata object. It is counted in
@@ -67,9 +68,6 @@ func ParseMetadata(encoded []byte) (Metadata, error) {
 	if err != nil {
 		return nil, awberr.Usagef("metadata is not a valid JSON object: %s", err)
 	}
-	if len(parsed) > MaxMetadataEntries {
-		return nil, awberr.Usagef("metadata is too large: maximum %d entries", MaxMetadataEntries)
-	}
 	return ValidateMetadata(parsed)
 }
 
@@ -95,7 +93,7 @@ func DecodeMetadata(encoded string) (Metadata, error) {
 }
 
 // ValidateMetadata is what a write a caller asked for applies: the canonical
-// form, and the bound on what that form may weigh.
+// form, and the bounds on how many keys it has and what it may weigh.
 //
 // The two are separate because only one of them is a gate. The canonical form
 // is what the column holds, so everything that writes it owes it; the size
@@ -103,6 +101,11 @@ func DecodeMetadata(encoded string) (Metadata, error) {
 // an object some other database already holds — deliberately does not apply
 // the rules, exactly as it does not apply the prose gate.
 func ValidateMetadata(m Metadata) (Metadata, error) {
+	// Counted first, because it costs nothing and spares canonicalizing and
+	// encoding an object that is refused anyway.
+	if len(m) > MaxMetadataEntries {
+		return nil, awberr.Usagef("metadata is too large: maximum %d entries", MaxMetadataEntries)
+	}
 	normalized, err := CanonicalMetadata(m)
 	if err != nil {
 		return nil, err

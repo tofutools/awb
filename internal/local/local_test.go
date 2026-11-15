@@ -577,6 +577,74 @@ func TestIssueMetadataIsBounded(t *testing.T) {
 	assert.Equal(t, `{"small":"value"}`, encodedMetadata(t, kept.Metadata))
 }
 
+// numberedMetadata is the entries k<from> to k<to-1>, each small enough that
+// MaxMetadataEntries+1 of them stay well under MaxMetadataBytes, so it is the
+// count that a test exercises.
+func numberedMetadata(from, to int, value string) domain.Metadata {
+	m := make(domain.Metadata, to-from)
+	for i := from; i < to; i++ {
+		m[fmt.Sprintf("k%d", i)] = json.RawMessage(value)
+	}
+	return m
+}
+
+func TestCreateIssueBoundsTheNumberOfMetadataEntries(t *testing.T) {
+	b, ctx := newBackend(t)
+	_, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "too many",
+		Metadata: numberedMetadata(0, domain.MaxMetadataEntries+1, `0`),
+	})
+	assert.Equal(t, 2, exitOf(err))
+
+	full, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "full",
+		Metadata: numberedMetadata(0, domain.MaxMetadataEntries, `0`),
+	})
+	require.NoError(t, err)
+	assert.Len(t, full.Metadata, domain.MaxMetadataEntries)
+}
+
+// The bound is on the merged object, so what counts is how many distinct keys
+// the result has, not how many the stored object and the update have between
+// them.
+func TestUpdateIssueBoundsTheNumberOfMergedMetadataEntries(t *testing.T) {
+	b, ctx := newBackend(t)
+	half := domain.MaxMetadataEntries / 2
+	issue, err := b.CreateIssue(ctx, backend.IssueCreate{
+		Workspace: "awb", Title: "tagged",
+		Metadata: numberedMetadata(0, half+1, `0`),
+	})
+	require.NoError(t, err)
+
+	// Rewriting every stored key adds none, although the two objects together
+	// hold more than the bound.
+	rewrite := numberedMetadata(0, half+1, `1`)
+	rewritten, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &rewrite}, "")
+	require.NoError(t, err)
+	assert.Len(t, rewritten.Metadata, half+1)
+	assert.JSONEq(t, `1`, string(rewritten.Metadata["k0"]))
+
+	// Adding keys up to the bound is accepted.
+	fill := numberedMetadata(half+1, domain.MaxMetadataEntries, `0`)
+	filled, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &fill}, "")
+	require.NoError(t, err)
+	assert.Len(t, filled.Metadata, domain.MaxMetadataEntries)
+
+	// One more key is refused, and nothing is stored.
+	extra := domain.Metadata{"one-more": json.RawMessage(`0`)}
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &extra}, "")
+	assert.Equal(t, 2, exitOf(err))
+
+	// So is an update that alone is over the bound.
+	tooMany := numberedMetadata(0, domain.MaxMetadataEntries+1, `2`)
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &tooMany}, "")
+	assert.Equal(t, 2, exitOf(err))
+
+	kept, err := b.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.True(t, domain.EqualMetadata(filled.Metadata, kept.Metadata))
+}
+
 // encodedMetadata is the stored form of one metadata object: keys sorted,
 // values compacted. Comparing that string rather than the map is what pins the
 // ordering down as well as the content.

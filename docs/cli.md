@@ -125,11 +125,11 @@ digits given, and no insignificant whitespace. So writing the same value again
 with its keys in another order changes nothing and does not move the issue's
 version.
 
-The top level must be an object containing at most 5000 keys. The encoded object 
-is at most 64 KiB. Leaving `--metadata` out means no metadata, while giving it an 
-empty value is naming one and not supplying it, which is refused. An issue given 
-no metadata carries `{}`, never `null`. Metadata appears in `--json` output and 
-over the API, and is deliberately absent from the default and compact presentations 
+The top level must be an object containing at most 5000 keys. The encoded object
+is at most 64 KiB. Leaving `--metadata` out means no metadata, while giving it an
+empty value is naming one and not supplying it, which is refused. An issue given
+no metadata carries `{}`, never `null`. Metadata appears in `--json` output and
+over the API, and is deliberately absent from the default and compact presentations
 and from the web UI.
 
 Hard deletion is not recovery or archiving:
