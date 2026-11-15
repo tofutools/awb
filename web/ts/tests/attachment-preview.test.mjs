@@ -7,7 +7,11 @@ import {
   attachmentContentHref,
   imageType,
   previewKind,
+  withoutFrontmatter,
 } from "../../static/attachment-preview.js";
+
+import { createRenderer } from "../../static/markdown-config.js";
+import { vendorBundle } from "./vendor.mjs";
 
 const file = (name, content_type, size = 100) => ({ name, content_type, size });
 
@@ -46,4 +50,37 @@ test("content is addressed by issue and encoded name", () => {
     attachmentContentHref("awb-1a2b", "a b/c.md"),
     "api/issues/awb-1a2b/attachments/a%20b%2Fc.md/content",
   );
+});
+
+const { default: MarkdownIt } = await import(vendorBundle("markdown-it"));
+const md = createRenderer(MarkdownIt);
+
+test("frontmatter is hidden while Markdown content renders", () => {
+  for (const metadata of [
+    '---\ntitle: Hidden\n---\n',
+    '---\ntitle: Hidden\n...\n',
+    '+++\ntitle = "Hidden"\n+++\n',
+    ';;;\n{"title":"Hidden"}\n;;;\n',
+    '{"title":"Hidden", "nested":{"brace":"}\\\"{"}}\n',
+    '{}\n',
+  ]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const source = metadata.replaceAll("\n", newline) + "# Visible";
+      assert.equal(md.render(withoutFrontmatter(source)), "<h1>Visible</h1>\n", source);
+      assert.equal(md.render(withoutFrontmatter("\uFEFF" + source)), "<h1>Visible</h1>\n");
+    }
+    assert.equal(md.render(withoutFrontmatter(metadata.trimEnd())), "");
+  }
+});
+
+test("incomplete metadata and markers within Markdown stay visible", () => {
+  for (const source of [
+    "---\ntitle: Hidden", "+++\ntitle = 1", ';;;\n{}',
+    '{"title": "unclosed"', '{not JSON}\n# Body',
+    '{} ordinary prose', "Text\n\n---\nbody\n---",
+    "```\n---\ntitle: example\n---\n```",
+    "---\nbody\n+++", "\n---\nbody\n---",
+  ]) {
+    assert.equal(withoutFrontmatter(source), source);
+  }
 });

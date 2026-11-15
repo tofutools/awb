@@ -4,6 +4,7 @@ import {
   attachmentContentHref,
   imageType,
   previewKind,
+  withoutFrontmatter,
   type PreviewKind,
 } from "../attachment-preview.js";
 import { Button, Markdown, Modal } from "./ui.js";
@@ -90,7 +91,7 @@ function PreviewDialog({
       />
     );
   } else if (kind === "markdown" && !source) {
-    body = <Markdown text={content.text} className="attachment-preview-markdown" />;
+    body = <Markdown text={withoutFrontmatter(content.text)} className="attachment-preview-markdown" />;
   } else {
     body = <pre class="attachment-preview-text">{content.text}</pre>;
   }

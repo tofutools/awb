@@ -238,3 +238,8 @@ test("a run of mailto prefixes renders in linear time", () => {
   const elapsedMs = renderMs("mailto::".repeat(32 * 1024)); // 256 KiB
   assert.ok(elapsedMs < redosBudgetMs, `rendering 256 KiB of mailto prefixes took ${elapsedMs.toFixed(0)} ms`);
 });
+
+test("ordinary Markdown keeps leading JSON and thematic breaks", () => {
+  assert.equal(md.render('{"status":"done"}'), '<p>{&quot;status&quot;:&quot;done&quot;}</p>\n');
+  assert.match(md.render("---\n\nIntro\n\n---\n\nRest"), /Intro/);
+});

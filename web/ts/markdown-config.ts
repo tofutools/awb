@@ -99,6 +99,7 @@ export function createRenderer(MarkdownIt: MarkdownConstructor): Markdown {
   return md;
 }
 
+
 const taskMarker = /^\[([ xX])\]\s+/;
 
 /**
