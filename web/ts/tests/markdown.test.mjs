@@ -238,3 +238,33 @@ test("a run of mailto prefixes renders in linear time", () => {
   const elapsedMs = renderMs("mailto::".repeat(32 * 1024)); // 256 KiB
   assert.ok(elapsedMs < redosBudgetMs, `rendering 256 KiB of mailto prefixes took ${elapsedMs.toFixed(0)} ms`);
 });
+
+test("frontmatter is hidden while Markdown content renders", () => {
+  for (const metadata of [
+    '---\ntitle: Hidden\n---\n',
+    '+++\ntitle = "Hidden"\n+++\n',
+    ';;;\n{"title":"Hidden"}\n;;;\n',
+    '{"title":"Hidden", "nested":{"brace":"}\\\"{"}}\n',
+    '{}\n',
+  ]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const source = metadata.replaceAll("\n", newline) + "# Visible";
+      assert.equal(md.render(source), "<h1>Visible</h1>\n", source);
+      assert.equal(md.render("\uFEFF" + source), "<h1>Visible</h1>\n");
+    }
+    assert.equal(md.render(metadata.trimEnd()), "");
+  }
+});
+
+test("incomplete metadata and markers within Markdown stay visible", () => {
+  for (const source of [
+    "---\ntitle: Hidden", "+++\ntitle = 1", ';;;\n{}',
+    '{"title": "unclosed"', '{not JSON}\n# Body',
+    '{} ordinary prose', "Text\n\n---\nbody\n---",
+    "```\n---\ntitle: example\n---\n```",
+    "---\nbody\n+++", "\n---\nbody\n---",
+  ]) {
+    assert.notEqual(md.render(source), "", source);
+    assert.match(md.render(source), /Hidden|title|JSON|ordinary|Text|example|body|;;;/, source);
+  }
+});
