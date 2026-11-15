@@ -434,7 +434,7 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		// into is what the write is about to replace.
 		if req.Metadata != nil {
 			// Validate size early to avoid costly allocation and encoding
-			if len(*req.Metadata) > domain.MaxMetadataEntries {
+			if len(issue.Metadata)+len(*req.Metadata) > domain.MaxMetadataEntries {
 				return awberr.Usagef("metadata is too large: maximum %d entries", domain.MaxMetadataEntries)
 			}
 			metadata, err := domain.ValidateMetadata(domain.MergeMetadata(issue.Metadata, *req.Metadata))
