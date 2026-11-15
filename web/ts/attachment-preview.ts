@@ -114,7 +114,7 @@ export function withoutFrontmatter(source: string): string {
   const opener = /^(---|\+\+\+|;;;)[ \t]*\r?\n/.exec(text);
   if (opener) {
     const rest = text.slice(opener[0].length);
-    const marker = opener[1] === "---" ? "(?:---|\\.\\.\\.)" : opener[1].replace(/\+/g, "\\+");
+    const marker = opener[1] === "---" ? "(?:---|\\.\\.\\.)" : opener[1] === "+++" ? "\\+\\+\\+" : ";;;";
     const closer = new RegExp(`^${marker}[ \t]*(?:\\r?\\n|$)`, "m").exec(rest);
     return closer ? rest.slice(closer.index + closer[0].length) : source;
   }
