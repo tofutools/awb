@@ -946,12 +946,17 @@ func gzipExcept(skip func(*http.Request) bool, next http.Handler) http.Handler {
 // contentSecurityPolicy pins the UI's script sources to the import map the
 // bundled page carries, so the committed third-party bundles load and nothing else
 // does.
+//
+// Images may also come from blob: URLs, which only this origin's own script can
+// mint: that is how the issue page previews a raster image attachment, whose
+// content the server only ever serves as an opaque download. An SVG, which can
+// carry script, is previewed from a data: URL instead.
 func contentSecurityPolicy() (string, error) {
 	importMapHash, err := commonweb.ImportMapCSPHash(web.Static)
 	if err != nil {
 		return "", awberr.Wrap(awberr.Runtime, err, "read the bundled web UI")
 	}
-	return "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+	return "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " +
 		"base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; " +
 		"script-src 'self' " + importMapHash, nil
 }

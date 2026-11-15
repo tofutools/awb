@@ -190,6 +190,15 @@ var demoIssues = []demoIssue{{
 			"1. Open the catalogue.\n" +
 			"2. Filter by a tag no widget carries.\n" +
 			"3. The page renders an empty row and the server logs the trace above.\n",
+	}, {
+		// A screenshot, so the web UI has an image attachment to preview.
+		name: "empty-row.svg",
+		content: `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120">` +
+			`<rect width="320" height="120" fill="#f6f7f9"/>` +
+			`<rect x="16" y="16" width="288" height="24" fill="#d0d5dd"/>` +
+			`<rect x="16" y="52" width="288" height="24" fill="#ffffff" stroke="#e5484d" stroke-dasharray="4 3"/>` +
+			`<rect x="16" y="88" width="288" height="16" fill="#e4e7ec"/>` +
+			`</svg>` + "\n",
 	}},
 }, {
 	key:       "docs",

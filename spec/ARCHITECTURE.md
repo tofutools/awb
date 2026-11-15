@@ -458,7 +458,12 @@ and local origins; CORS origins do not extend the Host allowlist.
 
 Cross-site writes are checked, external CORS origins are opt-in, state-changing
 responses are not cached, and attachment downloads are always opaque
-attachments rather than same-origin renderable content. Attachment responses
+attachments rather than same-origin renderable content. The web UI previews
+images, Markdown and text attachments by fetching the bytes itself. Images are
+shown in an `<img>`: a raster image from a `blob:` URL, and an SVG from a
+`data:` URL, whose opaque origin keeps its script away from the UI's even when
+it is opened as a page of its own. Markdown goes through the same sanitising
+renderer as a description. Attachment responses
 are the one type not gzipped, avoiding wasted compression work while preserving
 streaming behavior.
 
