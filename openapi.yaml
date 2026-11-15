@@ -2395,6 +2395,8 @@ components:
         under a key is merged into, so the result follows from the two objects
         alone.
 
+        The object contains at most 5000 top-level keys.
+
         The encoded object is at most 64 KiB of UTF-8. Key order carries no
         meaning here, and this object's own keys are the one thing about an
         issue response whose order is not fixed.

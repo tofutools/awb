@@ -59,9 +59,15 @@ func (b *Backend) CreateIssue(ctx context.Context, req backend.IssueCreate) (*do
 	if issue.PullRequestURL, err = domain.ValidatePullRequestURL(req.PullRequestURL); err != nil {
 		return nil, err
 	}
+
+	// Validate metadata size early to avoid costly allocation and encoding
+	if len(req.Metadata) > domain.MaxMetadataEntries {
+		return nil, awberr.Usagef("metadata is too large: maximum %d entries", domain.MaxMetadataEntries)
+	}
 	if issue.Metadata, err = domain.ValidateMetadata(req.Metadata); err != nil {
 		return nil, err
 	}
+
 	if req.Type != "" {
 		if issue.Type, err = domain.ParseType(string(req.Type)); err != nil {
 			return nil, err
@@ -427,6 +433,10 @@ func (b *Backend) UpdateIssue(ctx context.Context, ref string, req backend.Issue
 		// merge happens here, inside the write transaction, so what it merges
 		// into is what the write is about to replace.
 		if req.Metadata != nil {
+			// Validate size early to avoid costly allocation and encoding
+			if len(*req.Metadata) > domain.MaxMetadataEntries {
+				return awberr.Usagef("metadata is too large: maximum %d entries", domain.MaxMetadataEntries)
+			}
 			metadata, err := domain.ValidateMetadata(domain.MergeMetadata(issue.Metadata, *req.Metadata))
 			if err != nil {
 				return err

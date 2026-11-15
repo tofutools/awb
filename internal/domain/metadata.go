@@ -10,6 +10,9 @@ import (
 	"github.com/tofutools/awb/internal/awberr"
 )
 
+// MaxMetadataEntries bounds an issue's metadata entries.
+const MaxMetadataEntries = 5000
+
 // MaxMetadataBytes bounds an issue's encoded metadata object. It is counted in
 // bytes rather than code points, for the reason a description is: this is a
 // blob nobody counts characters in.
@@ -63,6 +66,9 @@ func ParseMetadata(encoded []byte) (Metadata, error) {
 	parsed, err := DecodeMetadata(string(trimmed))
 	if err != nil {
 		return nil, awberr.Usagef("metadata is not a valid JSON object: %s", err)
+	}
+	if len(parsed) > MaxMetadataEntries {
+		return nil, awberr.Usagef("metadata is too large: maximum %d entries", MaxMetadataEntries)
 	}
 	return ValidateMetadata(parsed)
 }
