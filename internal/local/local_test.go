@@ -645,6 +645,35 @@ func TestUpdateIssueBoundsTheNumberOfMergedMetadataEntries(t *testing.T) {
 	assert.True(t, domain.EqualMetadata(filled.Metadata, kept.Metadata))
 }
 
+// Metadata over the bound can be stored by a restore, which does not apply the
+// rules. An update sending an empty object changes nothing, so it is accepted.
+func TestEmptyMetadataUpdateAcceptsStoredMetadataOverTheBound(t *testing.T) {
+	dir := t.TempDir()
+	db := newTestDatabase(t, filepath.Join(dir, "awb.db"))
+	b := local.New(db, storage.NewBlobs(filepath.Join(dir, "attachments")), "mikael")
+	ctx := t.Context()
+	_, err := b.CreateWorkspace(ctx, backend.WorkspaceCreate{Key: "awb"})
+	require.NoError(t, err)
+	issue := create(t, b, ctx, "restored")
+
+	over, err := domain.EncodeMetadata(numberedMetadata(0, domain.MaxMetadataEntries+1, `0`))
+	require.NoError(t, err)
+	_, err = db.SQL().ExecContext(ctx, `UPDATE issues SET metadata = ? WHERE id = ?`, over, issue.ID)
+	require.NoError(t, err)
+
+	empty := domain.Metadata{}
+	title := "renamed"
+	updated, err := b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Title: &title, Metadata: &empty}, "")
+	require.NoError(t, err)
+	assert.Equal(t, "renamed", updated.Title)
+	assert.Len(t, updated.Metadata, domain.MaxMetadataEntries+1)
+
+	// A change to it is still refused.
+	one := domain.Metadata{"k0": json.RawMessage(`1`)}
+	_, err = b.UpdateIssue(ctx, issue.ID, backend.IssuePatch{Metadata: &one}, "")
+	assert.Equal(t, 2, exitOf(err))
+}
+
 // encodedMetadata is the stored form of one metadata object: keys sorted,
 // values compacted. Comparing that string rather than the map is what pins the
 // ordering down as well as the content.
